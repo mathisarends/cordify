@@ -25,7 +25,7 @@ cordify/
     llm.py, fs.py, shell.py, approver.py
     tokens.py, compaction.py, spill.py, models.py
   core/                  Agent-Invarianten und öffentliche Core-Events
-    loop.py, session.py, inbox.py, tools.py, prompt.py, events.py
+    loop.py, session.py, inbox.py, approvals.py, tools.py, prompt.py, events.py
     features.py          Tool-Deklarationen als Kernel-Registrierungen
     attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py
   plugins/
@@ -134,6 +134,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.14_session_log` | Dauerhafte Chunks, reine Log-Projektionen, Request-Replay und unabhängiger Fork |
 | `python -m examples.15_tool_output_limits` | 2-MB-Ausgabe begrenzen, ExecuteTool-Waterfall und Weiterlesen mit offset/limit |
 | `python -m examples.16_compaction_policies` | Threshold, Turn-Fenster, periodische Compaction, geschützte Turns und Budget-Guard |
+| `python -m examples.17_resume_crash` | Prozessneustart mit dauerhaften Freigaben, Inbox und archiviertem JSONL-Tail |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -610,7 +611,8 @@ als `ToolReturned` geloggt. `Approver` ist ein austauschbarer Service.
 
 `callback_approver(fn)` stellt einen Callback als `Approver` bereit;
 `approval_gate(risky={...})` fragt ihn. Entscheidungen sind `Decision.ALLOW`,
-`DENY` und `ALWAYS` (Freigabe für diesen Toolnamen bis zum Session-Ende).
+`DENY` und `ALWAYS` (Freigabe für Toolname und Policy-Scope innerhalb derselben
+Session-ID, auch nach Resume, bis zum Widerruf).
 Ein `ToolPolicy`-Hook kann `Decision.ASK` zurückgeben, um den Approver aufzurufen.
 Die kompakte Form `approval_gate(risky={...}, ask=fn)` ist ebenfalls möglich.
 `ToolResult.with_note(text)` reichert das Modell-Ergebnis an;
@@ -772,6 +774,106 @@ werden weiterhin über ihre `AssistantMessage`-Events projiziert.
 Serialisierung, Replay, historische Modell-Requests und einen Fork vollständig
 offline. Tests rekonstruieren jeden Event-Präfix vor und nach Serialisierung und
 prüfen identische Nachrichten und Requests.
+
+## Resume nach einem Prozessneustart
+
+`session_jsonl()` lädt beim Öffnen derselben Session-ID den gespeicherten
+Zustand. Die Anwendung montiert ihre Services und Plugins neu; Nachrichten,
+Inbox, Freigaben, Compaction und weitere protokollierte Zustände werden aus dem
+Log rekonstruiert.
+
+```python
+from cordify.plugins.permissions.approval import approval_gate
+from cordify.plugins.persistence import session_jsonl
+from cordify.presets import coding
+
+harness = coding(
+    model,
+    root="./repo",
+    shell=True,
+    plugins=[
+        approval_gate(risky={"run_command"}, ask=ask_user, scope="workspace-shell"),
+        session_jsonl(".sessions", fsync=True, recover_tail=True),
+    ],
+)
+async with harness.session("review-42") as agent:
+    await agent.when_idle()  # verarbeitet gespeicherte Eingaben mit Wakeup
+    result = await agent.run("Setze die bisherige Arbeit fort.")
+```
+
+`fsync=True` flusht jeden gespeicherten Record zusätzlich auf den Datenträger.
+Der exklusive OS-Schreiblock verhindert zwei gleichzeitige Writer für dieselbe
+Session und wird auch beim Prozessabbruch vom Betriebssystem freigegeben.
+
+### Dauerhafte Inbox und Freigaben
+
+| Zustand | Dauerhafte Darstellung und Resume |
+| --- | --- |
+| Follow-up und Steering | `InboxAdded` enthält Nachricht, Ziel und Wakeup; unbearbeitete Eingaben wecken den neuen Agenten |
+| Stille Injection | Bleibt gespeichert und wartet auch nach Resume auf den nächsten Step |
+| Approval-Frage | `ApprovalRequested` enthält Call, Argumente, Grund, Request-ID und Policy-Scope |
+| Antwort | `ApprovalResolved` hält `ALLOW`, `DENY` oder `ALWAYS` vor Beginn der Ausführung fest |
+| Wiederverwendung | Neue Approval-Events verweisen auf die ursprüngliche `ALWAYS`-Freigabe |
+| Widerruf | `ApprovalRevoked` entfernt die Freigabe aus der aktiven Log-Projektion |
+| Ausführungsgrenze | `ToolPolicyApplied` protokolliert die Entscheidung; `ToolExecutionStarted` wird vor der Ausführung gespeichert |
+
+`agent.session.approvals` ist ein unveränderlicher Snapshot mit `records`,
+`pending` und `grants`. Eine einzelne `ALLOW`-Antwort gilt für den zugehörigen
+Call. Eine `ALWAYS`-Freigabe gilt für Toolname und Scope derselben Session-ID.
+Unterschiedliche Policies können mit `approval_gate(..., scope="...")`
+getrennte Freigaben verwenden. Auch `ToolPolicy` mit `Decision.ASK` läuft durch
+denselben dauerhaften Approval-Pfad.
+
+```python
+grant = agent.session.approvals.grant_for("run_command", scope="workspace-shell")
+if grant is not None:
+    await agent.revoke_approval(grant.request_id)
+```
+
+Wiederholter Widerruf ist idempotent. Forks bekommen standardmäßig Widerrufe für
+die aktiven Freigaben ihres kopierten Präfixes. Mit
+`session.fork("trusted-copy", inherit_approvals=True)` kann die Anwendung die
+Übernahme ausdrücklich auswählen.
+
+### Unterbrochene Arbeit
+
+Vor dem Start des neuen Drivers ergänzt `repair_interrupted()` das Log:
+
+- Gespeicherte Text- und Reasoning-Chunks werden zu einer unterbrochenen
+  Assistant-Nachricht abgeschlossen.
+- Unbeantwortete Approval-Fragen erhalten den Status `interrupted` und erteilen
+  keine Freigabe. Ein neuer Versuch benötigt eine neue Entscheidung.
+- Tool-Calls ohne Ergebnis erhalten ein unterbrochenes Fehler-Ergebnis.
+  Für bereits gestartete Ausführungen wird der externe Ausgang als unbekannt
+  markiert; diese Calls werden beim Resume nicht automatisch wiederholt.
+- Offene Steps und Turns werden geschlossen. Weitere Reparaturaufrufe erzeugen
+  keine doppelten Abschlüsse.
+
+Der Agent verarbeitet anschließend gespeicherte Inbox-Eingaben gemäß ihrem
+Wakeup. Ohne solche Eingaben wartet er auf den nächsten `run()`, `followup()`
+oder `steer()`. Ein geplanter Stopp kann mit
+`await agent.cancel(keep_inbox=True)` die ausstehende Inbox erhalten.
+
+### Abgerissener letzter Schreibvorgang
+
+Standardmäßig weist der JSONL-Adapter unvollständige Records zurück.
+`recover_tail=True` erlaubt eine gezielte Reparatur des letzten Records ohne
+abschließende Newline: Seine Bytes werden vor der Reparatur in einer
+`*.incomplete-<offset>-<sha256>.bin`-Datei archiviert. Der vollständige Log-Präfix
+bleibt bytegleich. Ein `LogTailRecovered` protokolliert Offset, Bytezahl,
+Hash und Archivpfad. Auch eine unterbrochene Reparatur kann beim nächsten Laden
+abgeschlossen werden.
+
+Vollständige, aber ungültige Records, Sequenzfehler und unbekannte Event-Typen
+werden weiterhin abgewiesen. Eine Approval-Antwort ohne vollständigen
+Record-Abschluss wird nicht als Freigabe übernommen. Historische Logs ohne
+Approval-Events enthalten keine rekonstruierbare `ALWAYS`-Freigabe; die neue
+Ausführung fragt entsprechend ihrer Policy erneut.
+
+[`17_resume_crash.py`](examples/17_resume_crash.py) startet einen separaten
+Prozess, beendet ihn ohne Teardown und öffnet die Session mit einem frischen
+Harness erneut. Die Tests beenden Prozesse zusätzlich während eines laufenden
+Tools, während einer offenen Approval-Frage und mit stiller Inbox im Idle.
 
 ## Entwicklung und Grenzen
 
