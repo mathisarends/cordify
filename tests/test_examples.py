@@ -26,6 +26,7 @@ import pytest
         "examples.16_compaction_policies",
         "examples.17_resume_crash",
         "examples.18_parallel_tools",
+        "examples.19_approvals_and_priorities",
     ],
 )
 def test_offline_sdk_example_runs(module):

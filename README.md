@@ -136,6 +136,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.16_compaction_policies` | Threshold, Turn-Fenster, periodische Compaction, geschützte Turns und Budget-Guard |
 | `python -m examples.17_resume_crash` | Prozessneustart mit dauerhaften Freigaben, Inbox und archiviertem JSONL-Tail |
 | `python -m examples.18_parallel_tools` | Parallele Calls, stabile Results und Dateikonflikte mit Ressourcen-Schlüsseln |
+| `python -m examples.19_approvals_and_priorities` | Headless-Approval, Antwort-Timeout und explizite Waterfall-Prioritäten |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -591,6 +592,35 @@ Tools unterstützen `@bundle.tool`, `@bundle.tool()` und
 `harness.add_hook(Event, fn)` und `agent.add_hook(Event, fn)` sind die imperativen
 Varianten; `add_tool(fn, ...)` registriert Tools ohne Dekorator.
 
+Listener haben eine explizite `priority`: **kleinere Zahlen laufen zuerst**,
+Standard `0`. Ein Waterfall verschachtelt sie entsprechend:
+`-100 before → 0 before → Kern → 0 after → -100 after`.
+Die Priorität gilt auch für geerbte Listener und Listener auf Event-Basisklassen.
+Bei Gleichstand bleibt die bisherige Reihenfolge erhalten; bei geerbten Scopes
+stehen Eltern vor Kindern. `prepend=True` zieht einen Listener innerhalb seines
+Scopes vor gleich priorisierte Listener und überholt keine andere Priorität.
+`Parallel` startet die Observer in dieser Reihenfolge, ihre Fertigstellung ist
+weiterhin unabhängig.
+
+```python
+@policies.on(ToolPolicy, priority=-100)
+async def authorize(event, next_):
+    # Autorisierung vor nachgelagerten Policies.
+    return await next_()
+
+
+@hook(ExecuteTool, priority=0)
+async def measure_execution(event, next_):
+    # Diese Phase beginnt erst nach Policy und Approval.
+    return await next_()
+```
+
+`priority=...` funktioniert bei `ctx.on`/`add_listener`, `@hook`,
+`bundle.on`/`add_hook`, Harness und Agent. Ohne Dekorator unterstützt
+`Plugin(hooks=[(Event, callback, -100)])` eine Priorität als drittes Tuple-Element;
+`(Event, callback)` behält den Standard `0`. Beim Unload verschwinden die Listener
+wie bisher, bei erneuter Montage behalten sie ihre deklarierte Priorität.
+
 Für call-lokale Daten steht `call: Inject[ToolCallContext]` bereit.
 `await call.progress(text)` schreibt einen dauerhaften `ToolProgress`-Event.
 Async-Tools werden durch normale asyncio-Cancellation abgebrochen.
@@ -611,11 +641,61 @@ Abgelehnte Calls überspringen Ausführung und Review; ihr Ergebnis wird trotzde
 als `ToolReturned` geloggt. `Approver` ist ein austauschbarer Service.
 
 `callback_approver(fn)` stellt einen Callback als `Approver` bereit;
-`approval_gate(risky={...})` fragt ihn. Entscheidungen sind `Decision.ALLOW`,
+`approval_gate(risky={...})` verwendet ihn. Entscheidungen sind `Decision.ALLOW`,
 `DENY` und `ALWAYS` (Freigabe für Toolname und Policy-Scope innerhalb derselben
 Session-ID, auch nach Resume, bis zum Widerruf).
 Ein `ToolPolicy`-Hook kann `Decision.ASK` zurückgeben, um den Approver aufzurufen.
 Die kompakte Form `approval_gate(risky={...}, ask=fn)` ist ebenfalls möglich.
+Das Gate bleibt auch ohne `Approver` aktiv. Seine Standardpriorität ist `-100`,
+mit `approval_gate(..., priority=...)` überschreibbar. Ein Timing-Hook auf
+`ToolPolicy` mit `priority=0` läuft dadurch innerhalb des Gates und misst dessen
+Antwortwartezeit nicht mit. Für reine Tool-Laufzeit verwendet man `ExecuteTool`;
+die festen Phasen laufen unabhängig von ihren Listener-Prioritäten nacheinander.
+
+Für UI- oder SDK-Responder gibt es außerdem `ApprovalRequest` als
+`Bail[Decision]`-Event:
+
+```python
+from cordify import ApprovalRequest, Decision
+
+
+@harness.on(ApprovalRequest, priority=0)
+async def answer(event):
+    # event.call, event.reason, event.request.request_id und event.request.scope
+    return await ui.ask(event.call, event.reason)  # z. B. Decision.ALLOW oder DENY
+```
+
+Ein explizit übergebener Approver hat Vorrang, danach folgt der `Approver`-Service.
+Fehlen beide, werden aktive `ApprovalRequest`-Listener nach Priorität gefragt.
+`None` reicht an den nächsten Listener weiter; die erste Entscheidung beantwortet
+die Anfrage. `ApprovalRequested` ist das dauerhafte Log-Event zur Beobachtung;
+Antworten liefert der separate `ApprovalRequest`-Hook oder das Approver-Protocol.
+
+| Situation | Ergebnis |
+| --- | --- |
+| Kein Responder oder alle geben `None` zurück | Sofort `unavailable` |
+| Responder hängt, schlägt fehl oder liefert eine ungültige Antwort | `unavailable`; bei ausbleibender Antwort nach dem Timeout |
+| Explizite Ablehnung | `answered` mit `Decision.DENY`; Tool-Result `denied` |
+| Agent-Abbruch während einer Anfrage | `interrupted` |
+
+`Harness(..., approval_timeout=300)` begrenzt die Antwortwartezeit pro Anfrage
+auf Sekunden; der Standard sind fünf Minuten. Alle Presets unterstützen dieselbe
+Option, ebenso `harness.session(..., approval_timeout=5)` als Override.
+Der Wert muss endlich und positiv sein. Asynchrone Responder müssen Cancellation
+weitergeben und dürfen den Event-Loop nicht mit blockierenden UI-Aufrufen anhalten.
+
+Bei `unavailable` entsteht ein `ApprovalResolved(status="unavailable", reason=...)`
+ohne Entscheidung oder Freigabe. Das Tool startet nicht und erhält ein
+`ToolResult` mit `status="unavailable"`. Ein direkter
+`await agent.request_approval(...)` wirft `ApprovalUnavailable`. Es bleibt keine
+offene Anfrage zurück; Replay und Resume erhalten diesen Abschluss, ohne die
+Frage erneut auszulösen. Bestehende `ALWAYS`-Freigaben derselben Session und
+desselben Scopes bleiben auch ohne aktuellen Responder nutzbar.
+
+[`19_approvals_and_priorities.py`](examples/19_approvals_and_priorities.py)
+zeigt fehlende UI, einen antwortenden SDK-Listener, getrenntes Timing und
+einen ausbleibenden Responder vollständig offline.
+
 `ToolResult.with_note(text)` reichert das Modell-Ergebnis an;
 `await agent.inject(text)` fügt Kontext hinzu und `await agent.steer(text)` setzt
 eine neue Step-Eingabe. `ToolReturned` beobachtet das bereits festgeschriebene Ergebnis.
@@ -895,6 +975,7 @@ Session und wird auch beim Prozessabbruch vom Betriebssystem freigegeben.
 | Stille Injection | Bleibt gespeichert und wartet auch nach Resume auf den nächsten Step |
 | Approval-Frage | `ApprovalRequested` enthält Call, Argumente, Grund, Request-ID und Policy-Scope |
 | Antwort | `ApprovalResolved` hält `ALLOW`, `DENY` oder `ALWAYS` vor Beginn der Ausführung fest |
+| Fehlender Responder | `ApprovalResolved(status="unavailable", reason=...)` schließt die Anfrage ohne Freigabe |
 | Wiederverwendung | Neue Approval-Events verweisen auf die ursprüngliche `ALWAYS`-Freigabe |
 | Widerruf | `ApprovalRevoked` entfernt die Freigabe aus der aktiven Log-Projektion |
 | Ausführungsgrenze | `ToolPolicyApplied` protokolliert die Entscheidung; `ToolExecutionStarted` wird vor der Ausführung gespeichert |
