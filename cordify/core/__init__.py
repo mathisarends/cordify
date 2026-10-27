@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from cordify.core.loop import AgentHandle as AgentHandle
     from cordify.core.loop import AgentOptions as AgentOptions
     from cordify.core.loop import RunResult as RunResult
+    from cordify.core.outputs import ToolOutputLimit as ToolOutputLimit
     from cordify.core.prompt import SystemPrompt as SystemPrompt
     from cordify.core.session import Session as Session
     from cordify.core.session import SessionPersistence as SessionPersistence
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from cordify.core.turns import Turn as Turn
     from cordify.core.turns import derive_turns as derive_turns
 _EXPORTS = {
+    "ToolOutputLimit": ("cordify.core.outputs", "ToolOutputLimit"),
     "Step": ("cordify.core.turns", "Step"),
     "Turn": ("cordify.core.turns", "Turn"),
     "derive_turns": ("cordify.core.turns", "derive_turns"),
@@ -42,6 +44,7 @@ _EXPORTS = {
     "SystemPrompt": ("cordify.core.prompt", "SystemPrompt"),
 }
 __all__ = [
+    "ToolOutputLimit",
     "Step",
     "Turn",
     "derive_turns",

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from cordify.core.loop import AgentHandle as AgentHandle
     from cordify.core.loop import AgentOptions as AgentOptions
     from cordify.core.loop import RunResult as RunResult
+    from cordify.core.outputs import ToolOutputLimit as ToolOutputLimit
     from cordify.core.prompt import SystemPrompt as SystemPrompt
     from cordify.core.session import Session as Session
     from cordify.core.session import SessionPersistence as SessionPersistence
@@ -68,6 +69,7 @@ if TYPE_CHECKING:
     from cordify.seams.models import ModelRequest as ModelRequest
     from cordify.seams.models import ModelUsage as ModelUsage
     from cordify.seams.models import Observation as Observation
+    from cordify.seams.models import OutputTruncation as OutputTruncation
     from cordify.seams.models import SpillRef as SpillRef
     from cordify.seams.models import TextPart as TextPart
     from cordify.seams.models import ToolCall as ToolCall
@@ -80,6 +82,8 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "ToolOutputLimit": ("cordify.core.outputs", "ToolOutputLimit"),
+    "OutputTruncation": ("cordify.seams.models", "OutputTruncation"),
     "Step": ("cordify.core.turns", "Step"),
     "Turn": ("cordify.core.turns", "Turn"),
     "derive_turns": ("cordify.core.turns", "derive_turns"),
@@ -158,6 +162,8 @@ _EXPORTS = {
     "Key": ("cordify.kernel.keys", "Key"),
 }
 __all__ = [
+    "ToolOutputLimit",
+    "OutputTruncation",
     "Step",
     "Turn",
     "derive_turns",

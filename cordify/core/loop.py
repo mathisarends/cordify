@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AsyncExitStack
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
@@ -42,6 +42,7 @@ from .events import (
     UserMessage,
 )
 from .execution import ToolCallContext
+from .outputs import ToolOutputLimit
 from .prompt import SystemPrompt
 from .session import Session
 from .tools import ToolRegistry
@@ -56,6 +57,7 @@ class AgentOptions:
     max_steps: int = 32
     max_tokens: int | None = None
     context_window: int = 128_000
+    tool_output_limit: ToolOutputLimit = field(default_factory=ToolOutputLimit)
 
     def __post_init__(self):
         if not self.model:
@@ -356,6 +358,9 @@ class Agent:
         return True
 
     async def _execute_tool(self, call: ToolCall) -> ToolResult:
+        return self.options.tool_output_limit.apply(await self._tool_pipeline(call))
+
+    async def _tool_pipeline(self, call: ToolCall) -> ToolResult:
         try:
             decision = await self.ctx.dispatch(
                 ToolPolicy(call, self),

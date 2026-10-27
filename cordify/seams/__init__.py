@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from cordify.seams.models import ModelRequest as ModelRequest
     from cordify.seams.models import ModelUsage as ModelUsage
     from cordify.seams.models import Observation as Observation
+    from cordify.seams.models import OutputTruncation as OutputTruncation
     from cordify.seams.models import SpillRef as SpillRef
     from cordify.seams.models import TextPart as TextPart
     from cordify.seams.models import ToolCall as ToolCall
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "OutputTruncation": ("cordify.seams.models", "OutputTruncation"),
     "freeze": ("cordify.seams.models", "freeze"),
     "to_dict": ("cordify.seams.models", "to_dict"),
     "ToolCall": ("cordify.seams.models", "ToolCall"),
@@ -64,6 +66,7 @@ _EXPORTS = {
     "SpillStore": ("cordify.seams.spill", "SpillStore"),
 }
 __all__ = [
+    "OutputTruncation",
     "freeze",
     "to_dict",
     "ToolCall",

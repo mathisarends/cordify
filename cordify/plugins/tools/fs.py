@@ -18,12 +18,19 @@ async def fs_local(ctx: Context, root: str | Path = "."):
 async def fs_tools(ctx: Context, registry: Inject[ToolRegistry]):
 
     @registry.tool
-    async def read_file(path: str, limit: int | None = None, *, fs: Inject[FS]) -> str:
-        """Read a UTF-8 file from the workspace, optionally limiting the characters."""
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be non-negative")
+    async def read_file(path: str, limit: int = 8000, offset: int = 0, *, fs: Inject[FS]) -> str:
+        """Read a UTF-8 character range: offset >= 0, limit 1-16000 (default 8000)."""
+        if offset < 0 or not 1 <= limit <= 16_000:
+            raise ValueError("File reads require offset >= 0 and 1 <= limit <= 16000 characters")
         text = await fs.read(Path(path))
-        return text[:limit] if limit is not None else text
+        end = offset + limit
+        content = text[offset:end]
+        if end < len(text):
+            content += (
+                f"\n\n[File read truncated at character {end} of {len(text)}. "
+                f"Continue with offset={end}, limit={limit}.]"
+            )
+        return content
 
     @registry.tool
     async def write_file(path: str, text: str, *, fs: Inject[FS]) -> str:

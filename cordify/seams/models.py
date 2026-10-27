@@ -63,11 +63,29 @@ class SpillRef:
 
 
 @dataclass(frozen=True)
+class OutputTruncation:
+    original_chars: int
+    retained_chars: int
+    max_chars: int
+
+    def __post_init__(self):
+        if (
+            type(self.original_chars) is not int
+            or type(self.retained_chars) is not int
+            or type(self.max_chars) is not int
+            or not 0 <= self.retained_chars < self.original_chars
+            or self.retained_chars > self.max_chars
+        ):
+            raise ValueError("Invalid tool output truncation sizes")
+
+
+@dataclass(frozen=True)
 class ToolResult:
     content: str
     status: Literal["ok", "error", "denied"] = "ok"
     exit_code: int | None = None
     spill: SpillRef | None = None
+    truncation: OutputTruncation | None = None
 
     @classmethod
     def error(cls, content: str) -> "ToolResult":
@@ -244,6 +262,11 @@ def tool_result_from_dict(data: dict) -> ToolResult:
         **{
             **data,
             "spill": SpillRef(**data["spill"]) if data.get("spill") is not None else None,
+            "truncation": (
+                OutputTruncation(**data["truncation"])
+                if data.get("truncation") is not None
+                else None
+            ),
         }
     )
 

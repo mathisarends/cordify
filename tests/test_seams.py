@@ -91,7 +91,7 @@ async def test_foreign_fs_and_model_work_through_di_without_framework_inheritanc
         results = [event.result for event in result.events if isinstance(event, ToolReturned)]
         assert results[-1].content == "hello" and not results[-1].is_error
         definition = next(tool for tool in model.requests[0].tools if tool.name == "read_file")
-        assert set(definition.parameters["properties"]) == {"path", "limit"}
+        assert set(definition.parameters["properties"]) == {"path", "limit", "offset"}
 
 
 class ForeignShell:

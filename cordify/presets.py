@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from .core.features import Bundle
 from .core.loop import Agent, AgentFactory, AgentOptions
+from .core.outputs import ToolOutputLimit
 from .core.session import Session, SessionPersistence
 from .kernel.context import Context
 from .kernel.plugin import PluginLike
@@ -18,10 +19,14 @@ class Harness:
         *,
         model: str | None = None,
         context_window: int = 128_000,
+        tool_output_limit: ToolOutputLimit | None = None,
     ):
         self.plugins = tuple(plugins)
         self.model = model
         self.context_window = context_window
+        self.tool_output_limit = (
+            tool_output_limit if tool_output_limit is not None else ToolOutputLimit()
+        )
         self._active: set[str] = set()
         self._bundle = Bundle("harness")
 
@@ -47,6 +52,7 @@ class Harness:
         max_steps: int = 32,
         max_tokens: int | None = None,
         context_window: int | None = None,
+        tool_output_limit: ToolOutputLimit | None = None,
     ):
         from .plugins.context.providers import compactor, spill_store
         from .plugins.observe.tokens import token_counter
@@ -80,6 +86,7 @@ class Harness:
                     max_steps,
                     max_tokens,
                     self.context_window if context_window is None else context_window,
+                    self.tool_output_limit if tool_output_limit is None else tool_output_limit,
                 )
                 persistence = ctx[SessionPersistence] if SessionPersistence in ctx else None
                 seed = await persistence.load(session_id) if persistence is not None else ()
@@ -103,12 +110,16 @@ def minimal(
     plugins: Iterable[PluginLike] = (),
     model: str | None = None,
     context_window: int = 128_000,
+    tool_output_limit: ToolOutputLimit | None = None,
 ) -> Harness:
     from .plugins.agents.loop import agent_loop
     from .plugins.services import llm
 
     return Harness(
-        [agent_loop(), llm(implementation), *plugins], model=model, context_window=context_window
+        [agent_loop(), llm(implementation), *plugins],
+        model=model,
+        context_window=context_window,
+        tool_output_limit=tool_output_limit,
     )
 
 
@@ -120,6 +131,7 @@ def coding(
     plugins: Iterable[PluginLike] = (),
     model: str | None = None,
     context_window: int = 128_000,
+    tool_output_limit: ToolOutputLimit | None = None,
 ) -> Harness:
     from pathlib import Path
 
@@ -136,6 +148,7 @@ def coding(
         plugins=[*capabilities, *plugins],
         model=model,
         context_window=context_window,
+        tool_output_limit=tool_output_limit,
     )
 
 
@@ -145,5 +158,12 @@ def headless(
     plugins: Iterable[PluginLike] = (),
     model: str | None = None,
     context_window: int = 128_000,
+    tool_output_limit: ToolOutputLimit | None = None,
 ) -> Harness:
-    return minimal(implementation, plugins=plugins, model=model, context_window=context_window)
+    return minimal(
+        implementation,
+        plugins=plugins,
+        model=model,
+        context_window=context_window,
+        tool_output_limit=tool_output_limit,
+    )
