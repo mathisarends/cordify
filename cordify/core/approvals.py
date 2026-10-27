@@ -1,8 +1,14 @@
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from math import isfinite
 
 from ..seams.models import Decision
 from .events import ApprovalRequested, ApprovalResolved, ApprovalRevoked, SessionEvent
+
+
+def validate_approval_timeout(value: float) -> None:
+    if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+        raise ValueError("approval_timeout must be a finite positive number of seconds")
 
 
 @dataclass(frozen=True)

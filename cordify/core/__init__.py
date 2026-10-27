@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from cordify.core.approvals import Approvals as Approvals
     from cordify.core.budget import ContextBudget as ContextBudget
     from cordify.core.budget import ContextBudgetExceeded as ContextBudgetExceeded
+    from cordify.core.events import ApprovalRequest as ApprovalRequest
     from cordify.core.features import Bundle as Bundle
     from cordify.core.features import Plugin as Plugin
     from cordify.core.features import tool as tool
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from cordify.core.turns import Turn as Turn
     from cordify.core.turns import derive_turns as derive_turns
 _EXPORTS = {
+    "ApprovalRequest": ("cordify.core.events", "ApprovalRequest"),
     "Approval": ("cordify.core.approvals", "Approval"),
     "Approvals": ("cordify.core.approvals", "Approvals"),
     "ContextBudget": ("cordify.core.budget", "ContextBudget"),
@@ -52,6 +54,7 @@ _EXPORTS = {
     "SystemPrompt": ("cordify.core.prompt", "SystemPrompt"),
 }
 __all__ = [
+    "ApprovalRequest",
     "Approval",
     "Approvals",
     "ContextBudget",

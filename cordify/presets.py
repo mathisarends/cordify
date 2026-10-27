@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 
+from .core.approvals import validate_approval_timeout
 from .core.features import Bundle
 from .core.loop import Agent, AgentFactory, AgentOptions
 from .core.outputs import ToolOutputLimit
@@ -21,6 +22,7 @@ class Harness:
         context_window: int = 128_000,
         tool_output_limit: ToolOutputLimit | None = None,
         max_parallel_tools: int = 4,
+        approval_timeout: float = 300.0,
     ):
         self.plugins = tuple(plugins)
         self.model = model
@@ -28,6 +30,8 @@ class Harness:
         if type(max_parallel_tools) is not int or max_parallel_tools < 1:
             raise ValueError("max_parallel_tools must be a positive integer")
         self.max_parallel_tools = max_parallel_tools
+        validate_approval_timeout(approval_timeout)
+        self.approval_timeout = approval_timeout
         self.tool_output_limit = (
             tool_output_limit if tool_output_limit is not None else ToolOutputLimit()
         )
@@ -58,6 +62,7 @@ class Harness:
         context_window: int | None = None,
         tool_output_limit: ToolOutputLimit | None = None,
         max_parallel_tools: int | None = None,
+        approval_timeout: float | None = None,
     ):
         from .plugins.context.providers import compactor, spill_store
         from .plugins.observe.tokens import token_counter
@@ -93,6 +98,7 @@ class Harness:
                     self.context_window if context_window is None else context_window,
                     self.tool_output_limit if tool_output_limit is None else tool_output_limit,
                     self.max_parallel_tools if max_parallel_tools is None else max_parallel_tools,
+                    self.approval_timeout if approval_timeout is None else approval_timeout,
                 )
                 persistence = ctx[SessionPersistence] if SessionPersistence in ctx else None
                 seed = await persistence.load(session_id) if persistence is not None else ()
@@ -118,6 +124,7 @@ def minimal(
     context_window: int = 128_000,
     tool_output_limit: ToolOutputLimit | None = None,
     max_parallel_tools: int = 4,
+    approval_timeout: float = 300.0,
 ) -> Harness:
     from .plugins.agents.loop import agent_loop
     from .plugins.services import llm
@@ -128,6 +135,7 @@ def minimal(
         context_window=context_window,
         tool_output_limit=tool_output_limit,
         max_parallel_tools=max_parallel_tools,
+        approval_timeout=approval_timeout,
     )
 
 
@@ -141,6 +149,7 @@ def coding(
     context_window: int = 128_000,
     tool_output_limit: ToolOutputLimit | None = None,
     max_parallel_tools: int = 4,
+    approval_timeout: float = 300.0,
 ) -> Harness:
     from pathlib import Path
 
@@ -159,6 +168,7 @@ def coding(
         context_window=context_window,
         tool_output_limit=tool_output_limit,
         max_parallel_tools=max_parallel_tools,
+        approval_timeout=approval_timeout,
     )
 
 
@@ -170,6 +180,7 @@ def headless(
     context_window: int = 128_000,
     tool_output_limit: ToolOutputLimit | None = None,
     max_parallel_tools: int = 4,
+    approval_timeout: float = 300.0,
 ) -> Harness:
     return minimal(
         implementation,
@@ -178,4 +189,5 @@ def headless(
         context_window=context_window,
         tool_output_limit=tool_output_limit,
         max_parallel_tools=max_parallel_tools,
+        approval_timeout=approval_timeout,
     )

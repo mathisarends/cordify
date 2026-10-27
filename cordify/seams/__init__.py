@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from .._exports import exported
 
 if TYPE_CHECKING:
+    from cordify.seams.approver import ApprovalUnavailable as ApprovalUnavailable
     from cordify.seams.approver import Approver as Approver
     from cordify.seams.compaction import Compactor as Compactor
     from cordify.seams.fs import FS as FS
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "ApprovalUnavailable": ("cordify.seams.approver", "ApprovalUnavailable"),
     "OutputTruncation": ("cordify.seams.models", "OutputTruncation"),
     "freeze": ("cordify.seams.models", "freeze"),
     "to_dict": ("cordify.seams.models", "to_dict"),
@@ -66,6 +68,7 @@ _EXPORTS = {
     "SpillStore": ("cordify.seams.spill", "SpillStore"),
 }
 __all__ = [
+    "ApprovalUnavailable",
     "OutputTruncation",
     "freeze",
     "to_dict",

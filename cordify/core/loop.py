@@ -8,13 +8,15 @@ from uuid import uuid4
 
 from ..kernel.context import Context
 from ..kernel.effects import Disposer
-from ..seams.approver import Approver
+from ..seams.approver import ApprovalUnavailable, Approver
 from ..seams.llm import LLM
 from ..seams.models import Decision, Message, ModelRequest, Observation, ToolCall, ToolResult
 from ..seams.tokens import TokenCounter
+from .approvals import validate_approval_timeout
 from .attachments import Attachment, prepare_input
 from .budget import ContextBudget
 from .events import (
+    ApprovalRequest,
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
@@ -68,6 +70,7 @@ class AgentOptions:
     context_window: int = 128_000
     tool_output_limit: ToolOutputLimit = field(default_factory=ToolOutputLimit)
     max_parallel_tools: int = 4
+    approval_timeout: float = 300.0
 
     def __post_init__(self):
         if not self.model:
@@ -82,6 +85,7 @@ class AgentOptions:
             raise ValueError("context_window must be a positive integer")
         if type(self.max_parallel_tools) is not int or self.max_parallel_tools < 1:
             raise ValueError("max_parallel_tools must be a positive integer")
+        validate_approval_timeout(self.approval_timeout)
 
 
 @dataclass(frozen=True)
@@ -215,20 +219,53 @@ class Agent:
             if grant is not None:
                 decision = Decision.ALWAYS
             else:
-                selected = approver if approver is not None else self.ctx[Approver]
-                decision = await selected.ask(call, reason)
-            if not isinstance(decision, Decision) or decision is Decision.ASK:
-                raise TypeError("Approvers must return ALLOW, DENY or ALWAYS")
+                decision = await self._approval_answer(request, approver)
             await self.session.append(ApprovalResolved(request.request_id, decision))
             return decision
-        except BaseException:
+        except BaseException as exc:
             if any(
                 item.request_id == request.request_id for item in self.session.approvals.pending
             ):
                 await self.session.append(
-                    ApprovalResolved(request.request_id, status="interrupted")
+                    ApprovalResolved(
+                        request.request_id,
+                        status="unavailable"
+                        if isinstance(exc, ApprovalUnavailable)
+                        else "interrupted",
+                        reason=str(exc) if isinstance(exc, ApprovalUnavailable) else None,
+                    )
                 )
             raise
+
+    async def _approval_answer(
+        self, request: ApprovalRequested, approver: Approver | None
+    ) -> Decision:
+        try:
+            async with asyncio.timeout(self.options.approval_timeout):
+                selected = (
+                    approver
+                    if approver is not None
+                    else (self.ctx[Approver] if Approver in self.ctx else None)
+                )
+                if selected is not None:
+                    decision = await selected.ask(request.call, request.reason)
+                else:
+                    decision = await self.ctx.dispatch(ApprovalRequest(request, self))
+            if decision is None:
+                raise ApprovalUnavailable("No approval responder answered the request")
+            if not isinstance(decision, Decision) or decision is Decision.ASK:
+                raise TypeError("Approvers must return ALLOW, DENY or ALWAYS")
+            return decision
+        except ApprovalUnavailable:
+            raise
+        except TimeoutError as exc:
+            raise ApprovalUnavailable(
+                f"Approval response timed out after {self.options.approval_timeout:g} seconds"
+            ) from exc
+        except Exception as exc:
+            raise ApprovalUnavailable(
+                f"Approval responder failed: {type(exc).__name__}: {exc}"
+            ) from exc
 
     async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
         if self._closing or self._canceling:
@@ -479,6 +516,9 @@ class Agent:
             if decision not in (Decision.ALLOW, Decision.ALWAYS):
                 return ToolResult.denied("User declined this action")
             return None
+        except ApprovalUnavailable as exc:
+            await self.session.append(ToolPolicyApplied(call.id, Decision.DENY))
+            return ToolResult.unavailable(str(exc))
         except Exception as exc:
             return ToolResult.error(f"{type(exc).__name__}: {exc}")
 

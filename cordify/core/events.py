@@ -124,20 +124,37 @@ class ApprovalResolved(SessionEvent):
     type: ClassVar[str] = "approvals/resolved"
     request_id: str
     decision: Decision | None = None
-    status: Literal["answered", "interrupted"] = "answered"
+    status: Literal["answered", "interrupted", "unavailable"] = "answered"
+    reason: str | None = None
 
     def __post_init__(self):
         if self.decision is not None:
             object.__setattr__(self, "decision", Decision(self.decision))
+        if self.reason is not None and not isinstance(self.reason, str):
+            raise TypeError("Approval resolution reason must be a string")
         if self.status == "answered" and self.decision in (
             Decision.ALLOW,
             Decision.DENY,
             Decision.ALWAYS,
         ):
             return
-        if self.status == "interrupted" and self.decision is None:
+        if self.status in ("interrupted", "unavailable") and self.decision is None:
             return
-        raise ValueError("Approval must have a final decision or be interrupted")
+        raise ValueError("Approval must be answered, interrupted or unavailable")
+
+
+@dataclass(frozen=True)
+class ApprovalRequest(Bail[Decision]):
+    request: ApprovalRequested
+    agent: "Agent"
+
+    @property
+    def call(self) -> ToolCall:
+        return self.request.call
+
+    @property
+    def reason(self) -> str:
+        return self.request.reason
 
 
 @dataclass(frozen=True)

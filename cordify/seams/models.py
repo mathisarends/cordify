@@ -82,7 +82,7 @@ class OutputTruncation:
 @dataclass(frozen=True)
 class ToolResult:
     content: str
-    status: Literal["ok", "error", "denied"] = "ok"
+    status: Literal["ok", "error", "denied", "unavailable"] = "ok"
     exit_code: int | None = None
     spill: SpillRef | None = None
     truncation: OutputTruncation | None = None
@@ -94,6 +94,10 @@ class ToolResult:
     @classmethod
     def denied(cls, content: str) -> "ToolResult":
         return cls(content, "denied")
+
+    @classmethod
+    def unavailable(cls, content: str) -> "ToolResult":
+        return cls(content, "unavailable")
 
     @property
     def is_error(self) -> bool:

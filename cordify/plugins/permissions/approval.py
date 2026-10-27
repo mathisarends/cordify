@@ -8,7 +8,11 @@ from ...seams.models import Decision
 
 
 def approval_gate(
-    *, risky: Iterable[str], ask: Callable | None = None, scope: str = "approval-gate"
+    *,
+    risky: Iterable[str],
+    ask: Callable | None = None,
+    scope: str = "approval-gate",
+    priority: int = -100,
 ):
     risky = frozenset(risky)
     if any(not isinstance(name, str) or not name for name in risky):
@@ -16,9 +20,9 @@ def approval_gate(
     if not isinstance(scope, str) or not scope:
         raise ValueError("Approval scope must not be empty")
 
-    @plugin(name="approval_gate", needs=[Approver] if ask is None else [])
+    @plugin(name="approval_gate")
     async def mount(ctx):
-        @ctx.on(ToolPolicy)
+        @ctx.on(ToolPolicy, priority=priority)
         async def gate(event, next_):
             if event.call.name not in risky:
                 return await next_()
@@ -41,11 +45,13 @@ class CallbackApprover:
     def __init__(self, ask: Callable):
         self.callback = ask
 
-    async def ask(self, call, reason: str) -> Decision:
+    async def ask(self, call, reason: str) -> Decision | None:
         import inspect
 
         value = self.callback(call)
         value = await value if inspect.isawaitable(value) else value
+        if value is None:
+            return None
         if isinstance(value, Decision):
             return value
         if type(value) is bool:
