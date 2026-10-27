@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import os
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 from ..seams.models import SpillRef
@@ -10,11 +11,16 @@ from ..seams.models import SpillRef
 class LocalSpillStore:
     def __init__(self, root: str | Path = ".cordify/spills"):
         self.root = Path(root).absolute()
+        self._write_lock = Lock()
 
     async def put(self, content: str) -> SpillRef:
         return await asyncio.to_thread(self._put, content)
 
     def _put(self, content: str) -> SpillRef:
+        with self._write_lock:
+            return self._put_once(content)
+
+    def _put_once(self, content: str) -> SpillRef:
         data = content.encode("utf-8")
         digest = hashlib.sha256(data).hexdigest()
         self.root.mkdir(parents=True, exist_ok=True)

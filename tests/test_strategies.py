@@ -88,8 +88,9 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
 
 async def test_spill_reads_unicode_character_ranges_reject_escape_and_reuse_content(tmp_path):
     store = LocalSpillStore(tmp_path)
-    first, second = await asyncio.gather(store.put("ä😀abc"), store.put("ä😀abc"))
-    assert first == second
+    refs = await asyncio.gather(*(store.put("ä😀abc") for _ in range(20)))
+    first = refs[0]
+    assert all(ref == first for ref in refs)
     assert await store.read(first.path, offset=1, limit=2) == "😀a"
     assert await store.read(first.path, offset=100) == ""
     with pytest.raises(ValueError, match="outside"):
