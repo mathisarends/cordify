@@ -128,7 +128,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.08_observations` | Browserzustand pro Step: voller aktueller Zustand, kompakte alte Zustände |
 | `python -m examples.09_rules` | TestDiscipline als Klasse und deklarative Rules |
 | `python -m examples.10_context_strategies` | Spill, Compaction, Observation-Limit und Cache-Metadaten gemeinsam |
-| `python -m examples.11_temporal_needs` | Service-Verlust, Discomposition und frischer Neuaufbau |
+| `python -m examples.11_temporal_needs` | Umkehrbare Tools, Prompt-Sektionen, Listener und eigene Effekte bei Service-Wechsel |
 | `python -m examples.12_layered_sdk` | Neuer Schichtenaufbau, eigenständiger Kernel und Presets |
 | `python -m examples.13_llm_adapters` | Eigener BaseLLM-Adapter mit Retry und struktureller Adapter ohne Vererbung |
 
@@ -318,6 +318,68 @@ Browser-Dummy, den Observer sowie `click`- und `snapshot`-Tools.
 
 ## Plugins und Injection
 
+### Umkehrbare Effekte
+
+Jede aktive Registrierung gehört zum Cleanup-Stack ihres Contexts. Sie bekommt
+einen asynchronen, idempotenten **Disposer**: `await remove()` entfernt genau
+diese Registrierung. Beim Plugin-Teardown wird derselbe Disposer automatisch
+aufgerufen. Manuelle Entfernung und späterer Teardown funktionieren gemeinsam.
+
+| Direkte Registrierung | Rückgabe |
+| --- | --- |
+| `ctx.provide(Service, implementation)` | Disposer für den Service |
+| `ctx.add_listener(Event, callback)` | Disposer für den Listener |
+| `registry.register(callback, name="read")` | Disposer für das Tool |
+| `prompt.section("project", content)` | Disposer für die Prompt-Sektion |
+| `ctx.effect(cleanup)` | Disposer für einen eigenen synchronen oder asynchronen Effekt |
+| `agent.add_tool(callback)` / `agent.add_hook(Event, callback)` | Disposer für die laufende Session |
+
+Die Dekoratoren `@ctx.on(...)`, `@registry.tool` und `@agent.tool` geben weiterhin
+die ursprüngliche Funktion zurück. Ihre Registrierungen werden genauso
+automatisch entsorgt. `Harness` und `Bundle` sammeln zunächst Rezepte; die
+Effekte entstehen erst bei der Montage in einem Context.
+Auch über `agent.on` und `agent.add_hook` angelegte Listener gehören zum aktuell
+aktiven Plugin-Context; außerhalb eines Plugins gehören sie zur Session.
+
+```python
+from cordify import Context, Emit, SystemPrompt, ToolRegistry
+
+
+class Changed(Emit):
+    pass
+
+
+async def read() -> str:
+    return "temporary tool"
+
+
+async with Context() as ctx:
+    registry = ToolRegistry(ctx)
+    prompt = SystemPrompt(ctx)
+    remove_tool = registry.register(read)
+    remove_listener = ctx.add_listener(Changed, lambda event: print("changed"))
+    remove_section = prompt.section("project", "Use this workspace.")
+
+    await remove_tool()
+    await remove_tool()  # idempotent
+    await remove_listener()
+    # remove_section wird beim Verlassen des Contexts automatisch ausgeführt.
+```
+
+Eigene Ressourcen werden mit `ctx.effect(resource.aclose)` oder einem eigenen
+Cleanup-Callback angehängt, sobald sie angelegt wurden. So greift der Rollback
+auch bei einem teilweise fehlgeschlagenen Setup. Cleanup läuft in umgekehrter
+Registrierungsreihenfolge und führt die übrigen Disposer auch nach einem Fehler
+aus. Ein Fehler beim Registrieren nach erfolgreichem Klassen-Setup ruft zusätzlich
+`Plugin.teardown()` auf.
+
+Tools, Listener und Prompt-Sektionen werden erst nach erfolgreichem Plugin-Setup
+für andere Aufrufer sichtbar. Beim Beginn des Teardowns verschwinden sie aus der
+Auswahl, auch wenn asynchrones Cleanup noch wartet. Überschriebene Tools und
+Prompt-Sektionen geben dabei die vorherige Registrierung wieder frei.
+Bereits entfernte Listener werden in einem laufenden Dispatch übersprungen;
+eine während des Renderns entfernte Sektion liefert keinen veralteten Prompt-Text.
+
 ### needs und temporale Komposition
 
 `needs` beschreibt **wann ein Plugin lebt**. Das gilt während der gesamten
@@ -367,6 +429,14 @@ erfolgreichem Setup sichtbar. `handle.error` zeigt Setup-Fehler; `settle()` meld
 Fehler automatischer Aktivierungen als ExceptionGroup. Fehlgeschlagene Setups
 werden bei unveränderter Dependency nicht endlos wiederholt. Dynamische Zyklen
 werden gemeldet.
+
+Ein expliziter Hot-Reload benutzt dieselben Lebenszeiten: Den alten Provider mit
+`await provider.aclose()` entladen und seine neue Version mit
+`await ctx.plugin(new_provider_spec)` montieren. Die Rezepte seiner abhängigen
+Plugins bleiben erhalten; nach `await ctx.settle()` sind sie mit frischem Zustand
+und genau einer neuen Registrierung pro Tool, Sektion und Listener aufgebaut.
+[`11_temporal_needs.py`](examples/11_temporal_needs.py) zeigt Service-Verlust und
+Neuaufbau für alle drei Registrierungsarten samt eigenem Cleanup-Effekt.
 
 Die Formen sind gleichwertig:
 
