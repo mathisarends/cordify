@@ -32,7 +32,12 @@ class LocalSpillStore:
         temporary = self._path(str(self.root / f".{digest}.{uuid4().hex}.tmp"))
         try:
             temporary.write_bytes(data)
-            os.replace(temporary, path)
+            try:
+                os.replace(temporary, path)
+            except OSError:
+                # Windows can deny replace while another writer verifies the same target.
+                if not path.exists() or path.read_bytes() != data:
+                    raise
         finally:
             temporary.unlink(missing_ok=True)
         return SpillRef(str(path), digest)

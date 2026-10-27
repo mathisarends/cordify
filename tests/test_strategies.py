@@ -95,6 +95,29 @@ async def test_spill_reads_unicode_character_ranges_reject_escape_and_reuse_cont
         await store.read(first.path, limit=16001)
 
 
+async def test_spill_reuses_verified_concurrent_winner_on_windows_replace_race(
+    tmp_path, monkeypatch
+):
+    def racing_replace(source, destination):
+        destination.write_bytes(source.read_bytes())
+        raise PermissionError("target opened by concurrent writer")
+
+    monkeypatch.setattr("cordify.spill.os.replace", racing_replace)
+    ref = await LocalSpillStore(tmp_path).put("concurrent content")
+    assert await LocalSpillStore(tmp_path).read(ref.path) == "concurrent content"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+async def test_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatch):
+    def denied(source, destination):
+        raise PermissionError("write denied")
+
+    monkeypatch.setattr("cordify.spill.os.replace", denied)
+    with pytest.raises(PermissionError, match="write denied"):
+        await LocalSpillStore(tmp_path).put("content")
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 async def test_read_spill_tool_returns_bounded_ranges_without_respilling(tmp_path):
     store = LocalSpillStore(tmp_path)
     ref = await store.put("x" * 100)
