@@ -50,6 +50,43 @@ Rezepte; die ToolRegistry-Anbindung entsteht erst in `core.features`.
 `kernel.Plugin` ist die allgemeine Basis, `cordify.Plugin` ergänzt die
 Agent-Komfort-API mit `tools=[...]` und `.tool`-Bundles.
 
+### Seams verwenden Protocol
+
+`FS`, `LLM`, `Shell`, `Approver`, `TokenCounter`, `Compactor` und `SpillStore`
+sind schmale `typing.Protocol`-Verträge. Das gilt auch für die internen Verträge
+`AgentFactory` und `SessionPersistence`. Implementierungen erfüllen die Methoden
+strukturell und benötigen keine Cordify-Basisklasse:
+
+```python
+from pathlib import Path
+
+
+class MemoryFiles:
+    def __init__(self):
+        self.files: dict[str, str] = {}
+
+    async def read(self, path: Path) -> str:
+        return self.files[str(path)]
+
+    async def write(self, path: Path, text: str) -> None:
+        self.files[str(path)] = text
+
+
+# Erst die Integration kennt Cordify; die Implementierung oben bleibt unabhängig.
+from cordify import Context, FS
+
+async with Context() as ctx:
+    ctx.provide(FS, MemoryFiles())
+    await ctx[FS].write(Path("note.txt"), "hello")
+```
+
+Typprüfer vergleichen die Methodensignaturen. Die DI registriert Implementierungen
+explizit unter dem Protocol-Key und verlangt keine nominale Vererbung oder
+`isinstance`-Prüfung gegen den Seam. Gemeinsame Implementierungslogik gehört in
+Adapter oder Plugins; die Datenverträge bleiben unveränderliche Werttypen.
+Die Tests führen fremde FS-, LLM-, Shell- und Approver-Implementierungen ohne
+Vererbung durch die echte DI-, Approval- und Tool-Pipeline.
+
 Die alten flachen Modulpfade und `cordify.std` sind entfernt. Root-Imports wie
 `from cordify import Harness, Plugin, Inject` bleiben verfügbar. Konkrete
 Implementierungen werden aus ihrer Schicht importiert:
