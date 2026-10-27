@@ -45,7 +45,7 @@ from .prompt import SystemPrompt
 from .session import Session
 from .tools import ToolRegistry
 
-type AgentEvent = SessionEvent | AssistantChunk
+type AgentEvent = SessionEvent
 _preparing: ContextVar["Agent | None"] = ContextVar("cordify_preparing", default=None)
 
 
@@ -395,7 +395,14 @@ class Agent:
             return ToolResult.error(f"{type(exc).__name__}: {exc}")
 
     async def _respond(self, request: ModelRequest) -> Message:
-        text, reasoning, calls = [], [], []
+        message_id, calls = uuid4().hex, []
+
+        def partial_message():
+            return next(
+                (message for message in self.session.messages if message.id == message_id),
+                None,
+            )
+
         try:
             async with AsyncExitStack() as stack:
                 stream = self.ctx[LLM].stream(request)
@@ -405,26 +412,24 @@ class Agent:
                     if chunk.usage is not None:
                         await self.session.append(ModelUsageRecorded(chunk.usage))
                     if chunk.text or chunk.reasoning:
-                        text.append(chunk.text)
-                        reasoning.append(chunk.reasoning)
-                        event = AssistantChunk(chunk.text, chunk.reasoning)
-                        self._publish(event)
-                        await self.ctx.dispatch(event)
+                        await self.session.append(
+                            AssistantChunk(chunk.text, chunk.reasoning, message_id=message_id)
+                        )
                     if chunk.tool_call is not None:
                         calls.append(chunk.tool_call)
         except BaseException:
-            if text or reasoning:
-                await self.session.append(
-                    AssistantMessage(
-                        Message("assistant", "".join(text), reasoning_content="".join(reasoning)),
-                        interrupted=True,
-                    )
-                )
+            if partial := partial_message():
+                await self.session.append(AssistantMessage(partial, interrupted=True))
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
+        partial = partial_message()
         message = Message(
-            "assistant", "".join(text), tuple(calls), reasoning_content="".join(reasoning)
+            "assistant",
+            partial.text if partial else "",
+            tuple(calls),
+            reasoning_content=partial.reasoning_content if partial else "",
+            id=message_id,
         )
         await self.session.append(AssistantMessage(message))
         return message

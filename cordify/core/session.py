@@ -1,10 +1,14 @@
 import asyncio
+import math
 from collections.abc import Iterable
+from dataclasses import fields, is_dataclass
+from types import MappingProxyType
 from typing import Protocol
 
 from ..kernel.context import Context
 from ..seams.models import (
     Message,
+    ModelRequest,
     ModelUsage,
     Observation,
     SpillRef,
@@ -17,6 +21,7 @@ from ..seams.models import (
 )
 from .events import (
     SESSION_EVENT_TYPES,
+    AssistantChunk,
     AssistantMessage,
     CacheMetrics,
     CompactionApplied,
@@ -47,7 +52,40 @@ class SessionPersistence(Protocol):
     async def append(self, session_id: str, seq: int, event: SessionEvent) -> None: ...
 
 
+def _validate_event(event: SessionEvent) -> None:
+    if SESSION_EVENT_TYPES.get(getattr(event, "type", None)) is not type(event):
+        raise TypeError("Only registered frozen SessionEvent instances may be appended")
+
+    def immutable(value):
+        if value is None or isinstance(value, str | bool | int):
+            return
+        if isinstance(value, float) and math.isfinite(value):
+            return
+        if isinstance(value, tuple):
+            for item in value:
+                immutable(item)
+            return
+        if isinstance(value, MappingProxyType):
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    raise TypeError("Session event mapping keys must be strings")
+                immutable(item)
+            return
+        if (
+            is_dataclass(value)
+            and not isinstance(value, type)
+            and value.__dataclass_params__.frozen
+        ):
+            for item in fields(value):
+                immutable(getattr(value, item.name))
+            return
+        raise TypeError("Session events must contain only immutable, finite values")
+
+    immutable(event)
+
+
 def encode_event(event: SessionEvent) -> dict:
+    _validate_event(event)
     return {"type": event.type, "data": to_dict(event)}
 
 
@@ -72,11 +110,37 @@ def decode_event(record: dict) -> SessionEvent:
         data["call"] = ToolCall(**data["call"])
     elif kind is ToolReturned:
         data["result"] = tool_result_from_dict(data["result"])
-    return kind(**data)
+    event = kind(**data)
+    _validate_event(event)
+    return event
+
+
+def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
+    return tuple(event.request for event in events if isinstance(event, ModelRequested))
+
+
+def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Message]:
+    streams: dict[str, tuple[int, list[str], list[str]]] = {}
+    completed = set()
+    for seq, event in enumerate(events):
+        if isinstance(event, AssistantChunk):
+            _, text, reasoning = streams.setdefault(event.message_id, (seq, [], []))
+            text.append(event.text)
+            reasoning.append(event.reasoning)
+        elif isinstance(event, AssistantMessage):
+            completed.add(event.message.id)
+    return {
+        seq: Message(
+            "assistant", "".join(text), reasoning_content="".join(reasoning), id=message_id
+        )
+        for message_id, (seq, text, reasoning) in streams.items()
+        if message_id not in completed
+    }
 
 
 def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
     events = tuple(events)
+    partials = _pending_assistant_messages(events)
     active_turn, active_step, max_summaries = None, None, None
     observations: dict[str, list[int]] = {}
     for seq, event in enumerate(events):
@@ -101,6 +165,8 @@ def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
         )
     entries: list[tuple[int, Message]] = []
     for seq, event in enumerate(events):
+        if seq in partials:
+            entries.append((seq, partials[seq]))
         match event:
             case SystemMessage(content=content):
                 entries = [(offset, m) for offset, m in entries if m.id != "system"]
@@ -180,6 +246,8 @@ class Session:
         self._events = list(seed)
         self._persistence = persistence
         self._lock = asyncio.Lock()
+        for event in self._events:
+            _validate_event(event)
         Inbox(self._events)
         for seq, event in enumerate(self._events):
             if isinstance(event, CompactionApplied):
@@ -194,12 +262,15 @@ class Session:
         return derive_messages(self._events)
 
     @property
+    def requests(self) -> tuple[ModelRequest, ...]:
+        return derive_requests(self._events)
+
+    @property
     def inbox(self) -> Inbox:
         return Inbox(self._events)
 
     async def append(self, event: SessionEvent) -> None:
-        if not isinstance(event, SessionEvent):
-            raise TypeError("Only durable SessionEvent instances may be appended")
+        _validate_event(event)
         async with self._lock:
             if isinstance(event, InboxAdded | InboxRemoved):
                 Inbox((*self._events, event))
@@ -215,6 +286,8 @@ class Session:
 
     async def repair_interrupted(self) -> None:
         """Close unfinished activity and answer tool calls after cancellation or resume."""
+        for message in _pending_assistant_messages(self._events).values():
+            await self.append(AssistantMessage(message, interrupted=True))
         turn, step = None, None
         unanswered: dict[str, ToolCall] = {}
         for event in self._events:

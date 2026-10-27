@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from cordify.core.session import Session as Session
     from cordify.core.session import SessionPersistence as SessionPersistence
     from cordify.core.session import derive_messages as derive_messages
+    from cordify.core.session import derive_requests as derive_requests
     from cordify.core.tools import ToolRegistry as ToolRegistry
     from cordify.kernel.context import Context as Context
     from cordify.kernel.context import ContextClosed as ContextClosed
@@ -140,6 +141,7 @@ _EXPORTS = {
     "Session": ("cordify.core.session", "Session"),
     "SessionPersistence": ("cordify.core.session", "SessionPersistence"),
     "derive_messages": ("cordify.core.session", "derive_messages"),
+    "derive_requests": ("cordify.core.session", "derive_requests"),
     "LocalSpillStore": ("cordify.adapters.spill", "LocalSpillStore"),
     "SpillStore": ("cordify.seams.spill", "SpillStore"),
     "CacheBreakpoints": ("cordify.plugins.observe.cache", "CacheBreakpoints"),
@@ -214,6 +216,7 @@ __all__ = [
     "Session",
     "SessionPersistence",
     "derive_messages",
+    "derive_requests",
     "LocalSpillStore",
     "SpillStore",
     "CacheBreakpoints",

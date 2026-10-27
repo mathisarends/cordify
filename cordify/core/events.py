@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 from ..kernel.events import Bail, Emit, Waterfall
@@ -85,14 +85,22 @@ class TurnStopping(Bail[bool]):
     agent: "Agent"
 
 
-@dataclass(frozen=True)
-class AssistantChunk(Emit):
-    text: str = ""
-    reasoning: str = ""
-
-
 class SessionEvent(Emit):
     type: ClassVar[str]
+
+
+@dataclass(frozen=True)
+class AssistantChunk(SessionEvent):
+    type: ClassVar[str] = "assistant/chunk"
+    text: str = ""
+    reasoning: str = ""
+    message_id: str = field(kw_only=True)
+
+    def __post_init__(self):
+        if not isinstance(self.message_id, str) or not self.message_id:
+            raise ValueError("Assistant chunks require a message_id")
+        if not isinstance(self.text, str) or not isinstance(self.reasoning, str):
+            raise TypeError("Assistant chunk text and reasoning must be strings")
 
 
 @dataclass(frozen=True)
@@ -297,6 +305,7 @@ SESSION_EVENT_TYPES = {
         SpillCreated,
         RuleTriggered,
         RuleEvaluated,
+        AssistantChunk,
         AssistantMessage,
         ToolCalled,
         ToolReturned,
