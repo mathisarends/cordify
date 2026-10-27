@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from ..kernel.context import Context
+from ..kernel.effects import Disposer
 from ..seams.approver import Approver
 from ..seams.llm import LLM
 from ..seams.models import Decision, Message, ModelRequest, Observation, ToolCall, ToolResult
@@ -106,10 +107,10 @@ class Agent:
     def tool(self):
         return self.ctx[ToolRegistry].tool
 
-    def add_hook(self, event, callback, *, prepend: bool = False):
-        return self.ctx.on(event, callback, prepend=prepend)
+    def add_hook(self, event, callback, *, prepend: bool = False) -> Disposer:
+        return self.ctx.add_listener(event, callback, prepend=prepend)
 
-    def add_tool(self, callback, **options):
+    def add_tool(self, callback, **options) -> Disposer:
         return self.ctx[ToolRegistry].register(callback, **options)
 
     def observe(self, observation: Observation) -> None:

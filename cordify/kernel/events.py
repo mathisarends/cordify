@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from .di import bind_injected
-from .effects import resolve
+from .effects import Disposer, resolve
 
 if TYPE_CHECKING:
     from .context import Context
@@ -34,6 +34,7 @@ class _Listener:
     event: type[Event[Any]]
     callback: Any
     owner: "Context"
+    active: bool = True
 
 
 class EventBus:
@@ -41,14 +42,18 @@ class EventBus:
         self.parent = parent
         self.listeners: list[_Listener] = []
 
-    def on(self, owner: "Context", event, callback, *, prepend=False):
+    def on(self, owner: "Context", event, callback, *, prepend=False) -> Disposer:
         if not isinstance(event, type) or not issubclass(event, Event):
             raise TypeError("Listener keys must be Event classes")
         owner._check_open()
         listener = _Listener(event, callback, owner)
         self.listeners.insert(0, listener) if prepend else self.listeners.append(listener)
-        owner.effect(lambda: self.listeners.remove(listener))
-        return callback
+
+        def remove():
+            listener.active = False
+            self.listeners.remove(listener)
+
+        return owner.effect(remove)
 
     def matching(self, event):
         inherited = self.parent.matching(event) if self.parent is not None else []
@@ -57,7 +62,7 @@ class EventBus:
             *(
                 listener
                 for listener in tuple(self.listeners)
-                if isinstance(event, listener.event) and not listener.owner._closed
+                if isinstance(event, listener.event) and listener.owner._registrations_active()
             ),
         ]
 
@@ -65,7 +70,7 @@ class EventBus:
         listeners = self.matching(event)
 
         async def invoke(listener, *args):
-            if listener.owner._closed:
+            if not listener.active or not listener.owner._registrations_active():
                 return None
             with listener.owner.activate():
                 bound = bind_injected(listener.callback, ctx, args)
@@ -74,7 +79,10 @@ class EventBus:
         if isinstance(event, Waterfall):
 
             async def chain(index):
-                while index < len(listeners) and listeners[index].owner._closed:
+                while index < len(listeners) and (
+                    not listeners[index].active
+                    or not listeners[index].owner._registrations_active()
+                ):
                     index += 1
                 if index == len(listeners):
                     if default is None:

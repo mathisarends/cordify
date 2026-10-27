@@ -113,19 +113,19 @@ class Plugin:
             instance = self.clone()
             bound = _lifecycle_arguments(instance.setup, ctx)
             await resolve(instance.setup(*bound.args, **bound.kwargs))
-            for event, callback in getattr(instance, "hooks", ()):
-                ctx.on(event, callback)
-            for registration, callback in instance._registration_entries():
-                await resolve(registration.mount(ctx, callback))
-            for name, member in members.items():
-                if not callable(member):
-                    continue
-                callback = getattr(instance, name)
-                for event, prepend in getattr(member, "_cordify_hooks", ()):
-                    ctx.on(event, callback, prepend=prepend)
-                for registration in getattr(member, "_cordify_registrations", ()):
-                    await resolve(registration.mount(ctx, callback))
             try:
+                for event, callback in getattr(instance, "hooks", ()):
+                    ctx.on(event, callback)
+                for registration, callback in instance._registration_entries():
+                    await resolve(registration.mount(ctx, callback))
+                for name, member in members.items():
+                    if not callable(member):
+                        continue
+                    callback = getattr(instance, name)
+                    for event, prepend in getattr(member, "_cordify_hooks", ()):
+                        ctx.on(event, callback, prepend=prepend)
+                    for registration in getattr(member, "_cordify_registrations", ()):
+                        await resolve(registration.mount(ctx, callback))
                 yield
             finally:
                 bound = _lifecycle_arguments(instance.teardown, ctx)

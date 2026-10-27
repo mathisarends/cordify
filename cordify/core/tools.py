@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_typ
 
 from ..kernel.context import Context
 from ..kernel.di import bind_injected, injections
+from ..kernel.effects import Disposer
 from ..seams.models import ToolCall, ToolDefinition, ToolResult, result_content, to_dict
 from ..seams.shell import ProcResult
 from .execution import ToolCallContext
@@ -110,7 +111,7 @@ class ToolRegistry:
         *,
         name: str | None = None,
         timeout: float | None = None,
-    ) -> ToolDefinition:
+    ) -> Disposer:
         owner = Context.current() or self._ctx
         owner._check_open()
         if timeout is not None and timeout <= 0:
@@ -148,8 +149,13 @@ class ToolRegistry:
         entry = _Tool(definition, callback, owner, signature, injected, timeout)
         entries = self._tools.setdefault(definition.name, [])
         entries.append(entry)
-        owner.effect(lambda: entries.remove(entry))
-        return definition
+
+        def remove():
+            entries.remove(entry)
+            if not entries:
+                del self._tools[definition.name]
+
+        return owner.effect(remove)
 
     @property
     def definitions(self) -> tuple[ToolDefinition, ...]:
@@ -165,9 +171,14 @@ class ToolRegistry:
 
     def visible_definitions(self, ctx: Context) -> tuple[ToolDefinition, ...]:
         return tuple(
-            entries[-1].definition
+            tool.definition
             for entries in self._tools.values()
-            if entries and self._available(entries[-1], ctx)
+            if (tool := self._visible(entries)) is not None and self._available(tool, ctx)
+        )
+
+    def _visible(self, entries: list[_Tool]) -> _Tool | None:
+        return next(
+            (tool for tool in reversed(entries) if tool.owner._registrations_active()), None
         )
 
     async def execute(
@@ -177,10 +188,9 @@ class ToolRegistry:
         ctx: Context | None = None,
         call_context: ToolCallContext | None = None,
     ) -> ToolResult:
-        entries = self._tools.get(call.name)
-        if not entries:
+        tool = self._visible(self._tools.get(call.name, []))
+        if tool is None:
             return ToolResult.error(f"Unknown tool: {call.name}")
-        tool = entries[-1]
         ctx = ctx or self._ctx
         if not self._available(tool, ctx):
             return ToolResult.error(f"Tool {call.name} is unavailable: missing injected service")

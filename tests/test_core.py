@@ -243,3 +243,15 @@ async def test_listener_disposed_during_dispatch_does_not_run_from_stale_snapsho
 
         handle = await ctx.plugin(observer())
         await ctx.dispatch(Ping())
+
+
+async def test_manually_disposed_listener_is_skipped_in_an_existing_dispatch_snapshot():
+    async with Context() as ctx:
+        remove = None
+
+        async def first(event):
+            await remove()
+
+        ctx.add_listener(Ping, first)
+        remove = ctx.add_listener(Ping, lambda event: pytest.fail("Removed listener ran"))
+        await ctx.dispatch(Ping())

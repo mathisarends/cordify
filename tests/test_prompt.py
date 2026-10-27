@@ -1,3 +1,5 @@
+import asyncio
+
 from cordify import Context, Inject, SystemPrompt, ToolCall, ToolRegistry, plugin
 from cordify.plugins.services import system_prompt, tools
 
@@ -54,3 +56,24 @@ async def test_stable_sections_are_cached_and_sort_before_dynamic_sections():
         assert await prompt.render() == "one\n\none"
         current = "two"
         assert await prompt.render() == "one\n\ntwo"
+
+
+async def test_section_disposed_while_rendering_does_not_append_stale_content():
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async with Context() as ctx:
+        prompt = SystemPrompt(ctx)
+
+        async def content():
+            started.set()
+            await release.wait()
+            return "removed"
+
+        remove = prompt.section("temporary", content)
+        rendering = asyncio.create_task(prompt.render())
+        try:
+            await started.wait()
+            await remove()
+        finally:
+            release.set()
+        assert await rendering == ""

@@ -68,6 +68,11 @@ class Context:
         if self._closed:
             raise ContextClosed("This context has been disposed")
 
+    def _registrations_active(self) -> bool:
+        return not self._closed and (
+            self._handle is None or self._handle.status == "active" or Context.current() is self
+        )
+
     def _binding[T](self, key: ServiceKey[T], *, exclude: "PluginHandle | None" = None) -> _Binding:
         scope: _Scope | None = self._scope
         while scope is not None:
@@ -102,7 +107,7 @@ class Context:
         self._stack.push_async_callback(dispose)
         return dispose
 
-    def provide[T](self, key: ServiceKey[T], implementation: T) -> Callable[[], Any]:
+    def provide[T](self, key: ServiceKey[T], implementation: T) -> Disposer:
         self._check_open()
         bindings = self._scope.services.setdefault(key, [])
         binding = _Binding(implementation, self)
@@ -111,6 +116,8 @@ class Context:
 
         def remove():
             bindings.remove(binding)
+            if not bindings:
+                del self._scope.services[key]
             self._scope.runtime.changed()
 
         return self.effect(remove)
@@ -131,9 +138,15 @@ class Context:
         self._check_open()
 
         def register(callback):
-            return self._scope.event_bus.on(self, event, callback, prepend=prepend)
+            self.add_listener(event, callback, prepend=prepend)
+            return callback
 
         return register(fn) if fn is not None else register
+
+    def add_listener[E: Event[Any]](
+        self, event: type[E], callback: Callable, *, prepend: bool = False
+    ) -> Disposer:
+        return self._scope.event_bus.on(self, event, callback, prepend=prepend)
 
     def _listeners(self, event):
         return self._scope.event_bus.matching(event)
