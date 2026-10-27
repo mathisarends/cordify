@@ -25,7 +25,7 @@ cordify/
     llm.py, fs.py, shell.py, approver.py
     tokens.py, compaction.py, spill.py, models.py
   core/                  Agent-Invarianten und öffentliche Core-Events
-    loop.py, session.py, inbox.py, approvals.py, tools.py, prompt.py, events.py
+    loop.py, session.py, inbox.py, approvals.py, tools.py, scheduling.py, prompt.py, events.py
     features.py          Tool-Deklarationen als Kernel-Registrierungen
     attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py
   plugins/
@@ -135,6 +135,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.15_tool_output_limits` | 2-MB-Ausgabe begrenzen, ExecuteTool-Waterfall und Weiterlesen mit offset/limit |
 | `python -m examples.16_compaction_policies` | Threshold, Turn-Fenster, periodische Compaction, geschützte Turns und Budget-Guard |
 | `python -m examples.17_resume_crash` | Prozessneustart mit dauerhaften Freigaben, Inbox und archiviertem JSONL-Tail |
+| `python -m examples.18_parallel_tools` | Parallele Calls, stabile Results und Dateikonflikte mit Ressourcen-Schlüsseln |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -716,10 +717,91 @@ lesen; die Policy begrenzt das Ergebnis, das ins Log und ans Modell gelangt.
 Waterfall mit einer 2-MB-Ausgabe, erhaltenem Exit-Code und anschließenden
 Bereichsreads vollständig offline.
 
+## Parallele Tool-Calls und Konflikte
+
+Ein Modell kann mehrere Calls in einem Step zurückgeben. Der Harness führt
+explizit freigegebene Tools gleichzeitig aus, mit `max_parallel_tools=4` als
+Standard. Ohne Freigabe bildet ein Tool eine Barriere: Vorherige Calls werden
+einschließlich Review abgeschlossen, dann läuft dieses Tool allein.
+
+| Registrierung | Verhalten innerhalb eines Agenten-Batches |
+| --- | --- |
+| `@tools.tool` | Seriell; Barriere vor und nach dem Call |
+| `@tools.tool(parallel=True)` | Darf mit anderen freigegebenen Calls gleichzeitig laufen |
+| `@tools.tool(parallel=True, resources=("database:users",))` | Derselbe Schlüssel serialisiert konkurrierende Calls in Modellreihenfolge |
+| `resources=lambda call: (...)` | Synchrone, nebenwirkungsfreie Auflösung exklusiver Ressourcen aus dem Call |
+| `max_parallel_tools=1` | Erzwingt insgesamt serielle Ausführung |
+
+Die Optionen funktionieren bei Bundle, Klassen-`@tool`, Harness, Agent und
+`ToolRegistry.register`. Sie sind SDK-Metadaten und erscheinen nicht als
+Modell-Argumente im Tool-Schema.
+
+```python
+from cordify import Bundle, Inject, ToolCall
+from cordify.presets import minimal
+
+tools = Bundle("records")
+
+
+def record_resources(call: ToolCall) -> tuple[str, ...]:
+    return (f"record:{call.arguments['record_id']}",)
+
+
+@tools.tool(parallel=True, resources=record_resources)
+async def update_record(record_id: str, text: str, store: Inject[RecordStore]) -> str:
+    """Update one record."""
+    await store.write(record_id, text)
+    return "saved"
+
+
+# RecordStore ist ein eigenes Protocol; seine Implementierung als Service montieren.
+harness = minimal(model, plugins=[store_provider, tools], max_parallel_tools=4)
+# Pro Session überschreibbar:
+# async with harness.session("serial", max_parallel_tools=1) as agent: ...
+```
+
+Verschiedene Schlüssel dürfen überlappen. Ein Call kann mehrere Schlüssel
+belegen; ihre Reihenfolge spielt keine Rolle. Konflikte werden vor der
+Ausführung als Abhängigkeiten geplant, sodass kein wechselseitiges Warten
+beim Erwerb mehrerer Sperren entsteht. Nachfolger warten bis zum Abschluss
+des Vorgängers einschließlich Review.
+
+Im Coding-Preset ist `read_file` parallel freigegeben. `write_file` und
+`run_command` bleiben Barrieren. Zwei Writes auf dieselbe Datei laufen dadurch
+in Modellreihenfolge; auch `a.txt` und `./a.txt` können nicht überlappen.
+Eigene parallele Datei-Tools müssen kanonische Pfade als gemeinsame
+Ressourcen-Schlüssel verwenden, für Reads und Writes gleichermaßen.
+Die Koordination gilt für den jeweiligen Agenten-Batch. Für Zugriffe anderer
+Agenten oder Prozesse braucht das FS-/Datenbank-Backend eigene Sperren.
+
+Innerhalb einer parallelen Gruppe laufen Policies und Approval-Fragen zuerst
+in Modellreihenfolge. Erst danach beginnt die parallele `ExecuteTool`-Phase.
+`ReviewToolResult`, zustandsbehaftete Rules und `ToolReturned` folgen wieder
+der Modellreihenfolge. Auch die Tool-Nachrichten im nächsten Modell-Request
+halten diese Reihenfolge ein. `ToolProgress` und Ausführungsereignisse zeigen
+den tatsächlichen zeitlichen Ablauf; das gesamte Log wird nicht nachträglich
+umsortiert. Eigene `ExecuteTool`-Hooks müssen mit der freigegebenen Parallelität
+zurechtkommen.
+
+Tool-Fehler, Timeouts und Ablehnungen ergeben einzelne Tool-Results und brechen
+unabhängige Calls nicht ab. Ein Agent-Abbruch beendet und wartet auf alle
+laufenden Tasks. Die feste Output-Grenze greift nach jedem Review.
+Ein abschließend geprüftes, begrenztes Ergebnis wird zuerst als `ToolCompleted`
+gespeichert und danach als `ToolReturned` veröffentlicht. Bei Resume übernimmt
+die Reparatur gespeicherte Completions in die geordnete Result-Folge, ohne
+Tools erneut auszuführen. Fehlt diese Completion, bleibt ein bereits gestarteter
+Call nach einem Crash mit unbekanntem externem Ergebnis markiert.
+
+[`18_parallel_tools.py`](examples/18_parallel_tools.py) startet drei Calls
+gleichzeitig, lässt sie in umgekehrter Reihenfolge fertig werden und prüft die
+stabile Modell-Historie. Ein zweiter Durchlauf zeigt kanonische Dateischlüssel
+für zwei Writes auf dieselbe Datei neben einem unabhängigen Write.
+
 ## Das Session-Log ist die Quelle der Wahrheit
 
 Das Log enthält ausschließlich registrierte `frozen` Dataclasses wie `TurnStart`,
-`StepStart`, `AssistantChunk`, `AssistantMessage`, `ToolCalled` und `ToolReturned`.
+`StepStart`, `AssistantChunk`, `AssistantMessage`, `ToolCalled`,
+`ToolCompleted` und `ToolReturned`.
 Session, Codec und Seed-Import prüfen auch die verschachtelten Werte auf
 Unveränderlichkeit. `session.events` liefert einen unveränderlichen Tupel-Snapshot;
 `append()` fügt Ereignisse hinzu. Compaction, Inbox-Entnahme und die Reparatur
@@ -816,6 +898,7 @@ Session und wird auch beim Prozessabbruch vom Betriebssystem freigegeben.
 | Wiederverwendung | Neue Approval-Events verweisen auf die ursprüngliche `ALWAYS`-Freigabe |
 | Widerruf | `ApprovalRevoked` entfernt die Freigabe aus der aktiven Log-Projektion |
 | Ausführungsgrenze | `ToolPolicyApplied` protokolliert die Entscheidung; `ToolExecutionStarted` wird vor der Ausführung gespeichert |
+| Fertige Tools | `ToolCompleted` hält das geprüfte Ergebnis fest; Resume ergänzt fehlende `ToolReturned`-Events in Call-Reihenfolge |
 
 `agent.session.approvals` ist ein unveränderlicher Snapshot mit `records`,
 `pending` und `grants`. Eine einzelne `ALLOW`-Antwort gilt für den zugehörigen
@@ -890,8 +973,11 @@ Projizieren die Historie vollständig gelesen; große Sessions brauchen später
 inkrementelle Projektionen. Compaction verkleinert die Modell-Historie, nicht das
 append-only Log.
 
-Sync-Tools laufen im Threadpool. Ein Timeout beendet dort das Warten, nicht den
-Python-Thread. `fs_local` prüft auf Pfade außerhalb des Workspace, bietet aber
+Sync-Tools laufen im Threadpool. Ein Timeout oder Abbruch setzt das
+`ToolCallContext.signal`; der Harness wartet auf das Ende des Workers, bevor er
+Ressourcen freigibt. Ein Python-Thread lässt sich nicht hart stoppen, daher kann
+dieses Warten den konfigurierten Timeout überschreiten. Dasselbe gilt für lokale
+Dateioperationen. `fs_local` prüft auf Pfade außerhalb des Workspace, bietet aber
 keine OS-Sandbox gegen konkurrierende Symlink-Änderungen. `shell_local` startet
 lokale Prozesse; es ist ebenfalls kein Sandbox-Backend.
 
@@ -907,7 +993,7 @@ Die Modell-ID ist über `deepseek(model=...)`, `Harness(model=...)` oder
 `harness.session(..., model=...)` konfigurierbar. Eigene Modelle implementieren
 das kleine `LLM.stream(ModelRequest)`-Protocol.
 
-Diese erste Version führt Tools seriell aus. Sie enthält keinen MCP-Client,
+Diese Version enthält keinen MCP-Client,
 Realtime-Transport, Docker-Backend oder Subagenten. Compaction und die folgenden
 Kontextstrategien werden explizit als Plugins ausgewählt.
 Die entsprechenden Erweiterungen können auf denselben Services und Events aufbauen.

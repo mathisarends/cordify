@@ -25,6 +25,7 @@ import pytest
         "examples.15_tool_output_limits",
         "examples.16_compaction_policies",
         "examples.17_resume_crash",
+        "examples.18_parallel_tools",
     ],
 )
 def test_offline_sdk_example_runs(module):
