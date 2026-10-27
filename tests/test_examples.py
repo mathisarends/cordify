@@ -21,6 +21,7 @@ import pytest
         "examples.11_temporal_needs",
         "examples.12_layered_sdk",
         "examples.13_llm_adapters",
+        "examples.14_session_log",
     ],
 )
 def test_offline_sdk_example_runs(module):

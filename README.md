@@ -131,6 +131,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.11_temporal_needs` | Umkehrbare Tools, Prompt-Sektionen, Listener und eigene Effekte bei Service-Wechsel |
 | `python -m examples.12_layered_sdk` | Neuer Schichtenaufbau, eigenständiger Kernel und Presets |
 | `python -m examples.13_llm_adapters` | Eigener BaseLLM-Adapter mit Retry und struktureller Adapter ohne Vererbung |
+| `python -m examples.14_session_log` | Dauerhafte Chunks, reine Log-Projektionen, Request-Replay und unabhängiger Fork |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -546,8 +547,10 @@ sowie Standard-Services für TokenCounter, Compactor und SpillStore.
 Session-Events und Modellwerte sind unveränderlich; Inbox und Modell-Historie
 werden aus dem Log abgeleitet. `session_jsonl()` speichert JSONL mit einer
 Versionsnummer und exklusivem OS-Schreiblock. `ModelRequested` enthält den
-tatsächlichen Request, `AssistantChunk` ist nur ein Live-Event. Beim Resume werden
-unterbrochene Turns geschlossen und fehlende Tool-Ergebnisse ergänzt.
+tatsächlichen Request. Auch `AssistantChunk` ist ein dauerhaftes Session-Event:
+Chunks werden vor ihrer Live-Ausgabe gespeichert. Beim Resume werden
+unvollständige Antworten abgeschlossen, unterbrochene Turns geschlossen und
+fehlende Tool-Ergebnisse ergänzt.
 
 `PreStep` ist ein Waterfall über die an dieser Grenze angebotenen User-Messages.
 `StepDecision(messages)` übernimmt sie; `StepDecision.reject()` lässt sie in der
@@ -562,6 +565,65 @@ Der generische Kern bietet `Emit` (seriell), `Bail[R]` (erster Nicht-None-Wert),
 Plugin-Unload; frühere überschattete Registrierungen werden wieder sichtbar.
 `ctx.extend()` erzeugt einen Kindkontext mit eigenen Service- und Event-
 Registrierungen. Pro Harness-Session gibt es einen unabhängigen Root-Context.
+
+## Das Session-Log ist die Quelle der Wahrheit
+
+Das Log enthält ausschließlich registrierte `frozen` Dataclasses wie `TurnStart`,
+`StepStart`, `AssistantChunk`, `AssistantMessage`, `ToolCalled` und `ToolReturned`.
+Session, Codec und Seed-Import prüfen auch die verschachtelten Werte auf
+Unveränderlichkeit. `session.events` liefert einen unveränderlichen Tupel-Snapshot;
+`append()` fügt Ereignisse hinzu. Compaction, Inbox-Entnahme und die Reparatur
+unterbrochener Läufe erzeugen weitere Events und verändern keine alten Einträge.
+
+Die öffentlichen Projektionen sind reine Funktionen:
+
+```python
+from cordify import Session, derive_messages, derive_requests
+
+history = derive_messages(session.events)  # identisch zu session.messages
+requests = derive_requests(session.events)  # identisch zu session.requests
+replay = Session("replayed", seed=session.events)
+assert replay.messages == history
+assert replay.requests == requests
+```
+
+`derive_messages()` baut die Gesprächshistorie aus dem Log auf: System-Prompt,
+User- und Assistant-Nachrichten, Tool-Ergebnisse, Kontext, Observations und
+Compaction. Ein offener Stream erscheint als eine partielle Assistant-Nachricht.
+Seine `AssistantChunk`s tragen eine gemeinsame `message_id`; der abschließende
+`AssistantMessage` verwendet dieselbe ID. Die Projektion führt beides genau einmal
+zusammen und erzeugt dabei keine neuen zufälligen IDs.
+
+`derive_requests()` liefert die tatsächlich gesendeten `ModelRequest`-Snapshots,
+einschließlich Tool-Schemas, Token-Limit, Cache-Breakpoints und Änderungen durch
+Request-Hooks. Dadurch lässt sich die Modell-Historie **für jeden damaligen Step**
+exakt aus dem Log lesen, auch wenn sich Services oder Plugins inzwischen geändert
+haben. Die aktuelle Gesprächsprojektion und frühere Request-Snapshots bleiben
+getrennt abrufbar.
+
+```python
+for request in replay.requests:
+    print(request.model, request.messages, request.tools)
+
+fork = replay.fork("alternative")  # unabhängiges Log mit demselben geschlossenen Präfix
+```
+
+Replay und Fork benötigen weder den damaligen Provider noch Tool-Ausführung oder
+Plugin-Setup. Evals und Debugging können dieselben Events und Request-Snapshots
+auswerten. Die Codecs `encode_event()` und `decode_event()` in
+`cordify.core.session` erhalten die Projektionen bei einem JSON-Roundtrip.
+
+Bei einem Crash nach gespeicherten Chunks ergänzt `repair_interrupted()` ein
+`AssistantMessage(interrupted=True)` mit genau diesem Text und Reasoning.
+Erneutes Reparieren ändert das Log nicht mehr. Ein fehlgeschlagener Schreibversuch
+publiziert keinen Chunk und übernimmt dessen Text auch nicht in eine spätere
+Assistant-Nachricht. Bereits vor der Erweiterung gespeicherte Logs ohne Chunks
+werden weiterhin über ihre `AssistantMessage`-Events projiziert.
+
+[`14_session_log.py`](examples/14_session_log.py) zeigt Live-Stream,
+Serialisierung, Replay, historische Modell-Requests und einen Fork vollständig
+offline. Tests rekonstruieren jeden Event-Präfix vor und nach Serialisierung und
+prüfen identische Nachrichten und Requests.
 
 ## Entwicklung und Grenzen
 
