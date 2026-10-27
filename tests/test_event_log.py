@@ -83,6 +83,7 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
             replay = Session("prefix", seed=restored[:offset])
             assert replay.messages == derive_messages(prefix) == derive_messages(iter(prefix))
             assert replay.requests == derive_requests(prefix) == derive_requests(iter(prefix))
+            assert replay.turns == Session("original-prefix", seed=prefix).turns
         for seq, event in enumerate(log):
             if isinstance(event, ModelRequested):
                 assert event.request.messages == derive_messages(log[:seq])

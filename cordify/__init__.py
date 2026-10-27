@@ -31,6 +31,9 @@ if TYPE_CHECKING:
     from cordify.core.session import derive_messages as derive_messages
     from cordify.core.session import derive_requests as derive_requests
     from cordify.core.tools import ToolRegistry as ToolRegistry
+    from cordify.core.turns import Step as Step
+    from cordify.core.turns import Turn as Turn
+    from cordify.core.turns import derive_turns as derive_turns
     from cordify.kernel.context import Context as Context
     from cordify.kernel.context import ContextClosed as ContextClosed
     from cordify.kernel.context import MissingService as MissingService
@@ -77,6 +80,9 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "Step": ("cordify.core.turns", "Step"),
+    "Turn": ("cordify.core.turns", "Turn"),
+    "derive_turns": ("cordify.core.turns", "derive_turns"),
     "BaseLLM": ("cordify.adapters.base", "BaseLLM"),
     "RetryPolicy": ("cordify.adapters.base", "RetryPolicy"),
     "Agent": ("cordify.core.loop", "Agent"),
@@ -152,6 +158,9 @@ _EXPORTS = {
     "Key": ("cordify.kernel.keys", "Key"),
 }
 __all__ = [
+    "Step",
+    "Turn",
+    "derive_turns",
     "BaseLLM",
     "RetryPolicy",
     "Agent",

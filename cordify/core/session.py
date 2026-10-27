@@ -45,6 +45,7 @@ from .events import (
     UserMessage,
 )
 from .inbox import Inbox
+from .turns import Turn, derive_turns
 
 
 class SessionPersistence(Protocol):
@@ -264,6 +265,10 @@ class Session:
     @property
     def requests(self) -> tuple[ModelRequest, ...]:
         return derive_requests(self._events)
+
+    @property
+    def turns(self) -> tuple[Turn, ...]:
+        return derive_turns(self._events)
 
     @property
     def inbox(self) -> Inbox:

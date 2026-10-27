@@ -1,9 +1,13 @@
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from .events import ContextMessage, InboxAdded, InboxRemoved, SessionEvent, UserMessage
 
 
+@dataclass(frozen=True, init=False)
 class Inbox:
+    pending: tuple[InboxAdded, ...]
+
     def __init__(self, events: Iterable[SessionEvent]):
         pending: dict[str, InboxAdded] = {}
         for event in events:
@@ -17,7 +21,7 @@ class Inbox:
                 del pending[event.message_id]
             elif isinstance(event, UserMessage | ContextMessage):
                 pending.pop(event.message.id, None)
-        self.pending = tuple(pending.values())
+        object.__setattr__(self, "pending", tuple(pending.values()))
 
     @property
     def next_turn(self) -> tuple[InboxAdded, ...]:
@@ -26,3 +30,16 @@ class Inbox:
     @property
     def next_step(self) -> tuple[InboxAdded, ...]:
         return tuple(item for item in self.pending if item.target == "next-step")
+
+    @property
+    def has_wakeup(self) -> bool:
+        return any(item.wakeup for item in self.pending)
+
+    @property
+    def has_step_wakeup(self) -> bool:
+        return any(item.wakeup for item in self.next_step)
+
+    def for_step(self, step: int) -> tuple[InboxAdded, ...]:
+        if type(step) is not int or step < 1:
+            raise ValueError("Step numbers start at one")
+        return (*self.next_turn[:1], *self.next_step) if step == 1 else self.next_step

@@ -18,6 +18,15 @@ if TYPE_CHECKING:
     from .session import Session
 
 
+type InboxMode = Literal["followup", "steer", "inject"]
+type InboxTarget = Literal["next-turn", "next-step"]
+_INBOX_ROUTES: dict[InboxMode, tuple[InboxTarget, bool]] = {
+    "followup": ("next-turn", True),
+    "steer": ("next-step", True),
+    "inject": ("next-step", False),
+}
+
+
 @dataclass(frozen=True)
 class StepDecision:
     messages: tuple[Message, ...] = ()
@@ -107,13 +116,29 @@ class AssistantChunk(SessionEvent):
 class InboxAdded(SessionEvent):
     type: ClassVar[str] = "agent/inbox/inserted"
     message: Message
-    target: Literal["next-turn", "next-step"]
+    target: InboxTarget
     wakeup: bool
-    mode: Literal["followup", "steer", "inject"]
+    mode: InboxMode
     context: tuple[Message, ...] = ()
 
     def __post_init__(self):
+        if self.mode not in _INBOX_ROUTES:
+            raise ValueError(f"Unknown inbox mode: {self.mode!r}")
+        if type(self.wakeup) is not bool or (self.target, self.wakeup) != _INBOX_ROUTES[self.mode]:
+            raise ValueError(f"Inbox routing does not match {self.mode!r}")
+        allowed = ("user", "system") if self.mode == "inject" else ("user",)
+        if self.message.role not in allowed:
+            raise ValueError(f"{self.mode} requires one of these roles: {allowed}")
         object.__setattr__(self, "context", tuple(self.context))
+
+    @classmethod
+    def create(
+        cls, message: Message, mode: InboxMode, *, context: tuple[Message, ...] = ()
+    ) -> "InboxAdded":
+        if mode not in _INBOX_ROUTES:
+            raise ValueError(f"Unknown inbox mode: {mode!r}")
+        target, wakeup = _INBOX_ROUTES[mode]
+        return cls(message, target, wakeup, mode, context)
 
 
 @dataclass(frozen=True)

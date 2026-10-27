@@ -18,7 +18,13 @@ if TYPE_CHECKING:
     from cordify.core.session import derive_messages as derive_messages
     from cordify.core.session import derive_requests as derive_requests
     from cordify.core.tools import ToolRegistry as ToolRegistry
+    from cordify.core.turns import Step as Step
+    from cordify.core.turns import Turn as Turn
+    from cordify.core.turns import derive_turns as derive_turns
 _EXPORTS = {
+    "Step": ("cordify.core.turns", "Step"),
+    "Turn": ("cordify.core.turns", "Turn"),
+    "derive_turns": ("cordify.core.turns", "derive_turns"),
     "Agent": ("cordify.core.loop", "Agent"),
     "AgentOptions": ("cordify.core.loop", "AgentOptions"),
     "AgentFactory": ("cordify.core.loop", "AgentFactory"),
@@ -36,6 +42,9 @@ _EXPORTS = {
     "SystemPrompt": ("cordify.core.prompt", "SystemPrompt"),
 }
 __all__ = [
+    "Step",
+    "Turn",
+    "derive_turns",
     "Agent",
     "AgentOptions",
     "AgentFactory",

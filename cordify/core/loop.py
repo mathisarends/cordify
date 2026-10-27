@@ -19,6 +19,7 @@ from .events import (
     ContextMessage,
     ExecuteTool,
     InboxAdded,
+    InboxMode,
     InboxRemoved,
     ModelRequested,
     ModelUsageRecorded,
@@ -125,11 +126,7 @@ class Agent:
         self._wake()
 
     def _wake(self):
-        if (
-            self._ready
-            and any(item.wakeup for item in self.inbox.pending)
-            and (self._runner is None or self._runner.done())
-        ):
+        if self._ready and self.inbox.has_wakeup and (self._runner is None or self._runner.done()):
             self._error = None
             self.status = "running"
             self._runner = asyncio.create_task(self._drive(), name=f"cordify:{self.id}")
@@ -145,9 +142,7 @@ class Agent:
     async def _send(
         self,
         content: str | Message,
-        target,
-        wakeup: bool,
-        mode,
+        mode: InboxMode,
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
@@ -157,16 +152,13 @@ class Agent:
         message, contributions = await prepare_input(
             content, attachments=attachments, context=context
         )
-        allowed = ("user", "system") if mode == "inject" else ("user",)
-        if message.role not in allowed:
-            raise ValueError(f"{mode} requires one of these roles: {allowed}")
         if self._closing or self._canceling:
             raise RuntimeError("Agent is being cancelled or disposed")
-        item = InboxAdded(message, target, wakeup, mode, contributions)
+        item = InboxAdded.create(message, mode, context=contributions)
         await self.session.append(item)
         if mode == "inject" and _preparing.get() is self:
             self._step_push.append(item)
-        if wakeup:
+        if item.wakeup:
             self._wake()
         return message.id
 
@@ -179,18 +171,16 @@ class Agent:
     ) -> str:
         return await self._send(
             content,
-            "next-turn",
-            True,
             "followup",
             attachments=attachments,
             context=context,
         )
 
     async def steer(self, content: str | Message) -> str:
-        return await self._send(content, "next-step", True, "steer")
+        return await self._send(content, "steer")
 
     async def inject(self, content: str | Message) -> str:
-        return await self._send(content, "next-step", False, "inject")
+        return await self._send(content, "inject")
 
     async def when_idle(self) -> None:
         while self._runner is not None and not self._runner.done():
@@ -261,7 +251,7 @@ class Agent:
 
     async def _drive(self):
         try:
-            while any(item.wakeup for item in self.inbox.pending):
+            while self.inbox.has_wakeup:
                 if not await self._turn():
                     break
         except asyncio.CancelledError:
@@ -287,7 +277,7 @@ class Agent:
         for step in range(1, self.options.max_steps + 1):
             await self.ctx.settle()
             inbox = self.inbox
-            pending = (*inbox.next_turn[:1], *inbox.next_step) if step == 1 else inbox.next_step
+            pending = inbox.for_step(step)
             incoming = tuple(item.message for item in pending)
             self._step_push = []
             token = _preparing.set(self)
@@ -355,10 +345,10 @@ class Agent:
                 result = await self._execute_tool(call)
                 await self.session.append(ToolReturned(call.id, result))
             await self.session.append(StepEnd(turn, step))
-            if response.tool_calls or self.inbox.next_step:
+            if response.tool_calls or self.inbox.has_step_wakeup:
                 continue
             continuation = await self.ctx.dispatch(TurnStopping(self))
-            if continuation or self.inbox.next_step:
+            if continuation or self.inbox.has_step_wakeup:
                 continue
             await self.session.append(TurnEnd(turn))
             return True
