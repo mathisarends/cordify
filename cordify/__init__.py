@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING
 from ._exports import exported
 
 if TYPE_CHECKING:
+    from cordify.adapters.base import BaseLLM as BaseLLM
+    from cordify.adapters.base import RetryPolicy as RetryPolicy
     from cordify.adapters.compaction import ExtractiveCompactor as ExtractiveCompactor
     from cordify.adapters.compaction import LLMCompactor as LLMCompactor
     from cordify.adapters.spill import LocalSpillStore as LocalSpillStore
@@ -74,6 +76,8 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "BaseLLM": ("cordify.adapters.base", "BaseLLM"),
+    "RetryPolicy": ("cordify.adapters.base", "RetryPolicy"),
     "Agent": ("cordify.core.loop", "Agent"),
     "AgentFactory": ("cordify.core.loop", "AgentFactory"),
     "AgentHandle": ("cordify.core.loop", "AgentHandle"),
@@ -146,6 +150,8 @@ _EXPORTS = {
     "Key": ("cordify.kernel.keys", "Key"),
 }
 __all__ = [
+    "BaseLLM",
+    "RetryPolicy",
     "Agent",
     "AgentFactory",
     "AgentHandle",

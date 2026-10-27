@@ -12,9 +12,11 @@ from ..seams.models import (
     ToolCall,
     to_dict,
 )
+from .base import BaseLLM, RetryPolicy
+from .sse import iter_sse_data
 
 
-class DeepSeekLLM:
+class DeepSeekLLM(BaseLLM):
     def __init__(
         self,
         *,
@@ -23,7 +25,9 @@ class DeepSeekLLM:
         base_url: str = "https://api.deepseek.com",
         timeout: float = 120,
         client=None,
+        retry: RetryPolicy | None = None,
     ):
+        super().__init__(retry=retry)
         self.model = model or "deepseek-flash"
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -77,7 +81,20 @@ class DeepSeekLLM:
             payload["max_tokens"] = request.max_tokens
         return payload
 
-    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelChunk]:
+    def is_retryable(self, error: Exception) -> bool:
+        try:
+            import httpx
+        except ImportError:
+            return super().is_retryable(error)
+
+        if isinstance(error, httpx.HTTPStatusError):
+            status = error.response.status_code
+            return status in (408, 429) or 500 <= status < 600
+        return isinstance(
+            error, httpx.NetworkError | httpx.TimeoutException | httpx.RemoteProtocolError
+        ) or super().is_retryable(error)
+
+    async def _stream_once(self, request: ModelRequest) -> AsyncIterator[ModelChunk]:
         try:
             import httpx
         except ImportError as exc:
@@ -102,10 +119,7 @@ class DeepSeekLLM:
                 )
             )
             response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                content = line[5:].strip()
+            async for content in iter_sse_data(response.aiter_lines()):
                 if content == "[DONE]":
                     done = True
                     break
