@@ -1,0 +1,37 @@
+import inspect
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from .core import Context
+
+
+@dataclass(eq=False)
+class _Section:
+    name: str
+    content: str | Callable
+    order: int
+
+
+class SystemPrompt:
+    def __init__(self, ctx: Context):
+        self._ctx = ctx
+        self._sections: list[_Section] = []
+
+    def section(self, name: str, content: str | Callable, *, order: int = 0):
+        owner = Context.current() or self._ctx
+        owner._check_open()
+        section = _Section(name, content, order)
+        self._sections.append(section)
+        return owner.effect(lambda: self._sections.remove(section))
+
+    async def render(self) -> str:
+        visible = {section.name: section for section in self._sections}
+        rendered = []
+        for section in sorted(visible.values(), key=lambda s: s.order):
+            value = section.content() if callable(section.content) else section.content
+            value = await value if inspect.isawaitable(value) else value
+            if not isinstance(value, str):
+                raise TypeError(f"Prompt section {section.name!r} must render a string")
+            if value:
+                rendered.append(value)
+        return "\n\n".join(rendered)
