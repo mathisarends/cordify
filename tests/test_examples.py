@@ -23,6 +23,7 @@ import pytest
         "examples.13_llm_adapters",
         "examples.14_session_log",
         "examples.15_tool_output_limits",
+        "examples.16_compaction_policies",
     ],
 )
 def test_offline_sdk_example_runs(module):

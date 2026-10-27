@@ -27,7 +27,7 @@ cordify/
   core/                  Agent-Invarianten und öffentliche Core-Events
     loop.py, session.py, inbox.py, tools.py, prompt.py, events.py
     features.py          Tool-Deklarationen als Kernel-Registrierungen
-    attachments.py, execution.py, budget.py, outputs.py, turns.py
+    attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py
   plugins/
     context/             Instructions, Observations, Compaction, Spill
     tools/               Datei- und Shell-Tools
@@ -133,6 +133,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.13_llm_adapters` | Eigener BaseLLM-Adapter mit Retry und struktureller Adapter ohne Vererbung |
 | `python -m examples.14_session_log` | Dauerhafte Chunks, reine Log-Projektionen, Request-Replay und unabhängiger Fork |
 | `python -m examples.15_tool_output_limits` | 2-MB-Ausgabe begrenzen, ExecuteTool-Waterfall und Weiterlesen mit offset/limit |
+| `python -m examples.16_compaction_policies` | Threshold, Turn-Fenster, periodische Compaction, geschützte Turns und Budget-Guard |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -870,6 +871,89 @@ Das Framing folgt den
 Das vollständig offline ausführbare Beispiel
 [`13_llm_adapters.py`](examples/13_llm_adapters.py) zeigt den echten Harness mit
 einem simulierten Verbindungsfehler und beiden Adapter-Varianten.
+
+## Compaction-Policies und Kontextbudget
+
+Compaction ersetzt einen alten, abgeschlossenen Gesprächspräfix durch eine
+Zusammenfassung in der Modellprojektion. Das Original bleibt vollständig im
+append-only Log. Jede angewendete Compaction ist genau ein `CompactionApplied`
+mit Grenze `through`, Zusammenfassung, Policy-Name, geschützten Turn-IDs und
+geschätzter Tokenzahl vor und nach der Anwendung.
+
+| Policy | Wann sie zusammenfasst |
+| --- | --- |
+| `ThresholdCompaction(at=0.8)` | Request plus reservierte Output-Tokens erreichen 80 % des Kontextbudgets |
+| `SlidingWindowCompaction(keep_turns=6)` | Ältere abgeschlossene Turns liegen außerhalb des wörtlich erhaltenen Fensters |
+| `PeriodicCompaction(every=5)` | Seit dem letzten Compaction-Event sind fünf weitere Turns abgeschlossen |
+| `ContextBudgetGuard(...)` | Prüft den fertigen Request und weist ihn bei Überschreitung vor dem Provider-Aufruf ab |
+
+Für jeden automatischen Trigger stehen dieselben Retention-Optionen bereit:
+
+| Option | Was wörtlich erhalten bleibt |
+| --- | --- |
+| `keep_turns=2` | Die letzten zwei abgeschlossenen Turns, zusätzlich zum laufenden Turn |
+| `keep_first_turns=1` | Der erste Turn, etwa die ursprüngliche Aufgabenbeschreibung |
+| `preserve_turns=(turn_id, ...)` | Explizit ausgewählte Turns, einschließlich ihrer Tool-Calls und Ergebnisse |
+| `summary_tokens=2048` | Obergrenze für die neue Zusammenfassung nach dem konfigurierten TokenCounter |
+
+Der aktuelle System-Prompt und der laufende Turn bleiben erhalten. Die Grenze
+liegt immer hinter einem `TurnEnd`: Weder aktuelle Eingaben noch Tool-Paare
+werden zerschnitten. Geschützte Turns werden nicht als neuer Originaltext an den
+Summarizer übergeben und ihre IDs in weiteren automatischen Compactions
+weitergeführt. Die Projektion kann sie aus dem Original-Log rekonstruieren.
+System-Kontext aus `inject()` kann als Gesprächsinhalt zusammengefasst werden;
+dauerhaft wörtliche Regeln gehören in `SystemPrompt.section()`.
+
+```python
+from cordify import (
+    ContextBudgetGuard,
+    PeriodicCompaction,
+    SlidingWindowCompaction,
+    ThresholdCompaction,
+)
+from cordify.presets import coding
+
+policies = {
+    "coding": ThresholdCompaction(at=0.8, keep_turns=2, keep_first_turns=1),
+    "chat": SlidingWindowCompaction(keep_turns=6, keep_first_turns=1),
+    "batch": PeriodicCompaction(every=5, keep_turns=2, summary_tokens=1200),
+}
+harness = coding(
+    model,
+    root="./repo",
+    plugins=[policies["coding"], ContextBudgetGuard(reserve_tokens=4096)],
+    context_window=64_000,
+)
+```
+
+Die automatische Komposition schreibt höchstens ein Compaction-Event pro Step.
+Sind mehrere Trigger montiert, bestimmt der zuerst wirksam werdende Trigger die
+Retention dieses Events. Trigger, Retention und Budget-Guard lassen sich
+kombinieren. Der gemeinsame Kern übernimmt frühere Zusammenfassungen in die
+nächste Zusammenfassung und erhält zusätzlichen Kontext aus Request-Hooks.
+Er legt nur dann ein Event an, wenn der gesamte Request dadurch kleiner wird.
+Fehler oder Abbruch während der Zusammenfassung legen kein halbfertiges Event an.
+
+`ContextBudgetGuard(limit=32_000, reserve_tokens=4096)` setzt zusätzlich eine
+absolute Obergrenze; wirksam ist das Minimum aus `limit` und `context_window`.
+Als Output-Reserve zählt das Maximum aus `request.max_tokens` und
+`reserve_tokens`. Die Prüfung erfolgt nach `ConfigureRequest` und berücksichtigt
+Nachrichten, Tool-Schemas und die Reserve. Passen geschützte Inhalte oder die
+aktuelle Aufgabe weiterhin nicht hinein, erhält der Aufrufer
+`ContextBudgetExceeded` mit `input_tokens`, `reserve_tokens` und `limit`.
+Diese Inhalte werden zur Einhaltung des Budgets nicht still verworfen.
+
+Der Guard ist ein reversibel montiertes Plugin. Ohne Guard bleibt
+`context_window` die Planungsgröße für die gewählte Compaction-Policy.
+Alle Größen richten sich nach dem `TokenCounter`; der Standard schätzt Tokens
+über UTF-8-Bytes und erkennt keine Provider-Grenzen automatisch.
+`ExtractiveCompactor` und `LLMCompactor` bleiben austauschbare Implementierungen
+des `Compactor`-Protocols.
+
+[`16_compaction_policies.py`](examples/16_compaction_policies.py) vergleicht die
+drei Trigger offline, hält den ursprünglichen Auftrag wörtlich und prüft
+unveränderte Log-Präfixe, Replay und Fork. Es zeigt außerdem einen Request, den
+der Guard vor dem Provider-Aufruf stoppt.
 
 ## Rules und Kontextstrategien
 
