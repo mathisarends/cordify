@@ -3,8 +3,21 @@ from dataclasses import dataclass
 
 import pytest
 
-from cordify import Context, Emit, Plugin, SystemPrompt, ToolCall, ToolRegistry, hook, plugin, tool
+from cordify import (
+    Agent,
+    Context,
+    Emit,
+    Plugin,
+    SystemPrompt,
+    ToolCall,
+    ToolRegistry,
+    hook,
+    plugin,
+    tool,
+)
 from cordify.plugins.services import system_prompt, tools
+from cordify.presets import minimal
+from cordify.testing import ScriptedLLM
 
 
 @dataclass
@@ -258,3 +271,32 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
         assert await ctx[SystemPrompt].render() == "fixed"
         await ctx.dispatch(Ping())
         assert seen == ["fixed"]
+
+
+async def test_agent_registration_facade_uses_the_active_plugin_owner():
+    seen = []
+
+    @plugin(needs=[Agent])
+    async def feature(ctx):
+        agent = ctx[Agent]
+        agent.add_hook(Ping, lambda event: seen.append("explicit"))
+
+        @agent.on(Ping)
+        def listener(event):
+            seen.append("decorated")
+
+        @agent.tool
+        async def read() -> str:
+            return "plugin tool"
+
+        yield
+
+    async with minimal(ScriptedLLM([])).session("plugin-effects") as agent:
+        handle = await agent.ctx.plugin(feature())
+        assert [definition.name for definition in agent.ctx[ToolRegistry].definitions] == ["read"]
+        await agent.ctx.dispatch(Ping())
+        assert seen == ["explicit", "decorated"]
+        await handle.aclose()
+        assert agent.ctx[ToolRegistry].definitions == ()
+        await agent.ctx.dispatch(Ping())
+        assert seen == ["explicit", "decorated"]
