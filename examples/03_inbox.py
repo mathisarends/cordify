@@ -3,7 +3,6 @@
 import asyncio
 
 from cordify import Harness, ModelChunk
-from cordify.core.events import TurnStart
 from cordify.plugins.agents.loop import agent_loop
 from cordify.plugins.services import llm
 
@@ -48,8 +47,12 @@ async def main():
             for message in request.messages:
                 if message.role == "user":
                     print(f"  {message.content}")
-        turns = sum(isinstance(event, TurnStart) for event in agent.session.events)
-        print(f"\n{turns} Turns, {len(model.requests)} Steps, Status: {agent.status}")
+        turns = agent.session.turns
+        print(f"\n{len(turns)} Turns, {len(model.requests)} Steps, Status: {agent.status}")
+        for number, turn in enumerate(turns, 1):
+            print(f"Turn {number}: {len(turn.steps)} Steps, Grund: {turn.reason}")
+            for step in turn.steps:
+                print(f"  Step {step.number}: Modell {step.request.model}, beendet: {step.closed}")
 
 
 if __name__ == "__main__":

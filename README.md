@@ -27,7 +27,7 @@ cordify/
   core/                  Agent-Invarianten und öffentliche Core-Events
     loop.py, session.py, inbox.py, tools.py, prompt.py, events.py
     features.py          Tool-Deklarationen als Kernel-Registrierungen
-    attachments.py, execution.py, budget.py
+    attachments.py, execution.py, budget.py, turns.py
   plugins/
     context/             Instructions, Observations, Compaction, Spill
     tools/               Datei- und Shell-Tools
@@ -120,7 +120,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | --- | --- |
 | `python -m examples.01_tool_agent` | Tool-Loop, Token-Stream, weiterer Turn |
 | `python -m examples.02_plugins` | Eigene Services, Konfiguration, Middleware, Cleanup |
-| `python -m examples.03_inbox` | Follow-up, Steering und stille Injection während eines Laufs |
+| `python -m examples.03_inbox` | Follow-up, Steering und stille Injection mit expliziten Turn-/Step-Projektionen |
 | `python -m examples.04_deepseek` | Echter DeepSeek-Adapter, Dateitools und JSONL-Resume |
 | `python -m examples.05_bundles_and_injection` | Wiederverwendbare Module, Klassen, DI, Approval, Progress, Nudges |
 | `python -m examples.06_explicit_registration` | Plugins und Hooks ohne Dekoratoren |
@@ -179,6 +179,79 @@ nicht auf; dekorierte Tool- und Hook-Funktionen bleiben direkt testbar.
 Unterstützte Formen: Async-Generator mit `@plugin` oder `@plugin(...)`, `Bundle`,
 `Plugin`-Klassen mit `@hook`/`@tool`, explizite `Plugin(hooks=..., tools=...)` sowie
 `add_hook`/`add_tool`. Jede Montage besitzt einen eigenen Cleanup-Stack.
+
+## Turns, Steps und Inbox
+
+Ein **Turn** bearbeitet eine Nutzeranfrage bis zu ihrem Abschluss. Er enthält
+einen oder mehrere **Steps**. Ein Step umfasst genau einen Modellaufruf und die
+daraus folgenden Tool-Ausführungen, einschließlich Policy und Ergebnis-Review.
+`StepEnd` kommt nach den Tool-Ergebnissen. Braucht das Modell weitere Tools,
+beginnt anschließend ein weiterer Step desselben Turns.
+
+Die Inbox ist ein unveränderlicher Snapshot aus dem Session-Log. Sie trennt das
+Ziel einer Eingabe von der Frage, ob diese Eingabe Arbeit anfordert:
+
+| API | Ziel | Weckt auf | Während eines laufenden Turns |
+| --- | --- | --- | --- |
+| `await agent.followup(text)` | Nächster Turn | Ja | Wartet bis zum Abschluss des aktuellen Turns |
+| `await agent.steer(text)` | Nächster Step | Ja | Fordert einen weiteren Step zur Kurskorrektur an |
+| `await agent.inject(text)` | Nächster Step | Nein | Wartet auf den nächsten ohnehin nötigen Step |
+
+Eine stille Injection verlängert einen ansonsten abgeschlossenen Turn nicht.
+Sie bleibt in der Inbox, bis ein Tool-Fortgang, Steering, Follow-up oder ein
+Fortsetzungs-Hook den nächsten Step auslöst. Auch im Idle erzeugt `inject()`
+keinen Modellaufruf. `steer()` im Idle startet einen Turn, damit die Korrektur
+verarbeitet werden kann. Mehrere Follow-ups werden FIFO in separaten Turns
+bearbeitet; der nächste wartende Turn kann direkt anschließen.
+
+```python
+from cordify import system
+
+await agent.inject(system("Die Tür wurde geöffnet."))  # bleibt im Idle liegen
+await agent.followup("Prüfe den Raum.")  # weckt auf, neuer Turn
+
+# Während Modell oder Tools arbeiten:
+await agent.steer("Prüfe zuerst die Tür.")  # nächster Step desselben Turns
+await agent.followup("Erstelle danach einen Bericht.")  # separater Turn
+await agent.when_idle()  # wartet auf den gesamten Lauf
+```
+
+Ein bereits laufender Modellaufruf behält seinen Request-Snapshot. Steering
+unterbricht auch kein laufendes Tool; die Korrektur gelangt an die nächste
+Step-Grenze. `inject()` akzeptiert User- und System-Nachrichten, `steer()` und
+`followup()` User-Nachrichten. Strings sind User-Nachrichten.
+
+Für jeden Step wählt `Inbox.for_step(number)` die Eingaben aus. Im ersten Step
+kommen höchstens ein Follow-up und die wartenden Step-Eingaben an die Reihe;
+weitere Steps erhalten ausschließlich Step-Eingaben. `Inbox.has_wakeup` und
+`Inbox.has_step_wakeup` halten Start und Fortsetzung auseinander. Die Zuordnung
+von Modus, Ziel und Wakeup wird beim Erzeugen beziehungsweise Laden eines
+`InboxAdded` geprüft und beim Resume aus dem Log rekonstruiert.
+
+`PreStep` läuft vor dem Modellaufruf. Dort injizierter Push-Kontext erreicht noch
+den vorbereiteten Request. Lehnt ein Hook mit `StepDecision.reject()` ab, bleibt
+die Eingabe erhalten: Es gibt einen abgeschlossenen Turn mit Grund `rejected`,
+aber keinen Modell-Step. Ein neuer Wakeup kann einen weiteren Versuch auslösen.
+
+Turns und Steps sind selbst `frozen` Projektionen des Logs, keine zusätzliche
+veränderliche Historie:
+
+```python
+from cordify import derive_turns
+
+assert agent.session.turns == derive_turns(agent.session.events)
+for turn in agent.session.turns:
+    print(turn.id, turn.closed, turn.reason)
+    for step in turn.steps:
+        print(step.number, step.request, step.closed, step.reason)
+```
+
+Step-Nummern beginnen in jedem Turn bei eins. Während des Laufs können Turn und
+Step noch offen sein (`closed=False`, `reason=None`); ein vor dem Request
+abgebrochener Step hat `request=None`. Abbruch, regulärer Abschluss und
+`max_steps` bleiben über ihre Events und Abschlussgründe sichtbar. Replay und
+Fork liefern dieselben Turn-/Step-Projektionen. Das ausführbare
+[`03_inbox.py`](examples/03_inbox.py) zeigt zwei Turns mit insgesamt drei Steps.
 
 ## Kontext: fünf Wege
 
