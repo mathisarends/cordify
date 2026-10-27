@@ -136,4 +136,6 @@ def request_from_dict(data: dict) -> ModelRequest:
 
 
 def result_content(value: Any) -> str:
-    return value if isinstance(value, str) else json.dumps(to_dict(freeze(value)), ensure_ascii=False)
+    return (
+        value if isinstance(value, str) else json.dumps(to_dict(freeze(value)), ensure_ascii=False)
+    )

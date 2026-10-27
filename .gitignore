@@ -9,3 +9,5 @@ build/
 dist/
 .sessions/
 .env
+.uv-cache/
+.python/

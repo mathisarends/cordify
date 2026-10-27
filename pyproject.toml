@@ -37,3 +37,5 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
+# Shell's public timeout parameter is implemented with asyncio.timeout internally.
+ignore = ["ASYNC109"]

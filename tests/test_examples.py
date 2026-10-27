@@ -1,0 +1,30 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "examples.01_tool_agent",
+        "examples.02_plugins",
+        "examples.03_inbox",
+        "examples.05_bundles_and_injection",
+        "examples.06_explicit_registration",
+    ],
+)
+def test_offline_sdk_example_runs(module):
+    result = subprocess.run(
+        [sys.executable, "-m", module],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+        env={**os.environ, "PYTHONUTF8": "1"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout

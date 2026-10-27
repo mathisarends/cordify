@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import uuid4
@@ -101,8 +102,10 @@ class Agent:
         self._wake()
 
     def _wake(self):
-        if self._ready and any(item.wakeup for item in self.inbox.pending) and (
-            self._runner is None or self._runner.done()
+        if (
+            self._ready
+            and any(item.wakeup for item in self.inbox.pending)
+            and (self._runner is None or self._runner.done())
         ):
             self._error = None
             self.status = "running"
@@ -146,7 +149,11 @@ class Agent:
         await self.when_idle()
         events = self.session.events[offset:]
         text = next(
-            (event.message.content for event in reversed(events) if isinstance(event, AssistantMessage)),
+            (
+                event.message.content
+                for event in reversed(events)
+                if isinstance(event, AssistantMessage)
+            ),
             "",
         )
         return RunResult(text, events)
@@ -191,13 +198,18 @@ class Agent:
                 if not await self._turn():
                     break
         except asyncio.CancelledError:
-            await self.session.repair_interrupted()
+            try:
+                await self.session.repair_interrupted()
+            except Exception as exc:
+                self._error = exc
         except Exception as exc:
             self._error = exc
             try:
                 await self.session.repair_interrupted()
             except Exception as repair_error:
-                self._error = ExceptionGroup("Driver and session repair failed", [exc, repair_error])
+                self._error = ExceptionGroup(
+                    "Driver and session repair failed", [exc, repair_error]
+                )
         finally:
             self.status = "idle"
             self._publish(None)
@@ -210,7 +222,8 @@ class Agent:
             pending = (*inbox.next_turn[:1], *inbox.next_step) if step == 1 else inbox.next_step
             incoming = tuple(item.message for item in pending)
             decision = await self.ctx.dispatch(
-                PreStep(self, incoming, step), default=lambda: StepDecision(incoming),
+                PreStep(self, incoming, step),
+                default=lambda incoming=incoming: StepDecision(incoming),
             )
             if not decision.accepted:
                 await self.session.append(TurnEnd(turn, "rejected"))
@@ -218,8 +231,12 @@ class Agent:
             await self.session.append(StepStart(turn, step))
             prompt = await self.ctx[SystemPrompt].render()
             previous = next(
-                (event.content for event in reversed(self.session.events)
-                 if isinstance(event, SystemMessage)), None,
+                (
+                    event.content
+                    for event in reversed(self.session.events)
+                    if isinstance(event, SystemMessage)
+                ),
+                None,
             )
             if prompt != previous:
                 await self.session.append(SystemMessage(prompt))
@@ -234,7 +251,8 @@ class Agent:
             for message in decision.messages:
                 await self.session.append(UserMessage(message))
             request = ModelRequest(
-                self.options.model, self.session.messages,
+                self.options.model,
+                self.session.messages,
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
                 self.options.max_tokens,
             )
@@ -258,7 +276,8 @@ class Agent:
     async def _execute_tool(self, call: ToolCall) -> ToolResult:
         try:
             decision = await self.ctx.dispatch(
-                ToolPolicy(call, self), default=lambda: Decision.ALLOW,
+                ToolPolicy(call, self),
+                default=lambda: Decision.ALLOW,
             )
             if decision is Decision.ASK:
                 decision = await self.ctx[Approver].ask(call, "Tool policy requested approval")
@@ -268,11 +287,14 @@ class Agent:
             result = await self.ctx.dispatch(
                 ExecuteTool(call, self),
                 default=lambda: self.ctx[ToolRegistry].execute(
-                    call, ctx=self.ctx, call_context=execution,
+                    call,
+                    ctx=self.ctx,
+                    call_context=execution,
                 ),
             )
             result = await self.ctx.dispatch(
-                ReviewToolResult(call, result, self), default=lambda: result,
+                ReviewToolResult(call, result, self),
+                default=lambda: result,
             )
             if not isinstance(result, ToolResult):
                 raise TypeError("Tool hooks must return a ToolResult")
@@ -283,25 +305,33 @@ class Agent:
     async def _respond(self, request: ModelRequest) -> Message:
         text, reasoning, calls = [], [], []
         try:
-            async for chunk in self.ctx[LLM].stream(request):
-                if chunk.text or chunk.reasoning:
-                    text.append(chunk.text)
-                    reasoning.append(chunk.reasoning)
-                    event = AssistantChunk(chunk.text, chunk.reasoning)
-                    self._publish(event)
-                    await self.ctx.dispatch(event)
-                if chunk.tool_call is not None:
-                    calls.append(chunk.tool_call)
+            async with AsyncExitStack() as stack:
+                stream = self.ctx[LLM].stream(request)
+                if close := getattr(stream, "aclose", None):
+                    stack.push_async_callback(close)
+                async for chunk in stream:
+                    if chunk.text or chunk.reasoning:
+                        text.append(chunk.text)
+                        reasoning.append(chunk.reasoning)
+                        event = AssistantChunk(chunk.text, chunk.reasoning)
+                        self._publish(event)
+                        await self.ctx.dispatch(event)
+                    if chunk.tool_call is not None:
+                        calls.append(chunk.tool_call)
         except BaseException:
             if text or reasoning:
-                await self.session.append(AssistantMessage(
-                    Message("assistant", "".join(text), reasoning_content="".join(reasoning)),
-                    interrupted=True,
-                ))
+                await self.session.append(
+                    AssistantMessage(
+                        Message("assistant", "".join(text), reasoning_content="".join(reasoning)),
+                        interrupted=True,
+                    )
+                )
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
-        message = Message("assistant", "".join(text), tuple(calls), reasoning_content="".join(reasoning))
+        message = Message(
+            "assistant", "".join(text), tuple(calls), reasoning_content="".join(reasoning)
+        )
         await self.session.append(AssistantMessage(message))
         return message
 

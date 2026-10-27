@@ -1,5 +1,4 @@
 import copy
-import inspect
 from collections.abc import Callable, Iterable
 from typing import Any, overload
 
@@ -13,6 +12,7 @@ def hook(event: type[Event], *, prepend: bool = False):
         entries = list(getattr(callback, "_cordify_hooks", ()))
         callback._cordify_hooks = [*entries, (event, prepend)]
         return callback
+
     return decorate
 
 
@@ -22,7 +22,9 @@ def tool[F: Callable[..., Any]](fn: F, /) -> F: ...
 
 @overload
 def tool[F: Callable[..., Any]](
-    *, name: str | None = None, timeout: float | None = None,
+    *,
+    name: str | None = None,
+    timeout: float | None = None,
 ) -> Callable[[F], F]: ...
 
 
@@ -30,6 +32,7 @@ def tool(fn=None, /, *, name: str | None = None, timeout: float | None = None):
     def decorate(callback):
         callback._cordify_tool = {"name": name, "timeout": timeout}
         return callback
+
     return decorate(fn) if fn is not None else decorate
 
 
@@ -48,9 +51,12 @@ class Bundle:
     def on(self, event: type[Event], fn=None, *, prepend: bool = False):
         def register(callback):
             return self.add_hook(event, callback, prepend=prepend)
+
         return register(fn) if fn is not None else register
 
-    def add_tool(self, callback: Callable, *, name: str | None = None, timeout: float | None = None):
+    def add_tool(
+        self, callback: Callable, *, name: str | None = None, timeout: float | None = None
+    ):
         self._tools.append((callback, {"name": name, "timeout": timeout}))
         return callback
 
@@ -59,12 +65,16 @@ class Bundle:
 
     @overload
     def tool[F: Callable[..., Any]](
-        self, *, name: str | None = None, timeout: float | None = None,
+        self,
+        *,
+        name: str | None = None,
+        timeout: float | None = None,
     ) -> Callable[[F], F]: ...
 
     def tool(self, fn=None, /, *, name: str | None = None, timeout: float | None = None):
         def register(callback):
             return self.add_tool(callback, name=name, timeout=timeout)
+
         return register(fn) if fn is not None else register
 
     def _as_plugin_spec(self) -> PluginSpec:
@@ -87,7 +97,10 @@ class Plugin:
     """Stateful plugin template, deep-copied for each session. Override clone if needed."""
 
     def __init__(
-        self, *, name: str | None = None, hooks: Iterable[tuple[type[Event], Callable]] = (),
+        self,
+        *,
+        name: str | None = None,
+        hooks: Iterable[tuple[type[Event], Callable]] = (),
         tools: Iterable[Callable] = (),
     ):
         self.name = name or type(self).__name__
@@ -112,7 +125,9 @@ class Plugin:
         for name, member in members.items():
             if callable(member):
                 callback = getattr(self, name)
-                hooks.extend((event, callback) for event, _ in getattr(member, "_cordify_hooks", ()))
+                hooks.extend(
+                    (event, callback) for event, _ in getattr(member, "_cordify_hooks", ())
+                )
                 if hasattr(member, "_cordify_tool"):
                     tools.append(callback)
         dependencies = [*injections(self.setup).values()]
@@ -143,8 +158,11 @@ class Plugin:
                 await _resolve(instance.teardown(*bound.args, **bound.kwargs))
 
         return PluginSpec(
-            getattr(self, "name", type(self).__name__), mount,
-            tuple(dict.fromkeys(dependencies)), (), {},
+            getattr(self, "name", type(self).__name__),
+            mount,
+            tuple(dict.fromkeys(dependencies)),
+            (),
+            {},
         )
 
 

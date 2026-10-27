@@ -36,8 +36,12 @@ def injections(callback: Callable) -> dict[str, type]:
 
 
 def bind_injected(
-    callback: Callable, ctx, args: tuple = (), kwargs: Mapping[str, Any] | None = None,
-    *, extra: Mapping[type, Any] | None = None,
+    callback: Callable,
+    ctx,
+    args: tuple = (),
+    kwargs: Mapping[str, Any] | None = None,
+    *,
+    extra: Mapping[type, Any] | None = None,
 ) -> inspect.BoundArguments:
     bound = inspect.signature(callback).bind_partial(*args, **(kwargs or {}))
     extra = extra or {}

@@ -55,6 +55,7 @@ class _Binding:
 
 @dataclass(eq=False)
 class _Listener:
+    event: type[Event[Any]]
     callback: Callable[..., Any]
     owner: "Context"
 
@@ -63,7 +64,7 @@ class _Listener:
 class _Scope:
     parent: "_Scope | None" = None
     services: dict[type[Any], list[_Binding]] = field(default_factory=dict)
-    listeners: dict[type[Event[Any]], list[_Listener]] = field(default_factory=dict)
+    listeners: list[_Listener] = field(default_factory=list)
 
 
 class Context:
@@ -153,8 +154,8 @@ class Context:
 
         def register(callback):
             self._check_open()
-            listeners = self._scope.listeners.setdefault(event, [])
-            listener = _Listener(callback, self)
+            listeners = self._scope.listeners
+            listener = _Listener(event, callback, self)
             listeners.insert(0, listener) if prepend else listeners.append(listener)
             self.effect(lambda: listeners.remove(listener))
             return callback
@@ -170,9 +171,8 @@ class Context:
         return [
             listener
             for scope in reversed(scopes)
-            for kind, listeners in scope.listeners.items()
-            if isinstance(event, kind)
-            for listener in tuple(listeners)
+            for listener in tuple(scope.listeners)
+            if isinstance(event, listener.event)
             if not listener.owner._closed
         ]
 
@@ -180,12 +180,17 @@ class Context:
         listeners = self._listeners(event)
 
         async def invoke(listener: _Listener, *args):
+            if listener.owner._closed:
+                return None
             with listener.owner.activate():
                 bound = bind_injected(listener.callback, self, args)
                 return await _resolve(listener.callback(*bound.args, **bound.kwargs))
 
         if isinstance(event, Waterfall):
+
             async def chain(index):
+                while index < len(listeners) and listeners[index].owner._closed:
+                    index += 1
                 if index == len(listeners):
                     if default is None:
                         raise RuntimeError(f"No terminal handler for {type(event).__name__}")
@@ -312,9 +317,10 @@ class PluginHandle:
         self._dependents: set[PluginHandle] = set()
 
     async def aclose(self) -> None:
-        for dependent in tuple(self._dependents):
-            await dependent.aclose()
-        await self.ctx.aclose()
+        async with AsyncExitStack() as stack:
+            stack.push_async_callback(self.ctx.aclose)
+            for dependent in tuple(self._dependents):
+                stack.push_async_callback(dependent.aclose)
 
     async def __aenter__(self):
         return self
@@ -338,12 +344,15 @@ def plugin[F: Callable[..., AsyncGenerator]](fn: F, /) -> Callable[..., PluginSp
 
 @overload
 def plugin(
-    *, needs: Iterable[type[Any]] = (), name: str | None = None,
+    *,
+    needs: Iterable[type[Any]] = (),
+    name: str | None = None,
 ) -> Callable[[Callable[..., AsyncGenerator]], Callable[..., PluginSpec]]: ...
 
 
 def plugin(fn=None, /, *, needs: Iterable[type[Any]] = (), name: str | None = None):
     """Turn an async-generator function into a configured plugin factory."""
+
     def decorate(factory):
         from functools import wraps
 

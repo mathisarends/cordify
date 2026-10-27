@@ -25,7 +25,13 @@ def _schema(annotation: Any) -> dict:
         return {"type": "array", "items": _schema(args[0])}
     if origin is dict and args[0] is str:
         return {"type": "object", "additionalProperties": _schema(args[1])}
-    primitives = {str: "string", int: "integer", float: "number", bool: "boolean", type(None): "null"}
+    primitives = {
+        str: "string",
+        int: "integer",
+        float: "number",
+        bool: "boolean",
+        type(None): "null",
+    }
     if annotation in primitives:
         return {"type": primitives[annotation]}
     raise TypeError(f"Unsupported tool annotation {annotation!r}; use JSON types or Annotated")
@@ -84,17 +90,25 @@ class ToolRegistry:
 
     @overload
     def tool[F: Callable[..., Any]](
-        self, *, name: str | None = None, timeout: float | None = None,
+        self,
+        *,
+        name: str | None = None,
+        timeout: float | None = None,
     ) -> Callable[[F], F]: ...
 
     def tool(self, fn=None, /, *, name: str | None = None, timeout: float | None = None):
         def register(callback):
             self.register(callback, name=name, timeout=timeout)
             return callback
+
         return register(fn) if fn is not None else register
 
     def register(
-        self, callback: Callable, *, name: str | None = None, timeout: float | None = None,
+        self,
+        callback: Callable,
+        *,
+        name: str | None = None,
+        timeout: float | None = None,
     ) -> ToolDefinition:
         owner = Context.current() or self._ctx
         owner._check_open()
@@ -106,9 +120,12 @@ class ToolRegistry:
         properties, required = {}, []
         for parameter in signature.parameters.values():
             if parameter.kind not in (
-                inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
             ):
-                raise TypeError("Tools must have named parameters (no *args, **kwargs or positional-only)")
+                raise TypeError(
+                    "Tools must have named parameters (no *args, **kwargs or positional-only)"
+                )
             if parameter.name in injected:
                 continue
             schema = _schema(hints.get(parameter.name, parameter.annotation))
@@ -118,9 +135,14 @@ class ToolRegistry:
                 schema["default"] = parameter.default
             properties[parameter.name] = schema
         definition = ToolDefinition(
-            name or callback.__name__, inspect.getdoc(callback) or "",
-            {"type": "object", "properties": properties, "required": required,
-             "additionalProperties": False},
+            name or callback.__name__,
+            inspect.getdoc(callback) or "",
+            {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": False,
+            },
         )
         entry = _Tool(definition, callback, owner, signature, injected, timeout)
         entries = self._tools.setdefault(definition.name, [])
@@ -142,12 +164,16 @@ class ToolRegistry:
 
     def visible_definitions(self, ctx: Context) -> tuple[ToolDefinition, ...]:
         return tuple(
-            entries[-1].definition for entries in self._tools.values()
+            entries[-1].definition
+            for entries in self._tools.values()
             if entries and self._available(entries[-1], ctx)
         )
 
     async def execute(
-        self, call: ToolCall, *, ctx: Context | None = None,
+        self,
+        call: ToolCall,
+        *,
+        ctx: Context | None = None,
         call_context: ToolCallContext | None = None,
     ) -> ToolResult:
         entries = self._tools.get(call.name)

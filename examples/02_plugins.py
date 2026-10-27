@@ -66,17 +66,27 @@ async def trace(ctx: Context):
 
 
 async def main():
-    harness = Harness([
-        agent_loop(),
-        llm(ScriptedLLM([
-            [ModelChunk(tool_call=ToolCall("save_note", {"text": "Cordify ausprobieren"}))],
-            "Die Notiz wurde gespeichert.",
-        ])),
-        notes_tools(NotesConfig()),  # Dependencies are resolved before setup.
-        notes_backend(),
-        trace(),
-        approval_gate(risky={"save_note"}, ask=lambda call: True),
-    ])
+    harness = Harness(
+        [
+            agent_loop(),
+            llm(
+                ScriptedLLM(
+                    [
+                        [
+                            ModelChunk(
+                                tool_call=ToolCall("save_note", {"text": "Cordify ausprobieren"})
+                            )
+                        ],
+                        "Die Notiz wurde gespeichert.",
+                    ]
+                )
+            ),
+            notes_tools(NotesConfig()),  # Dependencies are resolved before setup.
+            notes_backend(),
+            trace(),
+            approval_gate(risky={"save_note"}, ask=lambda call: True),
+        ]
+    )
 
     async with harness.session("notes") as agent:
         print((await agent.run("Speichere eine Notiz.")).text)

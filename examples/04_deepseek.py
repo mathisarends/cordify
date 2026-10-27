@@ -11,15 +11,17 @@ from cordify.std import agent_loop, agents_md, deepseek, fs_local, fs_tools, per
 
 async def main():
     workspace = Path.cwd()
-    harness = Harness([
-        agent_loop(),
-        deepseek(model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")),
-        fs_local(workspace),
-        fs_tools(),
-        persona("Du hilfst beim Verständnis dieses Python-Projekts. Antworte auf Deutsch."),
-        agents_md(workspace / "AGENTS.md"),
-        session_jsonl(root=".sessions"),
-    ])
+    harness = Harness(
+        [
+            agent_loop(),
+            deepseek(model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")),
+            fs_local(workspace),
+            fs_tools(),
+            persona("Du hilfst beim Verständnis dieses Python-Projekts. Antworte auf Deutsch."),
+            agents_md(workspace / "AGENTS.md"),
+            session_jsonl(root=".sessions"),
+        ]
+    )
 
     # Opening this id again resumes the saved history.
     async with harness.session("project-tour", max_steps=8) as agent:

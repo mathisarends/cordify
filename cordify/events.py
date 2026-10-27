@@ -163,7 +163,18 @@ class SessionAppended(Emit):
 SESSION_EVENT_TYPES = {
     cls.type: cls
     for cls in (
-        InboxAdded, InboxRemoved, TurnStart, StepStart, SystemMessage, UserMessage,
-        ModelRequested, AssistantMessage, ToolCalled, ToolReturned, ToolProgress, StepEnd, TurnEnd,
+        InboxAdded,
+        InboxRemoved,
+        TurnStart,
+        StepStart,
+        SystemMessage,
+        UserMessage,
+        ModelRequested,
+        AssistantMessage,
+        ToolCalled,
+        ToolReturned,
+        ToolProgress,
+        StepEnd,
+        TurnEnd,
     )
 }

@@ -8,8 +8,13 @@ from ..models import ModelChunk, ModelRequest, ToolCall, to_dict
 
 class DeepSeekLLM:
     def __init__(
-        self, *, model: str | None = None, api_key: str | None = None,
-        base_url: str = "https://api.deepseek.com", timeout: float = 120, client=None,
+        self,
+        *,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str = "https://api.deepseek.com",
+        timeout: float = 120,
+        client=None,
     ):
         self.model = model or "deepseek-flash"
         self.api_key = api_key
@@ -27,9 +32,15 @@ class DeepSeekLLM:
                 item["reasoning_content"] = message.reasoning_content
             if message.tool_calls:
                 item["tool_calls"] = [
-                    {"id": call.id, "type": "function", "function": {
-                        "name": call.name, "arguments": json.dumps(to_dict(call.arguments)),
-                    }} for call in message.tool_calls
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(to_dict(call.arguments)),
+                        },
+                    }
+                    for call in message.tool_calls
                 ]
             messages.append(item)
         payload = {"model": request.model, "messages": messages, "stream": True}
@@ -45,7 +56,9 @@ class DeepSeekLLM:
         try:
             import httpx
         except ImportError as exc:
-            raise ImportError("Install the provider extra: pip install 'cordify[deepseek]'") from exc
+            raise ImportError(
+                "Install the provider extra: pip install 'cordify[deepseek]'"
+            ) from exc
         api_key = self.api_key or os.environ.get("DEEPSEEK_API_KEY")
         if not api_key:
             raise ValueError("Set DEEPSEEK_API_KEY or pass api_key to deepseek()")
@@ -55,10 +68,14 @@ class DeepSeekLLM:
             client = self.client
             if client is None:
                 client = await stack.enter_async_context(httpx.AsyncClient(timeout=self.timeout))
-            response = await stack.enter_async_context(client.stream(
-                "POST", f"{self.base_url}/chat/completions", json=self._payload(request),
-                headers={"Authorization": f"Bearer {api_key}"},
-            ))
+            response = await stack.enter_async_context(
+                client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    json=self._payload(request),
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            )
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if not line.startswith("data:"):
@@ -91,6 +108,10 @@ class DeepSeekLLM:
             call = calls[index]
             if not call["id"] or not call["name"]:
                 raise ValueError("Incomplete streamed tool call")
-            yield ModelChunk(tool_call=ToolCall(
-                call["name"], json.loads(call["arguments"] or "{}"), call["id"],
-            ))
+            yield ModelChunk(
+                tool_call=ToolCall(
+                    call["name"],
+                    json.loads(call["arguments"] or "{}"),
+                    call["id"],
+                )
+            )

@@ -33,7 +33,10 @@ class LocalShell:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         process = await asyncio.create_subprocess_exec(
-            *argv, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *argv,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         try:
             async with asyncio.timeout(timeout):
@@ -47,7 +50,9 @@ class LocalShell:
             await process.communicate()
             raise
         return ProcResult(
-            process.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace"),
+            process.returncode,
+            stdout.decode(errors="replace"),
+            stderr.decode(errors="replace"),
         )
 
 
@@ -85,11 +90,14 @@ async def shell_local(ctx: Context):
 
 @plugin
 async def shell_tools(ctx: Context, cwd: str | Path = ".", *, registry: Inject[ToolRegistry]):
-    cwd = Path(cwd).resolve()
+    cwd = await asyncio.to_thread(Path(cwd).resolve)
 
     @registry.tool
     async def run_command(
-        argv: list[str], timeout: float = 30, *, shell: Inject[Shell],
+        argv: list[str],
+        timeout: float = 30,
+        *,
+        shell: Inject[Shell],
     ) -> dict[str, str | int]:
         """Run an executable with arguments in the workspace, without shell expansion."""
         result = await shell.run(argv, cwd=cwd, timeout=timeout)

@@ -19,17 +19,21 @@ async def calculator(ctx: Context):
 
 
 async def main():
-    model = ScriptedLLM([
-        [ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))],
-        [ModelChunk(text="Das Ergebnis "), ModelChunk(text="ist 42.")],
-        "Ich habe 19 und 23 mit dem add-Tool addiert.",
-    ])
-    harness = Harness([
-        agent_loop(),
-        llm(model),
-        calculator(),
-        persona("Antworte kurz und auf Deutsch."),
-    ])
+    model = ScriptedLLM(
+        [
+            [ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))],
+            [ModelChunk(text="Das Ergebnis "), ModelChunk(text="ist 42.")],
+            "Ich habe 19 und 23 mit dem add-Tool addiert.",
+        ]
+    )
+    harness = Harness(
+        [
+            agent_loop(),
+            llm(model),
+            calculator(),
+            persona("Antworte kurz und auf Deutsch."),
+        ]
+    )
 
     async with harness.session("calculator") as agent:
         async for event in agent.stream("Was ist 19 + 23?"):

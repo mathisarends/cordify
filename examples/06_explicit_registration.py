@@ -21,16 +21,24 @@ async def annotate(event, next_, agent: Inject[Agent]):
 
 async def main():
     explicit = Plugin(
-        name="explicit-echo", tools=[echo], hooks=[(ReviewToolResult, annotate)],
+        name="explicit-echo",
+        tools=[echo],
+        hooks=[(ReviewToolResult, annotate)],
     )
-    harness = Harness([
-        agent_loop(),
-        llm(ScriptedLLM([
-            [ModelChunk(tool_call=ToolCall("echo", {"text": "Hello"}))],
-            "Done.",
-        ])),
-        explicit,
-    ])
+    harness = Harness(
+        [
+            agent_loop(),
+            llm(
+                ScriptedLLM(
+                    [
+                        [ModelChunk(tool_call=ToolCall("echo", {"text": "Hello"}))],
+                        "Done.",
+                    ]
+                )
+            ),
+            explicit,
+        ]
+    )
 
     # Host integrations can register recipes imperatively before opening a session.
     def log_result(event: ToolReturned):

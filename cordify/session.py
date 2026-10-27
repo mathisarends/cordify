@@ -97,8 +97,12 @@ class Session:
     """An append-only log. Inbox state and model history are pure projections."""
 
     def __init__(
-        self, session_id: str, *, ctx: Context | None = None,
-        seed: Iterable[SessionEvent] = (), persistence: SessionPersistence | None = None,
+        self,
+        session_id: str,
+        *,
+        ctx: Context | None = None,
+        seed: Iterable[SessionEvent] = (),
+        persistence: SessionPersistence | None = None,
     ):
         self.id = session_id
         self.ctx = ctx

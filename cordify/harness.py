@@ -1,8 +1,7 @@
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 
-from .agent import AgentFactory, AgentOptions
-from .agent import Agent
+from .agent import Agent, AgentFactory, AgentOptions
 from .core import Context, PluginSpec
 from .models import LLM
 from .plugins import Bundle
@@ -31,7 +30,11 @@ class Harness:
 
     @asynccontextmanager
     async def session(
-        self, session_id: str, *, model: str | None = None, max_steps: int = 32,
+        self,
+        session_id: str,
+        *,
+        model: str | None = None,
+        max_steps: int = 32,
         max_tokens: int | None = None,
     ):
         from .std import system_prompt, tools
@@ -41,13 +44,20 @@ class Harness:
         self._active.add(session_id)
         try:
             async with Context() as ctx:
-                _, pending = await ctx._install_ready([
-                    tools(), system_prompt(), *self.plugins, self._bundle,
-                ])
+                _, pending = await ctx._install_ready(
+                    [
+                        tools(),
+                        system_prompt(),
+                        *self.plugins,
+                        self._bundle,
+                    ]
+                )
                 if AgentFactory not in ctx:
                     await ctx.install(pending)
-                selected_model = model or self.model or (
-                    getattr(ctx[LLM], "model", "default") if LLM in ctx else "default"
+                selected_model = (
+                    model
+                    or self.model
+                    or (getattr(ctx[LLM], "model", "default") if LLM in ctx else "default")
                 )
                 options = AgentOptions(selected_model, max_steps, max_tokens)
                 persistence = ctx[SessionPersistence] if SessionPersistence in ctx else None

@@ -38,18 +38,25 @@ from cordify.testing import ScriptedLLM
 
 workspace = Bundle("workspace")
 
+
 @workspace.tool
 async def count_lines(path: str, fs: Inject[FS]) -> int:
     """Count lines in a workspace file."""
     return len((await fs.read(Path(path))).splitlines())
 
+
 async def main():
-    harness = Harness([
-        agent_loop(), llm(ScriptedLLM(["Hallo aus Cordify."])),
-        fs_local("."), workspace,
-    ])
+    harness = Harness(
+        [
+            agent_loop(),
+            llm(ScriptedLLM(["Hallo aus Cordify."])),
+            fs_local("."),
+            workspace,
+        ]
+    )
     async with harness.session("demo") as agent:
         print((await agent.run("Hallo!")).text)
+
 
 asyncio.run(main())
 ```
@@ -68,10 +75,12 @@ Unterstützte Formen: Async-Generator mit `@plugin` oder `@plugin(...)`, `Bundle
 ```python
 from cordify import Context, Inject, SystemPrompt, ToolRegistry, plugin
 
+
 @plugin
 async def project_rules(ctx: Context, prompt: Inject[SystemPrompt]):
     prompt.section("project", "Use Python 3.12+.", order=10)
     yield
+
 
 # Auch @plugin(), @plugin(name="...") und @plugin(needs=[...]) werden akzeptiert.
 # Inject-Parameter ergänzen needs automatisch.
@@ -86,6 +95,7 @@ normale Parameter. Der Agent wird pro Session injiziert:
 from cordify import Agent, Bundle, Inject, ReviewToolResult
 
 safety = Bundle("safety")
+
 
 @safety.on(ReviewToolResult)
 async def nudge(event, next_, agent: Inject[Agent]):

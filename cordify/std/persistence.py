@@ -34,9 +34,11 @@ class JsonlPersistence:
         try:
             if os.name == "nt":
                 import msvcrt
+
                 msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             lock.close()
@@ -46,8 +48,15 @@ class JsonlPersistence:
             if path.exists():
                 with path.open(encoding="utf-8") as stream:
                     for seq, line in enumerate(stream):
+                        if not line.endswith("\n"):
+                            raise ValueError(f"Truncated session record at line {seq + 1}")
                         record = json.loads(line)
-                        if record["version"] != 1 or record["seq"] != seq:
+                        if (
+                            type(record["version"]) is not int
+                            or record["version"] != 1
+                            or type(record["seq"]) is not int
+                            or record["seq"] != seq
+                        ):
                             raise ValueError(f"Invalid session record at line {seq + 1}")
                         events.append(decode_event(record))
             stream = path.open("a", encoding="utf-8", newline="\n")

@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ class _Section:
     name: str
     content: str | Callable
     order: int
+    owner: Context
 
 
 class SystemPrompt:
@@ -20,7 +22,7 @@ class SystemPrompt:
     def section(self, name: str, content: str | Callable, *, order: int = 0):
         owner = Context.current() or self._ctx
         owner._check_open()
-        section = _Section(name, content, order)
+        section = _Section(name, content, order, owner)
         self._sections.append(section)
         return owner.effect(lambda: self._sections.remove(section))
 
@@ -28,8 +30,15 @@ class SystemPrompt:
         visible = {section.name: section for section in self._sections}
         rendered = []
         for section in sorted(visible.values(), key=lambda s: s.order):
-            value = section.content() if callable(section.content) else section.content
-            value = await value if inspect.isawaitable(value) else value
+            with section.owner.activate():
+                if callable(section.content):
+                    if inspect.iscoroutinefunction(section.content):
+                        value = await section.content()
+                    else:
+                        value = await asyncio.to_thread(section.content)
+                        value = await value if inspect.isawaitable(value) else value
+                else:
+                    value = section.content
             if not isinstance(value, str):
                 raise TypeError(f"Prompt section {section.name!r} must render a string")
             if value:

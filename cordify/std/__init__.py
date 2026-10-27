@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
@@ -45,9 +46,13 @@ async def persona(ctx: Context, text: str, *, prompt: Inject[SystemPrompt], orde
 
 @plugin
 async def agents_md(
-    ctx: Context, path: str | Path = "AGENTS.md", *, prompt: Inject[SystemPrompt], order: int = 50,
+    ctx: Context,
+    path: str | Path = "AGENTS.md",
+    *,
+    prompt: Inject[SystemPrompt],
+    order: int = 50,
 ):
-    path = Path(path).resolve()
+    path = await asyncio.to_thread(Path(path).resolve)
 
     def read():
         return path.read_text(encoding="utf-8") if path.exists() else ""
@@ -77,7 +82,8 @@ def approval_gate(*, risky: Iterable[str], ask: Callable | None = None):
                 return await next_()
             if ask is None:
                 decision = await event.agent.ctx[Approver].ask(
-                    event.call, f"{event.call.name} is marked risky",
+                    event.call,
+                    f"{event.call.name} is marked risky",
                 )
             else:
                 decision = await CallbackApprover(ask).ask(event.call, "Tool is marked risky")
@@ -121,7 +127,18 @@ def deepseek(*, model: str | None = None, api_key: str | None = None, **kwargs):
 
 
 __all__ = [
-    "agent_loop", "agents_md", "approval_gate", "callback_approver", "deepseek", "fs_local",
-    "fs_tools", "llm",
-    "persona", "session_jsonl", "shell_local", "shell_tools", "system_prompt", "tools",
+    "agent_loop",
+    "agents_md",
+    "approval_gate",
+    "callback_approver",
+    "deepseek",
+    "fs_local",
+    "fs_tools",
+    "llm",
+    "persona",
+    "session_jsonl",
+    "shell_local",
+    "shell_tools",
+    "system_prompt",
+    "tools",
 ]
