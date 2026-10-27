@@ -27,7 +27,7 @@ cordify/
   core/                  Agent-Invarianten und öffentliche Core-Events
     loop.py, session.py, inbox.py, tools.py, prompt.py, events.py
     features.py          Tool-Deklarationen als Kernel-Registrierungen
-    attachments.py, execution.py, budget.py, turns.py
+    attachments.py, execution.py, budget.py, outputs.py, turns.py
   plugins/
     context/             Instructions, Observations, Compaction, Spill
     tools/               Datei- und Shell-Tools
@@ -132,6 +132,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.12_layered_sdk` | Neuer Schichtenaufbau, eigenständiger Kernel und Presets |
 | `python -m examples.13_llm_adapters` | Eigener BaseLLM-Adapter mit Retry und struktureller Adapter ohne Vererbung |
 | `python -m examples.14_session_log` | Dauerhafte Chunks, reine Log-Projektionen, Request-Replay und unabhängiger Fork |
+| `python -m examples.15_tool_output_limits` | 2-MB-Ausgabe begrenzen, ExecuteTool-Waterfall und Weiterlesen mit offset/limit |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -638,6 +639,79 @@ Der generische Kern bietet `Emit` (seriell), `Bail[R]` (erster Nicht-None-Wert),
 Plugin-Unload; frühere überschattete Registrierungen werden wieder sichtbar.
 `ctx.extend()` erzeugt einen Kindkontext mit eigenen Service- und Event-
 Registrierungen. Pro Harness-Session gibt es einen unabhängigen Root-Context.
+
+## Begrenzte Tool-Ausgaben
+
+Der Standard-Agent begrenzt jedes Tool-Ergebnis auf **32.000 Unicode-Zeichen**,
+einschließlich Kürzungshinweis. Die Grenze greift vor `ToolReturned`, Session-Log
+und dem nächsten Modell-Request. Auch Fehlertexte und Erweiterungen durch
+Review-Hooks werden begrenzt. Das ist eine feste Policy im Agent, die ohne
+zusätzliches Plugin aktiv ist.
+
+```python
+from cordify import ToolOutputLimit
+from cordify.presets import coding
+
+harness = coding(model, root="./repo", tool_output_limit=ToolOutputLimit(max_chars=8000))
+async with harness.session("review", tool_output_limit=ToolOutputLimit(max_chars=4000)) as agent:
+    result = await agent.run("Inspect the project.")
+```
+
+`Harness`, `minimal`, `coding` und `headless` akzeptieren `tool_output_limit`;
+eine Session kann die Vorgabe überschreiben. `max_chars` muss mindestens 256
+sein, damit der Hinweis Platz hat. Das Budget ist eine Zeichengrenze pro Ergebnis,
+kein anbieterspezifisches Token-Limit oder Gesamtbudget des Requests.
+
+Die Kürzung behält etwa drei Viertel des verfügbaren Inhalts vom Anfang und ein
+Viertel vom Ende, damit beispielsweise ein Fehler am Schluss sichtbar bleibt.
+Der Mittelteil wird durch einen Hinweis ersetzt:
+
+```text
+[Output truncated; middle omitted (2097168 characters total). Use offset/limit for smaller ranges or filter the command output.]
+```
+
+Status, Exit-Code und Spill-Referenz bleiben erhalten.
+`ToolResult.truncation` enthält `original_chars`, `retained_chars` und `max_chars`;
+das Log und seine JSON-Codecs erhalten diese Metadaten. `retained_chars` zählt
+den übernommenen Originaltext, während `max_chars` den Hinweis einschließt.
+Kleine Ergebnisse bleiben unverändert. Die Policy ist idempotent und kann auch
+als eigener Waterfall um `ExecuteTool` benutzt werden:
+
+```python
+from cordify import Bundle, ExecuteTool, ToolOutputLimit
+
+limits = Bundle("output-limits")
+budget = ToolOutputLimit(max_chars=8000)
+
+
+@limits.on(ExecuteTool)
+async def truncate(event, next_):
+    return budget.apply(await next_())
+```
+
+Dieser Waterfall kürzt bereits vor dem Ergebnis-Review. Die verbindliche
+Agent-Grenze greift zusätzlich **nach** `ReviewToolResult`, damit nachträglich
+ergänzte Texte sie nicht umgehen. `SpillLargeResults` braucht die vollständige
+Ausgabe für seine Datei; bei Spill verwendet man die finale Agent-Grenze ohne
+die zusätzliche frühe Kürzung. So bleibt das vollständige Ergebnis abrufbar.
+
+Das eingebaute Dateitool unterstützt echte Bereiche:
+
+```python
+read_file(path="large.log", offset=0, limit=8000)
+read_file(path="large.log", offset=8000, limit=8000)
+```
+
+`offset` ist eine nullbasierte Zeichenposition, `limit` liegt zwischen 1 und
+16.000 und beträgt standardmäßig 8.000. Weitere Daten werden mit einem Hinweis
+auf den nächsten Offset angezeigt. Das funktioniert auch bei mehrbyteiligen
+Unicode-Zeichen. Für Shell-Ausgaben filtert man den Befehl oder schreibt in eine
+Datei und liest anschließend Bereiche. Die Adapter können intern größere Daten
+lesen; die Policy begrenzt das Ergebnis, das ins Log und ans Modell gelangt.
+
+[`15_tool_output_limits.py`](examples/15_tool_output_limits.py) zeigt den
+Waterfall mit einer 2-MB-Ausgabe, erhaltenem Exit-Code und anschließenden
+Bereichsreads vollständig offline.
 
 ## Das Session-Log ist die Quelle der Wahrheit
 
