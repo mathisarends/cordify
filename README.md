@@ -9,6 +9,65 @@ Keine API- oder Dateiformat-Kompatibilität mit den TypeScript-Projekten.
 Python **3.12–3.14**, PEP-695-Generics, keine Runtime-Abhängigkeiten im Kern.
 Das Paket liegt direkt in `cordify/`.
 
+## Paketstruktur
+
+```text
+cordify/
+  kernel/                Context, Keys, DI, Events, Effekte, Plugin-Lifecycle
+    context.py
+    plugin.py
+    declarations.py      Agent-unabhängige Plugins, Bundles, Registration-Rezepte
+    events.py
+    effects.py
+    di.py
+    keys.py
+  seams/                 Protocols und unveränderliche Datenverträge
+    llm.py, fs.py, shell.py, approver.py
+    tokens.py, compaction.py, spill.py, models.py
+  core/                  Agent-Invarianten und öffentliche Core-Events
+    loop.py, session.py, inbox.py, tools.py, prompt.py, events.py
+    features.py          Tool-Deklarationen als Kernel-Registrierungen
+    attachments.py, execution.py, budget.py
+  plugins/
+    context/             Instructions, Observations, Compaction, Spill
+    tools/               Datei- und Shell-Tools
+    permissions/         Approvals und Rules
+    agents/              Registrierung des Standard-Loops
+    observe/             Token-Zählung und Cache-Usage; kein OTel
+    services.py          Registry-, Prompt- und LLM-Service-Provider
+    persistence.py       JSONL-Plugin
+  adapters/              DeepSeek, lokale FS/Shell, JSONL, Spill, Counter,
+                         Compactor und deterministischer Replay-Adapter
+  presets.py             Harness, minimal(), coding(), headless()
+  testing.py             Test-Helfer
+  __init__.py            Kompakte öffentliche API
+```
+
+Die Import-Richtung ist **kernel ← seams ← core ← plugins/adapters ← presets**.
+Architekturtests prüfen die Grenzen. `cordify.kernel` lädt keine Agents,
+Adapter oder Drittanbieterpakete. Der Kernel kennt generische Registrierungs-
+Rezepte; die ToolRegistry-Anbindung entsteht erst in `core.features`.
+`kernel.Plugin` ist die allgemeine Basis, `cordify.Plugin` ergänzt die
+Agent-Komfort-API mit `tools=[...]` und `.tool`-Bundles.
+
+Die alten flachen Modulpfade und `cordify.std` sind entfernt. Root-Imports wie
+`from cordify import Harness, Plugin, Inject` bleiben verfügbar. Konkrete
+Implementierungen werden aus ihrer Schicht importiert:
+
+```python
+from cordify.kernel import Context, Key, plugin
+from cordify.adapters.deepseek import DeepSeekLLM
+from cordify.plugins.context.compaction import ThresholdCompaction
+from cordify.presets import minimal, coding, headless
+
+agent = minimal(DeepSeekLLM(model="deepseek-flash"))
+# coding(adapter, root="./repo", shell=True) ergänzt Dateitools und Shell explizit.
+```
+
+OTel und zusätzliche Extras für nicht implementierte Fähigkeiten sind nicht
+enthalten. MCP, Sandbox-Backends, Checkpoints, Subagents, weitere Modelladapter
+und ein Voice-Preset können später in diesen Schichten ergänzt werden.
+
 ```sh
 python -m pip install -e .
 python -m examples.01_tool_agent
@@ -29,6 +88,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.09_rules` | TestDiscipline als Klasse und deklarative Rules |
 | `python -m examples.10_context_strategies` | Spill, Compaction, Observation-Limit und Cache-Metadaten gemeinsam |
 | `python -m examples.11_temporal_needs` | Service-Verlust, Discomposition und frischer Neuaufbau |
+| `python -m examples.12_layered_sdk` | Neuer Schichtenaufbau, eigenständiger Kernel und Presets |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -38,7 +98,9 @@ import asyncio
 from pathlib import Path
 
 from cordify import Bundle, FS, Harness, Inject
-from cordify.std import agent_loop, fs_local, llm
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.tools.fs import fs_local
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 workspace = Bundle("workspace")
@@ -517,7 +579,8 @@ Semantische Zusammenfassungen sind explizit möglich:
 
 ```python
 from cordify import LLMCompactor, LocalSpillStore
-from cordify.std import compactor, spill_store, token_counter
+from cordify.plugins.context.providers import compactor, spill_store
+from cordify.plugins.observe.tokens import token_counter
 
 # Zu den Harness-Plugins hinzufügen:
 # compactor(LLMCompactor(summary_llm, model="your-summary-model"))
