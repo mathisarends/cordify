@@ -137,7 +137,7 @@ async def test_install_missing_dependencies_rolls_back_mounted_plugins():
 
     async with Context() as ctx:
         with pytest.raises(RuntimeError, match="missing or cyclic"):
-            await ctx.install([available(), missing()])
+            await ctx.install([available(), missing()], strict=True)
         assert int not in ctx
 
 

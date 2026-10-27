@@ -289,6 +289,7 @@ class Agent:
         turn = uuid4().hex
         await self.session.append(TurnStart(turn))
         for step in range(1, self.options.max_steps + 1):
+            await self.ctx.settle()
             inbox = self.inbox
             pending = (*inbox.next_turn[:1], *inbox.next_step) if step == 1 else inbox.next_step
             incoming = tuple(item.message for item in pending)

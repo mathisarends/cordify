@@ -63,11 +63,66 @@ class _Listener:
     owner: "Context"
 
 
+class _Runtime:
+    def __init__(self):
+        self.handles: list[PluginHandle] = []
+        self.task: asyncio.Task | None = None
+        self.dirty = False
+        self.errors: list[Exception] = []
+
+    def changed(self):
+        self.dirty = True
+        for handle in tuple(self.handles):
+            if (
+                handle.status == "starting"
+                and handle._start_task is not None
+                and (handle._mount._closed or handle._signature() != handle._starting_signature)
+            ):
+                handle._start_task.cancel()
+        if not self.handles or (self.task is not None and not self.task.done()):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self.task = loop.create_task(self.reconcile(), name="cordify:composition")
+
+    async def reconcile(self):
+        blocked = set()
+        while self.dirty:
+            self.dirty = False
+            for handle in tuple(self.handles):
+                if handle in blocked or (
+                    handle._disposed
+                    or handle._mount._closed
+                    or handle.status in ("starting", "stopping")
+                ):
+                    continue
+                signature = handle._signature()
+                try:
+                    cycle = handle._cycle(signature)
+                    if cycle:
+                        blocked.update(cycle)
+                        await handle._suspend()
+                        raise RuntimeError(
+                            "Cyclic plugin needs: " + " -> ".join(h.name for h in cycle)
+                        )
+                    if handle.status == "active" and signature != handle._active_signature:
+                        await handle._suspend()
+                    signature = handle._signature()
+                    if signature is not None and handle.status in ("waiting", "failed"):
+                        if signature != handle._failed_signature:
+                            await handle._activate()
+                except Exception as exc:
+                    self.errors.append(exc)
+
+
 @dataclass
 class _Scope:
     parent: "_Scope | None" = None
     services: dict[type[Any], list[_Binding]] = field(default_factory=dict)
     listeners: list[_Listener] = field(default_factory=list)
+    runtime: _Runtime = field(default_factory=_Runtime)
 
 
 class Context:
@@ -100,11 +155,21 @@ class Context:
         if self._closed:
             raise ContextClosed("This context has been disposed")
 
-    def _binding[T](self, key: type[T]) -> _Binding:
+    def _binding[T](self, key: type[T], *, exclude: "PluginHandle | None" = None) -> _Binding:
         scope: _Scope | None = self._scope
         while scope is not None:
-            if bindings := scope.services.get(key):
-                return bindings[-1]
+            for binding in reversed(scope.services.get(key, ())):
+                handle = binding.owner._handle
+                if exclude is not None and handle is exclude:
+                    continue
+                current = Context.current()
+                if (
+                    handle is None
+                    or handle.status == "active"
+                    or handle is self._handle
+                    or (current is not None and current._closed and handle.status == "stopping")
+                ):
+                    return binding
             scope = scope.parent
         raise MissingService(key)
 
@@ -137,15 +202,17 @@ class Context:
         bindings = self._scope.services.setdefault(key, [])
         binding = _Binding(implementation, self)
         bindings.append(binding)
+        self._scope.runtime.changed()
 
         def remove():
             bindings.remove(binding)
+            self._scope.runtime.changed()
 
         return self.effect(remove)
 
     def extend(self) -> "Context":
         self._check_open()
-        child = Context(_scope=_Scope(parent=self._scope))
+        child = Context(_scope=_Scope(parent=self._scope, runtime=self._scope.runtime))
         self.effect(child.aclose)
         return child
 
@@ -222,51 +289,31 @@ class Context:
         return cast(R, None)
 
     async def plugin(self, spec: "PluginLike") -> "PluginHandle":
-        """Mount a plugin transactionally, rolling back a failed setup."""
+        """Retain a plugin recipe; activate it while its declared needs are available."""
         self._check_open()
         from .plugins import as_plugin_spec
 
         spec = as_plugin_spec(spec)
-        providers = [self._binding(key).owner._handle for key in spec.needs]
-        child = Context(_scope=self._scope)
-        handle = PluginHandle(spec.name, child)
-        child._handle = handle
-        for provider in providers:
-            if provider is not None:
-                provider._dependents.add(handle)
-                child.effect(lambda p=provider: p._dependents.discard(handle))
+        handle = PluginHandle(spec, self)
+        self._scope.runtime.handles.append(handle)
+        self.effect(handle.aclose)
         try:
-            with child.activate():
-                bound = bind_injected(spec.factory, child, (child, *spec.args), spec.kwargs)
-                generator = spec.factory(*bound.args, **bound.kwargs)
-                if not inspect.isasyncgen(generator):
-                    raise TypeError(f"Plugin {spec.name} must be an async generator yielding once")
-                try:
-                    await anext(generator)
-                except StopAsyncIteration as exc:
-                    raise RuntimeError(f"Plugin {spec.name} did not yield") from exc
-
-            async def teardown():
-                with child.activate():
-                    try:
-                        await anext(generator)
-                    except StopAsyncIteration:
-                        return
-                    finally:
-                        await generator.aclose()
-                raise RuntimeError(f"Plugin {spec.name} yielded more than once")
-
-            child.effect(teardown)
-            self.effect(handle.aclose)
+            if handle._signature() is not None:
+                await handle._activate()
             return handle
         except BaseException:
-            await child.aclose()
+            await handle.aclose()
             raise
 
-    async def install(self, plugins: Iterable["PluginLike"]) -> tuple["PluginHandle", ...]:
+    async def install(
+        self,
+        plugins: Iterable["PluginLike"],
+        *,
+        strict: bool = False,
+    ) -> tuple["PluginHandle", ...]:
         """Mount providers before consumers, regardless of composition order."""
         mounted, pending = await self._install_ready(plugins)
-        if pending:
+        if pending and strict:
             for handle in reversed(mounted):
                 await handle.aclose()
             missing = "; ".join(
@@ -274,7 +321,27 @@ class Context:
                 for spec in pending
             )
             raise RuntimeError(f"Unresolved plugin dependencies (missing or cyclic): {missing}")
+        try:
+            for spec in pending:
+                mounted.append(await self.plugin(spec))
+        except BaseException:
+            for handle in reversed(mounted):
+                await handle.aclose()
+            raise
         return tuple(mounted)
+
+    async def settle(self) -> None:
+        """Wait for scheduled dependency teardown/rebuild; report background setup failures."""
+        runtime = self._scope.runtime
+        if asyncio.current_task() is runtime.task:
+            return
+        if runtime.dirty:
+            runtime.changed()
+        while runtime.task is not None and not runtime.task.done():
+            await asyncio.shield(runtime.task)
+        if runtime.errors:
+            errors, runtime.errors = runtime.errors, []
+            raise ExceptionGroup("Plugin composition failed", errors)
 
     async def _install_ready(self, plugins):
         from .plugins import as_plugin_spec
@@ -312,18 +379,171 @@ class Context:
 
 
 class PluginHandle:
-    """Disposal also unloads consumers declaring this plugin's services in needs."""
+    """An owned recipe. Dependency loss suspends it; aclose permanently removes it."""
 
-    def __init__(self, name: str, ctx: Context):
-        self.name = name
-        self.ctx = ctx
+    def __init__(self, spec: "PluginSpec", mount: Context):
+        self.name, self.spec, self._mount = spec.name, spec, mount
+        self.ctx = Context(_scope=mount._scope)
+        self.ctx._closed = True
+        self.status = "waiting"
+        self.error: Exception | None = None
+        self._disposed = False
+        self._transition = asyncio.Lock()
+        self._active_signature = None
+        self._failed_signature = None
+        self._starting_signature = None
+        self._start_task: asyncio.Task | None = None
         self._dependents: set[PluginHandle] = set()
 
+    def _signature(self):
+        try:
+            bindings = tuple(self._mount._binding(key, exclude=self) for key in self.spec.needs)
+        except MissingService:
+            return None
+        if any(
+            binding.owner._handle is not None and binding.owner._handle.status != "active"
+            for binding in bindings
+        ):
+            return None
+        return bindings
+
+    def _cycle(self, signature):
+        def visit(handle, path):
+            if handle is self:
+                return [self, *path, self]
+            if handle in path:
+                return None
+            for binding in handle._active_signature or ():
+                provider = binding.owner._handle
+                if provider is not None and (cycle := visit(provider, [*path, handle])):
+                    return cycle
+            return None
+
+        for binding in signature or ():
+            provider = binding.owner._handle
+            if provider is not None and (cycle := visit(provider, [])):
+                return cycle
+        return None
+
+    async def _activate(self):
+        if self._disposed or self._mount._closed or self.status == "active":
+            return
+        if self._start_task is None or self._start_task.done():
+            self._starting_signature = self._signature()
+            self.status = "starting"
+            self._start_task = asyncio.create_task(
+                self._activate_worker(), name=f"cordify:setup:{self.name}"
+            )
+        try:
+            await asyncio.shield(self._start_task)
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                self._start_task.cancel()
+                try:
+                    await self._start_task
+                except asyncio.CancelledError:
+                    pass
+                raise
+            if not (
+                self._disposed
+                or self._mount._closed
+                or self._signature() != self._starting_signature
+            ):
+                raise
+
+    async def _activate_worker(self):
+        async with self._transition:
+            signature = self._signature()
+            if (
+                self._disposed
+                or self._mount._closed
+                or signature is None
+                or self.status == "active"
+            ):
+                self.status = "waiting"
+                return
+            self.status = "starting"
+            self.ctx = child = Context(_scope=self._mount._scope)
+            child._handle = self
+            for binding in signature:
+                provider = binding.owner._handle
+                if provider is not None:
+                    provider._dependents.add(self)
+                    child.effect(lambda p=provider: p._dependents.discard(self))
+            try:
+                with child.activate():
+                    spec = self.spec
+                    bound = bind_injected(spec.factory, child, (child, *spec.args), spec.kwargs)
+                    generator = spec.factory(*bound.args, **bound.kwargs)
+                    if not inspect.isasyncgen(generator):
+                        raise TypeError(
+                            f"Plugin {spec.name} must be an async generator yielding once"
+                        )
+                    try:
+                        await anext(generator)
+                    except StopAsyncIteration as exc:
+                        raise RuntimeError(f"Plugin {spec.name} did not yield") from exc
+
+                async def teardown():
+                    with child.activate():
+                        try:
+                            await anext(generator)
+                        except StopAsyncIteration:
+                            return
+                        finally:
+                            await generator.aclose()
+                    raise RuntimeError(f"Plugin {spec.name} yielded more than once")
+
+                child.effect(teardown)
+                self._active_signature = signature
+                self._failed_signature = None
+                self.error = None
+                self.status = "active"
+                self._mount._scope.runtime.changed()
+            except BaseException as exc:
+                cancelled = isinstance(exc, asyncio.CancelledError)
+                self.status = "waiting" if cancelled else "failed"
+                self._failed_signature = None if cancelled else signature
+                self.error = exc if isinstance(exc, Exception) else None
+                await child.aclose()
+                raise
+
+    async def _suspend(self, visited: set | None = None):
+        if self.status == "starting" and self._start_task is not None:
+            self._start_task.cancel()
+            try:
+                await self._start_task
+            except asyncio.CancelledError:
+                pass
+        visited = set() if visited is None else visited
+        if self in visited:
+            return
+        visited.add(self)
+        async with self._transition:
+            if self.status not in ("active", "failed"):
+                return
+            self.status = "stopping"
+            try:
+                async with AsyncExitStack() as stack:
+                    stack.push_async_callback(self.ctx.aclose)
+                    for dependent in tuple(self._dependents):
+                        stack.push_async_callback(dependent._suspend, visited)
+            finally:
+                self.status = "waiting"
+                self._active_signature = None
+                self._mount._scope.runtime.changed()
+
     async def aclose(self) -> None:
-        async with AsyncExitStack() as stack:
-            stack.push_async_callback(self.ctx.aclose)
-            for dependent in tuple(self._dependents):
-                stack.push_async_callback(dependent.aclose)
+        if self._disposed:
+            return
+        self._disposed = True
+        runtime = self._mount._scope.runtime
+        runtime.handles.remove(self)
+        try:
+            await self._suspend()
+        finally:
+            self.status = "disposed"
+            runtime.changed()
 
     async def __aenter__(self):
         return self

@@ -40,10 +40,11 @@ def tool(fn=None, /, *, name: str | None = None, timeout: float | None = None):
 class Bundle:
     """Reusable registration recipes; no live Context or Agent is captured."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, *, needs: Iterable[type] = ()):
         self.name = name
         self._hooks: list[tuple] = []
         self._tools: list[tuple] = []
+        self.needs = tuple(needs)
 
     def add_hook(self, event: type[Event], callback: Callable, *, prepend: bool = False):
         self._hooks.append((event, callback, prepend))
@@ -80,7 +81,10 @@ class Bundle:
 
     def _as_plugin_spec(self) -> PluginSpec:
         hooks, tools = tuple(self._hooks), tuple(self._tools)
-        dependencies = [key for _, callback, _ in hooks for key in injections(callback).values()]
+        dependencies = [
+            *self.needs,
+            *(key for _, callback, _ in hooks for key in injections(callback).values()),
+        ]
         if tools:
             dependencies.append(ToolRegistry)
 
@@ -97,16 +101,20 @@ class Bundle:
 class Plugin:
     """Stateful plugin template, deep-copied for each session. Override clone if needed."""
 
+    needs: tuple[type, ...] = ()
+
     def __init__(
         self,
         *,
         name: str | None = None,
         hooks: Iterable[tuple[type[Event], Callable]] = (),
         tools: Iterable[Callable] = (),
+        needs: Iterable[type] | None = None,
     ):
         self.name = name or type(self).__name__
         self.hooks = tuple(hooks)
         self.tools = tuple(tools)
+        self.needs = tuple(self.needs if needs is None else needs)
 
     def clone(self):
         return copy.deepcopy(self)
@@ -131,7 +139,7 @@ class Plugin:
                 )
                 if hasattr(member, "_cordify_tool"):
                     tools.append(callback)
-        dependencies = [*injections(self.setup).values()]
+        dependencies = [*getattr(self, "needs", ()), *injections(self.setup).values()]
         dependencies.extend(key for _, callback in hooks for key in injections(callback).values())
         if tools:
             dependencies.append(ToolRegistry)

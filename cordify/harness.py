@@ -85,6 +85,7 @@ class Harness:
                 ctx.provide(Agent, agent)
                 await ctx.install(pending)
                 ctx.effect(agent.aclose)
+                await ctx.settle()
                 agent.start()
                 yield agent
         finally:
