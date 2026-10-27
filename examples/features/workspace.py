@@ -23,6 +23,6 @@ class FailureNudge(Plugin):
         if result.is_error:
             self.failures += 1
             if self.failures == self.threshold:
-                await agent.inject("Prüfe den Dateipfad, bevor du das Tool erneut aufrufst.")
+                await agent.inject("Check the file path before calling the tool again.")
             return result.with_note("Check the file path before trying again.")
         return result

@@ -21,7 +21,7 @@ async def main():
             deepseek(model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")),
             fs_local(workspace),
             fs_tools(),
-            persona("Du hilfst beim Verständnis dieses Python-Projekts. Antworte auf Deutsch."),
+            persona("Help the user understand this Python project. Answer in English."),
             agents_md(workspace / "AGENTS.md"),
             session_jsonl(root=".sessions"),
         ]
@@ -29,7 +29,7 @@ async def main():
 
     # Opening this id again resumes the saved history.
     async with harness.session("project-tour", max_steps=8) as agent:
-        async for event in agent.stream("Lies pyproject.toml und erkläre mir das Paket."):
+        async for event in agent.stream("Read pyproject.toml and explain the package."):
             match event:
                 case AssistantChunk(text=text):
                     print(text, end="", flush=True)

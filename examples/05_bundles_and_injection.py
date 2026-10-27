@@ -22,7 +22,7 @@ async def main():
         [
             [ModelChunk(tool_call=ToolCall("count_lines", {"path": "missing-example-file.txt"}))],
             [ModelChunk(tool_call=ToolCall("count_lines", {"path": "missing-example-file.txt"}))],
-            "Die Datei fehlt. Ich prüfe zuerst den Pfad.",
+            "The file is missing. I will check the path first.",
         ]
     )
     harness = Harness(
@@ -38,7 +38,7 @@ async def main():
     )
 
     async with harness.session("bundles") as agent:
-        async for event in agent.stream("Zähle die Zeilen in der Beispieldatei."):
+        async for event in agent.stream("Count the lines in the example file."):
             match event:
                 case ToolProgress(text=text):
                     print(f"Progress: {text}")

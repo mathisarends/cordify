@@ -27,18 +27,18 @@ async def main():
     harness = Harness([agent_loop(), llm(model)])
 
     async with harness.session("inbox") as agent:
-        await agent.inject("Stiller Kontext: Das Projekt verwendet Python 3.12+.")
-        print(f"Nach inject: {agent.status}, {len(model.requests)} Requests")
+        await agent.inject("Silent context: This project uses Python 3.12+.")
+        print(f"After inject: {agent.status}, {len(model.requests)} requests")
 
-        await agent.followup("Analysiere das Projekt.")
+        await agent.followup("Analyze the project.")
         await model.started.wait()
 
         # The current model call keeps its snapshot. These land in its next step.
-        await agent.steer("Konzentriere dich auf die Tests.")
-        await agent.inject("Zusätzlicher Kontext: Es gibt bereits Unit-Tests.")
+        await agent.steer("Focus on the tests.")
+        await agent.inject("Additional context: Unit tests already exist.")
 
         # This gets a separate turn after the current one finishes.
-        await agent.followup("Schreibe anschließend eine Zusammenfassung.")
+        await agent.followup("Write a summary afterward.")
         model.proceed.set()
         await agent.when_idle()
 
@@ -48,11 +48,11 @@ async def main():
                 if message.role == "user":
                     print(f"  {message.content}")
         turns = agent.session.turns
-        print(f"\n{len(turns)} Turns, {len(model.requests)} Steps, Status: {agent.status}")
+        print(f"\n{len(turns)} turns, {len(model.requests)} steps, status: {agent.status}")
         for number, turn in enumerate(turns, 1):
-            print(f"Turn {number}: {len(turn.steps)} Steps, Grund: {turn.reason}")
+            print(f"Turn {number}: {len(turn.steps)} steps, reason: {turn.reason}")
             for step in turn.steps:
-                print(f"  Step {step.number}: Modell {step.request.model}, beendet: {step.closed}")
+                print(f"  Step {step.number}: model {step.request.model}, closed: {step.closed}")
 
 
 if __name__ == "__main__":

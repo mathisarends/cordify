@@ -24,8 +24,8 @@ async def main():
     model = ScriptedLLM(
         [
             [ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))],
-            [ModelChunk(text="Das Ergebnis "), ModelChunk(text="ist 42.")],
-            "Ich habe 19 und 23 mit dem add-Tool addiert.",
+            [ModelChunk(text="The result "), ModelChunk(text="is 42.")],
+            "I added 19 and 23 using the add tool.",
         ]
     )
     harness = Harness(
@@ -33,12 +33,12 @@ async def main():
             agent_loop(),
             llm(model),
             calculator(),
-            persona("Antworte kurz und auf Deutsch."),
+            persona("Keep your answers concise and in English."),
         ]
     )
 
     async with harness.session("calculator") as agent:
-        async for event in agent.stream("Was ist 19 + 23?"):
+        async for event in agent.stream("What is 19 + 23?"):
             match event:
                 case AssistantChunk(text=text):
                     print(text, end="", flush=True)
@@ -48,9 +48,9 @@ async def main():
                     print(f"<- {result.content}")
         print()
 
-        result = await agent.run("Wie hast du das berechnet?")
+        result = await agent.run("How did you calculate that?")
         print(result.text)
-        print(f"{len(agent.session.events)} Events, {len(model.requests)} Modellaufrufe")
+        print(f"{len(agent.session.events)} events, {len(model.requests)} model calls")
 
 
 if __name__ == "__main__":

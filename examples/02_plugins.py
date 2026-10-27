@@ -33,7 +33,7 @@ async def notes_backend(ctx: Context):
 
 @dataclass(frozen=True)
 class NotesConfig:
-    instruction: str = "Nutze save_note für Notizen."
+    instruction: str = "Use save_note to save notes."
 
 
 @plugin(needs=[Notes, ToolRegistry, SystemPrompt])
@@ -74,12 +74,8 @@ async def main():
             llm(
                 ScriptedLLM(
                     [
-                        [
-                            ModelChunk(
-                                tool_call=ToolCall("save_note", {"text": "Cordify ausprobieren"})
-                            )
-                        ],
-                        "Die Notiz wurde gespeichert.",
+                        [ModelChunk(tool_call=ToolCall("save_note", {"text": "Try Cordify"}))],
+                        "The note has been saved.",
                     ]
                 )
             ),
@@ -91,7 +87,7 @@ async def main():
     )
 
     async with harness.session("notes") as agent:
-        print((await agent.run("Speichere eine Notiz.")).text)
+        print((await agent.run("Save a note.")).text)
         print(agent.ctx[Notes].entries)
 
 
