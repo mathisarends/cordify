@@ -11,6 +11,17 @@ if TYPE_CHECKING:
     from .context import Context
     from .plugin import PluginSpec
 
+type HookEntry = tuple[type[Event], Callable] | tuple[type[Event], Callable, int]
+
+
+def _hooks(entries: Iterable[HookEntry]):
+    for entry in entries:
+        if len(entry) == 2:
+            yield (*entry, 0)
+        else:
+            event, callback, priority = entry
+            yield event, callback, priority
+
 
 class Registration(Protocol):
     needs: tuple[Any, ...]
@@ -24,13 +35,17 @@ class Bundle:
         self._hooks: list[tuple] = []
         self._registrations: list[tuple[Registration, Callable]] = []
 
-    def add_hook(self, event: type[Event], callback: Callable, *, prepend: bool = False):
-        self._hooks.append((event, callback, prepend))
+    def add_hook(
+        self, event: type[Event], callback: Callable, *, prepend: bool = False, priority: int = 0
+    ):
+        if type(priority) is not int:
+            raise TypeError("Listener priority must be an integer")
+        self._hooks.append((event, callback, prepend, priority))
         return callback
 
-    def on(self, event: type[Event], fn=None, *, prepend: bool = False):
+    def on(self, event: type[Event], fn=None, *, prepend: bool = False, priority: int = 0):
         def register(callback):
-            return self.add_hook(event, callback, prepend=prepend)
+            return self.add_hook(event, callback, prepend=prepend, priority=priority)
 
         return register(fn) if fn is not None else register
 
@@ -44,13 +59,13 @@ class Bundle:
         hooks, registrations = tuple(self._hooks), tuple(self._registrations)
         needs = [
             *self.needs,
-            *(key for _, callback, _ in hooks for key in injections(callback).values()),
+            *(key for _, callback, _, _ in hooks for key in injections(callback).values()),
         ]
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
         async def mount(ctx):
-            for event, callback, prepend in hooks:
-                ctx.on(event, callback, prepend=prepend)
+            for event, callback, prepend, priority in hooks:
+                ctx.on(event, callback, prepend=prepend, priority=priority)
             for registration, callback in registrations:
                 await resolve(registration.mount(ctx, callback))
             yield
@@ -67,7 +82,7 @@ class Plugin:
         self,
         *,
         name: str | None = None,
-        hooks: Iterable[tuple[type[Event], Callable]] = (),
+        hooks: Iterable[HookEntry] = (),
         needs: Iterable | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
     ):
@@ -94,19 +109,20 @@ class Plugin:
         members = {}
         for base in reversed(type(self).__mro__):
             members.update(vars(base))
-        hooks = list(getattr(self, "hooks", ()))
+        hooks = list(_hooks(getattr(self, "hooks", ())))
         registrations = list(self._registration_entries())
         for name, member in members.items():
             if callable(member):
                 callback = getattr(self, name)
                 hooks.extend(
-                    (event, callback) for event, _ in getattr(member, "_cordify_hooks", ())
+                    (event, callback, priority)
+                    for event, _, priority in getattr(member, "_cordify_hooks", ())
                 )
                 registrations.extend(
                     (recipe, callback) for recipe in getattr(member, "_cordify_registrations", ())
                 )
         needs = [*getattr(self, "needs", ()), *injections(self.setup).values()]
-        needs.extend(key for _, callback in hooks for key in injections(callback).values())
+        needs.extend(key for _, callback, _ in hooks for key in injections(callback).values())
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
         async def mount(ctx):
@@ -114,16 +130,16 @@ class Plugin:
             bound = _lifecycle_arguments(instance.setup, ctx)
             await resolve(instance.setup(*bound.args, **bound.kwargs))
             try:
-                for event, callback in getattr(instance, "hooks", ()):
-                    ctx.on(event, callback)
+                for event, callback, priority in _hooks(getattr(instance, "hooks", ())):
+                    ctx.on(event, callback, priority=priority)
                 for registration, callback in instance._registration_entries():
                     await resolve(registration.mount(ctx, callback))
                 for name, member in members.items():
                     if not callable(member):
                         continue
                     callback = getattr(instance, name)
-                    for event, prepend in getattr(member, "_cordify_hooks", ()):
-                        ctx.on(event, callback, prepend=prepend)
+                    for event, prepend, priority in getattr(member, "_cordify_hooks", ()):
+                        ctx.on(event, callback, prepend=prepend, priority=priority)
                     for registration in getattr(member, "_cordify_registrations", ()):
                         await resolve(registration.mount(ctx, callback))
                 yield

@@ -14,7 +14,7 @@ class Event[R]:
 
 
 class Emit(Event[None]):
-    """Await observers in registration order."""
+    """Await observers by ascending priority, then registration order."""
 
 
 class Bail[R](Event[R | None]):
@@ -34,6 +34,7 @@ class _Listener:
     event: type[Event[Any]]
     callback: Any
     owner: "Context"
+    priority: int = 0
     active: bool = True
 
 
@@ -42,11 +43,13 @@ class EventBus:
         self.parent = parent
         self.listeners: list[_Listener] = []
 
-    def on(self, owner: "Context", event, callback, *, prepend=False) -> Disposer:
+    def on(self, owner: "Context", event, callback, *, prepend=False, priority=0) -> Disposer:
         if not isinstance(event, type) or not issubclass(event, Event):
             raise TypeError("Listener keys must be Event classes")
         owner._check_open()
-        listener = _Listener(event, callback, owner)
+        if type(priority) is not int:
+            raise TypeError("Listener priority must be an integer")
+        listener = _Listener(event, callback, owner, priority)
         self.listeners.insert(0, listener) if prepend else self.listeners.append(listener)
 
         def remove():
@@ -57,14 +60,17 @@ class EventBus:
 
     def matching(self, event):
         inherited = self.parent.matching(event) if self.parent is not None else []
-        return [
-            *inherited,
-            *(
-                listener
-                for listener in tuple(self.listeners)
-                if isinstance(event, listener.event) and listener.owner._registrations_active()
-            ),
-        ]
+        return sorted(
+            [
+                *inherited,
+                *(
+                    listener
+                    for listener in tuple(self.listeners)
+                    if isinstance(event, listener.event) and listener.owner._registrations_active()
+                ),
+            ],
+            key=lambda listener: listener.priority,
+        )
 
     async def dispatch[R](self, ctx: "Context", event: Event[R], *, default=None) -> R:
         listeners = self.matching(event)
@@ -112,9 +118,15 @@ class EventBus:
         return cast(R, None)
 
 
-def on(event: type[Event], *, prepend: bool = False):
+def on(event: type[Event], *, prepend: bool = False, priority: int = 0):
+    if type(priority) is not int:
+        raise TypeError("Listener priority must be an integer")
+
     def decorate(callback):
-        callback._cordify_hooks = [*getattr(callback, "_cordify_hooks", ()), (event, prepend)]
+        callback._cordify_hooks = [
+            *getattr(callback, "_cordify_hooks", ()),
+            (event, prepend, priority),
+        ]
         return callback
 
     return decorate

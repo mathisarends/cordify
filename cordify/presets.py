@@ -38,11 +38,11 @@ class Harness:
     def tool(self):
         return self._bundle.tool
 
-    def on(self, event, fn=None, *, prepend: bool = False):
-        return self._bundle.on(event, fn, prepend=prepend)
+    def on(self, event, fn=None, *, prepend: bool = False, priority: int = 0):
+        return self._bundle.on(event, fn, prepend=prepend, priority=priority)
 
-    def add_hook(self, event, callback, *, prepend: bool = False):
-        return self._bundle.add_hook(event, callback, prepend=prepend)
+    def add_hook(self, event, callback, *, prepend: bool = False, priority: int = 0):
+        return self._bundle.add_hook(event, callback, prepend=prepend, priority=priority)
 
     def add_tool(self, callback, **options):
         return self._bundle.add_tool(callback, **options)

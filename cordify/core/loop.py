@@ -115,17 +115,17 @@ class Agent:
     def inbox(self):
         return self.session.inbox
 
-    def on(self, event, fn=None, *, prepend: bool = False):
+    def on(self, event, fn=None, *, prepend: bool = False, priority: int = 0):
         owner = Context.current() or self.ctx
-        return owner.on(event, fn, prepend=prepend)
+        return owner.on(event, fn, prepend=prepend, priority=priority)
 
     @property
     def tool(self):
         return self.ctx[ToolRegistry].tool
 
-    def add_hook(self, event, callback, *, prepend: bool = False) -> Disposer:
+    def add_hook(self, event, callback, *, prepend: bool = False, priority: int = 0) -> Disposer:
         owner = Context.current() or self.ctx
-        return owner.add_listener(event, callback, prepend=prepend)
+        return owner.add_listener(event, callback, prepend=prepend, priority=priority)
 
     def add_tool(self, callback, **options) -> Disposer:
         return self.ctx[ToolRegistry].register(callback, **options)

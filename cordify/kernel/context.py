@@ -134,19 +134,21 @@ class Context:
         self.effect(child.aclose)
         return child
 
-    def on[E: Event[Any]](self, event: type[E], fn=None, *, prepend: bool = False):
+    def on[E: Event[Any]](
+        self, event: type[E], fn=None, *, prepend: bool = False, priority: int = 0
+    ):
         self._check_open()
 
         def register(callback):
-            self.add_listener(event, callback, prepend=prepend)
+            self.add_listener(event, callback, prepend=prepend, priority=priority)
             return callback
 
         return register(fn) if fn is not None else register
 
     def add_listener[E: Event[Any]](
-        self, event: type[E], callback: Callable, *, prepend: bool = False
+        self, event: type[E], callback: Callable, *, prepend: bool = False, priority: int = 0
     ) -> Disposer:
-        return self._scope.event_bus.on(self, event, callback, prepend=prepend)
+        return self._scope.event_bus.on(self, event, callback, prepend=prepend, priority=priority)
 
     def _listeners(self, event):
         return self._scope.event_bus.matching(event)

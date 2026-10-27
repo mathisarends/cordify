@@ -4,9 +4,8 @@ from typing import Any, ClassVar, overload
 
 from ..kernel import Context
 from ..kernel.declarations import Bundle as KernelBundle
+from ..kernel.declarations import HookEntry, Registration
 from ..kernel.declarations import Plugin as KernelPlugin
-from ..kernel.declarations import Registration
-from ..kernel.events import Event
 from ..kernel.events import on as hook
 from ..kernel.plugin import PluginLike
 from .scheduling import ResourceSpec, resource_spec
@@ -122,7 +121,7 @@ class Plugin(KernelPlugin):
         self,
         *,
         name: str | None = None,
-        hooks: Iterable[tuple[type[Event], Callable]] = (),
+        hooks: Iterable[HookEntry] = (),
         tools: Iterable[Callable] = (),
         needs: Iterable | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
