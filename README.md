@@ -1,63 +1,65 @@
 # Cordify
 
-Ein natives Python-SDK für einen Agent-Harness: Context, Services, Plugins,
-typisierte Events, Session-Log und ein austauschbarer ReAct-Loop. Inspiriert von
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) und
-[Cordis](https://github.com/cordiverse/cordis), mit deren Begriffen und Python-APIs.
-Keine API- oder Dateiformat-Kompatibilität mit den TypeScript-Projekten.
+A native Python SDK for an agent harness: Context, services, plugins, typed
+events, a session log, and a replaceable ReAct loop. Inspired by
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and
+[Cordis](https://github.com/cordiverse/cordis), using their terminology with
+Python APIs. Cordify does not provide API or file format compatibility with
+the TypeScript projects.
 
-Python **3.12–3.14**, PEP-695-Generics, keine Runtime-Abhängigkeiten im Kern.
-Das Paket liegt direkt in `cordify/`.
+Python **3.12–3.14**, PEP 695 generics, and no runtime dependencies in the core.
+The package lives directly in `cordify/`.
 
-## Paketstruktur
+## Package structure
 
 ```text
 cordify/
-  kernel/                Context, Keys, DI, Events, Effekte, Plugin-Lifecycle
+  kernel/                Context, keys, DI, events, effects, plugin lifecycle
     context.py
     plugin.py
-    declarations.py      Agent-unabhängige Plugins, Bundles, Registration-Rezepte
+    declarations.py      Agent-independent plugins, bundles, registration recipes
     events.py
     effects.py
     di.py
     keys.py
-  seams/                 Protocols und unveränderliche Datenverträge
+  seams/                 Protocols and immutable data contracts
     llm.py, fs.py, shell.py, approver.py
     tokens.py, compaction.py, spill.py, models.py
-  core/                  Agent-Invarianten und öffentliche Core-Events
+  core/                  Agent invariants and public core events
     loop.py, session.py, inbox.py, approvals.py, tools.py, scheduling.py, prompt.py, events.py
-    features.py          Tool-Deklarationen als Kernel-Registrierungen
+    features.py          Tool declarations as kernel registrations
     attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py
   plugins/
-    context/             Instructions, Observations, Compaction, Spill
-    tools/               Datei- und Shell-Tools
-    permissions/         Approvals und Rules
-    agents/              Registrierung des Standard-Loops
-    observe/             Token-Zählung und Cache-Usage; kein OTel
-    services.py          Registry-, Prompt- und LLM-Service-Provider
-    persistence.py       JSONL-Plugin
-  adapters/              DeepSeek, lokale FS/Shell, JSONL, Spill, Counter,
-                         Compactor und deterministischer Replay-Adapter
-    base.py              Optionale BaseLLM mit RetryPolicy
-    sse.py               Gemeinsames SSE-Data-Framing für Streaming-Adapter
+    context/             Instructions, observations, compaction, spill
+    tools/               File and shell tools
+    permissions/         Approvals and rules
+    agents/              Default loop registration
+    observe/             Token counting and cache usage; no OTel
+    services.py          Registry, prompt, and LLM service providers
+    persistence.py       JSONL plugin
+  adapters/              DeepSeek, local FS/shell, JSONL, spill, token counter,
+                         compactor, and deterministic replay adapter
+    base.py              Optional BaseLLM with RetryPolicy
+    sse.py               Shared SSE data framing for streaming adapters
   presets.py             Harness, minimal(), coding(), headless()
-  testing.py             Test-Helfer
-  __init__.py            Kompakte öffentliche API
+  testing.py             Test helpers
+  __init__.py            Compact public API
 ```
 
-Die Import-Richtung ist **kernel ← seams ← core ← plugins/adapters ← presets**.
-Architekturtests prüfen die Grenzen. `cordify.kernel` lädt keine Agents,
-Adapter oder Drittanbieterpakete. Der Kernel kennt generische Registrierungs-
-Rezepte; die ToolRegistry-Anbindung entsteht erst in `core.features`.
-`kernel.Plugin` ist die allgemeine Basis, `cordify.Plugin` ergänzt die
-Agent-Komfort-API mit `tools=[...]` und `.tool`-Bundles.
+Dependencies point toward the lower layers:
+**kernel ← seams ← core ← plugins/adapters ← presets**.
+Architecture tests enforce these boundaries. `cordify.kernel` loads no agents,
+adapters, or third-party packages. The kernel provides generic registration
+recipes; `core.features` connects them to ToolRegistry.
+`kernel.Plugin` is the general base, while `cordify.Plugin` adds agent
+conveniences such as `tools=[...]` and bundles with `.tool`.
 
-### Seams verwenden Protocol
+### Seams use Protocol
 
-`FS`, `LLM`, `Shell`, `Approver`, `TokenCounter`, `Compactor` und `SpillStore`
-sind schmale `typing.Protocol`-Verträge. Das gilt auch für die internen Verträge
-`AgentFactory` und `SessionPersistence`. Implementierungen erfüllen die Methoden
-strukturell und benötigen keine Cordify-Basisklasse:
+`FS`, `LLM`, `Shell`, `Approver`, `TokenCounter`, `Compactor`, and `SpillStore`
+are small `typing.Protocol` contracts. The internal `AgentFactory` and
+`SessionPersistence` contracts follow the same pattern. Implementations satisfy
+these contracts structurally and do not need a Cordify base class:
 
 ```python
 from pathlib import Path
@@ -74,7 +76,7 @@ class MemoryFiles:
         self.files[str(path)] = text
 
 
-# Erst die Integration kennt Cordify; die Implementierung oben bleibt unabhängig.
+# Only the integration imports Cordify; the implementation above stays independent.
 from cordify import Context, FS
 
 async with Context() as ctx:
@@ -82,18 +84,18 @@ async with Context() as ctx:
     await ctx[FS].write(Path("note.txt"), "hello")
 ```
 
-Typprüfer vergleichen die Methodensignaturen. Die DI registriert Implementierungen
-explizit unter dem Protocol-Key und verlangt keine nominale Vererbung oder
-`isinstance`-Prüfung gegen den Seam. Gemeinsame Implementierungslogik gehört in
-Adapter oder Plugins; die Datenverträge bleiben unveränderliche Werttypen.
-Die Tests führen fremde FS-, LLM-, Shell- und Approver-Implementierungen ohne
-Vererbung durch die echte DI-, Approval- und Tool-Pipeline.
-Für Adapter mit gemeinsamer Implementierungslogik gibt es zusätzlich eine
-optionale `BaseLLM`; der gespeicherte Service-Key bleibt `LLM`.
+Type checkers compare method signatures. DI registers implementations explicitly
+under a Protocol key; it requires neither nominal inheritance nor an `isinstance`
+check against the seam. Shared implementation logic belongs in adapters or
+plugins; data contracts remain immutable value types.
+The tests run independent FS, LLM, Shell, and Approver implementations through
+the actual DI, approval, and tool pipelines without inheritance.
+An optional `BaseLLM` supports adapters that share implementation logic;
+the registered service key remains `LLM`.
 
-Die alten flachen Modulpfade und `cordify.std` sind entfernt. Root-Imports wie
-`from cordify import Harness, Plugin, Inject` bleiben verfügbar. Konkrete
-Implementierungen werden aus ihrer Schicht importiert:
+The old flat module paths and `cordify.std` have been removed. Root imports such
+as `from cordify import Harness, Plugin, Inject` remain available. Import
+concrete implementations from their respective layers:
 
 ```python
 from cordify.kernel import Context, Key, plugin
@@ -102,44 +104,44 @@ from cordify.plugins.context.compaction import ThresholdCompaction
 from cordify.presets import minimal, coding, headless
 
 agent = minimal(DeepSeekLLM(model="deepseek-flash"))
-# coding(adapter, root="./repo", shell=True) ergänzt Dateitools und Shell explizit.
+# coding(adapter, root="./repo", shell=True) explicitly adds file tools and a shell.
 ```
 
-OTel und zusätzliche Extras für nicht implementierte Fähigkeiten sind nicht
-enthalten. MCP, Sandbox-Backends, Checkpoints, Subagents, weitere Modelladapter
-und ein Voice-Preset können später in diesen Schichten ergänzt werden.
+OTel and extras for unimplemented capabilities are not included. MCP, sandbox
+backends, checkpoints, subagents, additional model adapters, and a voice preset
+can be added within these layers later.
 
 ```sh
 python -m pip install -e .
 python -m examples.01_tool_agent
 ```
 
-Ausführbare Beispiele (aus dem Repository-Root):
+Runnable examples (from the repository root):
 
-| Befehl | Zeigt |
+| Command | Demonstrates |
 | --- | --- |
-| `python -m examples.01_tool_agent` | Tool-Loop, Token-Stream, weiterer Turn |
-| `python -m examples.02_plugins` | Eigene Services, Konfiguration, Middleware, Cleanup |
-| `python -m examples.03_inbox` | Follow-up, Steering und stille Injection mit expliziten Turn-/Step-Projektionen |
-| `python -m examples.04_deepseek` | Echter DeepSeek-Adapter, Dateitools und JSONL-Resume |
-| `python -m examples.05_bundles_and_injection` | Wiederverwendbare Module, Klassen, DI, Approval, Progress, Nudges |
-| `python -m examples.06_explicit_registration` | Plugins und Hooks ohne Dekoratoren |
-| `python -m examples.07_context` | Alle fünf Kontextwege: Sektionen, Aufgaben-Kontext, Anhänge, Push und Pull |
-| `python -m examples.08_observations` | Browserzustand pro Step: voller aktueller Zustand, kompakte alte Zustände |
-| `python -m examples.09_rules` | TestDiscipline als Klasse und deklarative Rules |
-| `python -m examples.10_context_strategies` | Spill, Compaction, Observation-Limit und Cache-Metadaten gemeinsam |
-| `python -m examples.11_temporal_needs` | Umkehrbare Tools, Prompt-Sektionen, Listener und eigene Effekte bei Service-Wechsel |
-| `python -m examples.12_layered_sdk` | Neuer Schichtenaufbau, eigenständiger Kernel und Presets |
-| `python -m examples.13_llm_adapters` | Eigener BaseLLM-Adapter mit Retry und struktureller Adapter ohne Vererbung |
-| `python -m examples.14_session_log` | Dauerhafte Chunks, reine Log-Projektionen, Request-Replay und unabhängiger Fork |
-| `python -m examples.15_tool_output_limits` | 2-MB-Ausgabe begrenzen, ExecuteTool-Waterfall und Weiterlesen mit offset/limit |
-| `python -m examples.16_compaction_policies` | Threshold, Turn-Fenster, periodische Compaction, geschützte Turns und Budget-Guard |
-| `python -m examples.17_resume_crash` | Prozessneustart mit dauerhaften Freigaben, Inbox und archiviertem JSONL-Tail |
-| `python -m examples.18_parallel_tools` | Parallele Calls, stabile Results und Dateikonflikte mit Ressourcen-Schlüsseln |
-| `python -m examples.19_approvals_and_priorities` | Headless-Approval, Antwort-Timeout und explizite Waterfall-Prioritäten |
+| `python -m examples.01_tool_agent` | Tool loop, token stream, and a follow-up turn |
+| `python -m examples.02_plugins` | Custom services, configuration, middleware, and cleanup |
+| `python -m examples.03_inbox` | Follow-up, steering, and silent injection with explicit turn/step projections |
+| `python -m examples.04_deepseek` | Live DeepSeek adapter, file tools, and JSONL resume |
+| `python -m examples.05_bundles_and_injection` | Reusable modules, classes, DI, approval, progress, and nudges |
+| `python -m examples.06_explicit_registration` | Plugins and hooks without decorators |
+| `python -m examples.07_context` | All five context paths: sections, task context, attachments, push, and pull |
+| `python -m examples.08_observations` | Browser state per step: full current state and compact older states |
+| `python -m examples.09_rules` | TestDiscipline as a class and declarative Rules |
+| `python -m examples.10_context_strategies` | Spill, compaction, observation limits, and cache metadata together |
+| `python -m examples.11_temporal_needs` | Reversible tools, prompt sections, listeners, and custom effects as services change |
+| `python -m examples.12_layered_sdk` | Layered architecture, standalone kernel, and presets |
+| `python -m examples.13_llm_adapters` | Custom BaseLLM adapter with retries and a structural adapter without inheritance |
+| `python -m examples.14_session_log` | Durable chunks, pure log projections, request replay, and an independent fork |
+| `python -m examples.15_tool_output_limits` | Bounding a 2 MB output, ExecuteTool waterfall, and reading with offset/limit |
+| `python -m examples.16_compaction_policies` | Threshold, turn window, periodic compaction, preserved turns, and budget guard |
+| `python -m examples.17_resume_crash` | Process restart with durable approvals, inbox, and archived JSONL tail |
+| `python -m examples.18_parallel_tools` | Parallel calls, stable results, and file conflicts using resource keys |
+| `python -m examples.19_approvals_and_priorities` | Headless approval, response timeout, and explicit waterfall priorities |
 
-Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
-Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
+Only example 04 needs an API key and the `deepseek` extra. The other examples
+use deterministic model responses to demonstrate the SDK.
 
 ```python
 import asyncio
@@ -164,82 +166,83 @@ async def main():
     harness = Harness(
         [
             agent_loop(),
-            llm(ScriptedLLM(["Hallo aus Cordify."])),
+            llm(ScriptedLLM(["Hello from Cordify."])),
             fs_local("."),
             workspace,
         ]
     )
     async with harness.session("demo") as agent:
-        print((await agent.run("Hallo!")).text)
+        print((await agent.run("Hello!")).text)
 
 
 asyncio.run(main())
 ```
 
-Unmarkierte Tool-Parameter liefert das Modell; `Inject[T]` löst der Harness bei
-jedem Aufruf aus dem Context auf. Inject-Parameter fehlen im Modell-Schema.
-Tools mit fehlenden Services sind unsichtbar. Eine Registrierung ruft das Tool
-nicht auf; dekorierte Tool- und Hook-Funktionen bleiben direkt testbar.
+The model supplies unmarked tool parameters; the harness resolves `Inject[T]`
+from the Context on every call. Injected parameters are absent from the model
+schema. Tools with missing services are hidden. Registration does not invoke a
+tool; decorated tool and hook functions remain directly testable.
 
-Unterstützte Formen: Async-Generator mit `@plugin` oder `@plugin(...)`, `Bundle`,
-`Plugin`-Klassen mit `@hook`/`@tool`, explizite `Plugin(hooks=..., tools=...)` sowie
-`add_hook`/`add_tool`. Jede Montage besitzt einen eigenen Cleanup-Stack.
+Supported forms include async generators with `@plugin` or `@plugin(...)`,
+`Bundle`, `Plugin` classes with `@hook`/`@tool`, explicit
+`Plugin(hooks=..., tools=...)`, and `add_hook`/`add_tool`.
+Each mount owns its own cleanup stack.
 
-## Turns, Steps und Inbox
 
-Ein **Turn** bearbeitet eine Nutzeranfrage bis zu ihrem Abschluss. Er enthält
-einen oder mehrere **Steps**. Ein Step umfasst genau einen Modellaufruf und die
-daraus folgenden Tool-Ausführungen, einschließlich Policy und Ergebnis-Review.
-`StepEnd` kommt nach den Tool-Ergebnissen. Braucht das Modell weitere Tools,
-beginnt anschließend ein weiterer Step desselben Turns.
+## Turns, steps, and the inbox
 
-Die Inbox ist ein unveränderlicher Snapshot aus dem Session-Log. Sie trennt das
-Ziel einer Eingabe von der Frage, ob diese Eingabe Arbeit anfordert:
+A **turn** handles one user request through completion. It contains one or more
+**steps**. A step consists of exactly one model call and the resulting tool
+executions, including policy and result review. `StepEnd` follows the tool
+results. If the model needs more tools, another step begins in the same turn.
 
-| API | Ziel | Weckt auf | Während eines laufenden Turns |
+The inbox is an immutable snapshot derived from the session log. It separates
+an input's target from whether that input requests work:
+
+| API | Target | Wakes the agent | During an active turn |
 | --- | --- | --- | --- |
-| `await agent.followup(text)` | Nächster Turn | Ja | Wartet bis zum Abschluss des aktuellen Turns |
-| `await agent.steer(text)` | Nächster Step | Ja | Fordert einen weiteren Step zur Kurskorrektur an |
-| `await agent.inject(text)` | Nächster Step | Nein | Wartet auf den nächsten ohnehin nötigen Step |
+| `await agent.followup(text)` | Next turn | Yes | Waits for the current turn to finish |
+| `await agent.steer(text)` | Next step | Yes | Requests another step to change course |
+| `await agent.inject(text)` | Next step | No | Waits for the next step that would happen anyway |
 
-Eine stille Injection verlängert einen ansonsten abgeschlossenen Turn nicht.
-Sie bleibt in der Inbox, bis ein Tool-Fortgang, Steering, Follow-up oder ein
-Fortsetzungs-Hook den nächsten Step auslöst. Auch im Idle erzeugt `inject()`
-keinen Modellaufruf. `steer()` im Idle startet einen Turn, damit die Korrektur
-verarbeitet werden kann. Mehrere Follow-ups werden FIFO in separaten Turns
-bearbeitet; der nächste wartende Turn kann direkt anschließen.
+A silent injection does not extend an otherwise completed turn. It stays in
+the inbox until tool continuation, steering, a follow-up, or a continuation
+hook triggers the next step. Even when idle, `inject()` does not cause a model
+call. Calling `steer()` while idle starts a turn to process the correction.
+Multiple follow-ups run FIFO in separate turns; the next queued turn may start
+immediately after the current one.
 
 ```python
 from cordify import system
 
-await agent.inject(system("Die Tür wurde geöffnet."))  # bleibt im Idle liegen
-await agent.followup("Prüfe den Raum.")  # weckt auf, neuer Turn
+await agent.inject(system("The door was opened."))  # Stays queued while idle.
+await agent.followup("Check the room.")  # Wakes the agent for a new turn.
 
-# Während Modell oder Tools arbeiten:
-await agent.steer("Prüfe zuerst die Tür.")  # nächster Step desselben Turns
-await agent.followup("Erstelle danach einen Bericht.")  # separater Turn
-await agent.when_idle()  # wartet auf den gesamten Lauf
+# While the model or tools are working:
+await agent.steer("Check the door first.")  # Next step of the same turn.
+await agent.followup("Write a report afterward.")  # Separate turn.
+await agent.when_idle()  # Waits for the entire run.
 ```
 
-Ein bereits laufender Modellaufruf behält seinen Request-Snapshot. Steering
-unterbricht auch kein laufendes Tool; die Korrektur gelangt an die nächste
-Step-Grenze. `inject()` akzeptiert User- und System-Nachrichten, `steer()` und
-`followup()` User-Nachrichten. Strings sind User-Nachrichten.
+A model call already in progress keeps its request snapshot. Steering also
+leaves a running tool uninterrupted; the correction takes effect at the next
+step boundary. `inject()` accepts user and system messages; `steer()` and
+`followup()` accept user messages. Strings become user messages.
 
-Für jeden Step wählt `Inbox.for_step(number)` die Eingaben aus. Im ersten Step
-kommen höchstens ein Follow-up und die wartenden Step-Eingaben an die Reihe;
-weitere Steps erhalten ausschließlich Step-Eingaben. `Inbox.has_wakeup` und
-`Inbox.has_step_wakeup` halten Start und Fortsetzung auseinander. Die Zuordnung
-von Modus, Ziel und Wakeup wird beim Erzeugen beziehungsweise Laden eines
-`InboxAdded` geprüft und beim Resume aus dem Log rekonstruiert.
+For each step, `Inbox.for_step(number)` selects the inputs. The first step
+receives at most one follow-up plus queued step inputs; later steps receive
+only step inputs. `Inbox.has_wakeup` and `Inbox.has_step_wakeup` distinguish
+starting from continuing work. The mapping between mode, target, and wakeup is
+validated when an `InboxAdded` event is created or loaded and is reconstructed
+from the log on resume.
 
-`PreStep` läuft vor dem Modellaufruf. Dort injizierter Push-Kontext erreicht noch
-den vorbereiteten Request. Lehnt ein Hook mit `StepDecision.reject()` ab, bleibt
-die Eingabe erhalten: Es gibt einen abgeschlossenen Turn mit Grund `rejected`,
-aber keinen Modell-Step. Ein neuer Wakeup kann einen weiteren Versuch auslösen.
+`PreStep` runs before the model call. Push context injected there reaches the
+request being prepared. If a hook returns `StepDecision.reject()`, the input
+stays queued: the turn closes with reason `rejected`, without a model step.
+A new wakeup can trigger another attempt.
 
-Turns und Steps sind selbst `frozen` Projektionen des Logs, keine zusätzliche
-veränderliche Historie:
+Turns and steps are themselves `frozen` log projections, with no separate
+mutable history:
 
 ```python
 from cordify import derive_turns
@@ -251,29 +254,29 @@ for turn in agent.session.turns:
         print(step.number, step.request, step.closed, step.reason)
 ```
 
-Step-Nummern beginnen in jedem Turn bei eins. Während des Laufs können Turn und
-Step noch offen sein (`closed=False`, `reason=None`); ein vor dem Request
-abgebrochener Step hat `request=None`. Abbruch, regulärer Abschluss und
-`max_steps` bleiben über ihre Events und Abschlussgründe sichtbar. Replay und
-Fork liefern dieselben Turn-/Step-Projektionen. Das ausführbare
-[`03_inbox.py`](examples/03_inbox.py) zeigt zwei Turns mit insgesamt drei Steps.
+Step numbers restart at one in each turn. While work is in progress, turns and
+steps may still be open (`closed=False`, `reason=None`); a step interrupted
+before its request has `request=None`. Cancellation, normal completion, and
+`max_steps` remain visible through their events and completion reasons. Replay
+and fork produce the same turn/step projections. The runnable
+[`03_inbox.py`](examples/03_inbox.py) shows two turns with three steps in total.
 
-## Kontext: fünf Wege
+## Context: five paths
 
-| Inhalt | Mechanismus | Lebensdauer und Platz |
+| Content | Mechanism | Lifetime and placement |
 | --- | --- | --- |
-| Rolle und feste Regeln | `section(stable=True)` | Statischer System-Prefix |
-| Tool-Doku | Signatur und Docstring bei `.tool` | Sichtbare Tool-Schemas im Request |
-| Änderbares Projektwissen | `section(stable=False)` | System-Prefix hinter stabilen Sektionen |
-| Aufgabe und Anhänge | `run(prompt, attachments=...)` | User-Nachricht im Log und in späterer Historie |
-| Kontext nur für diese Aufgabe | `run(..., context=...)` | Aktueller Turn; danach nur noch im Log |
-| Hinweis auf ein Ergebnis | `result.with_note(...)` | Tool-Ergebnis im Log und in der Historie |
-| Stiller Zusatzkontext | `inject(system(...))` | Nächster Step; weckt nicht auf |
-| Kurskorrektur | `steer(user(...))` | Nächster Step; weckt auf |
-| Browser- oder Screenzustand | `observe(Observation(...))` | Aktuell voll im Tail, frühere Zustände kurz |
-| Großes Wissen und Memory | Pull-Tools | Ergebnis nur bei tatsächlichem Abruf |
+| Role and fixed rules | `section(stable=True)` | Static system prefix |
+| Tool documentation | Signature and docstring at `.tool` registration | Visible tool schemas in the request |
+| Changing project knowledge | `section(stable=False)` | System prefix after stable sections |
+| Task and attachments | `run(prompt, attachments=...)` | User message in the log and subsequent history |
+| Context for this task only | `run(..., context=...)` | Current turn; retained only in the log afterward |
+| Note on a result | `result.with_note(...)` | Tool result in the log and history |
+| Silent additional context | `inject(system(...))` | Next step; does not wake the agent |
+| Course correction | `steer(user(...))` | Next step; wakes the agent |
+| Browser or screen state | `observe(Observation(...))` | Full current state in the tail, summaries of earlier states |
+| Large knowledge bases and memory | Pull tools | Results included only when requested |
 
-**1. System-Sektionen** für dauerhafte Regeln und dynamischen Projektkontext:
+**1. System sections** for persistent rules and dynamic project context:
 
 ```python
 from pathlib import Path
@@ -291,13 +294,13 @@ class ProjectInstructions(Plugin):
         )
 ```
 
-Stabile Sektionen kommen vor dynamischen Sektionen, innerhalb jeder Gruppe zählt
-`order`. Stabile Callable-Provider werden einmal pro Registrierung ausgewertet;
-Provider mit `stable=False` werden vor jedem Request neu ausgewertet. So bleibt
-der stabile Prompt-Präfix erhalten. Ein bestimmtes Cache-Verhalten eines
-Modellanbieters wird dadurch nicht garantiert. Plugin-Unload entfernt die Sektionen.
+Stable sections precede dynamic sections; `order` determines placement within
+each group. Stable callable providers are evaluated once per registration;
+providers with `stable=False` are evaluated before each request. This preserves
+the stable prompt prefix, without guaranteeing any particular provider cache
+behavior. Unloading the plugin removes its sections.
 
-**2. Kontext pro Aufgabe** und Anhänge:
+**2. Per-task context** and attachments:
 
 ```python
 from cordify import File, Image
@@ -309,14 +312,14 @@ result = await agent.run(
 )
 ```
 
-`context` erzeugt eigene System-Blöcke vor der Aufgabe. Sie gelten für alle Steps
-dieses Turns und verschwinden aus späteren Modell-Requests. Die Blöcke bleiben im
-Log. `File` liest Text, `Image` erzeugt ein Bild-Part aus einer lokalen Datei oder
-einer URL. Dateiinhalte werden beim Enqueue festgehalten; Anhänge bleiben als Teil
-der ursprünglichen User-Nachricht in der Historie. Bildverständnis hängt vom
-gewählten Modell ab. `followup` und `stream` akzeptieren dieselben Optionen.
+`context` creates separate system blocks before the task. They apply to all
+steps of that turn and disappear from later model requests, while remaining in
+the log. `File` reads text; `Image` creates an image part from a local file or
+URL. File contents are captured when queued; attachments remain in history as
+part of the original user message. Image understanding depends on the selected
+model. `followup` and `stream` accept the same options.
 
-**3. Während des Laufs** stille Nachrichten oder Steering:
+**3. During a run**, send silent messages or steering:
 
 ```python
 from cordify import system, user
@@ -325,11 +328,11 @@ await agent.inject(system("utils.py was modified externally."))
 await agent.steer(user("Focus on the auth module first."))
 ```
 
-Strings werden weiterhin als User-Nachrichten angenommen. Explizite `system()`-
-Nachrichten ergänzen den Kontext und ersetzen keine registrierten Prompt-Sektionen.
-Diese Nachrichten bleiben in Log und Modell-Historie erhalten.
+Strings are accepted as user messages. Explicit `system()` messages add context
+without replacing registered prompt sections. These messages remain in the log
+and model history.
 
-**4. Push-Kontext vor einem Step**, zum Beispiel Memory:
+**4. Push context before a step**, such as memory:
 
 ```python
 from cordify import Agent, Inject, Plugin, PreStep, hook, system
@@ -345,12 +348,12 @@ class RelevantMemories(Plugin):
         return await next_()
 ```
 
-`Memory` ist dabei ein eigener Service. Injections aus einem `PreStep`-Hook werden
-noch in **diesem** Step aufgenommen. Externe Injections nach dessen Aufnahmegrenze
-warten auf den nächsten Step. `ev.is_turn_start` und `ev.latest_user_text` erlauben
-gezielte Retrievals ohne eigene Turn-Zähler.
+`Memory` is a custom service here. Injections from a `PreStep` hook are included
+in **this** step. External injections arriving after its input boundary wait
+for the next step. `ev.is_turn_start` and `ev.latest_user_text` support targeted
+retrieval without maintaining your own turn counters.
 
-**5. Pull-Kontext durch ein Tool** nutzt dieselbe DI:
+**5. Pull context through a tool** uses the same DI:
 
 ```python
 memory_tools = Bundle("memory")
@@ -362,11 +365,11 @@ async def recall(query: str, memory: Inject[Memory]) -> list[str]:
     return await memory.search(query, k=5)
 ```
 
-Push eignet sich für Regeln und kleinen Kontext, der immer sichtbar sein soll;
-Pull für große Wissensbestände, die das Modell bei Bedarf abfragt.
-Eine ausführbare Implementierung einschließlich `Memory` steht in Beispiel 07.
+Push suits rules and small context that should always be visible; pull suits
+large knowledge bases that the model searches as needed. Example 07 includes
+a runnable implementation with a `Memory` service.
 
-## Observations für Browser und andere Live-Zustände
+## Observations for browsers and other live state
 
 ```python
 from cordify import Agent, Inject, Observation, Plugin, PreStep, hook
@@ -386,39 +389,39 @@ class BrowserObserver(Plugin):
         return await next_()
 ```
 
-`observe()` registriert synchron einen Zustand für den nächsten zugelassenen Step
-und weckt den Agenten nicht. Mehrere ausstehende Zustände derselben `source`
-werden auf den neuesten zusammengeführt. Im aktuellen Step erscheint `full`, in
-späteren Steps `summary`. Das Log behält beide Werte; `ModelRequested` speichert
-den jeweils tatsächlich verwendeten Request. Replay und Fork brauchen keinen
-erneuten Browserzugriff. Das ist eine eigene Projektion, keine Änderung alter Events.
-`Browser` ist ein eigener Service; Beispiel 08 enthält einen ausführbaren
-Browser-Dummy, den Observer sowie `click`- und `snapshot`-Tools.
+`observe()` synchronously records state for the next accepted step without
+waking the agent. Multiple pending states from the same `source` are coalesced
+to the latest one. The current step receives `full`; later steps receive
+`summary`. The log keeps both values, and `ModelRequested` stores the request
+actually used. Replay and fork need no new browser access. This is a separate
+projection that leaves earlier events unchanged.
+`Browser` is a custom service; example 08 includes a runnable fake browser,
+the observer, and `click` and `snapshot` tools.
 
-## Plugins und Injection
+## Plugins and injection
 
-### Umkehrbare Effekte
+### Reversible effects
 
-Jede aktive Registrierung gehört zum Cleanup-Stack ihres Contexts. Sie bekommt
-einen asynchronen, idempotenten **Disposer**: `await remove()` entfernt genau
-diese Registrierung. Beim Plugin-Teardown wird derselbe Disposer automatisch
-aufgerufen. Manuelle Entfernung und späterer Teardown funktionieren gemeinsam.
+Every active registration belongs to its Context's cleanup stack. It receives
+an asynchronous, idempotent **disposer**: `await remove()` removes that specific
+registration. Plugin teardown calls the same disposer automatically. Manual
+removal and later teardown work together.
 
-| Direkte Registrierung | Rückgabe |
+| Direct registration | Returns |
 | --- | --- |
-| `ctx.provide(Service, implementation)` | Disposer für den Service |
-| `ctx.add_listener(Event, callback)` | Disposer für den Listener |
-| `registry.register(callback, name="read")` | Disposer für das Tool |
-| `prompt.section("project", content)` | Disposer für die Prompt-Sektion |
-| `ctx.effect(cleanup)` | Disposer für einen eigenen synchronen oder asynchronen Effekt |
-| `agent.add_tool(callback)` / `agent.add_hook(Event, callback)` | Disposer für die laufende Session |
+| `ctx.provide(Service, implementation)` | Service disposer |
+| `ctx.add_listener(Event, callback)` | Listener disposer |
+| `registry.register(callback, name="read")` | Tool disposer |
+| `prompt.section("project", content)` | Prompt section disposer |
+| `ctx.effect(cleanup)` | Disposer for a custom synchronous or asynchronous effect |
+| `agent.add_tool(callback)` / `agent.add_hook(Event, callback)` | Disposer for the active session |
 
-Die Dekoratoren `@ctx.on(...)`, `@registry.tool` und `@agent.tool` geben weiterhin
-die ursprüngliche Funktion zurück. Ihre Registrierungen werden genauso
-automatisch entsorgt. `Harness` und `Bundle` sammeln zunächst Rezepte; die
-Effekte entstehen erst bei der Montage in einem Context.
-Auch über `agent.on` und `agent.add_hook` angelegte Listener gehören zum aktuell
-aktiven Plugin-Context; außerhalb eines Plugins gehören sie zur Session.
+The `@ctx.on(...)`, `@registry.tool`, and `@agent.tool` decorators still return
+the original function. Their registrations receive the same automatic cleanup.
+`Harness` and `Bundle` initially collect recipes; effects are created when
+mounted in a Context.
+Listeners registered through `agent.on` and `agent.add_hook` also belong to the
+currently active plugin Context, or to the session when called outside a plugin.
 
 ```python
 from cordify import Context, Emit, SystemPrompt, ToolRegistry
@@ -440,30 +443,30 @@ async with Context() as ctx:
     remove_section = prompt.section("project", "Use this workspace.")
 
     await remove_tool()
-    await remove_tool()  # idempotent
+    await remove_tool()  # Idempotent.
     await remove_listener()
-    # remove_section wird beim Verlassen des Contexts automatisch ausgeführt.
+    # remove_section runs automatically when the Context closes.
 ```
 
-Eigene Ressourcen werden mit `ctx.effect(resource.aclose)` oder einem eigenen
-Cleanup-Callback angehängt, sobald sie angelegt wurden. So greift der Rollback
-auch bei einem teilweise fehlgeschlagenen Setup. Cleanup läuft in umgekehrter
-Registrierungsreihenfolge und führt die übrigen Disposer auch nach einem Fehler
-aus. Ein Fehler beim Registrieren nach erfolgreichem Klassen-Setup ruft zusätzlich
-`Plugin.teardown()` auf.
+Attach custom resources with `ctx.effect(resource.aclose)` or a cleanup callback
+as soon as they are created. This also covers rollback after partially failed
+setup. Cleanup runs in reverse registration order and continues with the
+remaining disposers after an error. If registration fails after a successful
+class setup, `Plugin.teardown()` is also called.
 
-Tools, Listener und Prompt-Sektionen werden erst nach erfolgreichem Plugin-Setup
-für andere Aufrufer sichtbar. Beim Beginn des Teardowns verschwinden sie aus der
-Auswahl, auch wenn asynchrones Cleanup noch wartet. Überschriebene Tools und
-Prompt-Sektionen geben dabei die vorherige Registrierung wieder frei.
-Bereits entfernte Listener werden in einem laufenden Dispatch übersprungen;
-eine während des Renderns entfernte Sektion liefert keinen veralteten Prompt-Text.
+Tools, listeners, and prompt sections become visible to other callers only
+after plugin setup succeeds. They disappear from selection as soon as teardown
+starts, even while asynchronous cleanup is still waiting. Removing overriding
+tools and prompt sections exposes the previous registration.
+A running dispatch skips listeners that have already been removed; a section
+removed during rendering does not contribute stale prompt text.
 
-### needs und temporale Komposition
 
-`needs` beschreibt **wann ein Plugin lebt**. Das gilt während der gesamten
-Montage, nicht nur beim Start. `Inject[T]` beschreibt, **woher ein Parameter
-kommt**. Die explizite needs-Liste ist die klare Form für den Lebenszyklus:
+### needs and temporal composition
+
+`needs` describes **when a plugin is alive**, throughout its mount rather than
+only at startup. `Inject[T]` describes **where a parameter comes from**.
+An explicit needs list expresses the lifecycle clearly:
 
 ```python
 @plugin(needs=[Browser, ToolRegistry])
@@ -478,17 +481,16 @@ async def browser_tools(ctx: Context):
     yield
 ```
 
-Fehlt `Browser`, bleibt die Montage `waiting`. Wird er bereitgestellt, beginnt
-Setup; verschwindet er, werden die abhängigen Plugins vor ihrem Provider
-abgebaut. Tools, Hooks, Services, Prompt-Sektionen und Effekte dieser Montage
-verschwinden. Kehrt der Service zurück, wird derselbe Plugin-Beleg mit einem
-neuen Context, einem neuen Async-Generator beziehungsweise einer frischen
-Klasseninstanz wieder aktiviert. Der eingefangene `browser` oben ist deshalb
-immer an die aktuelle Aktivierung gebunden. Auch Service-Overrides und das
-Zurückfallen auf die vorherige Implementierung führen zum Neuaufbau.
+If `Browser` is missing, the mount stays `waiting`. Providing it starts setup;
+removing it tears down dependent plugins before their provider. Tools, hooks,
+services, prompt sections, and effects from that activation disappear.
+When the service returns, the same plugin handle is reactivated with a new
+Context, async generator, or class instance. The captured `browser` above
+therefore always belongs to the current activation. Service overrides and
+falling back to a previous implementation also trigger a rebuild.
 
 ```python
-feature = await ctx.plugin(browser_tools())  # wartet, falls Browser fehlt
+feature = await ctx.plugin(browser_tools())  # Waits if Browser is missing.
 remove = ctx.provide(Browser, local_browser)
 await ctx.settle()  # feature.status == "active"
 
@@ -496,28 +498,27 @@ await remove()
 await ctx.settle()  # feature.status == "waiting"
 
 ctx.provide(Browser, replacement_browser)
-await ctx.settle()  # frischer Aufbau
-await feature.aclose()  # permanent "disposed"
+await ctx.settle()  # Fresh setup.
+await feature.aclose()  # Permanently "disposed".
 ```
 
-Die Komposition läuft automatisch auf dem Event-Loop. `settle()` ist die
-explizite Barriere für Tests und Anwendungen, die den fertigen Übergang benötigen.
-Ein unvollständiges Setup wird bei Dependency-Verlust oder Shutdown abgebrochen
-und zurückgerollt. Services eines Providers werden für andere Plugins erst nach
-erfolgreichem Setup sichtbar. `handle.error` zeigt Setup-Fehler; `settle()` meldet
-Fehler automatischer Aktivierungen als ExceptionGroup. Fehlgeschlagene Setups
-werden bei unveränderter Dependency nicht endlos wiederholt. Dynamische Zyklen
-werden gemeldet.
+Composition runs automatically on the event loop. `settle()` is an explicit
+barrier for tests and applications that need the transition to be complete.
+Incomplete setup is cancelled and rolled back on dependency loss or shutdown.
+A provider's services become visible to other plugins only after setup succeeds.
+`handle.error` exposes setup errors; `settle()` reports automatic activation
+failures as an ExceptionGroup. Failed setups are not retried indefinitely while
+their dependencies stay unchanged. Dynamic cycles are reported.
 
-Ein expliziter Hot-Reload benutzt dieselben Lebenszeiten: Den alten Provider mit
-`await provider.aclose()` entladen und seine neue Version mit
-`await ctx.plugin(new_provider_spec)` montieren. Die Rezepte seiner abhängigen
-Plugins bleiben erhalten; nach `await ctx.settle()` sind sie mit frischem Zustand
-und genau einer neuen Registrierung pro Tool, Sektion und Listener aufgebaut.
-[`11_temporal_needs.py`](examples/11_temporal_needs.py) zeigt Service-Verlust und
-Neuaufbau für alle drei Registrierungsarten samt eigenem Cleanup-Effekt.
+Explicit hot reload uses the same lifetimes: unload the old provider with
+`await provider.aclose()` and mount its new version with
+`await ctx.plugin(new_provider_spec)`. Dependent plugin recipes remain retained;
+after `await ctx.settle()`, they have fresh state and exactly one new
+registration per tool, section, and listener.
+[`11_temporal_needs.py`](examples/11_temporal_needs.py) demonstrates service loss
+and rebuilding all three registration types, including a custom cleanup effect.
 
-Die Formen sind gleichwertig:
+The following forms are equivalent:
 
 ```python
 @plugin(needs=[Browser])
@@ -533,16 +534,16 @@ bundle = Bundle("browser-feature", needs=[Browser])
 explicit = Plugin(name="browser-feature", needs=[Browser], hooks=[], tools=[])
 ```
 
-`Context.install()` behält auch momentan nicht erfüllte Plugins als wartende
-Rezepte. `strict=True` verlangt stattdessen erfüllbare Start-Abhängigkeiten und
-rollt einen unvollständigen Installationssatz zurück. Kindkontexte haben eigene
-Service-Sichten; Änderungen in einem isolierten Geschwisterkontext bauen die
-anderen Plugins nicht um. `Agent` wartet vor jedem Step auf die Komposition.
+`Context.install()` retains plugins with currently unmet dependencies as waiting
+recipes. `strict=True` instead requires satisfiable startup dependencies and
+rolls back an incomplete installation set. Child contexts have independent
+service views; changes in an isolated sibling context do not rebuild other
+plugins. `Agent` waits for composition before each step.
 
-Inject-Parameter in Plugin-Setup und Klassen-Hooks ergänzen `needs` weiterhin als
-Kurzform. Unmarkierte Service-Typen lösen keine automatische Injection aus.
-Tool-Injection allein macht ein Tool bei fehlendem Service unsichtbar; für die
-Lebensdauer des ganzen Features wird `needs` ausdrücklich angegeben.
+Injected parameters in plugin setup and class hooks still add to `needs` as a
+shorthand. Unmarked service types do not trigger automatic injection.
+Tool injection alone hides a tool when a service is missing; declare `needs`
+explicitly to control the lifetime of the whole feature.
 
 ```python
 from cordify import Context, Inject, SystemPrompt, ToolRegistry, plugin
@@ -554,14 +555,14 @@ async def project_rules(ctx: Context, prompt: Inject[SystemPrompt]):
     yield
 
 
-# Auch @plugin(), @plugin(name="...") und @plugin(needs=[...]) werden akzeptiert.
-# Inject-Parameter ergänzen needs automatisch.
+# @plugin(), @plugin(name="..."), and @plugin(needs=[...]) are also supported.
+# Injected parameters automatically add to needs.
 ```
 
-`Inject[T]` ist ein PEP-695-Alias für `Annotated[T, InjectMarker()]` und wird von
-Typprüfern als `T` behandelt. Normale Parameter eines Plugins sind Konfiguration;
-normale Tool-Parameter kommen vom Modell. Bei Hooks bleiben Event und `next_`
-normale Parameter. Der Agent wird pro Session injiziert:
+`Inject[T]` is a PEP 695 alias for `Annotated[T, InjectMarker()]` and is treated
+as `T` by type checkers. Ordinary plugin parameters are configuration; ordinary
+tool parameters come from the model. In hooks, the event and `next_` remain
+ordinary parameters. The agent is injected per session:
 
 ```python
 from cordify import Agent, Bundle, Inject, ReviewToolResult
@@ -577,83 +578,83 @@ async def nudge(event, next_, agent: Inject[Agent]):
     return result
 ```
 
-`Bundle` kennt beim Definieren keinen Agenten. Die Montage in mehreren Sessions
-erzeugt jeweils eigene Registrierungen. Eine `Plugin`-Instanz ist eine Vorlage:
-pro Montage wird `clone()` aufgerufen (standardmäßig `deepcopy`). Zustand gehört
-dadurch der Session. Für nicht kopierbare Konfigurationen kann `clone()` eine neue
-Instanz erzeugen; Ressourcen werden in `setup()` geöffnet und in `teardown()` oder
-über `ctx.effect()` geschlossen. Bei Funktionsplugins gehört lokaler Zustand in
-den Async-Generator, bei Bundles in einen Service oder ein Klassenplugin.
+A `Bundle` has no agent when defined. Mounting it in multiple sessions creates
+independent registrations. A `Plugin` instance is a template: each mount calls
+`clone()`, which defaults to `deepcopy`. State therefore belongs to the session.
+For configuration that cannot be copied, `clone()` can construct a new instance;
+open resources in `setup()` and close them in `teardown()` or through
+`ctx.effect()`. Function plugins keep local state in their async generator;
+bundles use a service or class plugin.
 
-Tools unterstützen `@bundle.tool`, `@bundle.tool()` und
-`@bundle.tool(name="name", timeout=30)`. Das gilt auch für `@tool`, `@agent.tool`,
-`@harness.tool` und `@ctx[ToolRegistry].tool`. Für Events ist die Event-Klasse bei
-`on(Event)`/`hook(Event)` Pflicht. `ctx.on(Event, fn)`, `bundle.add_hook(Event, fn)`,
-`harness.add_hook(Event, fn)` und `agent.add_hook(Event, fn)` sind die imperativen
-Varianten; `add_tool(fn, ...)` registriert Tools ohne Dekorator.
+Tools support `@bundle.tool`, `@bundle.tool()`, and
+`@bundle.tool(name="name", timeout=30)`. The same applies to `@tool`,
+`@agent.tool`, `@harness.tool`, and `@ctx[ToolRegistry].tool`.
+Event decorators require an event class in `on(Event)`/`hook(Event)`.
+`ctx.on(Event, fn)`, `bundle.add_hook(Event, fn)`, `harness.add_hook(Event, fn)`,
+and `agent.add_hook(Event, fn)` are the imperative forms;
+`add_tool(fn, ...)` registers tools without a decorator.
 
-Listener haben eine explizite `priority`: **kleinere Zahlen laufen zuerst**,
-Standard `0`. Ein Waterfall verschachtelt sie entsprechend:
-`-100 before → 0 before → Kern → 0 after → -100 after`.
-Die Priorität gilt auch für geerbte Listener und Listener auf Event-Basisklassen.
-Bei Gleichstand bleibt die bisherige Reihenfolge erhalten; bei geerbten Scopes
-stehen Eltern vor Kindern. `prepend=True` zieht einen Listener innerhalb seines
-Scopes vor gleich priorisierte Listener und überholt keine andere Priorität.
-`Parallel` startet die Observer in dieser Reihenfolge, ihre Fertigstellung ist
-weiterhin unabhängig.
+Listeners have an explicit `priority`: **lower numbers run first**, with `0` as
+the default. A waterfall nests them accordingly:
+`-100 before → 0 before → core → 0 after → -100 after`.
+Priority also applies across inherited listeners and listeners on event base
+classes. Ties preserve the existing order; inherited scopes place parents before
+children. `prepend=True` moves a listener ahead of equal-priority listeners
+within its own scope and does not overtake another priority.
+`Parallel` starts observers in this order, but their completion remains
+independent.
 
 ```python
 @policies.on(ToolPolicy, priority=-100)
 async def authorize(event, next_):
-    # Autorisierung vor nachgelagerten Policies.
+    # Authorize before downstream policies.
     return await next_()
 
 
 @hook(ExecuteTool, priority=0)
 async def measure_execution(event, next_):
-    # Diese Phase beginnt erst nach Policy und Approval.
+    # This phase starts only after policy and approval.
     return await next_()
 ```
 
-`priority=...` funktioniert bei `ctx.on`/`add_listener`, `@hook`,
-`bundle.on`/`add_hook`, Harness und Agent. Ohne Dekorator unterstützt
-`Plugin(hooks=[(Event, callback, -100)])` eine Priorität als drittes Tuple-Element;
-`(Event, callback)` behält den Standard `0`. Beim Unload verschwinden die Listener
-wie bisher, bei erneuter Montage behalten sie ihre deklarierte Priorität.
+`priority=...` works with `ctx.on`/`add_listener`, `@hook`,
+`bundle.on`/`add_hook`, Harness, and Agent. Without decorators,
+`Plugin(hooks=[(Event, callback, -100)])` accepts a priority as the third tuple
+element; `(Event, callback)` keeps the default `0`. Listeners disappear on
+unload as before and retain their declared priority when mounted again.
 
-Für call-lokale Daten steht `call: Inject[ToolCallContext]` bereit.
-`await call.progress(text)` schreibt einen dauerhaften `ToolProgress`-Event.
-Async-Tools werden durch normale asyncio-Cancellation abgebrochen.
-`call.signal` ist ein `asyncio.Event`, das der Harness bei Tool-Cancellation setzt.
+Call-local data is available through `call: Inject[ToolCallContext]`.
+`await call.progress(text)` writes a durable `ToolProgress` event.
+Async tools use normal asyncio cancellation.
+`call.signal` is an `asyncio.Event` set by the harness on tool cancellation.
 
-| API | Grenze | Weckt den Agenten? |
+| API | Boundary | Wakes the agent? |
 | --- | --- | --- |
-| `await agent.followup(text)` | Nächster eigener Turn | Ja |
-| `await agent.steer(text)` | Nächster Step | Ja |
-| `await agent.inject(text)` | Nächster Step | Nein |
+| `await agent.followup(text)` | Next separate turn | Yes |
+| `await agent.steer(text)` | Next step | Yes |
+| `await agent.inject(text)` | Next step | No |
 
-`when_idle()` wartet auf den gesamten Agenten einschließlich weiterer Turns.
-`run()` und `stream()` beobachten diesen Zeitraum, keinen einzelnen Enqueue-Beleg.
-Die Rückgabe von `followup`, `steer` und `inject` ist die Message-ID.
+`when_idle()` waits for the whole agent, including subsequent turns.
+`run()` and `stream()` observe that interval rather than one queued input.
+`followup`, `steer`, and `inject` return the message ID.
 
-Die Tool-Pipeline hat feste Phasen: **ToolPolicy → ExecuteTool → ReviewToolResult**.
-Abgelehnte Calls überspringen Ausführung und Review; ihr Ergebnis wird trotzdem
-als `ToolReturned` geloggt. `Approver` ist ein austauschbarer Service.
+The tool pipeline has fixed phases: **ToolPolicy → ExecuteTool → ReviewToolResult**.
+Denied calls skip execution and review; their result is still logged as
+`ToolReturned`. `Approver` is a replaceable service.
 
-`callback_approver(fn)` stellt einen Callback als `Approver` bereit;
-`approval_gate(risky={...})` verwendet ihn. Entscheidungen sind `Decision.ALLOW`,
-`DENY` und `ALWAYS` (Freigabe für Toolname und Policy-Scope innerhalb derselben
-Session-ID, auch nach Resume, bis zum Widerruf).
-Ein `ToolPolicy`-Hook kann `Decision.ASK` zurückgeben, um den Approver aufzurufen.
-Die kompakte Form `approval_gate(risky={...}, ask=fn)` ist ebenfalls möglich.
-Das Gate bleibt auch ohne `Approver` aktiv. Seine Standardpriorität ist `-100`,
-mit `approval_gate(..., priority=...)` überschreibbar. Ein Timing-Hook auf
-`ToolPolicy` mit `priority=0` läuft dadurch innerhalb des Gates und misst dessen
-Antwortwartezeit nicht mit. Für reine Tool-Laufzeit verwendet man `ExecuteTool`;
-die festen Phasen laufen unabhängig von ihren Listener-Prioritäten nacheinander.
+`callback_approver(fn)` provides a callback as an `Approver`;
+`approval_gate(risky={...})` uses it. Decisions are `Decision.ALLOW`, `DENY`,
+and `ALWAYS` (permission for a tool name and policy scope within the same
+session ID, including after resume, until revoked).
+A `ToolPolicy` hook can return `Decision.ASK` to invoke the approver.
+The compact `approval_gate(risky={...}, ask=fn)` form is also supported.
+The gate stays active even without an `Approver`. Its default priority is
+`-100`, configurable with `approval_gate(..., priority=...)`. A timing hook on
+`ToolPolicy` with `priority=0` therefore runs inside the gate and excludes its
+response wait. Use `ExecuteTool` for tool execution time alone; the fixed
+phases run sequentially regardless of their listener priorities.
 
-Für UI- oder SDK-Responder gibt es außerdem `ApprovalRequest` als
-`Bail[Decision]`-Event:
+UI and SDK responders can also use `ApprovalRequest`, a `Bail[Decision]` event:
 
 ```python
 from cordify import ApprovalRequest, Decision
@@ -661,76 +662,75 @@ from cordify import ApprovalRequest, Decision
 
 @harness.on(ApprovalRequest, priority=0)
 async def answer(event):
-    # event.call, event.reason, event.request.request_id und event.request.scope
-    return await ui.ask(event.call, event.reason)  # z. B. Decision.ALLOW oder DENY
+    # event.call, event.reason, event.request.request_id, and event.request.scope
+    return await ui.ask(event.call, event.reason)  # For example, Decision.ALLOW or DENY.
 ```
 
-Ein explizit übergebener Approver hat Vorrang, danach folgt der `Approver`-Service.
-Fehlen beide, werden aktive `ApprovalRequest`-Listener nach Priorität gefragt.
-`None` reicht an den nächsten Listener weiter; die erste Entscheidung beantwortet
-die Anfrage. `ApprovalRequested` ist das dauerhafte Log-Event zur Beobachtung;
-Antworten liefert der separate `ApprovalRequest`-Hook oder das Approver-Protocol.
+An explicitly supplied approver takes precedence, followed by the `Approver`
+service. If neither exists, active `ApprovalRequest` listeners are queried by
+priority. `None` delegates to the next listener; the first decision answers the
+request. `ApprovalRequested` is the durable log event for observation;
+responses come from the separate `ApprovalRequest` hook or Approver Protocol.
 
-| Situation | Ergebnis |
+| Situation | Outcome |
 | --- | --- |
-| Kein Responder oder alle geben `None` zurück | Sofort `unavailable` |
-| Responder hängt, schlägt fehl oder liefert eine ungültige Antwort | `unavailable`; bei ausbleibender Antwort nach dem Timeout |
-| Explizite Ablehnung | `answered` mit `Decision.DENY`; Tool-Result `denied` |
-| Agent-Abbruch während einer Anfrage | `interrupted` |
+| No responder, or all return `None` | Immediate `unavailable` |
+| Responder stalls, fails, or returns an invalid answer | `unavailable`; a missing response reaches this state after the timeout |
+| Explicit denial | `answered` with `Decision.DENY`; tool result `denied` |
+| Agent cancellation during a request | `interrupted` |
 
-`Harness(..., approval_timeout=300)` begrenzt die Antwortwartezeit pro Anfrage
-auf Sekunden; der Standard sind fünf Minuten. Alle Presets unterstützen dieselbe
-Option, ebenso `harness.session(..., approval_timeout=5)` als Override.
-Der Wert muss endlich und positiv sein. Asynchrone Responder müssen Cancellation
-weitergeben und dürfen den Event-Loop nicht mit blockierenden UI-Aufrufen anhalten.
+`Harness(..., approval_timeout=300)` limits the response wait per request in
+seconds; the default is five minutes. All presets support the same option,
+with `harness.session(..., approval_timeout=5)` as a session override.
+The value must be finite and positive. Async responders must propagate
+cancellation and must not block the event loop with blocking UI calls.
 
-Bei `unavailable` entsteht ein `ApprovalResolved(status="unavailable", reason=...)`
-ohne Entscheidung oder Freigabe. Das Tool startet nicht und erhält ein
-`ToolResult` mit `status="unavailable"`. Ein direkter
-`await agent.request_approval(...)` wirft `ApprovalUnavailable`. Es bleibt keine
-offene Anfrage zurück; Replay und Resume erhalten diesen Abschluss, ohne die
-Frage erneut auszulösen. Bestehende `ALWAYS`-Freigaben derselben Session und
-desselben Scopes bleiben auch ohne aktuellen Responder nutzbar.
+An `unavailable` outcome produces
+`ApprovalResolved(status="unavailable", reason=...)` without a decision or
+permission grant. The tool does not start and receives a `ToolResult` with
+`status="unavailable"`. A direct `await agent.request_approval(...)` raises
+`ApprovalUnavailable`. No pending request remains; replay and resume preserve
+this resolution without asking again. Existing `ALWAYS` grants for the same
+session and scope remain usable without a current responder.
 
 [`19_approvals_and_priorities.py`](examples/19_approvals_and_priorities.py)
-zeigt fehlende UI, einen antwortenden SDK-Listener, getrenntes Timing und
-einen ausbleibenden Responder vollständig offline.
+demonstrates a missing UI, an answering SDK listener, separate timing, and an
+unresponsive handler entirely offline.
 
-`ToolResult.with_note(text)` reichert das Modell-Ergebnis an;
-`await agent.inject(text)` fügt Kontext hinzu und `await agent.steer(text)` setzt
-eine neue Step-Eingabe. `ToolReturned` beobachtet das bereits festgeschriebene Ergebnis.
+`ToolResult.with_note(text)` enriches the model-facing result;
+`await agent.inject(text)` adds context, and `await agent.steer(text)` queues a
+new step input. `ToolReturned` observes the result already committed to the log.
 
-`Harness` montiert pro Session frische Contexts, ToolRegistry und SystemPrompt
-sowie Standard-Services für TokenCounter, Compactor und SpillStore.
-Session-Events und Modellwerte sind unveränderlich; Inbox und Modell-Historie
-werden aus dem Log abgeleitet. `session_jsonl()` speichert JSONL mit einer
-Versionsnummer und exklusivem OS-Schreiblock. `ModelRequested` enthält den
-tatsächlichen Request. Auch `AssistantChunk` ist ein dauerhaftes Session-Event:
-Chunks werden vor ihrer Live-Ausgabe gespeichert. Beim Resume werden
-unvollständige Antworten abgeschlossen, unterbrochene Turns geschlossen und
-fehlende Tool-Ergebnisse ergänzt.
+`Harness` mounts fresh Contexts, ToolRegistry, SystemPrompt, and default
+TokenCounter, Compactor, and SpillStore services for each session.
+Session events and model values are immutable; the inbox and model history
+are derived from the log. `session_jsonl()` stores versioned JSONL with an
+exclusive OS write lock. `ModelRequested` contains the actual request.
+`AssistantChunk` is also a durable session event: chunks are stored before
+being published live. Resume completes partial responses, closes interrupted
+turns, and fills in missing tool results.
 
-`PreStep` ist ein Waterfall über die an dieser Grenze angebotenen User-Messages.
-`StepDecision(messages)` übernimmt sie; `StepDecision.reject()` lässt sie in der
-Inbox. Ersetzte Messages behalten ihre ID, wenn ihre Inbox-Identität erhalten
-bleiben soll. Eingaben nach dieser Grenze erreichen frühestens den nächsten Step.
-`Session.fork(new_id, at=offset)` kopiert einen Log-Präfix bis zu einem geschlossenen
-Turn; `at` ist eine exklusive Event-Position. Ein Fork hat zunächst keinen Writer.
+`PreStep` is a waterfall over the user messages offered at that boundary.
+`StepDecision(messages)` accepts them; `StepDecision.reject()` leaves them in
+the inbox. Replacement messages keep their ID when their inbox identity should
+be preserved. Inputs arriving after this boundary reach the next step at the
+earliest. `Session.fork(new_id, at=offset)` copies a log prefix ending at a
+closed turn; `at` is an exclusive event position. A fork initially has no writer.
 
-Der generische Kern bietet `Emit` (seriell), `Bail[R]` (erster Nicht-None-Wert),
-`Waterfall[R]` (Middleware mit einmaligem `await next_()`) und `Parallel`
-(TaskGroup). Services, Listener, Tools und Prompt-Sektionen verschwinden beim
-Plugin-Unload; frühere überschattete Registrierungen werden wieder sichtbar.
-`ctx.extend()` erzeugt einen Kindkontext mit eigenen Service- und Event-
-Registrierungen. Pro Harness-Session gibt es einen unabhängigen Root-Context.
+The generic kernel provides `Emit` (serial), `Bail[R]` (first non-None result),
+`Waterfall[R]` (middleware with a single-use `await next_()`), and `Parallel`
+(TaskGroup). Services, listeners, tools, and prompt sections disappear on plugin
+unload; previously shadowed registrations become visible again.
+`ctx.extend()` creates a child context with its own service and event
+registrations. Every Harness session has an independent root Context.
 
-## Begrenzte Tool-Ausgaben
 
-Der Standard-Agent begrenzt jedes Tool-Ergebnis auf **32.000 Unicode-Zeichen**,
-einschließlich Kürzungshinweis. Die Grenze greift vor `ToolReturned`, Session-Log
-und dem nächsten Modell-Request. Auch Fehlertexte und Erweiterungen durch
-Review-Hooks werden begrenzt. Das ist eine feste Policy im Agent, die ohne
-zusätzliches Plugin aktiv ist.
+## Bounded tool outputs
+
+The default agent limits every tool result to **32,000 Unicode characters**,
+including the truncation notice. The limit applies before `ToolReturned`, the
+session log, and the next model request. It also bounds error text and additions
+from review hooks. This is a fixed agent policy, active without an extra plugin.
 
 ```python
 from cordify import ToolOutputLimit
@@ -741,25 +741,25 @@ async with harness.session("review", tool_output_limit=ToolOutputLimit(max_chars
     result = await agent.run("Inspect the project.")
 ```
 
-`Harness`, `minimal`, `coding` und `headless` akzeptieren `tool_output_limit`;
-eine Session kann die Vorgabe überschreiben. `max_chars` muss mindestens 256
-sein, damit der Hinweis Platz hat. Das Budget ist eine Zeichengrenze pro Ergebnis,
-kein anbieterspezifisches Token-Limit oder Gesamtbudget des Requests.
+`Harness`, `minimal`, `coding`, and `headless` accept `tool_output_limit`;
+a session can override the default. `max_chars` must be at least 256 to leave
+room for the notice. This budget is a per-result character limit, not a
+provider-specific token limit or a budget for the entire request.
 
-Die Kürzung behält etwa drei Viertel des verfügbaren Inhalts vom Anfang und ein
-Viertel vom Ende, damit beispielsweise ein Fehler am Schluss sichtbar bleibt.
-Der Mittelteil wird durch einen Hinweis ersetzt:
+Truncation keeps roughly three quarters of the available content from the start
+and one quarter from the end, preserving a trailing error, for example.
+A notice replaces the middle:
 
 ```text
 [Output truncated; middle omitted (2097168 characters total). Use offset/limit for smaller ranges or filter the command output.]
 ```
 
-Status, Exit-Code und Spill-Referenz bleiben erhalten.
-`ToolResult.truncation` enthält `original_chars`, `retained_chars` und `max_chars`;
-das Log und seine JSON-Codecs erhalten diese Metadaten. `retained_chars` zählt
-den übernommenen Originaltext, während `max_chars` den Hinweis einschließt.
-Kleine Ergebnisse bleiben unverändert. Die Policy ist idempotent und kann auch
-als eigener Waterfall um `ExecuteTool` benutzt werden:
+Status, exit code, and spill reference are preserved.
+`ToolResult.truncation` contains `original_chars`, `retained_chars`, and
+`max_chars`; the log and its JSON codecs retain this metadata.
+`retained_chars` counts retained original text, while `max_chars` includes the
+notice. Small results stay unchanged. The policy is idempotent and can also
+be used in a custom waterfall around `ExecuteTool`:
 
 ```python
 from cordify import Bundle, ExecuteTool, ToolOutputLimit
@@ -773,48 +773,47 @@ async def truncate(event, next_):
     return budget.apply(await next_())
 ```
 
-Dieser Waterfall kürzt bereits vor dem Ergebnis-Review. Die verbindliche
-Agent-Grenze greift zusätzlich **nach** `ReviewToolResult`, damit nachträglich
-ergänzte Texte sie nicht umgehen. `SpillLargeResults` braucht die vollständige
-Ausgabe für seine Datei; bei Spill verwendet man die finale Agent-Grenze ohne
-die zusätzliche frühe Kürzung. So bleibt das vollständige Ergebnis abrufbar.
+This waterfall truncates before result review. The mandatory agent limit also
+applies **after** `ReviewToolResult`, so text added later cannot bypass it.
+`SpillLargeResults` needs the full output for its file; when using spill, rely on
+the final agent limit without the additional early truncation. The full result
+then remains available for retrieval.
 
-Das eingebaute Dateitool unterstützt echte Bereiche:
+The built-in file tool supports ranges:
 
 ```python
 read_file(path="large.log", offset=0, limit=8000)
 read_file(path="large.log", offset=8000, limit=8000)
 ```
 
-`offset` ist eine nullbasierte Zeichenposition, `limit` liegt zwischen 1 und
-16.000 und beträgt standardmäßig 8.000. Weitere Daten werden mit einem Hinweis
-auf den nächsten Offset angezeigt. Das funktioniert auch bei mehrbyteiligen
-Unicode-Zeichen. Für Shell-Ausgaben filtert man den Befehl oder schreibt in eine
-Datei und liest anschließend Bereiche. Die Adapter können intern größere Daten
-lesen; die Policy begrenzt das Ergebnis, das ins Log und ans Modell gelangt.
+`offset` is a zero-based character position; `limit` ranges from 1 to 16,000
+and defaults to 8,000. If more data remains, a notice gives the next offset.
+This also works with multibyte Unicode characters. For shell output, filter the
+command or write to a file and read ranges afterward. Adapters may read larger
+amounts internally; the policy bounds the result sent to the log and model.
 
-[`15_tool_output_limits.py`](examples/15_tool_output_limits.py) zeigt den
-Waterfall mit einer 2-MB-Ausgabe, erhaltenem Exit-Code und anschließenden
-Bereichsreads vollständig offline.
+[`15_tool_output_limits.py`](examples/15_tool_output_limits.py) demonstrates the
+waterfall with a 2 MB output, a preserved exit code, and subsequent range reads
+entirely offline.
 
-## Parallele Tool-Calls und Konflikte
+## Parallel tool calls and conflicts
 
-Ein Modell kann mehrere Calls in einem Step zurückgeben. Der Harness führt
-explizit freigegebene Tools gleichzeitig aus, mit `max_parallel_tools=4` als
-Standard. Ohne Freigabe bildet ein Tool eine Barriere: Vorherige Calls werden
-einschließlich Review abgeschlossen, dann läuft dieses Tool allein.
+A model can return several calls in one step. The harness runs explicitly
+enabled tools concurrently, with `max_parallel_tools=4` as the default.
+Without this opt-in, a tool forms a barrier: previous calls finish, including
+review, and then this tool runs alone.
 
-| Registrierung | Verhalten innerhalb eines Agenten-Batches |
+| Registration | Behavior within one agent batch |
 | --- | --- |
-| `@tools.tool` | Seriell; Barriere vor und nach dem Call |
-| `@tools.tool(parallel=True)` | Darf mit anderen freigegebenen Calls gleichzeitig laufen |
-| `@tools.tool(parallel=True, resources=("database:users",))` | Derselbe Schlüssel serialisiert konkurrierende Calls in Modellreihenfolge |
-| `resources=lambda call: (...)` | Synchrone, nebenwirkungsfreie Auflösung exklusiver Ressourcen aus dem Call |
-| `max_parallel_tools=1` | Erzwingt insgesamt serielle Ausführung |
+| `@tools.tool` | Serial; barrier before and after the call |
+| `@tools.tool(parallel=True)` | May overlap with other calls enabled for parallel execution |
+| `@tools.tool(parallel=True, resources=("database:users",))` | Shared keys serialize conflicting calls in model order |
+| `resources=lambda call: (...)` | Synchronous, side-effect-free resolution of exclusive resources from the call |
+| `max_parallel_tools=1` | Forces serial execution throughout |
 
-Die Optionen funktionieren bei Bundle, Klassen-`@tool`, Harness, Agent und
-`ToolRegistry.register`. Sie sind SDK-Metadaten und erscheinen nicht als
-Modell-Argumente im Tool-Schema.
+These options work with Bundle, class `@tool` decorators, Harness, Agent, and
+`ToolRegistry.register`. They are SDK metadata and do not appear as model
+arguments in the tool schema.
 
 ```python
 from cordify import Bundle, Inject, ToolCall
@@ -834,115 +833,110 @@ async def update_record(record_id: str, text: str, store: Inject[RecordStore]) -
     return "saved"
 
 
-# RecordStore ist ein eigenes Protocol; seine Implementierung als Service montieren.
+# RecordStore is a custom Protocol; mount its implementation as a service.
 harness = minimal(model, plugins=[store_provider, tools], max_parallel_tools=4)
-# Pro Session überschreibbar:
+# Override per session:
 # async with harness.session("serial", max_parallel_tools=1) as agent: ...
 ```
 
-Verschiedene Schlüssel dürfen überlappen. Ein Call kann mehrere Schlüssel
-belegen; ihre Reihenfolge spielt keine Rolle. Konflikte werden vor der
-Ausführung als Abhängigkeiten geplant, sodass kein wechselseitiges Warten
-beim Erwerb mehrerer Sperren entsteht. Nachfolger warten bis zum Abschluss
-des Vorgängers einschließlich Review.
+Calls with different keys may overlap. A call can hold multiple keys in any
+order. Conflicts are planned as dependencies before execution, preventing
+mutual waiting while acquiring multiple locks. Successors wait for their
+predecessors to finish, including review.
 
-Im Coding-Preset ist `read_file` parallel freigegeben. `write_file` und
-`run_command` bleiben Barrieren. Zwei Writes auf dieselbe Datei laufen dadurch
-in Modellreihenfolge; auch `a.txt` und `./a.txt` können nicht überlappen.
-Eigene parallele Datei-Tools müssen kanonische Pfade als gemeinsame
-Ressourcen-Schlüssel verwenden, für Reads und Writes gleichermaßen.
-Die Koordination gilt für den jeweiligen Agenten-Batch. Für Zugriffe anderer
-Agenten oder Prozesse braucht das FS-/Datenbank-Backend eigene Sperren.
+In the coding preset, `read_file` is enabled for parallel execution.
+`write_file` and `run_command` remain barriers. Two writes to the same file
+therefore run in model order; even `a.txt` and `./a.txt` cannot overlap.
+Custom parallel file tools must use canonical paths as shared resource keys
+for both reads and writes. Coordination applies to the current agent batch.
+Access from other agents or processes requires locks in the FS/database backend.
 
-Innerhalb einer parallelen Gruppe laufen Policies und Approval-Fragen zuerst
-in Modellreihenfolge. Erst danach beginnt die parallele `ExecuteTool`-Phase.
-`ReviewToolResult`, zustandsbehaftete Rules und `ToolReturned` folgen wieder
-der Modellreihenfolge. Auch die Tool-Nachrichten im nächsten Modell-Request
-halten diese Reihenfolge ein. `ToolProgress` und Ausführungsereignisse zeigen
-den tatsächlichen zeitlichen Ablauf; das gesamte Log wird nicht nachträglich
-umsortiert. Eigene `ExecuteTool`-Hooks müssen mit der freigegebenen Parallelität
-zurechtkommen.
+Within a parallel group, policies and approval requests run first in model
+order. Only then does the parallel `ExecuteTool` phase begin.
+`ReviewToolResult`, stateful Rules, and `ToolReturned` again follow model order.
+Tool messages in the next model request keep the same order.
+`ToolProgress` and execution events show the actual timing; the log as a whole
+is never reordered afterward. Custom `ExecuteTool` hooks must support the
+concurrency enabled for their tools.
 
-Tool-Fehler, Timeouts und Ablehnungen ergeben einzelne Tool-Results und brechen
-unabhängige Calls nicht ab. Ein Agent-Abbruch beendet und wartet auf alle
-laufenden Tasks. Die feste Output-Grenze greift nach jedem Review.
-Ein abschließend geprüftes, begrenztes Ergebnis wird zuerst als `ToolCompleted`
-gespeichert und danach als `ToolReturned` veröffentlicht. Bei Resume übernimmt
-die Reparatur gespeicherte Completions in die geordnete Result-Folge, ohne
-Tools erneut auszuführen. Fehlt diese Completion, bleibt ein bereits gestarteter
-Call nach einem Crash mit unbekanntem externem Ergebnis markiert.
+Tool errors, timeouts, and denials produce individual tool results without
+cancelling independent calls. Agent cancellation cancels and waits for all
+running tasks. The fixed output limit applies after each review.
+A fully reviewed, bounded result is first stored as `ToolCompleted` and then
+published as `ToolReturned`. On resume, repair copies stored completions into
+the ordered result sequence without re-executing tools. If no completion was
+stored, an already-started call remains marked as having an unknown external
+outcome after a crash.
 
-[`18_parallel_tools.py`](examples/18_parallel_tools.py) startet drei Calls
-gleichzeitig, lässt sie in umgekehrter Reihenfolge fertig werden und prüft die
-stabile Modell-Historie. Ein zweiter Durchlauf zeigt kanonische Dateischlüssel
-für zwei Writes auf dieselbe Datei neben einem unabhängigen Write.
+[`18_parallel_tools.py`](examples/18_parallel_tools.py) starts three calls
+concurrently, completes them in reverse order, and verifies stable model
+history. A second run shows canonical file keys for two writes to the same file
+alongside an independent write.
 
-## Das Session-Log ist die Quelle der Wahrheit
+## The session log is the source of truth
 
-Das Log enthält ausschließlich registrierte `frozen` Dataclasses wie `TurnStart`,
+The log contains only registered `frozen` dataclasses such as `TurnStart`,
 `StepStart`, `AssistantChunk`, `AssistantMessage`, `ToolCalled`,
-`ToolCompleted` und `ToolReturned`.
-Session, Codec und Seed-Import prüfen auch die verschachtelten Werte auf
-Unveränderlichkeit. `session.events` liefert einen unveränderlichen Tupel-Snapshot;
-`append()` fügt Ereignisse hinzu. Compaction, Inbox-Entnahme und die Reparatur
-unterbrochener Läufe erzeugen weitere Events und verändern keine alten Einträge.
+`ToolCompleted`, and `ToolReturned`.
+Session, codec, and seed import also validate nested values for immutability.
+`session.events` returns an immutable tuple snapshot; `append()` adds events.
+Compaction, inbox consumption, and interrupted-run repair append further events
+without changing earlier entries.
 
-Die öffentlichen Projektionen sind reine Funktionen:
+The public projections are pure functions:
 
 ```python
 from cordify import Session, derive_messages, derive_requests
 
-history = derive_messages(session.events)  # identisch zu session.messages
-requests = derive_requests(session.events)  # identisch zu session.requests
+history = derive_messages(session.events)  # Identical to session.messages.
+requests = derive_requests(session.events)  # Identical to session.requests.
 replay = Session("replayed", seed=session.events)
 assert replay.messages == history
 assert replay.requests == requests
 ```
 
-`derive_messages()` baut die Gesprächshistorie aus dem Log auf: System-Prompt,
-User- und Assistant-Nachrichten, Tool-Ergebnisse, Kontext, Observations und
-Compaction. Ein offener Stream erscheint als eine partielle Assistant-Nachricht.
-Seine `AssistantChunk`s tragen eine gemeinsame `message_id`; der abschließende
-`AssistantMessage` verwendet dieselbe ID. Die Projektion führt beides genau einmal
-zusammen und erzeugt dabei keine neuen zufälligen IDs.
+`derive_messages()` builds conversation history from the log: the system prompt,
+user and assistant messages, tool results, context, observations, and compaction.
+An open stream appears as one partial assistant message.
+Its `AssistantChunk` events share a `message_id`; the final `AssistantMessage`
+uses the same ID. The projection combines them exactly once without generating
+new random IDs.
 
-`derive_requests()` liefert die tatsächlich gesendeten `ModelRequest`-Snapshots,
-einschließlich Tool-Schemas, Token-Limit, Cache-Breakpoints und Änderungen durch
-Request-Hooks. Dadurch lässt sich die Modell-Historie **für jeden damaligen Step**
-exakt aus dem Log lesen, auch wenn sich Services oder Plugins inzwischen geändert
-haben. Die aktuelle Gesprächsprojektion und frühere Request-Snapshots bleiben
-getrennt abrufbar.
+`derive_requests()` returns the `ModelRequest` snapshots actually sent,
+including tool schemas, token limit, cache breakpoints, and changes made by
+request hooks. This makes the exact model history **for every historical step**
+readable from the log, even after services or plugins have changed.
+The current conversation projection and historical request snapshots remain
+available separately.
 
 ```python
 for request in replay.requests:
     print(request.model, request.messages, request.tools)
 
-fork = replay.fork("alternative")  # unabhängiges Log mit demselben geschlossenen Präfix
+fork = replay.fork("alternative")  # Independent log with the same closed prefix.
 ```
 
-Replay und Fork benötigen weder den damaligen Provider noch Tool-Ausführung oder
-Plugin-Setup. Evals und Debugging können dieselben Events und Request-Snapshots
-auswerten. Die Codecs `encode_event()` und `decode_event()` in
-`cordify.core.session` erhalten die Projektionen bei einem JSON-Roundtrip.
+Replay and fork need neither the original provider nor tool execution or plugin
+setup. Evals and debugging can inspect the same events and request snapshots.
+The `encode_event()` and `decode_event()` codecs in `cordify.core.session`
+preserve projections across a JSON round trip.
 
-Bei einem Crash nach gespeicherten Chunks ergänzt `repair_interrupted()` ein
-`AssistantMessage(interrupted=True)` mit genau diesem Text und Reasoning.
-Erneutes Reparieren ändert das Log nicht mehr. Ein fehlgeschlagener Schreibversuch
-publiziert keinen Chunk und übernimmt dessen Text auch nicht in eine spätere
-Assistant-Nachricht. Bereits vor der Erweiterung gespeicherte Logs ohne Chunks
-werden weiterhin über ihre `AssistantMessage`-Events projiziert.
+If a crash follows stored chunks, `repair_interrupted()` appends
+`AssistantMessage(interrupted=True)` with exactly that text and reasoning.
+Repeating repair leaves the log unchanged. A failed write publishes no chunk
+and does not include its text in a later assistant message.
+Older logs without chunks still project through their `AssistantMessage` events.
 
-[`14_session_log.py`](examples/14_session_log.py) zeigt Live-Stream,
-Serialisierung, Replay, historische Modell-Requests und einen Fork vollständig
-offline. Tests rekonstruieren jeden Event-Präfix vor und nach Serialisierung und
-prüfen identische Nachrichten und Requests.
+[`14_session_log.py`](examples/14_session_log.py) demonstrates live streaming,
+serialization, replay, historical model requests, and a fork entirely offline.
+Tests reconstruct every event prefix before and after serialization and verify
+identical messages and requests.
 
-## Resume nach einem Prozessneustart
+## Resuming after a process restart
 
-`session_jsonl()` lädt beim Öffnen derselben Session-ID den gespeicherten
-Zustand. Die Anwendung montiert ihre Services und Plugins neu; Nachrichten,
-Inbox, Freigaben, Compaction und weitere protokollierte Zustände werden aus dem
-Log rekonstruiert.
+`session_jsonl()` loads stored state when reopening the same session ID.
+The application remounts its services and plugins; messages, inbox, permissions,
+compaction, and other recorded state are reconstructed from the log.
 
 ```python
 from cordify.plugins.permissions.approval import approval_gate
@@ -959,34 +953,34 @@ harness = coding(
     ],
 )
 async with harness.session("review-42") as agent:
-    await agent.when_idle()  # verarbeitet gespeicherte Eingaben mit Wakeup
-    result = await agent.run("Setze die bisherige Arbeit fort.")
+    await agent.when_idle()  # Processes stored inputs that request wakeup.
+    result = await agent.run("Continue the previous work.")
 ```
 
-`fsync=True` flusht jeden gespeicherten Record zusätzlich auf den Datenträger.
-Der exklusive OS-Schreiblock verhindert zwei gleichzeitige Writer für dieselbe
-Session und wird auch beim Prozessabbruch vom Betriebssystem freigegeben.
+`fsync=True` additionally flushes every stored record to disk.
+The exclusive OS write lock prevents simultaneous writers for the same session
+and is released by the operating system even if the process terminates.
 
-### Dauerhafte Inbox und Freigaben
+### Durable inbox and approvals
 
-| Zustand | Dauerhafte Darstellung und Resume |
+| State | Durable representation and resume behavior |
 | --- | --- |
-| Follow-up und Steering | `InboxAdded` enthält Nachricht, Ziel und Wakeup; unbearbeitete Eingaben wecken den neuen Agenten |
-| Stille Injection | Bleibt gespeichert und wartet auch nach Resume auf den nächsten Step |
-| Approval-Frage | `ApprovalRequested` enthält Call, Argumente, Grund, Request-ID und Policy-Scope |
-| Antwort | `ApprovalResolved` hält `ALLOW`, `DENY` oder `ALWAYS` vor Beginn der Ausführung fest |
-| Fehlender Responder | `ApprovalResolved(status="unavailable", reason=...)` schließt die Anfrage ohne Freigabe |
-| Wiederverwendung | Neue Approval-Events verweisen auf die ursprüngliche `ALWAYS`-Freigabe |
-| Widerruf | `ApprovalRevoked` entfernt die Freigabe aus der aktiven Log-Projektion |
-| Ausführungsgrenze | `ToolPolicyApplied` protokolliert die Entscheidung; `ToolExecutionStarted` wird vor der Ausführung gespeichert |
-| Fertige Tools | `ToolCompleted` hält das geprüfte Ergebnis fest; Resume ergänzt fehlende `ToolReturned`-Events in Call-Reihenfolge |
+| Follow-up and steering | `InboxAdded` stores the message, target, and wakeup; unprocessed inputs wake the new agent |
+| Silent injection | Remains stored and waits for the next step after resume |
+| Approval question | `ApprovalRequested` stores the call, arguments, reason, request ID, and policy scope |
+| Answer | `ApprovalResolved` records `ALLOW`, `DENY`, or `ALWAYS` before execution starts |
+| Missing responder | `ApprovalResolved(status="unavailable", reason=...)` closes the request without granting permission |
+| Reuse | New approval events reference the original `ALWAYS` grant |
+| Revocation | `ApprovalRevoked` removes the grant from the active log projection |
+| Execution boundary | `ToolPolicyApplied` records the decision; `ToolExecutionStarted` is stored before execution |
+| Completed tools | `ToolCompleted` stores the reviewed result; resume fills missing `ToolReturned` events in call order |
 
-`agent.session.approvals` ist ein unveränderlicher Snapshot mit `records`,
-`pending` und `grants`. Eine einzelne `ALLOW`-Antwort gilt für den zugehörigen
-Call. Eine `ALWAYS`-Freigabe gilt für Toolname und Scope derselben Session-ID.
-Unterschiedliche Policies können mit `approval_gate(..., scope="...")`
-getrennte Freigaben verwenden. Auch `ToolPolicy` mit `Decision.ASK` läuft durch
-denselben dauerhaften Approval-Pfad.
+`agent.session.approvals` is an immutable snapshot with `records`, `pending`,
+and `grants`. A single `ALLOW` answer applies to its call.
+An `ALWAYS` grant applies to a tool name and scope within the same session ID.
+Different policies can use separate grants with
+`approval_gate(..., scope="...")`. `ToolPolicy` returning `Decision.ASK` uses
+the same durable approval path.
 
 ```python
 grant = agent.session.approvals.grant_for("run_command", scope="workspace-shell")
@@ -994,52 +988,50 @@ if grant is not None:
     await agent.revoke_approval(grant.request_id)
 ```
 
-Wiederholter Widerruf ist idempotent. Forks bekommen standardmäßig Widerrufe für
-die aktiven Freigaben ihres kopierten Präfixes. Mit
-`session.fork("trusted-copy", inherit_approvals=True)` kann die Anwendung die
-Übernahme ausdrücklich auswählen.
+Repeated revocation is idempotent. By default, forks receive revocations for
+active grants in their copied prefix. An application can explicitly choose to
+inherit them with `session.fork("trusted-copy", inherit_approvals=True)`.
 
-### Unterbrochene Arbeit
+### Interrupted work
 
-Vor dem Start des neuen Drivers ergänzt `repair_interrupted()` das Log:
+Before the new driver starts, `repair_interrupted()` appends repairs to the log:
 
-- Gespeicherte Text- und Reasoning-Chunks werden zu einer unterbrochenen
-  Assistant-Nachricht abgeschlossen.
-- Unbeantwortete Approval-Fragen erhalten den Status `interrupted` und erteilen
-  keine Freigabe. Ein neuer Versuch benötigt eine neue Entscheidung.
-- Tool-Calls ohne Ergebnis erhalten ein unterbrochenes Fehler-Ergebnis.
-  Für bereits gestartete Ausführungen wird der externe Ausgang als unbekannt
-  markiert; diese Calls werden beim Resume nicht automatisch wiederholt.
-- Offene Steps und Turns werden geschlossen. Weitere Reparaturaufrufe erzeugen
-  keine doppelten Abschlüsse.
+- Stored text and reasoning chunks are finalized as an interrupted assistant
+  message.
+- Unanswered approval questions receive status `interrupted` and grant no
+  permission. A new attempt requires a new decision.
+- Tool calls without results receive an interrupted error result. For executions
+  that already started, the external outcome is marked unknown; resume does not
+  automatically repeat these calls.
+- Open steps and turns are closed. Repeating repair creates no duplicate
+  completions.
 
-Der Agent verarbeitet anschließend gespeicherte Inbox-Eingaben gemäß ihrem
-Wakeup. Ohne solche Eingaben wartet er auf den nächsten `run()`, `followup()`
-oder `steer()`. Ein geplanter Stopp kann mit
-`await agent.cancel(keep_inbox=True)` die ausstehende Inbox erhalten.
+The agent then processes stored inbox inputs according to their wakeup flags.
+Without such inputs, it waits for the next `run()`, `followup()`, or `steer()`.
+A planned stop can retain pending inbox entries with
+`await agent.cancel(keep_inbox=True)`.
 
-### Abgerissener letzter Schreibvorgang
+### An interrupted final write
 
-Standardmäßig weist der JSONL-Adapter unvollständige Records zurück.
-`recover_tail=True` erlaubt eine gezielte Reparatur des letzten Records ohne
-abschließende Newline: Seine Bytes werden vor der Reparatur in einer
-`*.incomplete-<offset>-<sha256>.bin`-Datei archiviert. Der vollständige Log-Präfix
-bleibt bytegleich. Ein `LogTailRecovered` protokolliert Offset, Bytezahl,
-Hash und Archivpfad. Auch eine unterbrochene Reparatur kann beim nächsten Laden
-abgeschlossen werden.
+By default, the JSONL adapter rejects incomplete records.
+`recover_tail=True` permits targeted repair of the final record without a
+terminating newline: before repair, its bytes are archived in a
+`*.incomplete-<offset>-<sha256>.bin` file. The complete log prefix stays
+byte-for-byte unchanged. A `LogTailRecovered` event records the offset, byte
+count, hash, and archive path. An interrupted repair can also be completed on
+the next load.
 
-Vollständige, aber ungültige Records, Sequenzfehler und unbekannte Event-Typen
-werden weiterhin abgewiesen. Eine Approval-Antwort ohne vollständigen
-Record-Abschluss wird nicht als Freigabe übernommen. Historische Logs ohne
-Approval-Events enthalten keine rekonstruierbare `ALWAYS`-Freigabe; die neue
-Ausführung fragt entsprechend ihrer Policy erneut.
+Complete but invalid records, sequence errors, and unknown event types are still
+rejected. An approval answer without a complete record terminator is not accepted
+as a grant. Historical logs without approval events contain no recoverable
+`ALWAYS` grant; new execution asks again according to its policy.
 
-[`17_resume_crash.py`](examples/17_resume_crash.py) startet einen separaten
-Prozess, beendet ihn ohne Teardown und öffnet die Session mit einem frischen
-Harness erneut. Die Tests beenden Prozesse zusätzlich während eines laufenden
-Tools, während einer offenen Approval-Frage und mit stiller Inbox im Idle.
+[`17_resume_crash.py`](examples/17_resume_crash.py) starts a separate process,
+exits without teardown, and reopens the session with a fresh Harness.
+Tests also kill processes during a running tool, a pending approval question,
+and idle state with a silent inbox entry.
 
-## Entwicklung und Grenzen
+## Development and limitations
 
 ```sh
 python -m pip install -e ".[dev]"
@@ -1047,43 +1039,42 @@ python -m pytest
 ruff check .
 ```
 
-JSONL-Append ist synchron und flusht pro Event; `fsync=True` aktiviert zusätzlich
-einen Datenträger-Flush. Beschädigte oder unbekannte Records werden abgewiesen.
-Das Log-Format ist ein eigenes, versioniertes Cordify-Format. Aktuell wird beim
-Projizieren die Historie vollständig gelesen; große Sessions brauchen später
-inkrementelle Projektionen. Compaction verkleinert die Modell-Historie, nicht das
-append-only Log.
+JSONL append is synchronous and flushes each event; `fsync=True` additionally
+flushes to disk. Corrupt or unknown records are rejected.
+The log uses Cordify's own versioned format. Projections currently read the
+whole history; large sessions will need incremental projections later.
+Compaction reduces model history while leaving the append-only log intact.
 
-Sync-Tools laufen im Threadpool. Ein Timeout oder Abbruch setzt das
-`ToolCallContext.signal`; der Harness wartet auf das Ende des Workers, bevor er
-Ressourcen freigibt. Ein Python-Thread lässt sich nicht hart stoppen, daher kann
-dieses Warten den konfigurierten Timeout überschreiten. Dasselbe gilt für lokale
-Dateioperationen. `fs_local` prüft auf Pfade außerhalb des Workspace, bietet aber
-keine OS-Sandbox gegen konkurrierende Symlink-Änderungen. `shell_local` startet
-lokale Prozesse; es ist ebenfalls kein Sandbox-Backend.
+Sync tools run in the thread pool. Timeout or cancellation sets
+`ToolCallContext.signal`; the harness waits for the worker to finish before
+releasing resources. A Python thread cannot be forcibly stopped, so this wait
+can exceed the configured timeout. The same applies to local file operations.
+`fs_local` checks for paths outside the workspace, but provides no OS sandbox
+against concurrent symlink changes. `shell_local` starts local processes and
+is also not a sandbox backend.
 
-Für DeepSeek:
+For DeepSeek:
 
 ```sh
 python -m pip install -e ".[deepseek]"
-# DEEPSEEK_API_KEY in der Umgebung setzen
+# Set DEEPSEEK_API_KEY in the environment.
 python -m examples.04_deepseek
 ```
 
-Die Modell-ID ist über `deepseek(model=...)`, `Harness(model=...)` oder
-`harness.session(..., model=...)` konfigurierbar. Eigene Modelle implementieren
-das kleine `LLM.stream(ModelRequest)`-Protocol.
+Configure the model ID through `deepseek(model=...)`, `Harness(model=...)`,
+or `harness.session(..., model=...)`. Custom models implement the small
+`LLM.stream(ModelRequest)` Protocol.
 
-Diese Version enthält keinen MCP-Client,
-Realtime-Transport, Docker-Backend oder Subagenten. Compaction und die folgenden
-Kontextstrategien werden explizit als Plugins ausgewählt.
-Die entsprechenden Erweiterungen können auf denselben Services und Events aufbauen.
+This version has no MCP client, realtime transport, Docker backend, or subagents.
+Compaction and the context strategies below are explicitly selected as plugins.
+These extensions can build on the same services and events.
 
-## Eigene LLM-Adapter
 
-`LLM` bleibt ein `Protocol`. `BaseLLM` ist ein optionaler Helfer für Retry,
-exponentiellen Backoff und das Schließen der Streams pro Versuch. Eigene Provider
-implementieren `_stream_once()` und bei Bedarf `is_retryable(error)`:
+## Custom LLM adapters
+
+`LLM` remains a `Protocol`. `BaseLLM` is an optional helper for retries,
+exponential backoff, and closing streams after each attempt. Custom providers
+implement `_stream_once()` and, if needed, `is_retryable(error)`:
 
 ```python
 from collections.abc import AsyncIterator
@@ -1100,22 +1091,21 @@ class DemoLLM(BaseLLM):
 adapter = DemoLLM(retry=RetryPolicy(max_attempts=3, initial_delay=0.5, max_delay=8))
 ```
 
-`max_attempts` zählt den ersten Versuch mit; `1` schaltet Retries aus. Die
-Standardwerte sind drei Versuche, 0,5 Sekunden Anfangspause, Faktor 2 und eine
-Obergrenze von 8 Sekunden. Die Basis wiederholt `ConnectionError` und
-`TimeoutError`. DeepSeek ergänzt HTTP 408, 429, 5xx sowie Netzwerk-, Timeout-
-und Remote-Protokollfehler von HTTPX. Authentifizierungs- und ungültige
-JSON-Antworten werden direkt weitergegeben.
+`max_attempts` includes the first attempt; `1` disables retries.
+Defaults are three attempts, a 0.5-second initial delay, a factor of 2, and an
+8-second cap. The base retries `ConnectionError` and `TimeoutError`.
+DeepSeek also retries HTTP 408, 429, and 5xx responses, plus HTTPX network,
+timeout, and remote protocol errors. Authentication failures and invalid JSON
+responses propagate immediately.
 
-**Ab dem ersten ausgegebenen `ModelChunk` gibt es keinen Retry**, auch bei
-Reasoning, Usage oder Tool-Calls. Dadurch entstehen keine doppelten sichtbaren
-Ausgaben. Cancellation und explizites Schließen beenden den aktuellen Stream;
-Cancellation während der Backoff-Pause startet keinen weiteren Versuch.
-Die API braucht keine ABC und keinen Eintrag einer Basisklasse im DI-Container.
-`ScriptedLLM` erfüllt das Protocol weiterhin direkt.
+**There is no retry after the first emitted `ModelChunk`**, including reasoning,
+usage, and tool calls. This prevents duplicate visible output.
+Cancellation and explicit closure close the current stream; cancellation during
+backoff starts no further attempt. The API needs no ABC or base-class entry in
+the DI container. `ScriptedLLM` continues to satisfy the Protocol directly.
 
-`DeepSeekLLM` verwendet den Helfer bereits. Dieselbe Konfiguration kann über
-das bestehende Provider-Plugin übergeben werden:
+`DeepSeekLLM` already uses this helper. Pass the same configuration through the
+existing provider plugin:
 
 ```python
 from cordify import Harness
@@ -1131,47 +1121,46 @@ harness = Harness(
 )
 ```
 
-Für SSE-basierte Provider verarbeitet
-`cordify.adapters.sse.iter_sse_data(response.aiter_lines())` gemeinsame
-Data-Frames inklusive mehrzeiliger Daten und Kommentaren. Die Interpretation
-von JSON-Deltas, Tool-Call-Fragmenten und `[DONE]` bleibt beim Provider.
-Das Framing folgt den
-[SSE-Regeln des HTML-Standards](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation).
-Das vollständig offline ausführbare Beispiel
-[`13_llm_adapters.py`](examples/13_llm_adapters.py) zeigt den echten Harness mit
-einem simulierten Verbindungsfehler und beiden Adapter-Varianten.
+For SSE providers,
+`cordify.adapters.sse.iter_sse_data(response.aiter_lines())` handles shared
+data framing, including multiline data and comments. Interpretation of JSON
+deltas, tool-call fragments, and `[DONE]` stays with the provider.
+Framing follows the
+[SSE rules in the HTML standard](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation).
+The fully offline [`13_llm_adapters.py`](examples/13_llm_adapters.py) example runs
+the actual Harness with a simulated connection failure and both adapter forms.
 
-## Compaction-Policies und Kontextbudget
+## Compaction policies and context budget
 
-Compaction ersetzt einen alten, abgeschlossenen Gesprächspräfix durch eine
-Zusammenfassung in der Modellprojektion. Das Original bleibt vollständig im
-append-only Log. Jede angewendete Compaction ist genau ein `CompactionApplied`
-mit Grenze `through`, Zusammenfassung, Policy-Name, geschützten Turn-IDs und
-geschätzter Tokenzahl vor und nach der Anwendung.
+Compaction replaces an old, completed conversation prefix with a summary in
+the model projection. The full original remains in the append-only log.
+Each applied compaction produces exactly one `CompactionApplied` event with
+a `through` boundary, summary, policy name, preserved turn IDs, and estimated
+token counts before and after application.
 
-| Policy | Wann sie zusammenfasst |
+| Policy | When it acts |
 | --- | --- |
-| `ThresholdCompaction(at=0.8)` | Request plus reservierte Output-Tokens erreichen 80 % des Kontextbudgets |
-| `SlidingWindowCompaction(keep_turns=6)` | Ältere abgeschlossene Turns liegen außerhalb des wörtlich erhaltenen Fensters |
-| `PeriodicCompaction(every=5)` | Seit dem letzten Compaction-Event sind fünf weitere Turns abgeschlossen |
-| `ContextBudgetGuard(...)` | Prüft den fertigen Request und weist ihn bei Überschreitung vor dem Provider-Aufruf ab |
+| `ThresholdCompaction(at=0.8)` | Request plus reserved output tokens reach 80% of the context budget |
+| `SlidingWindowCompaction(keep_turns=6)` | Older completed turns fall outside the window retained verbatim |
+| `PeriodicCompaction(every=5)` | Five more turns have completed since the last compaction event |
+| `ContextBudgetGuard(...)` | Checks the final request and rejects overflow before the provider call |
 
-Für jeden automatischen Trigger stehen dieselben Retention-Optionen bereit:
+All automatic triggers share the same retention options:
 
-| Option | Was wörtlich erhalten bleibt |
+| Option | Retention behavior |
 | --- | --- |
-| `keep_turns=2` | Die letzten zwei abgeschlossenen Turns, zusätzlich zum laufenden Turn |
-| `keep_first_turns=1` | Der erste Turn, etwa die ursprüngliche Aufgabenbeschreibung |
-| `preserve_turns=(turn_id, ...)` | Explizit ausgewählte Turns, einschließlich ihrer Tool-Calls und Ergebnisse |
-| `summary_tokens=2048` | Obergrenze für die neue Zusammenfassung nach dem konfigurierten TokenCounter |
+| `keep_turns=2` | Keeps the last two completed turns verbatim, in addition to the active turn |
+| `keep_first_turns=1` | Keeps the first turn, such as the original task description, verbatim |
+| `preserve_turns=(turn_id, ...)` | Keeps explicitly selected turns verbatim, including their tool calls and results |
+| `summary_tokens=2048` | Caps the new summary according to the configured TokenCounter |
 
-Der aktuelle System-Prompt und der laufende Turn bleiben erhalten. Die Grenze
-liegt immer hinter einem `TurnEnd`: Weder aktuelle Eingaben noch Tool-Paare
-werden zerschnitten. Geschützte Turns werden nicht als neuer Originaltext an den
-Summarizer übergeben und ihre IDs in weiteren automatischen Compactions
-weitergeführt. Die Projektion kann sie aus dem Original-Log rekonstruieren.
-System-Kontext aus `inject()` kann als Gesprächsinhalt zusammengefasst werden;
-dauerhaft wörtliche Regeln gehören in `SystemPrompt.section()`.
+The current system prompt and active turn are retained. The boundary always
+follows a `TurnEnd`, so neither current inputs nor tool pairs are split.
+Preserved turns are not passed to the summarizer as new original text, and their
+IDs carry forward through subsequent automatic compactions.
+The projection can reconstruct them from the original log.
+System context from `inject()` may be summarized as conversation content;
+rules that must remain verbatim belong in `SystemPrompt.section()`.
 
 ```python
 from cordify import (
@@ -1195,36 +1184,36 @@ harness = coding(
 )
 ```
 
-Die automatische Komposition schreibt höchstens ein Compaction-Event pro Step.
-Sind mehrere Trigger montiert, bestimmt der zuerst wirksam werdende Trigger die
-Retention dieses Events. Trigger, Retention und Budget-Guard lassen sich
-kombinieren. Der gemeinsame Kern übernimmt frühere Zusammenfassungen in die
-nächste Zusammenfassung und erhält zusätzlichen Kontext aus Request-Hooks.
-Er legt nur dann ein Event an, wenn der gesamte Request dadurch kleiner wird.
-Fehler oder Abbruch während der Zusammenfassung legen kein halbfertiges Event an.
+Automatic composition writes at most one compaction event per step.
+If several triggers are mounted, the first effective trigger determines that
+event's retention. Triggers, retention, and the budget guard can be combined.
+The shared core incorporates earlier summaries into the next one and preserves
+additional context from request hooks. It creates an event only if the entire
+request becomes smaller. Failure or cancellation during summarization leaves
+no partial event.
 
-`ContextBudgetGuard(limit=32_000, reserve_tokens=4096)` setzt zusätzlich eine
-absolute Obergrenze; wirksam ist das Minimum aus `limit` und `context_window`.
-Als Output-Reserve zählt das Maximum aus `request.max_tokens` und
-`reserve_tokens`. Die Prüfung erfolgt nach `ConfigureRequest` und berücksichtigt
-Nachrichten, Tool-Schemas und die Reserve. Passen geschützte Inhalte oder die
-aktuelle Aufgabe weiterhin nicht hinein, erhält der Aufrufer
-`ContextBudgetExceeded` mit `input_tokens`, `reserve_tokens` und `limit`.
-Diese Inhalte werden zur Einhaltung des Budgets nicht still verworfen.
+`ContextBudgetGuard(limit=32_000, reserve_tokens=4096)` adds an absolute cap;
+the effective limit is the minimum of `limit` and `context_window`.
+The output reserve is the maximum of `request.max_tokens` and `reserve_tokens`.
+The check runs after `ConfigureRequest` and includes messages, tool schemas,
+and the reserve. If preserved content or the current task still cannot fit,
+the caller receives `ContextBudgetExceeded` with `input_tokens`,
+`reserve_tokens`, and `limit`. This content is not silently discarded to fit
+the budget.
 
-Der Guard ist ein reversibel montiertes Plugin. Ohne Guard bleibt
-`context_window` die Planungsgröße für die gewählte Compaction-Policy.
-Alle Größen richten sich nach dem `TokenCounter`; der Standard schätzt Tokens
-über UTF-8-Bytes und erkennt keine Provider-Grenzen automatisch.
-`ExtractiveCompactor` und `LLMCompactor` bleiben austauschbare Implementierungen
-des `Compactor`-Protocols.
+The guard is a reversibly mounted plugin. Without it, `context_window` remains
+the planning budget for the selected compaction policy.
+All counts follow the `TokenCounter`; the default estimates tokens from UTF-8
+bytes and does not automatically discover provider limits.
+`ExtractiveCompactor` and `LLMCompactor` remain interchangeable implementations
+of the `Compactor` Protocol.
 
-[`16_compaction_policies.py`](examples/16_compaction_policies.py) vergleicht die
-drei Trigger offline, hält den ursprünglichen Auftrag wörtlich und prüft
-unveränderte Log-Präfixe, Replay und Fork. Es zeigt außerdem einen Request, den
-der Guard vor dem Provider-Aufruf stoppt.
+[`16_compaction_policies.py`](examples/16_compaction_policies.py) compares the
+three triggers offline, preserves the original task verbatim, and checks
+unchanged log prefixes, replay, and fork. It also shows a request stopped by
+the guard before the provider call.
 
-## Rules und Kontextstrategien
+## Rules and context strategies
 
 ```python
 from cordify import (
@@ -1253,7 +1242,7 @@ rules = Rules(
 
 coding = Harness(
     [
-        # agent_loop(), llm(...), eigene Tools ...
+        # agent_loop(), llm(...), custom tools ...
         rules,
         SpillLargeResults(max_tokens=8_000),
         ThresholdCompaction(at=0.8),
@@ -1271,63 +1260,63 @@ browser = Harness(
 )
 ```
 
-`Rules` ist ein normales Klassenplugin mit einem `ReviewToolResult`-Hook. Aktionen
-können verkettet werden und laufen in Deklarationsreihenfolge. `repeated=3` zählt
-aufeinanderfolgende Matches je Tool und Befehl und löst beim dritten Match einmal
-aus; ein Nicht-Match desselben Befehls setzt den Zähler zurück. Andere Befehle
-haben eigene Zähler. Ohne `repeated` wird jedes Match behandelt. Der Befehl kommt
-aus `ToolCall.command` (Argument `command` oder `argv`). `ToolResult.exit_code`
-wird bei nativen `ProcResult`-Rückgaben automatisch übernommen und bleibt bei
-`with_note()` und Spill erhalten.
+`Rules` is a regular class plugin with a `ReviewToolResult` hook.
+Actions can be chained and run in declaration order.
+`repeated=3` counts consecutive matches per tool and command, triggering once
+on the third match; a non-match for the same command resets the counter.
+Other commands have separate counters. Without `repeated`, every match is
+handled. The command comes from `ToolCall.command` (the `command` or `argv`
+argument). Native `ProcResult` return values automatically populate
+`ToolResult.exit_code`, which is preserved by `with_note()` and spill.
 
-Rules reagieren nach der Ausführung. Für das Verhindern einer Aktion werden
-`ToolPolicy` oder `approval_gate` verwendet. Das manuelle `TestDiscipline`-Plugin
-und die deklarative Variante stehen ausführbar in Beispiel 09; die async SDK-
-Methoden `inject` und `steer` werden dabei jeweils mit `await` aufgerufen.
+Rules react after execution. Use `ToolPolicy` or `approval_gate` to prevent an
+action. Example 09 includes runnable versions of the manual `TestDiscipline`
+plugin and declarative rules; the async SDK methods `inject` and `steer` are
+called with `await`.
 
-`RuleEvaluated` und `RuleTriggered` protokollieren Zähler und ausgelöste Aktionen.
-Ein Resume stellt Zähler wieder her, ohne alte Aktionen erneut auszuführen.
-Namen und Regelpositionen identifizieren die Policy: bei inhaltlichen Änderungen
-einen neuen `name` wählen, ebenso für mehrere unabhängige Rules-Instanzen.
+`RuleEvaluated` and `RuleTriggered` record counters and triggered actions.
+Resume restores counters without re-executing earlier actions.
+Names and rule positions identify the policy: choose a new `name` when changing
+its meaning, and use distinct names for independent Rules instances.
 
-- `LatestObservationOnly` behält den aktuellen Zustand voll und höchstens
-  `max_summaries` frühere Kurzfassungen je Quelle. Die Auswahl ist im Log
-  festgehalten; Unload stellt die vorherige Einstellung wieder her.
-- `SpillLargeResults` speichert große Ergebnisse im `SpillStore`. Das Modell
-  bekommt Pfad, Hash, Vorschau und einen Hinweis auf das registrierte `read_spill`-
-  Tool. Die Dateien bleiben für spätere Reads und Forks bestehen und sollten mit
-  der Session aufbewahrt werden. Standardpfad: `.cordify/spills`.
-- `ThresholdCompaction` prüft den vollständigen Request plus reservierte
-  Output-Tokens. Ab `at * context_window` fasst es ältere abgeschlossene Turns
-  zusammen und erhält standardmäßig die letzten zwei. Ein erfolgreicher Austausch
-  schreibt genau ein `CompactionApplied`-Event. Replay und Fork leiten dieselbe
-  Historie ab; laufende Turns, Eingaben und Tool-Paare werden nicht angeschnitten.
-- `CacheBreakpoints` markiert das Ende des Prefix als exklusive Message-Position
-  in `ModelRequest.cache_breakpoints`; volle aktuelle Observations bleiben im
-  Tail. Es schreibt `CacheMetrics` nur aus gemeldeter Provider-Usage.
+- `LatestObservationOnly` keeps the full current state and at most
+  `max_summaries` earlier summaries per source. The selection is recorded in the
+  log; unload restores the previous setting.
+- `SpillLargeResults` stores large results in the `SpillStore`. The model gets a
+  path, hash, preview, and a reference to the registered `read_spill` tool.
+  Files remain available for later reads and forks and should be retained with
+  the session. Default path: `.cordify/spills`.
+- `ThresholdCompaction` checks the complete request plus reserved output tokens.
+  At `at * context_window`, it summarizes older completed turns and keeps the
+  last two by default. A successful replacement writes exactly one
+  `CompactionApplied` event. Replay and fork derive the same history; active
+  turns, inputs, and tool pairs are not split.
+- `CacheBreakpoints` marks the end of the prefix as an exclusive message position
+  in `ModelRequest.cache_breakpoints`; full current observations stay in the tail.
+  It writes `CacheMetrics` only from provider-reported usage.
 
-`TokenCounter`, `Compactor` und `SpillStore` sind austauschbare Services. Der
-Standard zählt Tokens näherungsweise über UTF-8-Bytes und verwendet einen
-`ExtractiveCompactor`, der Textauszüge ohne zusätzlichen Modellaufruf verdichtet.
-`context_window` ist ein SDK-Budget (Standard 128000), keine automatisch erkannte
-Modellgrenze. Für genaue Budgets einen passenden TokenCounter montieren.
-Semantische Zusammenfassungen sind explizit möglich:
+`TokenCounter`, `Compactor`, and `SpillStore` are replaceable services.
+The default estimates tokens from UTF-8 bytes and uses an `ExtractiveCompactor`
+to condense text excerpts without another model call.
+`context_window` is an SDK budget (default 128000), not an automatically
+discovered model limit. Mount a suitable TokenCounter for accurate budgets.
+Semantic summaries can be enabled explicitly:
 
 ```python
 from cordify import LLMCompactor, LocalSpillStore
 from cordify.plugins.context.providers import compactor, spill_store
 from cordify.plugins.observe.tokens import token_counter
 
-# Zu den Harness-Plugins hinzufügen:
+# Add to the Harness plugins:
 # compactor(LLMCompactor(summary_llm, model="your-summary-model"))
 # token_counter(your_tokenizer)
 # spill_store(LocalSpillStore("./artifacts/spills"))
 ```
 
-`PrepareRequest` läuft nach Kontextaufnahme und Prompt-Rendering; dort arbeitet
-Compaction. `ConfigureRequest` folgt danach und plant Cache-Metadaten auf dem
-fertigen Request. Provider-Adapter entscheiden, wie sie Breakpoints umsetzen.
-DeepSeek cached Prefixe automatisch und erhält keine erfundenen Cache-Parameter;
-sein Adapter übernimmt die gemeldeten `prompt_cache_hit_tokens` und
-`prompt_cache_miss_tokens`. Eine bestimmte Anzahl Cache-Misses ist nicht
-garantiert. Siehe [DeepSeek Context Caching](https://api-docs.deepseek.com/guides/kv_cache/).
+`PrepareRequest` runs after context intake and prompt rendering; compaction
+operates there. `ConfigureRequest` follows and plans cache metadata on the final
+request. Provider adapters decide how to implement breakpoints.
+DeepSeek caches prefixes automatically and receives no invented cache parameters;
+its adapter records the reported `prompt_cache_hit_tokens` and
+`prompt_cache_miss_tokens`. No specific number of cache misses is guaranteed.
+See [DeepSeek Context Caching](https://api-docs.deepseek.com/guides/kv_cache/).
