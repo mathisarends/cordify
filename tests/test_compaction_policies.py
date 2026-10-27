@@ -250,6 +250,30 @@ async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_b
         assert any(m.text == "current task" for m in agent.session.messages)
 
 
+async def test_unknown_turn_pins_are_reported_before_the_provider_call():
+    model = ScriptedLLM([])
+    async with minimal(
+        model, plugins=[SlidingWindowCompaction(preserve_turns=["unknown"])]
+    ).session("unknown-pin") as agent:
+        with pytest.raises(ValueError, match="existing turns"):
+            await agent.run("task")
+        assert model.requests == []
+
+
+async def test_budget_reserve_uses_maximum_and_keeps_the_stricter_window_limit():
+    model = ScriptedLLM(["ok"])
+    harness = minimal(
+        model, plugins=[ContextBudgetGuard(limit=100, reserve_tokens=20)], context_window=200
+    )
+    async with harness.session("fits", max_tokens=80) as agent:
+        await agent.run("hello")
+    async with harness.session("too-large", max_tokens=120) as agent:
+        with pytest.raises(ContextBudgetExceeded) as error:
+            await agent.run("hello")
+        assert error.value.reserve_tokens == 120 and error.value.limit == 100
+    assert len(model.requests) == 1
+
+
 @pytest.mark.parametrize(
     "factory",
     [

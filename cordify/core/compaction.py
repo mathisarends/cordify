@@ -22,6 +22,9 @@ def plan_compaction(
     preserve_turns: tuple[str, ...],
 ) -> CompactionPlan | None:
     events = tuple(events)
+    known_turns = {event.turn_id for event in events if isinstance(event, TurnStart)}
+    if not set(preserve_turns) <= known_turns:
+        raise ValueError("preserve_turns must refer to existing turns in the session log")
     closed = [
         (seq + 1, event.turn_id) for seq, event in enumerate(events) if isinstance(event, TurnEnd)
     ]
