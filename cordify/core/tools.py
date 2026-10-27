@@ -3,14 +3,18 @@ import inspect
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints, overload
 
 from ..kernel.context import Context
 from ..kernel.di import bind_injected, injections
-from ..kernel.effects import Disposer
+from ..kernel.effects import Disposer, run_sync
 from ..seams.models import ToolCall, ToolDefinition, ToolResult, result_content, to_dict
 from ..seams.shell import ProcResult
 from .execution import ToolCallContext
+from .scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
+
+_UNSPECIFIED = object()
 
 
 def _schema(annotation: Any) -> dict:
@@ -80,6 +84,8 @@ class _Tool:
     signature: inspect.Signature
     injected: dict[str, type]
     timeout: float | None
+    parallel: bool
+    resources: ResourceSpec
 
 
 class ToolRegistry:
@@ -96,11 +102,24 @@ class ToolRegistry:
         *,
         name: str | None = None,
         timeout: float | None = None,
+        parallel: bool = False,
+        resources: ResourceSpec = (),
     ) -> Callable[[F], F]: ...
 
-    def tool(self, fn=None, /, *, name: str | None = None, timeout: float | None = None):
+    def tool(
+        self,
+        fn=None,
+        /,
+        *,
+        name: str | None = None,
+        timeout: float | None = None,
+        parallel: bool = False,
+        resources: ResourceSpec = (),
+    ):
         def register(callback):
-            self.register(callback, name=name, timeout=timeout)
+            self.register(
+                callback, name=name, timeout=timeout, parallel=parallel, resources=resources
+            )
             return callback
 
         return register(fn) if fn is not None else register
@@ -111,9 +130,13 @@ class ToolRegistry:
         *,
         name: str | None = None,
         timeout: float | None = None,
+        parallel: bool = False,
+        resources: ResourceSpec = (),
     ) -> Disposer:
         owner = Context.current() or self._ctx
         owner._check_open()
+        ToolScheduling(parallel)
+        resources = resource_spec(resources)
         if timeout is not None and timeout <= 0:
             raise ValueError("Tool timeout must be positive")
         signature = inspect.signature(callback)
@@ -146,7 +169,9 @@ class ToolRegistry:
                 "additionalProperties": False,
             },
         )
-        entry = _Tool(definition, callback, owner, signature, injected, timeout)
+        entry = _Tool(
+            definition, callback, owner, signature, injected, timeout, parallel, resources
+        )
         entries = self._tools.setdefault(definition.name, [])
         entries.append(entry)
 
@@ -181,14 +206,30 @@ class ToolRegistry:
             (tool for tool in reversed(entries) if tool.owner._registrations_active()), None
         )
 
+    def plan(self, call: ToolCall) -> ToolPlan:
+        tool = self._visible(self._tools.get(call.name, []))
+        if tool is None:
+            return ToolPlan(call, ToolScheduling())
+        keys = tool.resources(call) if callable(tool.resources) else tool.resources
+        if inspect.isawaitable(keys):
+            if inspect.iscoroutine(keys):
+                keys.close()
+            raise TypeError("Resource resolvers must return resource names, not an awaitable")
+        return ToolPlan(call, ToolScheduling(tool.parallel, keys), binding=tool)
+
     async def execute(
         self,
         call: ToolCall,
         *,
         ctx: Context | None = None,
         call_context: ToolCallContext | None = None,
+        _expected: object = _UNSPECIFIED,
     ) -> ToolResult:
         tool = self._visible(self._tools.get(call.name, []))
+        if _expected is not _UNSPECIFIED and tool is not _expected:
+            return ToolResult.error(
+                "Tool registration changed during batch planning; issue a fresh call"
+            )
         if tool is None:
             return ToolResult.error(f"Unknown tool: {call.name}")
         ctx = ctx or self._ctx
@@ -212,7 +253,10 @@ class ToolRegistry:
                     if inspect.iscoroutinefunction(tool.callback):
                         value = await tool.callback(*bound.args, **bound.kwargs)
                     else:
-                        value = await asyncio.to_thread(tool.callback, *bound.args, **bound.kwargs)
+                        value = await run_sync(
+                            partial(tool.callback, *bound.args, **bound.kwargs),
+                            on_cancel=call_context.signal.set if call_context is not None else None,
+                        )
                         if inspect.isawaitable(value):
                             value = await value
             if isinstance(value, ProcResult):

@@ -39,6 +39,7 @@ from .events import (
     StepStart,
     SystemMessage,
     ToolCalled,
+    ToolCompleted,
     ToolExecutionStarted,
     ToolPolicy,
     ToolPolicyApplied,
@@ -51,6 +52,7 @@ from .events import (
 from .execution import ToolCallContext
 from .outputs import ToolOutputLimit
 from .prompt import SystemPrompt
+from .scheduling import ToolPlan, ToolScheduler, ToolScheduling
 from .session import Session
 from .tools import ToolRegistry
 
@@ -65,6 +67,7 @@ class AgentOptions:
     max_tokens: int | None = None
     context_window: int = 128_000
     tool_output_limit: ToolOutputLimit = field(default_factory=ToolOutputLimit)
+    max_parallel_tools: int = 4
 
     def __post_init__(self):
         if not self.model:
@@ -77,6 +80,8 @@ class AgentOptions:
             raise ValueError("max_tokens must be a positive integer")
         if type(self.context_window) is not int or self.context_window < 1:
             raise ValueError("context_window must be a positive integer")
+        if type(self.max_parallel_tools) is not int or self.max_parallel_tools < 1:
+            raise ValueError("max_parallel_tools must be a positive integer")
 
 
 @dataclass(frozen=True)
@@ -400,10 +405,7 @@ class Agent:
                 )
             await self.session.append(ModelRequested(request))
             response = await self._respond(request)
-            for call in response.tool_calls:
-                await self.session.append(ToolCalled(call))
-                result = await self._execute_tool(call)
-                await self.session.append(ToolReturned(call.id, result))
+            await self._run_tools(response.tool_calls)
             await self.session.append(StepEnd(turn, step))
             if response.tool_calls or self.inbox.has_step_wakeup:
                 continue
@@ -415,10 +417,55 @@ class Agent:
         await self.session.append(TurnEnd(turn, "max_steps"))
         return True
 
-    async def _execute_tool(self, call: ToolCall) -> ToolResult:
-        return self.options.tool_output_limit.apply(await self._tool_pipeline(call))
+    async def _run_tools(self, calls: tuple[ToolCall, ...]) -> None:
+        if not calls:
+            return
+        plans = []
+        registry = self.ctx[ToolRegistry]
+        for call in calls:
+            await self.session.append(ToolCalled(call))
+            try:
+                plans.append(registry.plan(call))
+            except Exception as exc:
+                plans.append(
+                    ToolPlan(
+                        call, ToolScheduling(), ToolResult.error(f"{type(exc).__name__}: {exc}")
+                    )
+                )
+        scheduler = ToolScheduler(self.options.max_parallel_tools)
+        for group in scheduler.groups(plans):
+            await self._run_tool_group(group, scheduler)
 
-    async def _tool_pipeline(self, call: ToolCall) -> ToolResult:
+    async def _run_tool_group(self, plans: tuple[ToolPlan, ...], scheduler: ToolScheduler) -> None:
+        authorizations = [
+            plan.error if plan.error is not None else await self._authorize_tool(plan.call)
+            for plan in plans
+        ]
+        reviewed = [asyncio.Event() for _ in plans]
+
+        async def worker(index: int, plan: ToolPlan) -> ToolResult:
+            try:
+                result = authorizations[index]
+                reviewable = result is None
+                if result is None:
+                    async with scheduler.slots:
+                        result, reviewable = await self._invoke_tool(plan)
+                if index:
+                    await reviewed[index - 1].wait()
+                if reviewable:
+                    result = await self._review_tool(plan.call, result)
+                result = self.options.tool_output_limit.apply(result)
+                await self.session.append(ToolCompleted(plan.call.id, result))
+                return result
+            finally:
+                reviewed[index].set()
+
+        async def commit(call: ToolCall, result: ToolResult):
+            await self.session.append(ToolReturned(call.id, result))
+
+        await scheduler.run(plans, worker, commit)
+
+    async def _authorize_tool(self, call: ToolCall) -> ToolResult | None:
         try:
             decision = await self.ctx.dispatch(
                 ToolPolicy(call, self),
@@ -431,16 +478,35 @@ class Agent:
             await self.session.append(ToolPolicyApplied(call.id, decision))
             if decision not in (Decision.ALLOW, Decision.ALWAYS):
                 return ToolResult.denied("User declined this action")
+            return None
+        except Exception as exc:
+            return ToolResult.error(f"{type(exc).__name__}: {exc}")
+
+    async def _invoke_tool(self, plan: ToolPlan) -> tuple[ToolResult, bool]:
+        call = plan.call
+        execution = ToolCallContext(call, self)
+        try:
             await self.session.append(ToolExecutionStarted(call.id))
-            execution = ToolCallContext(call, self)
             result = await self.ctx.dispatch(
                 ExecuteTool(call, self),
                 default=lambda: self.ctx[ToolRegistry].execute(
                     call,
                     ctx=self.ctx,
                     call_context=execution,
+                    _expected=plan.binding,
                 ),
             )
+            if not isinstance(result, ToolResult):
+                raise TypeError("Tool hooks must return a ToolResult")
+            return result, True
+        except asyncio.CancelledError:
+            execution.signal.set()
+            raise
+        except Exception as exc:
+            return ToolResult.error(f"{type(exc).__name__}: {exc}"), False
+
+    async def _review_tool(self, call: ToolCall, result: ToolResult) -> ToolResult:
+        try:
             result = await self.ctx.dispatch(
                 ReviewToolResult(call, result, self),
                 default=lambda: result,

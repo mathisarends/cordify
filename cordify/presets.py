@@ -20,10 +20,14 @@ class Harness:
         model: str | None = None,
         context_window: int = 128_000,
         tool_output_limit: ToolOutputLimit | None = None,
+        max_parallel_tools: int = 4,
     ):
         self.plugins = tuple(plugins)
         self.model = model
         self.context_window = context_window
+        if type(max_parallel_tools) is not int or max_parallel_tools < 1:
+            raise ValueError("max_parallel_tools must be a positive integer")
+        self.max_parallel_tools = max_parallel_tools
         self.tool_output_limit = (
             tool_output_limit if tool_output_limit is not None else ToolOutputLimit()
         )
@@ -53,6 +57,7 @@ class Harness:
         max_tokens: int | None = None,
         context_window: int | None = None,
         tool_output_limit: ToolOutputLimit | None = None,
+        max_parallel_tools: int | None = None,
     ):
         from .plugins.context.providers import compactor, spill_store
         from .plugins.observe.tokens import token_counter
@@ -87,6 +92,7 @@ class Harness:
                     max_tokens,
                     self.context_window if context_window is None else context_window,
                     self.tool_output_limit if tool_output_limit is None else tool_output_limit,
+                    self.max_parallel_tools if max_parallel_tools is None else max_parallel_tools,
                 )
                 persistence = ctx[SessionPersistence] if SessionPersistence in ctx else None
                 seed = await persistence.load(session_id) if persistence is not None else ()
@@ -111,6 +117,7 @@ def minimal(
     model: str | None = None,
     context_window: int = 128_000,
     tool_output_limit: ToolOutputLimit | None = None,
+    max_parallel_tools: int = 4,
 ) -> Harness:
     from .plugins.agents.loop import agent_loop
     from .plugins.services import llm
@@ -120,6 +127,7 @@ def minimal(
         model=model,
         context_window=context_window,
         tool_output_limit=tool_output_limit,
+        max_parallel_tools=max_parallel_tools,
     )
 
 
@@ -132,6 +140,7 @@ def coding(
     model: str | None = None,
     context_window: int = 128_000,
     tool_output_limit: ToolOutputLimit | None = None,
+    max_parallel_tools: int = 4,
 ) -> Harness:
     from pathlib import Path
 
@@ -149,6 +158,7 @@ def coding(
         model=model,
         context_window=context_window,
         tool_output_limit=tool_output_limit,
+        max_parallel_tools=max_parallel_tools,
     )
 
 
@@ -159,6 +169,7 @@ def headless(
     model: str | None = None,
     context_window: int = 128_000,
     tool_output_limit: ToolOutputLimit | None = None,
+    max_parallel_tools: int = 4,
 ) -> Harness:
     return minimal(
         implementation,
@@ -166,4 +177,5 @@ def headless(
         model=model,
         context_window=context_window,
         tool_output_limit=tool_output_limit,
+        max_parallel_tools=max_parallel_tools,
     )

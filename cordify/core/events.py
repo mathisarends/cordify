@@ -388,6 +388,13 @@ class ToolReturned(SessionEvent):
 
 
 @dataclass(frozen=True)
+class ToolCompleted(SessionEvent):
+    type: ClassVar[str] = "tools/completed"
+    call_id: str
+    result: ToolResult
+
+
+@dataclass(frozen=True)
 class ToolProgress(SessionEvent):
     type: ClassVar[str] = "tools/progress"
     call_id: str
@@ -445,6 +452,7 @@ SESSION_EVENT_TYPES = {
         AssistantMessage,
         ToolCalled,
         ToolReturned,
+        ToolCompleted,
         ToolProgress,
         StepEnd,
         TurnEnd,

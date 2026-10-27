@@ -43,6 +43,7 @@ from .events import (
     StepStart,
     SystemMessage,
     ToolCalled,
+    ToolCompleted,
     ToolExecutionStarted,
     ToolReturned,
     TurnEnd,
@@ -114,7 +115,7 @@ def decode_event(record: dict) -> SessionEvent:
         data["ref"] = SpillRef(**data["ref"])
     elif kind in (ToolCalled, ApprovalRequested):
         data["call"] = ToolCall(**data["call"])
-    elif kind is ToolReturned:
+    elif kind in (ToolReturned, ToolCompleted):
         data["result"] = tool_result_from_dict(data["result"])
     event = kind(**data)
     _validate_event(event)
@@ -338,6 +339,7 @@ class Session:
             await self.append(AssistantMessage(message, interrupted=True))
         turn, step = None, None
         unanswered: dict[str, ToolCall] = {}
+        completed: dict[str, ToolResult] = {}
         started = set()
         for event in self._events:
             match event:
@@ -346,9 +348,14 @@ class Session:
                 case StepStart(step=index):
                     step = index
                 case AssistantMessage(message=message):
-                    unanswered.update((call.id, call) for call in message.tool_calls)
+                    for call in message.tool_calls:
+                        unanswered[call.id] = call
+                        completed.pop(call.id, None)
+                        started.discard(call.id)
                 case ToolReturned(call_id=call_id):
                     unanswered.pop(call_id, None)
+                case ToolCompleted(call_id=call_id, result=result):
+                    completed[call_id] = result
                 case ToolExecutionStarted(call_id=call_id):
                     started.add(call_id)
                 case StepEnd():
@@ -356,6 +363,9 @@ class Session:
                 case TurnEnd():
                     turn = None
         for call in unanswered.values():
+            if call.id in completed:
+                await self.append(ToolReturned(call.id, completed[call.id]))
+                continue
             message = "Tool execution interrupted"
             if call.id in started:
                 message += "; external outcome is unknown. Inspect external state before retrying."

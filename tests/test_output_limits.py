@@ -71,7 +71,8 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         assert Session("replay", seed=restored).messages == agent.session.messages
         replayed = next(e.result for e in restored if isinstance(e, ToolReturned))
         assert replayed == result and replayed.exit_code == 3
-    assert (tmp_path / "bounded.jsonl").stat().st_size < 100_000
+    # Completion journal, ordered result and model request retain only bounded copies.
+    assert (tmp_path / "bounded.jsonl").stat().st_size < 4 * ToolOutputLimit().max_chars
 
 
 @pytest.mark.parametrize("stage", ["execution", "review", "error"])

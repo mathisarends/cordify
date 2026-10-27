@@ -9,6 +9,7 @@ from ..kernel.declarations import Registration
 from ..kernel.events import Event
 from ..kernel.events import on as hook
 from ..kernel.plugin import PluginLike
+from .scheduling import ResourceSpec, resource_spec
 from .tools import ToolRegistry
 
 
@@ -16,10 +17,18 @@ from .tools import ToolRegistry
 class ToolRegistration:
     name: str | None = None
     timeout: float | None = None
+    parallel: bool = False
+    resources: ResourceSpec = ()
     needs: ClassVar[tuple] = (ToolRegistry,)
 
     def mount(self, ctx: Context, callback: Callable):
-        ctx[ToolRegistry].register(callback, name=self.name, timeout=self.timeout)
+        ctx[ToolRegistry].register(
+            callback,
+            name=self.name,
+            timeout=self.timeout,
+            parallel=self.parallel,
+            resources=self.resources,
+        )
 
 
 @overload
@@ -31,15 +40,32 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     timeout: float | None = None,
+    parallel: bool = False,
+    resources: ResourceSpec = (),
 ) -> Callable[[F], F]: ...
 
 
-def tool(fn=None, /, *, name: str | None = None, timeout: float | None = None):
+def tool(
+    fn=None,
+    /,
+    *,
+    name: str | None = None,
+    timeout: float | None = None,
+    parallel: bool = False,
+    resources: ResourceSpec = (),
+):
+    resources = resource_spec(resources)
+
     def decorate(callback):
-        callback._cordify_tool = {"name": name, "timeout": timeout}
+        callback._cordify_tool = {
+            "name": name,
+            "timeout": timeout,
+            "parallel": parallel,
+            "resources": resources,
+        }
         callback._cordify_registrations = [
             *getattr(callback, "_cordify_registrations", ()),
-            ToolRegistration(name, timeout),
+            ToolRegistration(name, timeout, parallel, resources),
         ]
         return callback
 
@@ -48,9 +74,17 @@ def tool(fn=None, /, *, name: str | None = None, timeout: float | None = None):
 
 class Bundle(KernelBundle):
     def add_tool(
-        self, callback: Callable, *, name: str | None = None, timeout: float | None = None
+        self,
+        callback: Callable,
+        *,
+        name: str | None = None,
+        timeout: float | None = None,
+        parallel: bool = False,
+        resources: ResourceSpec = (),
     ):
-        return self.add_registration(ToolRegistration(name, timeout), callback)
+        return self.add_registration(
+            ToolRegistration(name, timeout, parallel, resource_spec(resources)), callback
+        )
 
     @overload
     def tool[F: Callable[..., Any]](self, fn: F, /) -> F: ...
@@ -61,11 +95,24 @@ class Bundle(KernelBundle):
         *,
         name: str | None = None,
         timeout: float | None = None,
+        parallel: bool = False,
+        resources: ResourceSpec = (),
     ) -> Callable[[F], F]: ...
 
-    def tool(self, fn=None, /, *, name: str | None = None, timeout: float | None = None):
+    def tool(
+        self,
+        fn=None,
+        /,
+        *,
+        name: str | None = None,
+        timeout: float | None = None,
+        parallel: bool = False,
+        resources: ResourceSpec = (),
+    ):
         def register(callback):
-            return self.add_tool(callback, name=name, timeout=timeout)
+            return self.add_tool(
+                callback, name=name, timeout=timeout, parallel=parallel, resources=resources
+            )
 
         return register(fn) if fn is not None else register
 
