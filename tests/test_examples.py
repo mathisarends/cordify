@@ -16,6 +16,9 @@ import pytest
         "examples.06_explicit_registration",
         "examples.07_context",
         "examples.08_observations",
+        "examples.09_rules",
+        "examples.10_context_strategies",
+        "examples.11_temporal_needs",
     ],
 )
 def test_offline_sdk_example_runs(module):

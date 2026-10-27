@@ -26,6 +26,9 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.06_explicit_registration` | Plugins und Hooks ohne Dekoratoren |
 | `python -m examples.07_context` | Alle fünf Kontextwege: Sektionen, Aufgaben-Kontext, Anhänge, Push und Pull |
 | `python -m examples.08_observations` | Browserzustand pro Step: voller aktueller Zustand, kompakte alte Zustände |
+| `python -m examples.09_rules` | TestDiscipline als Klasse und deklarative Rules |
+| `python -m examples.10_context_strategies` | Spill, Compaction, Observation-Limit und Cache-Metadaten gemeinsam |
+| `python -m examples.11_temporal_needs` | Service-Verlust, Discomposition und frischer Neuaufbau |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -73,6 +76,19 @@ Unterstützte Formen: Async-Generator mit `@plugin` oder `@plugin(...)`, `Bundle
 `add_hook`/`add_tool`. Jede Montage besitzt einen eigenen Cleanup-Stack.
 
 ## Kontext: fünf Wege
+
+| Inhalt | Mechanismus | Lebensdauer und Platz |
+| --- | --- | --- |
+| Rolle und feste Regeln | `section(stable=True)` | Statischer System-Prefix |
+| Tool-Doku | Signatur und Docstring bei `.tool` | Sichtbare Tool-Schemas im Request |
+| Änderbares Projektwissen | `section(stable=False)` | System-Prefix hinter stabilen Sektionen |
+| Aufgabe und Anhänge | `run(prompt, attachments=...)` | User-Nachricht im Log und in späterer Historie |
+| Kontext nur für diese Aufgabe | `run(..., context=...)` | Aktueller Turn; danach nur noch im Log |
+| Hinweis auf ein Ergebnis | `result.with_note(...)` | Tool-Ergebnis im Log und in der Historie |
+| Stiller Zusatzkontext | `inject(system(...))` | Nächster Step; weckt nicht auf |
+| Kurskorrektur | `steer(user(...))` | Nächster Step; weckt auf |
+| Browser- oder Screenzustand | `observe(Observation(...))` | Aktuell voll im Tail, frühere Zustände kurz |
+| Großes Wissen und Memory | Pull-Tools | Ergebnis nur bei tatsächlichem Abruf |
 
 **1. System-Sektionen** für dauerhafte Regeln und dynamischen Projektkontext:
 
@@ -198,6 +214,83 @@ Browser-Dummy, den Observer sowie `click`- und `snapshot`-Tools.
 
 ## Plugins und Injection
 
+### needs und temporale Komposition
+
+`needs` beschreibt **wann ein Plugin lebt**. Das gilt während der gesamten
+Montage, nicht nur beim Start. `Inject[T]` beschreibt, **woher ein Parameter
+kommt**. Die explizite needs-Liste ist die klare Form für den Lebenszyklus:
+
+```python
+@plugin(needs=[Browser, ToolRegistry])
+async def browser_tools(ctx: Context):
+    browser = ctx[Browser]
+
+    @ctx[ToolRegistry].tool
+    async def title() -> str:
+        """Read the current page title."""
+        return await browser.title()
+
+    yield
+```
+
+Fehlt `Browser`, bleibt die Montage `waiting`. Wird er bereitgestellt, beginnt
+Setup; verschwindet er, werden die abhängigen Plugins vor ihrem Provider
+abgebaut. Tools, Hooks, Services, Prompt-Sektionen und Effekte dieser Montage
+verschwinden. Kehrt der Service zurück, wird derselbe Plugin-Beleg mit einem
+neuen Context, einem neuen Async-Generator beziehungsweise einer frischen
+Klasseninstanz wieder aktiviert. Der eingefangene `browser` oben ist deshalb
+immer an die aktuelle Aktivierung gebunden. Auch Service-Overrides und das
+Zurückfallen auf die vorherige Implementierung führen zum Neuaufbau.
+
+```python
+feature = await ctx.plugin(browser_tools())  # wartet, falls Browser fehlt
+remove = ctx.provide(Browser, local_browser)
+await ctx.settle()  # feature.status == "active"
+
+await remove()
+await ctx.settle()  # feature.status == "waiting"
+
+ctx.provide(Browser, replacement_browser)
+await ctx.settle()  # frischer Aufbau
+await feature.aclose()  # permanent "disposed"
+```
+
+Die Komposition läuft automatisch auf dem Event-Loop. `settle()` ist die
+explizite Barriere für Tests und Anwendungen, die den fertigen Übergang benötigen.
+Ein unvollständiges Setup wird bei Dependency-Verlust oder Shutdown abgebrochen
+und zurückgerollt. Services eines Providers werden für andere Plugins erst nach
+erfolgreichem Setup sichtbar. `handle.error` zeigt Setup-Fehler; `settle()` meldet
+Fehler automatischer Aktivierungen als ExceptionGroup. Fehlgeschlagene Setups
+werden bei unveränderter Dependency nicht endlos wiederholt. Dynamische Zyklen
+werden gemeldet.
+
+Die Formen sind gleichwertig:
+
+```python
+@plugin(needs=[Browser])
+async def feature(ctx):
+    yield
+
+
+class BrowserFeature(Plugin):
+    needs = (Browser,)
+
+
+bundle = Bundle("browser-feature", needs=[Browser])
+explicit = Plugin(name="browser-feature", needs=[Browser], hooks=[], tools=[])
+```
+
+`Context.install()` behält auch momentan nicht erfüllte Plugins als wartende
+Rezepte. `strict=True` verlangt stattdessen erfüllbare Start-Abhängigkeiten und
+rollt einen unvollständigen Installationssatz zurück. Kindkontexte haben eigene
+Service-Sichten; Änderungen in einem isolierten Geschwisterkontext bauen die
+anderen Plugins nicht um. `Agent` wartet vor jedem Step auf die Komposition.
+
+Inject-Parameter in Plugin-Setup und Klassen-Hooks ergänzen `needs` weiterhin als
+Kurzform. Unmarkierte Service-Typen lösen keine automatische Injection aus.
+Tool-Injection allein macht ein Tool bei fehlendem Service unsichtbar; für die
+Lebensdauer des ganzen Features wird `needs` ausdrücklich angegeben.
+
 ```python
 from cordify import Context, Inject, SystemPrompt, ToolRegistry, plugin
 
@@ -274,7 +367,8 @@ Die kompakte Form `approval_gate(risky={...}, ask=fn)` ist ebenfalls möglich.
 `await agent.inject(text)` fügt Kontext hinzu und `await agent.steer(text)` setzt
 eine neue Step-Eingabe. `ToolReturned` beobachtet das bereits festgeschriebene Ergebnis.
 
-`Harness` montiert pro Session frische Contexts, ToolRegistry und SystemPrompt.
+`Harness` montiert pro Session frische Contexts, ToolRegistry und SystemPrompt
+sowie Standard-Services für TokenCounter, Compactor und SpillStore.
 Session-Events und Modellwerte sind unveränderlich; Inbox und Modell-Historie
 werden aus dem Log abgeleitet. `session_jsonl()` speichert JSONL mit einer
 Versionsnummer und exklusivem OS-Schreiblock. `ModelRequested` enthält den
@@ -387,6 +481,11 @@ haben eigene Zähler. Ohne `repeated` wird jedes Match behandelt. Der Befehl kom
 aus `ToolCall.command` (Argument `command` oder `argv`). `ToolResult.exit_code`
 wird bei nativen `ProcResult`-Rückgaben automatisch übernommen und bleibt bei
 `with_note()` und Spill erhalten.
+
+Rules reagieren nach der Ausführung. Für das Verhindern einer Aktion werden
+`ToolPolicy` oder `approval_gate` verwendet. Das manuelle `TestDiscipline`-Plugin
+und die deklarative Variante stehen ausführbar in Beispiel 09; die async SDK-
+Methoden `inject` und `steer` werden dabei jeweils mit `await` aufgerufen.
 
 `RuleEvaluated` und `RuleTriggered` protokollieren Zähler und ausgelöste Aktionen.
 Ein Resume stellt Zähler wieder her, ohne alte Aktionen erneut auszuführen.
