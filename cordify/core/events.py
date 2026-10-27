@@ -99,6 +99,91 @@ class SessionEvent(Emit):
 
 
 @dataclass(frozen=True)
+class ApprovalRequested(SessionEvent):
+    type: ClassVar[str] = "approvals/requested"
+    request_id: str
+    call: ToolCall
+    reason: str
+    scope: str
+    grant_id: str | None = None
+
+    def __post_init__(self):
+        if (
+            not isinstance(self.request_id, str)
+            or not self.request_id
+            or not isinstance(self.scope, str)
+            or not self.scope
+        ):
+            raise ValueError("Approvals require a request_id and scope")
+        if not isinstance(self.call, ToolCall):
+            raise TypeError("Approvals require a ToolCall")
+
+
+@dataclass(frozen=True)
+class ApprovalResolved(SessionEvent):
+    type: ClassVar[str] = "approvals/resolved"
+    request_id: str
+    decision: Decision | None = None
+    status: Literal["answered", "interrupted"] = "answered"
+
+    def __post_init__(self):
+        if self.decision is not None:
+            object.__setattr__(self, "decision", Decision(self.decision))
+        if self.status == "answered" and self.decision in (
+            Decision.ALLOW,
+            Decision.DENY,
+            Decision.ALWAYS,
+        ):
+            return
+        if self.status == "interrupted" and self.decision is None:
+            return
+        raise ValueError("Approval must have a final decision or be interrupted")
+
+
+@dataclass(frozen=True)
+class ApprovalRevoked(SessionEvent):
+    type: ClassVar[str] = "approvals/revoked"
+    request_id: str
+    reason: str = "revoked"
+
+
+@dataclass(frozen=True)
+class ToolPolicyApplied(SessionEvent):
+    type: ClassVar[str] = "tools/policy"
+    call_id: str
+    decision: Decision
+
+    def __post_init__(self):
+        object.__setattr__(self, "decision", Decision(self.decision))
+        if self.decision is Decision.ASK:
+            raise ValueError("ToolPolicyApplied requires a final decision")
+
+
+@dataclass(frozen=True)
+class ToolExecutionStarted(SessionEvent):
+    type: ClassVar[str] = "tools/execution-started"
+    call_id: str
+
+
+@dataclass(frozen=True)
+class LogTailRecovered(SessionEvent):
+    type: ClassVar[str] = "session/log-tail-recovered"
+    offset: int
+    discarded_bytes: int
+    sha256: str
+    archive: str
+
+    def __post_init__(self):
+        if (
+            type(self.offset) is not int
+            or self.offset < 0
+            or type(self.discarded_bytes) is not int
+            or self.discarded_bytes < 1
+        ):
+            raise ValueError("Invalid recovered log tail bounds")
+
+
+@dataclass(frozen=True)
 class AssistantChunk(SessionEvent):
     type: ClassVar[str] = "assistant/chunk"
     text: str = ""
@@ -334,6 +419,12 @@ class SessionAppended(Emit):
 SESSION_EVENT_TYPES = {
     cls.type: cls
     for cls in (
+        ApprovalRequested,
+        ApprovalResolved,
+        ApprovalRevoked,
+        ToolPolicyApplied,
+        ToolExecutionStarted,
+        LogTailRecovered,
         InboxAdded,
         InboxRemoved,
         TurnStart,

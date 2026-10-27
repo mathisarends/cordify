@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from cordify.adapters.compaction import LLMCompactor as LLMCompactor
     from cordify.adapters.spill import LocalSpillStore as LocalSpillStore
     from cordify.adapters.tokens import ApproximateTokenCounter as ApproximateTokenCounter
+    from cordify.core.approvals import Approval as Approval
+    from cordify.core.approvals import Approvals as Approvals
     from cordify.core.attachments import File as File
     from cordify.core.attachments import Image as Image
     from cordify.core.budget import ContextBudget as ContextBudget
@@ -89,6 +91,8 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "Approval": ("cordify.core.approvals", "Approval"),
+    "Approvals": ("cordify.core.approvals", "Approvals"),
     "ContextBudget": ("cordify.core.budget", "ContextBudget"),
     "ContextBudgetExceeded": ("cordify.core.budget", "ContextBudgetExceeded"),
     "ContextBudgetGuard": ("cordify.plugins.context.compaction", "ContextBudgetGuard"),
@@ -174,6 +178,8 @@ _EXPORTS = {
     "Key": ("cordify.kernel.keys", "Key"),
 }
 __all__ = [
+    "Approval",
+    "Approvals",
     "ContextBudget",
     "ContextBudgetExceeded",
     "ContextBudgetGuard",

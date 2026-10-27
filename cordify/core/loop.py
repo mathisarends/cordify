@@ -15,6 +15,9 @@ from ..seams.tokens import TokenCounter
 from .attachments import Attachment, prepare_input
 from .budget import ContextBudget
 from .events import (
+    ApprovalRequested,
+    ApprovalResolved,
+    ApprovalRevoked,
     AssistantChunk,
     AssistantMessage,
     ConfigureRequest,
@@ -36,7 +39,9 @@ from .events import (
     StepStart,
     SystemMessage,
     ToolCalled,
+    ToolExecutionStarted,
     ToolPolicy,
+    ToolPolicyApplied,
     ToolReturned,
     TurnEnd,
     TurnStart,
@@ -185,6 +190,51 @@ class Agent:
 
     async def inject(self, content: str | Message) -> str:
         return await self._send(content, "inject")
+
+    async def request_approval(
+        self,
+        call: ToolCall,
+        reason: str,
+        *,
+        scope: str = "tool-policy",
+        approver: Approver | None = None,
+    ) -> Decision:
+        if self._closing or self._canceling:
+            raise RuntimeError("Agent is being cancelled or disposed")
+        grant = self.session.approvals.grant_for(call.name, scope=scope)
+        request = ApprovalRequested(
+            uuid4().hex, call, reason, scope, grant.request_id if grant else None
+        )
+        await self.session.append(request)
+        try:
+            if grant is not None:
+                decision = Decision.ALWAYS
+            else:
+                selected = approver if approver is not None else self.ctx[Approver]
+                decision = await selected.ask(call, reason)
+            if not isinstance(decision, Decision) or decision is Decision.ASK:
+                raise TypeError("Approvers must return ALLOW, DENY or ALWAYS")
+            await self.session.append(ApprovalResolved(request.request_id, decision))
+            return decision
+        except BaseException:
+            if any(
+                item.request_id == request.request_id for item in self.session.approvals.pending
+            ):
+                await self.session.append(
+                    ApprovalResolved(request.request_id, status="interrupted")
+                )
+            raise
+
+    async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
+        if self._closing or self._canceling:
+            raise RuntimeError("Agent is being cancelled or disposed")
+        record = next(
+            (item for item in self.session.approvals.records if item.request_id == request_id), None
+        )
+        if record is None:
+            raise KeyError(request_id)
+        if not record.revoked:
+            await self.session.append(ApprovalRevoked(request_id, reason))
 
     async def when_idle(self) -> None:
         while self._runner is not None and not self._runner.done():
@@ -375,9 +425,13 @@ class Agent:
                 default=lambda: Decision.ALLOW,
             )
             if decision is Decision.ASK:
-                decision = await self.ctx[Approver].ask(call, "Tool policy requested approval")
+                decision = await self.request_approval(call, "Tool policy requested approval")
+            if decision not in (Decision.ALLOW, Decision.ALWAYS):
+                decision = Decision.DENY
+            await self.session.append(ToolPolicyApplied(call.id, decision))
             if decision not in (Decision.ALLOW, Decision.ALWAYS):
                 return ToolResult.denied("User declined this action")
+            await self.session.append(ToolExecutionStarted(call.id))
             execution = ToolCallContext(call, self)
             result = await self.ctx.dispatch(
                 ExecuteTool(call, self),

@@ -7,26 +7,27 @@ from ...seams.approver import Approver
 from ...seams.models import Decision
 
 
-def approval_gate(*, risky: Iterable[str], ask: Callable | None = None):
+def approval_gate(
+    *, risky: Iterable[str], ask: Callable | None = None, scope: str = "approval-gate"
+):
     risky = frozenset(risky)
+    if any(not isinstance(name, str) or not name for name in risky):
+        raise ValueError("risky must contain non-empty tool names")
+    if not isinstance(scope, str) or not scope:
+        raise ValueError("Approval scope must not be empty")
 
     @plugin(name="approval_gate", needs=[Approver] if ask is None else [])
     async def mount(ctx):
-        always_allowed: set[str] = set()
-
         @ctx.on(ToolPolicy)
         async def gate(event, next_):
-            if event.call.name not in risky or event.call.name in always_allowed:
+            if event.call.name not in risky:
                 return await next_()
-            if ask is None:
-                decision = await event.agent.ctx[Approver].ask(
-                    event.call,
-                    f"{event.call.name} is marked risky",
-                )
-            else:
-                decision = await CallbackApprover(ask).ask(event.call, "Tool is marked risky")
-            if decision is Decision.ALWAYS:
-                always_allowed.add(event.call.name)
+            decision = await event.agent.request_approval(
+                event.call,
+                f"{event.call.name} is marked risky",
+                scope=scope,
+                approver=CallbackApprover(ask) if ask is not None else None,
+            )
             if decision not in (Decision.ALLOW, Decision.ALWAYS):
                 return Decision.DENY
             return await next_()

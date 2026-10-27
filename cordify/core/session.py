@@ -19,8 +19,12 @@ from ..seams.models import (
     to_dict,
     tool_result_from_dict,
 )
+from .approvals import Approvals
 from .events import (
     SESSION_EVENT_TYPES,
+    ApprovalRequested,
+    ApprovalResolved,
+    ApprovalRevoked,
     AssistantChunk,
     AssistantMessage,
     CacheMetrics,
@@ -39,6 +43,7 @@ from .events import (
     StepStart,
     SystemMessage,
     ToolCalled,
+    ToolExecutionStarted,
     ToolReturned,
     TurnEnd,
     TurnStart,
@@ -107,7 +112,7 @@ def decode_event(record: dict) -> SessionEvent:
         data["usage"] = ModelUsage(**data["usage"])
     elif kind is SpillCreated:
         data["ref"] = SpillRef(**data["ref"])
-    elif kind is ToolCalled:
+    elif kind in (ToolCalled, ApprovalRequested):
         data["call"] = ToolCall(**data["call"])
     elif kind is ToolReturned:
         data["result"] = tool_result_from_dict(data["result"])
@@ -279,6 +284,7 @@ class Session:
         for event in self._events:
             _validate_event(event)
         Inbox(self._events)
+        Approvals(self._events)
         for seq, event in enumerate(self._events):
             if isinstance(event, CompactionApplied):
                 _validate_compaction(self._events, event, seq)
@@ -303,11 +309,17 @@ class Session:
     def inbox(self) -> Inbox:
         return Inbox(self._events)
 
+    @property
+    def approvals(self) -> Approvals:
+        return Approvals(self._events)
+
     async def append(self, event: SessionEvent) -> None:
         _validate_event(event)
         async with self._lock:
             if isinstance(event, InboxAdded | InboxRemoved):
                 Inbox((*self._events, event))
+            if isinstance(event, ApprovalRequested | ApprovalResolved | ApprovalRevoked):
+                Approvals((*self._events, event))
             seq = len(self._events)
             if isinstance(event, CompactionApplied):
                 _validate_compaction(self._events, event, seq)
@@ -320,10 +332,13 @@ class Session:
 
     async def repair_interrupted(self) -> None:
         """Close unfinished activity and answer tool calls after cancellation or resume."""
+        for approval in self.approvals.pending:
+            await self.append(ApprovalResolved(approval.request_id, status="interrupted"))
         for message in _pending_assistant_messages(self._events).values():
             await self.append(AssistantMessage(message, interrupted=True))
         turn, step = None, None
         unanswered: dict[str, ToolCall] = {}
+        started = set()
         for event in self._events:
             match event:
                 case TurnStart(turn_id=turn_id):
@@ -334,18 +349,25 @@ class Session:
                     unanswered.update((call.id, call) for call in message.tool_calls)
                 case ToolReturned(call_id=call_id):
                     unanswered.pop(call_id, None)
+                case ToolExecutionStarted(call_id=call_id):
+                    started.add(call_id)
                 case StepEnd():
                     step = None
                 case TurnEnd():
                     turn = None
         for call in unanswered.values():
-            await self.append(ToolReturned(call.id, ToolResult.error("Tool execution interrupted")))
+            message = "Tool execution interrupted"
+            if call.id in started:
+                message += "; external outcome is unknown. Inspect external state before retrying."
+            await self.append(ToolReturned(call.id, ToolResult.error(message)))
         if turn is not None:
             if step is not None:
                 await self.append(StepEnd(turn, step, "interrupted"))
             await self.append(TurnEnd(turn, "interrupted"))
 
-    def fork(self, session_id: str, *, at: int | None = None) -> "Session":
+    def fork(
+        self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
+    ) -> "Session":
         """Copy an event prefix ending at a closed turn; ``at`` is an exclusive offset."""
         if at is not None and (type(at) is not int or not 0 <= at <= len(self._events)):
             raise ValueError("Fork offset must lie inside the session log")
@@ -358,4 +380,10 @@ class Session:
                 open_turn = False
         if open_turn:
             raise ValueError("Fork at a closed turn boundary")
+        approvals = Approvals(seed)
+        seed.extend(
+            ApprovalResolved(item.request_id, status="interrupted") for item in approvals.pending
+        )
+        if not inherit_approvals:
+            seed.extend(ApprovalRevoked(item.request_id, "fork") for item in approvals.grants)
         return Session(session_id, seed=seed)
