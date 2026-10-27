@@ -139,7 +139,7 @@ def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Mes
     }
 
 
-def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
+def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, Message], ...]:
     events = tuple(events)
     partials = _pending_assistant_messages(events)
     active_turn, active_step, max_summaries = None, None, None
@@ -165,45 +165,67 @@ def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
             older if max_summaries is None else older[-max_summaries:] if max_summaries else ()
         )
     entries: list[tuple[int, Message]] = []
+    originals: list[tuple[int, Message]] = []
+
+    def add(seq, message):
+        entries.append((seq, message))
+        originals.append((seq, message))
+
+    turn_offsets = {}
+    current_turn = None
     for seq, event in enumerate(events):
+        if isinstance(event, TurnStart):
+            current_turn = event.turn_id
+        turn_offsets[seq] = current_turn
+        if isinstance(event, TurnEnd):
+            current_turn = None
         if seq in partials:
-            entries.append((seq, partials[seq]))
+            add(seq, partials[seq])
         match event:
             case SystemMessage(content=content):
                 entries = [(offset, m) for offset, m in entries if m.id != "system"]
                 if content:
                     entries.insert(0, (seq, Message("system", content, id="system")))
             case UserMessage(message=message) | AssistantMessage(message=message):
-                entries.append((seq, message))
+                add(seq, message)
             case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
                 if lifetime == "session" or turn_id == active_turn:
-                    entries.append((seq, message))
+                    add(seq, message)
             case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
                 content = (
                     observation.full if active_step == (turn_id, step) else observation.summary
                 )
                 if content and (active_step == (turn_id, step) or seq in visible_observations):
-                    entries.append(
-                        (
-                            seq,
-                            Message(
-                                "user",
-                                content,
-                                id=f"observation:{turn_id}:{step}:{observation.source}",
-                            ),
-                        )
+                    add(
+                        seq,
+                        Message(
+                            "user",
+                            content,
+                            id=f"observation:{turn_id}:{step}:{observation.source}",
+                        ),
                     )
             case ToolReturned(call_id=call_id, result=result):
-                entries.append(
-                    (seq, Message("tool", result.content, tool_call_id=call_id, id=call_id))
-                )
-            case CompactionApplied(through=through, summary=summary):
+                add(seq, Message("tool", result.content, tool_call_id=call_id, id=call_id))
+            case CompactionApplied(through=through, summary=summary, preserve_turns=preserved):
                 entries = [
                     (offset, message)
                     for offset, message in entries
-                    if (offset >= through or message.id == "system")
+                    if (
+                        offset >= through
+                        or message.id == "system"
+                        or turn_offsets.get(offset) in preserved
+                    )
                     and not message.id.startswith("compaction:")
                 ]
+                retained_offsets = {offset for offset, _ in entries}
+                entries.extend(
+                    (offset, message)
+                    for offset, message in originals
+                    if offset < through
+                    and turn_offsets.get(offset) in preserved
+                    and offset not in retained_offsets
+                )
+                entries.sort(key=lambda item: -1 if item[1].id == "system" else item[0])
                 position = 1 if entries and entries[0][1].id == "system" else 0
                 entries.insert(
                     position,
@@ -212,11 +234,15 @@ def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
                         Message(
                             "system",
                             f"Conversation summary:\n{summary}",
-                            id=f"compaction:{seq}",
+                            id=f"compaction:{event.id or seq}",
                         ),
                     ),
                 )
-    return tuple(message for _, message in entries)
+    return tuple(entries)
+
+
+def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
+    return tuple(message for _, message in _derive_message_entries(events))
 
 
 def _validate_compaction(events, event: CompactionApplied, seq: int):
@@ -229,6 +255,9 @@ def _validate_compaction(events, event: CompactionApplied, seq: int):
         raise ValueError("Compaction must advance the previous boundary")
     if not isinstance(event.summary, str) or not event.summary.strip():
         raise ValueError("Compaction requires a non-empty summary")
+    closed = {item.turn_id for item in events[: event.through] if isinstance(item, TurnEnd)}
+    if not set(event.preserve_turns) <= closed:
+        raise ValueError("Preserved turns must be closed inside the compaction prefix")
 
 
 class Session:

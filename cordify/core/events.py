@@ -216,6 +216,26 @@ class CompactionApplied(SessionEvent):
     type: ClassVar[str] = "context/compacted"
     through: int
     summary: str
+    preserve_turns: tuple[str, ...] = ()
+    policy: str = ""
+    before_tokens: int | None = None
+    after_tokens: int | None = None
+    id: str | None = None
+
+    def __post_init__(self):
+        if self.id is not None and (not isinstance(self.id, str) or not self.id):
+            raise ValueError("Compaction ids must be non-empty strings or None")
+        turns = tuple(self.preserve_turns)
+        if any(not isinstance(turn, str) or not turn for turn in turns) or len(set(turns)) != len(
+            turns
+        ):
+            raise ValueError("Preserved turn ids must be unique non-empty strings")
+        object.__setattr__(self, "preserve_turns", turns)
+        if any(
+            value is not None and (type(value) is not int or value < 0)
+            for value in (self.before_tokens, self.after_tokens)
+        ):
+            raise ValueError("Compaction token counts must be non-negative integers")
 
 
 @dataclass(frozen=True)

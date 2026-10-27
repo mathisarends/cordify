@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING
 from .._exports import exported
 
 if TYPE_CHECKING:
+    from cordify.core.budget import ContextBudget as ContextBudget
+    from cordify.core.budget import ContextBudgetExceeded as ContextBudgetExceeded
     from cordify.core.features import Bundle as Bundle
     from cordify.core.features import Plugin as Plugin
     from cordify.core.features import tool as tool
@@ -23,6 +25,8 @@ if TYPE_CHECKING:
     from cordify.core.turns import Turn as Turn
     from cordify.core.turns import derive_turns as derive_turns
 _EXPORTS = {
+    "ContextBudget": ("cordify.core.budget", "ContextBudget"),
+    "ContextBudgetExceeded": ("cordify.core.budget", "ContextBudgetExceeded"),
     "ToolOutputLimit": ("cordify.core.outputs", "ToolOutputLimit"),
     "Step": ("cordify.core.turns", "Step"),
     "Turn": ("cordify.core.turns", "Turn"),
@@ -44,6 +48,8 @@ _EXPORTS = {
     "SystemPrompt": ("cordify.core.prompt", "SystemPrompt"),
 }
 __all__ = [
+    "ContextBudget",
+    "ContextBudgetExceeded",
     "ToolOutputLimit",
     "Step",
     "Turn",

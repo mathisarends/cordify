@@ -11,7 +11,9 @@ from ..kernel.effects import Disposer
 from ..seams.approver import Approver
 from ..seams.llm import LLM
 from ..seams.models import Decision, Message, ModelRequest, Observation, ToolCall, ToolResult
+from ..seams.tokens import TokenCounter
 from .attachments import Attachment, prepare_input
+from .budget import ContextBudget
 from .events import (
     AssistantChunk,
     AssistantMessage,
@@ -340,6 +342,12 @@ class Agent:
                 ConfigureRequest(self, request),
                 default=lambda request=request: request,
             )
+            if ContextBudget in self.ctx:
+                self.ctx[ContextBudget].check(
+                    request,
+                    context_window=self.options.context_window,
+                    counter=self.ctx[TokenCounter],
+                )
             await self.session.append(ModelRequested(request))
             response = await self._respond(request)
             for call in response.tool_calls:

@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from cordify.adapters.tokens import ApproximateTokenCounter as ApproximateTokenCounter
     from cordify.core.attachments import File as File
     from cordify.core.attachments import Image as Image
+    from cordify.core.budget import ContextBudget as ContextBudget
+    from cordify.core.budget import ContextBudgetExceeded as ContextBudgetExceeded
     from cordify.core.events import ExecuteTool as ExecuteTool
     from cordify.core.events import PreStep as PreStep
     from cordify.core.events import ReviewToolResult as ReviewToolResult
@@ -50,6 +52,11 @@ if TYPE_CHECKING:
     from cordify.kernel.plugin import PluginSpec as PluginSpec
     from cordify.kernel.plugin import hook as hook
     from cordify.kernel.plugin import plugin as plugin
+    from cordify.plugins.context.compaction import ContextBudgetGuard as ContextBudgetGuard
+    from cordify.plugins.context.compaction import PeriodicCompaction as PeriodicCompaction
+    from cordify.plugins.context.compaction import (
+        SlidingWindowCompaction as SlidingWindowCompaction,
+    )
     from cordify.plugins.context.compaction import ThresholdCompaction as ThresholdCompaction
     from cordify.plugins.context.observations import LatestObservationOnly as LatestObservationOnly
     from cordify.plugins.context.spill import SpillLargeResults as SpillLargeResults
@@ -82,6 +89,11 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "ContextBudget": ("cordify.core.budget", "ContextBudget"),
+    "ContextBudgetExceeded": ("cordify.core.budget", "ContextBudgetExceeded"),
+    "ContextBudgetGuard": ("cordify.plugins.context.compaction", "ContextBudgetGuard"),
+    "PeriodicCompaction": ("cordify.plugins.context.compaction", "PeriodicCompaction"),
+    "SlidingWindowCompaction": ("cordify.plugins.context.compaction", "SlidingWindowCompaction"),
     "ToolOutputLimit": ("cordify.core.outputs", "ToolOutputLimit"),
     "OutputTruncation": ("cordify.seams.models", "OutputTruncation"),
     "Step": ("cordify.core.turns", "Step"),
@@ -162,6 +174,11 @@ _EXPORTS = {
     "Key": ("cordify.kernel.keys", "Key"),
 }
 __all__ = [
+    "ContextBudget",
+    "ContextBudgetExceeded",
+    "ContextBudgetGuard",
+    "PeriodicCompaction",
+    "SlidingWindowCompaction",
     "ToolOutputLimit",
     "OutputTruncation",
     "Step",
