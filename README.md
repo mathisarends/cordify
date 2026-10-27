@@ -38,6 +38,8 @@ cordify/
     persistence.py       JSONL-Plugin
   adapters/              DeepSeek, lokale FS/Shell, JSONL, Spill, Counter,
                          Compactor und deterministischer Replay-Adapter
+    base.py              Optionale BaseLLM mit RetryPolicy
+    sse.py               Gemeinsames SSE-Data-Framing für Streaming-Adapter
   presets.py             Harness, minimal(), coding(), headless()
   testing.py             Test-Helfer
   __init__.py            Kompakte öffentliche API
@@ -86,6 +88,8 @@ explizit unter dem Protocol-Key und verlangt keine nominale Vererbung oder
 Adapter oder Plugins; die Datenverträge bleiben unveränderliche Werttypen.
 Die Tests führen fremde FS-, LLM-, Shell- und Approver-Implementierungen ohne
 Vererbung durch die echte DI-, Approval- und Tool-Pipeline.
+Für Adapter mit gemeinsamer Implementierungslogik gibt es zusätzlich eine
+optionale `BaseLLM`; der gespeicherte Service-Key bleibt `LLM`.
 
 Die alten flachen Modulpfade und `cordify.std` sind entfernt. Root-Imports wie
 `from cordify import Harness, Plugin, Inject` bleiben verfügbar. Konkrete
@@ -126,6 +130,7 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.10_context_strategies` | Spill, Compaction, Observation-Limit und Cache-Metadaten gemeinsam |
 | `python -m examples.11_temporal_needs` | Service-Verlust, Discomposition und frischer Neuaufbau |
 | `python -m examples.12_layered_sdk` | Neuer Schichtenaufbau, eigenständiger Kernel und Presets |
+| `python -m examples.13_llm_adapters` | Eigener BaseLLM-Adapter mit Retry und struktureller Adapter ohne Vererbung |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -524,6 +529,68 @@ Diese erste Version führt Tools seriell aus. Sie enthält keinen MCP-Client,
 Realtime-Transport, Docker-Backend oder Subagenten. Compaction und die folgenden
 Kontextstrategien werden explizit als Plugins ausgewählt.
 Die entsprechenden Erweiterungen können auf denselben Services und Events aufbauen.
+
+## Eigene LLM-Adapter
+
+`LLM` bleibt ein `Protocol`. `BaseLLM` ist ein optionaler Helfer für Retry,
+exponentiellen Backoff und das Schließen der Streams pro Versuch. Eigene Provider
+implementieren `_stream_once()` und bei Bedarf `is_retryable(error)`:
+
+```python
+from collections.abc import AsyncIterator
+
+from cordify.adapters.base import BaseLLM, RetryPolicy
+from cordify.seams import ModelChunk, ModelRequest
+
+
+class DemoLLM(BaseLLM):
+    async def _stream_once(self, request: ModelRequest) -> AsyncIterator[ModelChunk]:
+        yield ModelChunk(text="Hello from my adapter.")
+
+
+adapter = DemoLLM(retry=RetryPolicy(max_attempts=3, initial_delay=0.5, max_delay=8))
+```
+
+`max_attempts` zählt den ersten Versuch mit; `1` schaltet Retries aus. Die
+Standardwerte sind drei Versuche, 0,5 Sekunden Anfangspause, Faktor 2 und eine
+Obergrenze von 8 Sekunden. Die Basis wiederholt `ConnectionError` und
+`TimeoutError`. DeepSeek ergänzt HTTP 408, 429, 5xx sowie Netzwerk-, Timeout-
+und Remote-Protokollfehler von HTTPX. Authentifizierungs- und ungültige
+JSON-Antworten werden direkt weitergegeben.
+
+**Ab dem ersten ausgegebenen `ModelChunk` gibt es keinen Retry**, auch bei
+Reasoning, Usage oder Tool-Calls. Dadurch entstehen keine doppelten sichtbaren
+Ausgaben. Cancellation und explizites Schließen beenden den aktuellen Stream;
+Cancellation während der Backoff-Pause startet keinen weiteren Versuch.
+Die API braucht keine ABC und keinen Eintrag einer Basisklasse im DI-Container.
+`ScriptedLLM` erfüllt das Protocol weiterhin direkt.
+
+`DeepSeekLLM` verwendet den Helfer bereits. Dieselbe Konfiguration kann über
+das bestehende Provider-Plugin übergeben werden:
+
+```python
+from cordify import Harness
+from cordify.adapters.base import RetryPolicy
+from cordify.adapters.deepseek import deepseek
+from cordify.plugins.agents.loop import agent_loop
+
+harness = Harness(
+    [
+        deepseek(retry=RetryPolicy(max_attempts=4, initial_delay=1, max_delay=10)),
+        agent_loop(),
+    ]
+)
+```
+
+Für SSE-basierte Provider verarbeitet
+`cordify.adapters.sse.iter_sse_data(response.aiter_lines())` gemeinsame
+Data-Frames inklusive mehrzeiliger Daten und Kommentaren. Die Interpretation
+von JSON-Deltas, Tool-Call-Fragmenten und `[DONE]` bleibt beim Provider.
+Das Framing folgt den
+[SSE-Regeln des HTML-Standards](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation).
+Das vollständig offline ausführbare Beispiel
+[`13_llm_adapters.py`](examples/13_llm_adapters.py) zeigt den echten Harness mit
+einem simulierten Verbindungsfehler und beiden Adapter-Varianten.
 
 ## Rules und Kontextstrategien
 

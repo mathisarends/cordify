@@ -20,6 +20,7 @@ import pytest
         "examples.10_context_strategies",
         "examples.11_temporal_needs",
         "examples.12_layered_sdk",
+        "examples.13_llm_adapters",
     ],
 )
 def test_offline_sdk_example_runs(module):
