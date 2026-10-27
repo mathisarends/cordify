@@ -2,14 +2,14 @@ from collections.abc import Iterable
 from contextlib import asynccontextmanager
 
 from .agent import Agent, AgentFactory, AgentOptions
-from .core import Context, PluginSpec
+from .core import Context
 from .models import LLM
-from .plugins import Bundle
+from .plugins import Bundle, PluginLike
 from .session import Session, SessionPersistence
 
 
 class Harness:
-    def __init__(self, plugins: Iterable[PluginSpec], *, model: str | None = None):
+    def __init__(self, plugins: Iterable[PluginLike], *, model: str | None = None):
         self.plugins = tuple(plugins)
         self.model = model
         self._active: set[str] = set()

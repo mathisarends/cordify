@@ -57,7 +57,7 @@ async def agents_md(
     def read():
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
-    prompt.section("project", read, order=order)
+    prompt.section("project", read, order=order, stable=False)
     yield
 
 

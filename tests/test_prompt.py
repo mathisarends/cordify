@@ -38,8 +38,19 @@ async def test_prompt_providers_are_re_evaluated_in_order():
     async with Context() as ctx:
         prompt = SystemPrompt(ctx)
         current = "one"
-        prompt.section("project", lambda: current, order=50)
+        prompt.section("project", lambda: current, order=50, stable=False)
         prompt.section("persona", "first", order=0)
         assert await prompt.render() == "first\n\none"
         current = "two"
         assert await prompt.render() == "first\n\ntwo"
+
+
+async def test_stable_sections_are_cached_and_sort_before_dynamic_sections():
+    async with Context() as ctx:
+        prompt = SystemPrompt(ctx)
+        current = "one"
+        prompt.section("dynamic", lambda: current, order=-100, stable=False)
+        prompt.section("stable", lambda: current, order=100)
+        assert await prompt.render() == "one\n\none"
+        current = "two"
+        assert await prompt.render() == "one\n\ntwo"

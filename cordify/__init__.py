@@ -1,4 +1,5 @@
 from .agent import Agent, AgentFactory, AgentHandle, AgentOptions, RunResult
+from .context import File, Image
 from .core import (
     Bail,
     Context,
@@ -20,12 +21,17 @@ from .models import (
     LLM,
     Approver,
     Decision,
+    ImagePart,
     Message,
     ModelChunk,
     ModelRequest,
+    Observation,
+    TextPart,
     ToolCall,
     ToolDefinition,
     ToolResult,
+    system,
+    user,
 )
 from .plugins import Bundle, Plugin, hook, tool
 from .prompt import SystemPrompt
@@ -35,6 +41,13 @@ from .tools import ToolRegistry
 
 __all__ = [
     "FS",
+    "File",
+    "Image",
+    "ImagePart",
+    "Observation",
+    "TextPart",
+    "system",
+    "user",
     "LLM",
     "Agent",
     "AgentFactory",

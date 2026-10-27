@@ -14,6 +14,8 @@ import pytest
         "examples.03_inbox",
         "examples.05_bundles_and_injection",
         "examples.06_explicit_registration",
+        "examples.07_context",
+        "examples.08_observations",
     ],
 )
 def test_offline_sdk_example_runs(module):

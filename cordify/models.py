@@ -77,9 +77,25 @@ class Approver(Protocol):
 
 
 @dataclass(frozen=True)
+class TextPart:
+    text: str
+    type: Literal["text"] = "text"
+
+
+@dataclass(frozen=True)
+class ImagePart:
+    url: str
+    detail: Literal["auto", "low", "high", "original"] = "auto"
+    type: Literal["image_url"] = "image_url"
+
+
+type ContentPart = TextPart | ImagePart
+
+
+@dataclass(frozen=True)
 class Message:
     role: Literal["system", "user", "assistant", "tool"]
-    content: str = ""
+    content: str | tuple[ContentPart, ...] = ""
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
     reasoning_content: str = ""
@@ -87,6 +103,36 @@ class Message:
 
     def __post_init__(self):
         object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
+        if not isinstance(self.content, str):
+            parts = tuple(self.content)
+            if any(not isinstance(part, TextPart | ImagePart) for part in parts):
+                raise TypeError("Message content must be a string or text/image parts")
+            object.__setattr__(self, "content", parts)
+
+    @property
+    def text(self) -> str:
+        if isinstance(self.content, str):
+            return self.content
+        return "\n".join(part.text for part in self.content if isinstance(part, TextPart))
+
+
+def user(text: str) -> Message:
+    return Message("user", text)
+
+
+def system(text: str) -> Message:
+    return Message("system", text)
+
+
+@dataclass(frozen=True)
+class Observation:
+    source: str
+    full: str
+    summary: str
+
+    def __post_init__(self):
+        if not self.source:
+            raise ValueError("Observations require a source")
 
 
 @dataclass(frozen=True)
@@ -123,7 +169,17 @@ class LLM(Protocol):
 
 
 def message_from_dict(data: dict) -> Message:
-    return Message(**{**data, "tool_calls": tuple(ToolCall(**c) for c in data["tool_calls"])})
+    content = data["content"]
+    if not isinstance(content, str):
+        kinds = {"text": TextPart, "image_url": ImagePart}
+        content = tuple(kinds[part["type"]](**part) for part in content)
+    return Message(
+        **{
+            **data,
+            "content": content,
+            "tool_calls": tuple(ToolCall(**c) for c in data["tool_calls"]),
+        }
+    )
 
 
 def request_from_dict(data: dict) -> ModelRequest:

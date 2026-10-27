@@ -1,4 +1,5 @@
 import copy
+import inspect
 from collections.abc import Callable, Iterable
 from typing import Any, overload
 
@@ -137,7 +138,7 @@ class Plugin:
 
         async def mount(ctx):
             instance = self.clone()
-            bound = bind_injected(instance.setup, ctx, (ctx,))
+            bound = _lifecycle_arguments(instance.setup, ctx)
             await _resolve(instance.setup(*bound.args, **bound.kwargs))
             for event, callback in getattr(instance, "hooks", ()):
                 ctx.on(event, callback)
@@ -154,7 +155,7 @@ class Plugin:
             try:
                 yield
             finally:
-                bound = bind_injected(instance.teardown, ctx, (ctx,))
+                bound = _lifecycle_arguments(instance.teardown, ctx)
                 await _resolve(instance.teardown(*bound.args, **bound.kwargs))
 
         return PluginSpec(
@@ -166,7 +167,17 @@ class Plugin:
         )
 
 
-def as_plugin_spec(value) -> PluginSpec:
+def _lifecycle_arguments(callback, ctx):
+    parameters = tuple(inspect.signature(callback).parameters)
+    injected = injections(callback)
+    args = (ctx,) if parameters and parameters[0] not in injected else ()
+    return bind_injected(callback, ctx, args)
+
+
+type PluginLike = PluginSpec | Bundle | Plugin | Callable[..., PluginSpec]
+
+
+def as_plugin_spec(value: PluginLike) -> PluginSpec:
     if isinstance(value, PluginSpec):
         return value
     if isinstance(value, Bundle | Plugin):

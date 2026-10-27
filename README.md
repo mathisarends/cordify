@@ -24,6 +24,8 @@ Ausführbare Beispiele (aus dem Repository-Root):
 | `python -m examples.04_deepseek` | Echter DeepSeek-Adapter, Dateitools und JSONL-Resume |
 | `python -m examples.05_bundles_and_injection` | Wiederverwendbare Module, Klassen, DI, Approval, Progress, Nudges |
 | `python -m examples.06_explicit_registration` | Plugins und Hooks ohne Dekoratoren |
+| `python -m examples.07_context` | Alle fünf Kontextwege: Sektionen, Aufgaben-Kontext, Anhänge, Push und Pull |
+| `python -m examples.08_observations` | Browserzustand pro Step: voller aktueller Zustand, kompakte alte Zustände |
 
 Nur Beispiel 04 benötigt einen API-Key und das `deepseek`-Extra. Die anderen
 Beispiele verwenden deterministische Modellantworten, um das SDK sichtbar zu machen.
@@ -69,6 +71,130 @@ nicht auf; dekorierte Tool- und Hook-Funktionen bleiben direkt testbar.
 Unterstützte Formen: Async-Generator mit `@plugin` oder `@plugin(...)`, `Bundle`,
 `Plugin`-Klassen mit `@hook`/`@tool`, explizite `Plugin(hooks=..., tools=...)` sowie
 `add_hook`/`add_tool`. Jede Montage besitzt einen eigenen Cleanup-Stack.
+
+## Kontext: fünf Wege
+
+**1. System-Sektionen** für dauerhafte Regeln und dynamischen Projektkontext:
+
+```python
+from pathlib import Path
+from cordify import FS, Inject, Plugin, SystemPrompt
+
+
+class ProjectInstructions(Plugin):
+    async def setup(self, prompt: Inject[SystemPrompt], fs: Inject[FS]):
+        prompt.section("persona", "You are a code reviewer.", order=0)
+        prompt.section(
+            "agents_md",
+            lambda: fs.read(Path("AGENTS.md")),
+            order=50,
+            stable=False,
+        )
+```
+
+Stabile Sektionen kommen vor dynamischen Sektionen, innerhalb jeder Gruppe zählt
+`order`. Stabile Callable-Provider werden einmal pro Registrierung ausgewertet;
+Provider mit `stable=False` werden vor jedem Request neu ausgewertet. So bleibt
+der stabile Prompt-Präfix erhalten. Ein bestimmtes Cache-Verhalten eines
+Modellanbieters wird dadurch nicht garantiert. Plugin-Unload entfernt die Sektionen.
+
+**2. Kontext pro Aufgabe** und Anhänge:
+
+```python
+from cordify import File, Image
+
+result = await agent.run(
+    "Review this PR.",
+    attachments=[File("PR.diff"), Image("screenshot.png")],
+    context={"ticket": "Fix the authentication regression."},
+)
+```
+
+`context` erzeugt eigene System-Blöcke vor der Aufgabe. Sie gelten für alle Steps
+dieses Turns und verschwinden aus späteren Modell-Requests. Die Blöcke bleiben im
+Log. `File` liest Text, `Image` erzeugt ein Bild-Part aus einer lokalen Datei oder
+einer URL. Dateiinhalte werden beim Enqueue festgehalten; Anhänge bleiben als Teil
+der ursprünglichen User-Nachricht in der Historie. Bildverständnis hängt vom
+gewählten Modell ab. `followup` und `stream` akzeptieren dieselben Optionen.
+
+**3. Während des Laufs** stille Nachrichten oder Steering:
+
+```python
+from cordify import system, user
+
+await agent.inject(system("utils.py was modified externally."))
+await agent.steer(user("Focus on the auth module first."))
+```
+
+Strings werden weiterhin als User-Nachrichten angenommen. Explizite `system()`-
+Nachrichten ergänzen den Kontext und ersetzen keine registrierten Prompt-Sektionen.
+Diese Nachrichten bleiben in Log und Modell-Historie erhalten.
+
+**4. Push-Kontext vor einem Step**, zum Beispiel Memory:
+
+```python
+from cordify import Agent, Inject, Plugin, PreStep, hook, system
+
+
+class RelevantMemories(Plugin):
+    @hook(PreStep)
+    async def recall(self, ev, next_, memory: Inject[Memory], agent: Inject[Agent]):
+        if ev.is_turn_start:
+            hits = await memory.search(ev.latest_user_text, k=3)
+            if hits:
+                await agent.inject(system("Relevant memories:\n" + "\n".join(hits)))
+        return await next_()
+```
+
+`Memory` ist dabei ein eigener Service. Injections aus einem `PreStep`-Hook werden
+noch in **diesem** Step aufgenommen. Externe Injections nach dessen Aufnahmegrenze
+warten auf den nächsten Step. `ev.is_turn_start` und `ev.latest_user_text` erlauben
+gezielte Retrievals ohne eigene Turn-Zähler.
+
+**5. Pull-Kontext durch ein Tool** nutzt dieselbe DI:
+
+```python
+memory_tools = Bundle("memory")
+
+
+@memory_tools.tool
+async def recall(query: str, memory: Inject[Memory]) -> list[str]:
+    """Search long-term memory for relevant facts."""
+    return await memory.search(query, k=5)
+```
+
+Push eignet sich für Regeln und kleinen Kontext, der immer sichtbar sein soll;
+Pull für große Wissensbestände, die das Modell bei Bedarf abfragt.
+Eine ausführbare Implementierung einschließlich `Memory` steht in Beispiel 07.
+
+## Observations für Browser und andere Live-Zustände
+
+```python
+from cordify import Agent, Inject, Observation, Plugin, PreStep, hook
+
+
+class BrowserObserver(Plugin):
+    @hook(PreStep)
+    async def observe(self, ev, next_, browser: Inject[Browser], agent: Inject[Agent]):
+        state = await browser.snapshot()
+        agent.observe(
+            Observation(
+                source="browser",
+                full=state.render(),
+                summary=f"[page state: {state.url} — {state.title}]",
+            )
+        )
+        return await next_()
+```
+
+`observe()` registriert synchron einen Zustand für den nächsten zugelassenen Step
+und weckt den Agenten nicht. Mehrere ausstehende Zustände derselben `source`
+werden auf den neuesten zusammengeführt. Im aktuellen Step erscheint `full`, in
+späteren Steps `summary`. Das Log behält beide Werte; `ModelRequested` speichert
+den jeweils tatsächlich verwendeten Request. Replay und Fork brauchen keinen
+erneuten Browserzugriff. Das ist eine eigene Projektion, keine Änderung alter Events.
+`Browser` ist ein eigener Service; Beispiel 08 enthält einen ausführbaren
+Browser-Dummy, den Observer sowie `click`- und `snapshot`-Tools.
 
 ## Plugins und Injection
 

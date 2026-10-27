@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 from .core import Bail, Emit, Waterfall
-from .models import Decision, Message, ModelRequest, ToolCall, ToolResult
+from .models import Decision, Message, ModelRequest, Observation, ToolCall, ToolResult
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -24,6 +24,20 @@ class PreStep(Waterfall[StepDecision]):
     agent: "Agent"
     messages: tuple[Message, ...]
     step: int
+
+    @property
+    def is_turn_start(self) -> bool:
+        return self.step == 1
+
+    @property
+    def latest_user_text(self) -> str:
+        for message in reversed(self.messages):
+            if message.role == "user":
+                return message.text
+        for event in reversed(self.agent.session.events):
+            if isinstance(event, UserMessage):
+                return event.message.text
+        return ""
 
 
 @dataclass(frozen=True)
@@ -67,6 +81,10 @@ class InboxAdded(SessionEvent):
     target: Literal["next-turn", "next-step"]
     wakeup: bool
     mode: Literal["followup", "steer", "inject"]
+    context: tuple[Message, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "context", tuple(self.context))
 
 
 @dataclass(frozen=True)
@@ -99,6 +117,22 @@ class SystemMessage(SessionEvent):
 class UserMessage(SessionEvent):
     type: ClassVar[str] = "user/message"
     message: Message
+
+
+@dataclass(frozen=True)
+class ContextMessage(SessionEvent):
+    type: ClassVar[str] = "context/message"
+    message: Message
+    lifetime: Literal["session", "turn"] = "session"
+    turn_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ObservationRecorded(SessionEvent):
+    type: ClassVar[str] = "agent/observation"
+    observation: Observation
+    turn_id: str
+    step: int
 
 
 @dataclass(frozen=True)
@@ -169,6 +203,8 @@ SESSION_EVENT_TYPES = {
         StepStart,
         SystemMessage,
         UserMessage,
+        ContextMessage,
+        ObservationRecorded,
         ModelRequested,
         AssistantMessage,
         ToolCalled,

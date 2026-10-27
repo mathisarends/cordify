@@ -6,9 +6,11 @@ from .core import Context
 from .events import (
     SESSION_EVENT_TYPES,
     AssistantMessage,
+    ContextMessage,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
+    ObservationRecorded,
     SessionAppended,
     SessionEvent,
     StepEnd,
@@ -22,6 +24,7 @@ from .events import (
 )
 from .models import (
     Message,
+    Observation,
     ToolCall,
     ToolResult,
     message_from_dict,
@@ -42,8 +45,14 @@ def encode_event(event: SessionEvent) -> dict:
 def decode_event(record: dict) -> SessionEvent:
     kind = SESSION_EVENT_TYPES[record["type"]]
     data = dict(record["data"])
-    if kind in (UserMessage, AssistantMessage, InboxAdded):
+    if kind in (UserMessage, AssistantMessage, InboxAdded, ContextMessage):
         data["message"] = message_from_dict(data["message"])
+        if kind is InboxAdded:
+            data["context"] = tuple(
+                message_from_dict(message) for message in data.get("context", ())
+            )
+    elif kind is ObservationRecorded:
+        data["observation"] = Observation(**data["observation"])
     elif kind is ModelRequested:
         data["request"] = request_from_dict(data["request"])
     elif kind is ToolCalled:
@@ -54,15 +63,42 @@ def decode_event(record: dict) -> SessionEvent:
 
 
 def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
+    events = tuple(events)
+    active_turn, active_step = None, None
+    for event in events:
+        match event:
+            case TurnStart(turn_id=turn_id):
+                active_turn = turn_id
+            case StepStart(turn_id=turn_id, step=step):
+                active_step = (turn_id, step)
+            case StepEnd():
+                active_step = None
+            case TurnEnd():
+                active_turn, active_step = None, None
     messages: list[Message] = []
     for event in events:
         match event:
             case SystemMessage(content=content):
-                messages = [m for m in messages if m.role != "system"]
+                messages = [m for m in messages if m.id != "system"]
                 if content:
                     messages.insert(0, Message("system", content, id="system"))
             case UserMessage(message=message) | AssistantMessage(message=message):
                 messages.append(message)
+            case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
+                if lifetime == "session" or turn_id == active_turn:
+                    messages.append(message)
+            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
+                content = (
+                    observation.full if active_step == (turn_id, step) else observation.summary
+                )
+                if content:
+                    messages.append(
+                        Message(
+                            "user",
+                            content,
+                            id=f"observation:{turn_id}:{step}:{observation.source}",
+                        )
+                    )
             case ToolReturned(call_id=call_id, result=result):
                 messages.append(Message("tool", result.content, tool_call_id=call_id, id=call_id))
     return tuple(messages)
@@ -80,7 +116,7 @@ class Inbox:
                 if event.message_id not in pending:
                     raise ValueError(f"Removing unknown inbox message: {event.message_id}")
                 del pending[event.message_id]
-            elif isinstance(event, UserMessage):
+            elif isinstance(event, UserMessage | ContextMessage):
                 pending.pop(event.message.id, None)
         self.pending = tuple(pending.values())
 

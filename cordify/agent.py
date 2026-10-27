@@ -1,18 +1,22 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AsyncExitStack
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
+from .context import Attachment, prepare_input
 from .core import Context
 from .events import (
     AssistantChunk,
     AssistantMessage,
+    ContextMessage,
     ExecuteTool,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
+    ObservationRecorded,
     PreStep,
     ReviewToolResult,
     SessionAppended,
@@ -30,12 +34,22 @@ from .events import (
     UserMessage,
 )
 from .execution import ToolCallContext
-from .models import LLM, Approver, Decision, Message, ModelRequest, ToolCall, ToolResult
+from .models import (
+    LLM,
+    Approver,
+    Decision,
+    Message,
+    ModelRequest,
+    Observation,
+    ToolCall,
+    ToolResult,
+)
 from .prompt import SystemPrompt
 from .session import Session
 from .tools import ToolRegistry
 
 type AgentEvent = SessionEvent | AssistantChunk
+_preparing: ContextVar["Agent | None"] = ContextVar("cordify_preparing", default=None)
 
 
 @dataclass(frozen=True)
@@ -78,6 +92,8 @@ class Agent:
         self._closing = False
         self._canceling = False
         self._ready = False
+        self._step_push: list[InboxAdded] = []
+        self._observations: dict[str, Observation] = {}
         ctx.on(SessionAppended, self._session_event)
 
     @property
@@ -96,6 +112,11 @@ class Agent:
 
     def add_tool(self, callback, **options):
         return self.ctx[ToolRegistry].register(callback, **options)
+
+    def observe(self, observation: Observation) -> None:
+        if self._closing:
+            raise RuntimeError("Agent is disposed")
+        self._observations[observation.source] = observation
 
     def start(self):
         self._ready = True
@@ -119,22 +140,54 @@ class Agent:
         for queue in self._subscribers:
             queue.put_nowait(event)
 
-    async def _send(self, content: str, target, wakeup: bool, mode) -> str:
+    async def _send(
+        self,
+        content: str | Message,
+        target,
+        wakeup: bool,
+        mode,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+    ) -> str:
         if self._closing or self._canceling:
             raise RuntimeError("Agent is being cancelled or disposed")
-        message = Message("user", content)
-        await self.session.append(InboxAdded(message, target, wakeup, mode))
+        message, contributions = await prepare_input(
+            content, attachments=attachments, context=context
+        )
+        allowed = ("user", "system") if mode == "inject" else ("user",)
+        if message.role not in allowed:
+            raise ValueError(f"{mode} requires one of these roles: {allowed}")
+        if self._closing or self._canceling:
+            raise RuntimeError("Agent is being cancelled or disposed")
+        item = InboxAdded(message, target, wakeup, mode, contributions)
+        await self.session.append(item)
+        if mode == "inject" and _preparing.get() is self:
+            self._step_push.append(item)
         if wakeup:
             self._wake()
         return message.id
 
-    async def followup(self, content: str) -> str:
-        return await self._send(content, "next-turn", True, "followup")
+    async def followup(
+        self,
+        content: str | Message,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+    ) -> str:
+        return await self._send(
+            content,
+            "next-turn",
+            True,
+            "followup",
+            attachments=attachments,
+            context=context,
+        )
 
-    async def steer(self, content: str) -> str:
+    async def steer(self, content: str | Message) -> str:
         return await self._send(content, "next-step", True, "steer")
 
-    async def inject(self, content: str) -> str:
+    async def inject(self, content: str | Message) -> str:
         return await self._send(content, "next-step", False, "inject")
 
     async def when_idle(self) -> None:
@@ -143,14 +196,20 @@ class Agent:
         if self._error is not None:
             raise self._error
 
-    async def run(self, content: str) -> RunResult:
+    async def run(
+        self,
+        content: str | Message,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+    ) -> RunResult:
         offset = len(self.session.events)
-        await self.followup(content)
+        await self.followup(content, attachments=attachments, context=context)
         await self.when_idle()
         events = self.session.events[offset:]
         text = next(
             (
-                event.message.content
+                event.message.text
                 for event in reversed(events)
                 if isinstance(event, AssistantMessage)
             ),
@@ -158,11 +217,17 @@ class Agent:
         )
         return RunResult(text, events)
 
-    async def stream(self, content: str) -> AsyncIterator[AgentEvent]:
+    async def stream(
+        self,
+        content: str | Message,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+    ) -> AsyncIterator[AgentEvent]:
         queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._subscribers.add(queue)
         try:
-            await self.followup(content)
+            await self.followup(content, attachments=attachments, context=context)
             while (event := await queue.get()) is not None:
                 yield event
             await self.when_idle()
@@ -221,13 +286,20 @@ class Agent:
             inbox = self.inbox
             pending = (*inbox.next_turn[:1], *inbox.next_step) if step == 1 else inbox.next_step
             incoming = tuple(item.message for item in pending)
-            decision = await self.ctx.dispatch(
-                PreStep(self, incoming, step),
-                default=lambda incoming=incoming: StepDecision(incoming),
-            )
+            self._step_push = []
+            token = _preparing.set(self)
+            try:
+                decision = await self.ctx.dispatch(
+                    PreStep(self, incoming, step),
+                    default=lambda incoming=incoming: StepDecision(incoming),
+                )
+            finally:
+                _preparing.reset(token)
             if not decision.accepted:
                 await self.session.append(TurnEnd(turn, "rejected"))
                 return False
+            pending = (*pending, *self._step_push)
+            accepted = (*decision.messages, *(item.message for item in self._step_push))
             await self.session.append(StepStart(turn, step))
             prompt = await self.ctx[SystemPrompt].render()
             previous = next(
@@ -240,16 +312,25 @@ class Agent:
             )
             if prompt != previous:
                 await self.session.append(SystemMessage(prompt))
-            accepted_ids = {message.id for message in decision.messages}
-            if len(accepted_ids) != len(decision.messages) or any(
-                message.role != "user" for message in decision.messages
+            accepted_ids = {message.id for message in accepted}
+            if len(accepted_ids) != len(accepted) or any(
+                message.role not in ("user", "system") for message in accepted
             ):
-                raise ValueError("PreStep must return unique user messages")
+                raise ValueError("PreStep must return unique user or system messages")
             for item in pending:
                 if item.message.id not in accepted_ids:
                     await self.session.append(InboxRemoved(item.message.id))
-            for message in decision.messages:
-                await self.session.append(UserMessage(message))
+            for message in accepted:
+                for item in pending:
+                    if item.message.id == message.id:
+                        for contribution in item.context:
+                            await self.session.append(ContextMessage(contribution, "turn", turn))
+                event = UserMessage(message) if message.role == "user" else ContextMessage(message)
+                await self.session.append(event)
+            observations = tuple(self._observations.values())
+            self._observations.clear()
+            for observation in observations:
+                await self.session.append(ObservationRecorded(observation, turn, step))
             request = ModelRequest(
                 self.options.model,
                 self.session.messages,

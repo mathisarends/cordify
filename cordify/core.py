@@ -6,9 +6,12 @@ from collections.abc import AsyncGenerator, Callable, Iterable
 from contextlib import AsyncExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, cast, overload
+from typing import TYPE_CHECKING, Any, cast, overload
 
 from .di import bind_injected, injections
+
+if TYPE_CHECKING:
+    from .plugins import PluginLike
 
 _current: ContextVar["Context | None"] = ContextVar("cordify_context", default=None)
 
@@ -218,7 +221,7 @@ class Context:
                 return cast(R, result)
         return cast(R, None)
 
-    async def plugin(self, spec: "PluginSpec") -> "PluginHandle":
+    async def plugin(self, spec: "PluginLike") -> "PluginHandle":
         """Mount a plugin transactionally, rolling back a failed setup."""
         self._check_open()
         from .plugins import as_plugin_spec
@@ -260,7 +263,7 @@ class Context:
             await child.aclose()
             raise
 
-    async def install(self, plugins: Iterable["PluginSpec"]) -> tuple["PluginHandle", ...]:
+    async def install(self, plugins: Iterable["PluginLike"]) -> tuple["PluginHandle", ...]:
         """Mount providers before consumers, regardless of composition order."""
         mounted, pending = await self._install_ready(plugins)
         if pending:

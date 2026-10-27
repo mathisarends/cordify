@@ -3,7 +3,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 
-from ..models import ModelChunk, ModelRequest, ToolCall, to_dict
+from ..models import ImagePart, ModelChunk, ModelRequest, TextPart, ToolCall, to_dict
 
 
 class DeepSeekLLM:
@@ -25,7 +25,19 @@ class DeepSeekLLM:
     def _payload(self, request: ModelRequest) -> dict:
         messages = []
         for message in request.messages:
-            item = {"role": message.role, "content": message.content}
+            content = message.content
+            if not isinstance(content, str):
+                content = [
+                    {"type": "text", "text": part.text}
+                    if isinstance(part, TextPart)
+                    else {
+                        "type": "image_url",
+                        "image_url": {"url": part.url, "detail": part.detail},
+                    }
+                    for part in content
+                    if isinstance(part, TextPart | ImagePart)
+                ]
+            item = {"role": message.role, "content": content}
             if message.tool_call_id is not None:
                 item["tool_call_id"] = message.tool_call_id
             if message.reasoning_content:
