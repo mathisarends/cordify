@@ -3,8 +3,9 @@
 import asyncio
 
 from cordify import Harness, ModelChunk
-from cordify.events import TurnStart
-from cordify.std import agent_loop, llm
+from cordify.core.events import TurnStart
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.services import llm
 
 
 class PausingLLM:

@@ -18,8 +18,9 @@ from cordify import (
     user,
     when,
 )
-from cordify.events import InboxAdded, ToolReturned
-from cordify.std import agent_loop, llm
+from cordify.core.events import InboxAdded, ToolReturned
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

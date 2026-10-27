@@ -26,7 +26,7 @@ from cordify import (
     ToolResult,
     hook,
 )
-from cordify.events import (
+from cordify.core.events import (
     CacheMetrics,
     CompactionApplied,
     ModelUsageRecorded,
@@ -38,8 +38,11 @@ from cordify.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.session import Session, decode_event, encode_event
-from cordify.std import agent_loop, compactor, llm, session_jsonl, spill_store
+from cordify.core.session import Session, decode_event, encode_event
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.context.providers import compactor, spill_store
+from cordify.plugins.persistence import session_jsonl
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 
@@ -102,7 +105,7 @@ async def test_spill_reuses_verified_concurrent_winner_on_windows_replace_race(
         destination.write_bytes(source.read_bytes())
         raise PermissionError("target opened by concurrent writer")
 
-    monkeypatch.setattr("cordify.spill.os.replace", racing_replace)
+    monkeypatch.setattr("cordify.adapters.spill.os.replace", racing_replace)
     ref = await LocalSpillStore(tmp_path).put("concurrent content")
     assert await LocalSpillStore(tmp_path).read(ref.path) == "concurrent content"
     assert not list(tmp_path.glob("*.tmp"))
@@ -112,7 +115,7 @@ async def test_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatc
     def denied(source, destination):
         raise PermissionError("write denied")
 
-    monkeypatch.setattr("cordify.spill.os.replace", denied)
+    monkeypatch.setattr("cordify.adapters.spill.os.replace", denied)
     with pytest.raises(PermissionError, match="write denied"):
         await LocalSpillStore(tmp_path).put("content")
     assert not list(tmp_path.glob("*.tmp"))

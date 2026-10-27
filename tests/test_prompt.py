@@ -1,5 +1,5 @@
 from cordify import Context, Inject, SystemPrompt, ToolCall, ToolRegistry, plugin
-from cordify.std import system_prompt, tools
+from cordify.plugins.services import system_prompt, tools
 
 
 async def test_plugin_unload_restores_shadowed_tools_and_prompt_sections():

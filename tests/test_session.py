@@ -3,7 +3,8 @@ import json
 import pytest
 
 from cordify import Harness, Message, ModelRequest, Session, ToolCall, ToolDefinition, ToolResult
-from cordify.events import (
+from cordify.adapters.persistence import JsonlPersistence
+from cordify.core.events import (
     AssistantMessage,
     InboxAdded,
     ModelRequested,
@@ -14,9 +15,10 @@ from cordify.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.session import decode_event, derive_messages, encode_event
-from cordify.std import agent_loop, llm, session_jsonl
-from cordify.std.persistence import JsonlPersistence
+from cordify.core.session import decode_event, derive_messages, encode_event
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.persistence import session_jsonl
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

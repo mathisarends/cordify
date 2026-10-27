@@ -18,7 +18,8 @@ from cordify import (
     hook,
     plugin,
 )
-from cordify.std import agent_loop, llm
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

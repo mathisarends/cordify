@@ -5,8 +5,12 @@ import os
 from pathlib import Path
 
 from cordify import Harness
-from cordify.events import AssistantChunk, ToolCalled
-from cordify.std import agent_loop, agents_md, deepseek, fs_local, fs_tools, persona, session_jsonl
+from cordify.adapters.deepseek import deepseek
+from cordify.core.events import AssistantChunk, ToolCalled
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.context.instructions import agents_md, persona
+from cordify.plugins.persistence import session_jsonl
+from cordify.plugins.tools.fs import fs_local, fs_tools
 
 
 async def main():

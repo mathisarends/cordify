@@ -10,9 +10,11 @@ from cordify import (
     ToolResult,
     when,
 )
-from cordify.events import InboxAdded, RuleTriggered, ToolReturned
-from cordify.session import Session, decode_event, encode_event
-from cordify.std import agent_loop, llm, session_jsonl
+from cordify.core.events import InboxAdded, RuleTriggered, ToolReturned
+from cordify.core.session import Session, decode_event, encode_event
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.persistence import session_jsonl
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

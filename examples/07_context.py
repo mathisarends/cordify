@@ -24,8 +24,10 @@ from cordify import (
     plugin,
     system,
 )
-from cordify.events import ContextMessage
-from cordify.std import agent_loop, fs_local, llm
+from cordify.core.events import ContextMessage
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.services import llm
+from cordify.plugins.tools.fs import fs_local
 from cordify.testing import ScriptedLLM
 
 

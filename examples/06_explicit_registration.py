@@ -3,8 +3,9 @@
 import asyncio
 
 from cordify import Agent, Harness, Inject, ModelChunk, Plugin, ReviewToolResult, ToolCall
-from cordify.events import ToolReturned
-from cordify.std import agent_loop, llm
+from cordify.core.events import ToolReturned
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from cordify import Message, ModelRequest, ToolCall, ToolDefinition
-from cordify.std.deepseek import DeepSeekLLM
+from cordify.adapters.deepseek import DeepSeekLLM
 
 
 def sse(*deltas, done=True):

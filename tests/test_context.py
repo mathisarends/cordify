@@ -21,9 +21,11 @@ from cordify import (
     system,
     user,
 )
-from cordify.events import ContextMessage, ModelRequested, ObservationRecorded
-from cordify.session import Session, decode_event, encode_event
-from cordify.std import agent_loop, fs_local, llm
+from cordify.core.events import ContextMessage, ModelRequested, ObservationRecorded
+from cordify.core.session import Session, decode_event, encode_event
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.services import llm
+from cordify.plugins.tools.fs import fs_local
 from cordify.testing import ScriptedLLM
 
 
@@ -48,7 +50,7 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
 
 
 async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payload(tmp_path):
-    from cordify.std.deepseek import DeepSeekLLM
+    from cordify.adapters.deepseek import DeepSeekLLM
 
     diff = tmp_path / "PR.diff"
     diff.write_text("+ fixed login", encoding="utf-8")

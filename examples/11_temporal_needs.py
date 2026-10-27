@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from cordify import Context, ToolCall, ToolRegistry, plugin
-from cordify.std import tools
+from cordify.plugins.services import tools
 
 
 @dataclass

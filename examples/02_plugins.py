@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from cordify import Context, Harness, ModelChunk, SystemPrompt, ToolCall, ToolRegistry, plugin
-from cordify.events import ExecuteTool, SessionAppended
-from cordify.std import agent_loop, approval_gate, llm
+from cordify.core.events import ExecuteTool, SessionAppended
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.permissions.approval import approval_gate
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

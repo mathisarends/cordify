@@ -16,7 +16,7 @@ from cordify import (
     plugin,
     tool,
 )
-from cordify.std import system_prompt, tools
+from cordify.plugins.services import system_prompt, tools
 
 
 @dataclass

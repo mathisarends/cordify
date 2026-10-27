@@ -3,8 +3,11 @@
 import asyncio
 
 from cordify import Decision, Harness, ModelChunk, ToolCall
-from cordify.events import ModelRequested, ToolProgress, ToolReturned
-from cordify.std import agent_loop, approval_gate, callback_approver, fs_local, llm
+from cordify.core.events import ModelRequested, ToolProgress, ToolReturned
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.permissions.approval import approval_gate, callback_approver
+from cordify.plugins.services import llm
+from cordify.plugins.tools.fs import fs_local
 from cordify.testing import ScriptedLLM
 
 from .features.workspace import FailureNudge, workspace_tools

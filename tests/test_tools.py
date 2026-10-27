@@ -4,7 +4,7 @@ from typing import Annotated, Protocol
 import pytest
 
 from cordify import Bundle, Context, Inject, ToolCall, ToolRegistry, tool
-from cordify.di import InjectMarker
+from cordify.kernel.di import InjectMarker
 
 
 class Backend(Protocol):

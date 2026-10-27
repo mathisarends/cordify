@@ -21,8 +21,10 @@ from cordify import (
     ToolCall,
     hook,
 )
-from cordify.events import CacheMetrics, CompactionApplied, SpillCreated
-from cordify.std import agent_loop, llm, spill_store
+from cordify.core.events import CacheMetrics, CompactionApplied, SpillCreated
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.context.providers import spill_store
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

@@ -20,7 +20,7 @@ from cordify import (
     plugin,
     tool,
 )
-from cordify.events import (
+from cordify.core.events import (
     AssistantChunk,
     AssistantMessage,
     ModelRequested,
@@ -31,7 +31,9 @@ from cordify.events import (
     TurnEnd,
     TurnStart,
 )
-from cordify.std import agent_loop, approval_gate, callback_approver, llm
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.permissions.approval import approval_gate, callback_approver
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

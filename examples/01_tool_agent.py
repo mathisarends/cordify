@@ -3,8 +3,10 @@
 import asyncio
 
 from cordify import Context, Harness, ModelChunk, ToolCall, ToolRegistry, plugin
-from cordify.events import AssistantChunk, ToolCalled, ToolReturned
-from cordify.std import agent_loop, llm, persona
+from cordify.core.events import AssistantChunk, ToolCalled, ToolReturned
+from cordify.plugins.agents.loop import agent_loop
+from cordify.plugins.context.instructions import persona
+from cordify.plugins.services import llm
 from cordify.testing import ScriptedLLM
 
 

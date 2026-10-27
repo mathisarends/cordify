@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from cordify.std.local import LocalFS, LocalShell
+from cordify.adapters.fs import LocalFS
+from cordify.adapters.shell import LocalShell
 
 
 async def test_local_fs_reads_writes_and_rejects_parent_paths(tmp_path):
