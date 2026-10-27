@@ -11,12 +11,15 @@ from .core import Context
 from .events import (
     AssistantChunk,
     AssistantMessage,
+    ConfigureRequest,
     ContextMessage,
     ExecuteTool,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
+    ModelUsageRecorded,
     ObservationRecorded,
+    PrepareRequest,
     PreStep,
     ReviewToolResult,
     SessionAppended,
@@ -57,6 +60,7 @@ class AgentOptions:
     model: str
     max_steps: int = 32
     max_tokens: int | None = None
+    context_window: int = 128_000
 
     def __post_init__(self):
         if not self.model:
@@ -67,6 +71,8 @@ class AgentOptions:
             type(self.max_tokens) is not int or self.max_tokens < 1
         ):
             raise ValueError("max_tokens must be a positive integer")
+        if type(self.context_window) is not int or self.context_window < 1:
+            raise ValueError("context_window must be a positive integer")
 
 
 @dataclass(frozen=True)
@@ -337,6 +343,14 @@ class Agent:
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
                 self.options.max_tokens,
             )
+            request = await self.ctx.dispatch(
+                PrepareRequest(self, request),
+                default=lambda request=request: request,
+            )
+            request = await self.ctx.dispatch(
+                ConfigureRequest(self, request),
+                default=lambda request=request: request,
+            )
             await self.session.append(ModelRequested(request))
             response = await self._respond(request)
             for call in response.tool_calls:
@@ -391,6 +405,8 @@ class Agent:
                 if close := getattr(stream, "aclose", None):
                     stack.push_async_callback(close)
                 async for chunk in stream:
+                    if chunk.usage is not None:
+                        await self.session.append(ModelUsageRecorded(chunk.usage))
                     if chunk.text or chunk.reasoning:
                         text.append(chunk.text)
                         reasoning.append(chunk.reasoning)

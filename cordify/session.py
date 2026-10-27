@@ -6,13 +6,18 @@ from .core import Context
 from .events import (
     SESSION_EVENT_TYPES,
     AssistantMessage,
+    CacheMetrics,
+    CompactionApplied,
     ContextMessage,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
+    ModelUsageRecorded,
+    ObservationPolicyApplied,
     ObservationRecorded,
     SessionAppended,
     SessionEvent,
+    SpillCreated,
     StepEnd,
     StepStart,
     SystemMessage,
@@ -24,12 +29,15 @@ from .events import (
 )
 from .models import (
     Message,
+    ModelUsage,
     Observation,
+    SpillRef,
     ToolCall,
     ToolResult,
     message_from_dict,
     request_from_dict,
     to_dict,
+    tool_result_from_dict,
 )
 
 
@@ -55,17 +63,22 @@ def decode_event(record: dict) -> SessionEvent:
         data["observation"] = Observation(**data["observation"])
     elif kind is ModelRequested:
         data["request"] = request_from_dict(data["request"])
+    elif kind in (ModelUsageRecorded, CacheMetrics):
+        data["usage"] = ModelUsage(**data["usage"])
+    elif kind is SpillCreated:
+        data["ref"] = SpillRef(**data["ref"])
     elif kind is ToolCalled:
         data["call"] = ToolCall(**data["call"])
     elif kind is ToolReturned:
-        data["result"] = ToolResult(**data["result"])
+        data["result"] = tool_result_from_dict(data["result"])
     return kind(**data)
 
 
 def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
     events = tuple(events)
-    active_turn, active_step = None, None
-    for event in events:
+    active_turn, active_step, max_summaries = None, None, None
+    observations: dict[str, list[int]] = {}
+    for seq, event in enumerate(events):
         match event:
             case TurnStart(turn_id=turn_id):
                 active_turn = turn_id
@@ -75,33 +88,79 @@ def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
                 active_step = None
             case TurnEnd():
                 active_turn, active_step = None, None
-    messages: list[Message] = []
-    for event in events:
+            case ObservationPolicyApplied(max_summaries=limit):
+                max_summaries = limit
+            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
+                observations.setdefault(observation.source, []).append(seq)
+    visible_observations = set()
+    for indices in observations.values():
+        older = [seq for seq in indices if (events[seq].turn_id, events[seq].step) != active_step]
+        visible_observations.update(
+            older if max_summaries is None else older[-max_summaries:] if max_summaries else ()
+        )
+    entries: list[tuple[int, Message]] = []
+    for seq, event in enumerate(events):
         match event:
             case SystemMessage(content=content):
-                messages = [m for m in messages if m.id != "system"]
+                entries = [(offset, m) for offset, m in entries if m.id != "system"]
                 if content:
-                    messages.insert(0, Message("system", content, id="system"))
+                    entries.insert(0, (seq, Message("system", content, id="system")))
             case UserMessage(message=message) | AssistantMessage(message=message):
-                messages.append(message)
+                entries.append((seq, message))
             case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
                 if lifetime == "session" or turn_id == active_turn:
-                    messages.append(message)
+                    entries.append((seq, message))
             case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
                 content = (
                     observation.full if active_step == (turn_id, step) else observation.summary
                 )
-                if content:
-                    messages.append(
-                        Message(
-                            "user",
-                            content,
-                            id=f"observation:{turn_id}:{step}:{observation.source}",
+                if content and (active_step == (turn_id, step) or seq in visible_observations):
+                    entries.append(
+                        (
+                            seq,
+                            Message(
+                                "user",
+                                content,
+                                id=f"observation:{turn_id}:{step}:{observation.source}",
+                            ),
                         )
                     )
             case ToolReturned(call_id=call_id, result=result):
-                messages.append(Message("tool", result.content, tool_call_id=call_id, id=call_id))
-    return tuple(messages)
+                entries.append(
+                    (seq, Message("tool", result.content, tool_call_id=call_id, id=call_id))
+                )
+            case CompactionApplied(through=through, summary=summary):
+                entries = [
+                    (offset, message)
+                    for offset, message in entries
+                    if (offset >= through or message.id == "system")
+                    and not message.id.startswith("compaction:")
+                ]
+                position = 1 if entries and entries[0][1].id == "system" else 0
+                entries.insert(
+                    position,
+                    (
+                        seq,
+                        Message(
+                            "system",
+                            f"Conversation summary:\n{summary}",
+                            id=f"compaction:{seq}",
+                        ),
+                    ),
+                )
+    return tuple(message for _, message in entries)
+
+
+def _validate_compaction(events, event: CompactionApplied, seq: int):
+    if type(event.through) is not int or not 0 < event.through <= seq:
+        raise ValueError("Compaction must replace an existing event prefix")
+    if not isinstance(events[event.through - 1], TurnEnd):
+        raise ValueError("Compaction must end at a closed turn boundary")
+    previous = max((e.through for e in events[:seq] if isinstance(e, CompactionApplied)), default=0)
+    if event.through <= previous:
+        raise ValueError("Compaction must advance the previous boundary")
+    if not isinstance(event.summary, str) or not event.summary.strip():
+        raise ValueError("Compaction requires a non-empty summary")
 
 
 class Inbox:
@@ -146,6 +205,9 @@ class Session:
         self._persistence = persistence
         self._lock = asyncio.Lock()
         Inbox(self._events)
+        for seq, event in enumerate(self._events):
+            if isinstance(event, CompactionApplied):
+                _validate_compaction(self._events, event, seq)
 
     @property
     def events(self) -> tuple[SessionEvent, ...]:
@@ -166,6 +228,8 @@ class Session:
             if isinstance(event, InboxAdded | InboxRemoved):
                 Inbox((*self._events, event))
             seq = len(self._events)
+            if isinstance(event, CompactionApplied):
+                _validate_compaction(self._events, event, seq)
             if self._persistence is not None:
                 await self._persistence.append(self.id, seq, event)
             self._events.append(event)

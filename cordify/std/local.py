@@ -98,9 +98,8 @@ async def shell_tools(ctx: Context, cwd: str | Path = ".", *, registry: Inject[T
         timeout: float = 30,
         *,
         shell: Inject[Shell],
-    ) -> dict[str, str | int]:
+    ) -> ProcResult:
         """Run an executable with arguments in the workspace, without shell expansion."""
-        result = await shell.run(argv, cwd=cwd, timeout=timeout)
-        return {"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+        return await shell.run(argv, cwd=cwd, timeout=timeout)
 
     yield

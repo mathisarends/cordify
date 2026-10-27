@@ -9,6 +9,7 @@ from .core import Context
 from .di import bind_injected, injections
 from .execution import ToolCallContext
 from .models import ToolCall, ToolDefinition, ToolResult, result_content, to_dict
+from .seams import ProcResult
 
 
 def _schema(annotation: Any) -> dict:
@@ -204,6 +205,12 @@ class ToolRegistry:
                         value = await asyncio.to_thread(tool.callback, *bound.args, **bound.kwargs)
                         if inspect.isawaitable(value):
                             value = await value
+            if isinstance(value, ProcResult):
+                return ToolResult(
+                    result_content(to_dict(value)),
+                    "ok" if value.returncode == 0 else "error",
+                    exit_code=value.returncode,
+                )
             return value if isinstance(value, ToolResult) else ToolResult(result_content(value))
         except asyncio.CancelledError:
             if call_context is not None:

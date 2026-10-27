@@ -1,7 +1,7 @@
 import json
 import math
 from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Literal, Protocol
@@ -43,11 +43,31 @@ class ToolCall:
             raise TypeError("Tool arguments must be a JSON object")
         object.__setattr__(self, "arguments", freeze(self.arguments))
 
+    @property
+    def command(self) -> str:
+        command = self.arguments.get("command")
+        if isinstance(command, str):
+            return command
+        argv = self.arguments.get("argv", ())
+        return (
+            " ".join(argv)
+            if isinstance(argv, tuple) and all(isinstance(a, str) for a in argv)
+            else ""
+        )
+
+
+@dataclass(frozen=True)
+class SpillRef:
+    path: str
+    sha256: str
+
 
 @dataclass(frozen=True)
 class ToolResult:
     content: str
     status: Literal["ok", "error", "denied"] = "ok"
+    exit_code: int | None = None
+    spill: SpillRef | None = None
 
     @classmethod
     def error(cls, content: str) -> "ToolResult":
@@ -59,10 +79,10 @@ class ToolResult:
 
     @property
     def is_error(self) -> bool:
-        return self.status != "ok"
+        return self.status != "ok" or self.exit_code not in (None, 0)
 
     def with_note(self, text: str) -> "ToolResult":
-        return ToolResult(f"{self.content}\n\n{text}", self.status)
+        return replace(self, content=f"{self.content}\n\n{text}")
 
 
 class Decision(StrEnum):
@@ -151,10 +171,44 @@ class ModelRequest:
     messages: tuple[Message, ...]
     tools: tuple[ToolDefinition, ...] = ()
     max_tokens: int | None = None
+    cache_breakpoints: tuple[int, ...] = ()
 
     def __post_init__(self):
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
+        points = tuple(self.cache_breakpoints)
+        if any(type(point) is not int or not 0 < point <= len(self.messages) for point in points):
+            raise ValueError(
+                "Cache breakpoints must be exclusive message offsets inside the request"
+            )
+        if tuple(sorted(set(points))) != points:
+            raise ValueError("Cache breakpoints must be unique and ordered")
+        object.__setattr__(self, "cache_breakpoints", points)
+
+
+@dataclass(frozen=True)
+class ModelUsage:
+    prompt_tokens: int
+    completion_tokens: int = 0
+    prompt_cache_hit_tokens: int | None = None
+    prompt_cache_miss_tokens: int | None = None
+
+    def __post_init__(self):
+        values = (
+            self.prompt_tokens,
+            self.completion_tokens,
+            self.prompt_cache_hit_tokens,
+            self.prompt_cache_miss_tokens,
+        )
+        if any(value is not None and (type(value) is not int or value < 0) for value in values):
+            raise ValueError("Token usage must contain non-negative integers")
+
+    @property
+    def cache_hit_rate(self) -> float | None:
+        hit, miss = self.prompt_cache_hit_tokens, self.prompt_cache_miss_tokens
+        if hit is None or miss is None or hit + miss == 0:
+            return None
+        return hit / (hit + miss)
 
 
 @dataclass(frozen=True)
@@ -162,6 +216,7 @@ class ModelChunk:
     text: str = ""
     reasoning: str = ""
     tool_call: ToolCall | None = None
+    usage: ModelUsage | None = None
 
 
 class LLM(Protocol):
@@ -188,6 +243,16 @@ def request_from_dict(data: dict) -> ModelRequest:
         messages=tuple(message_from_dict(m) for m in data["messages"]),
         tools=tuple(ToolDefinition(**t) for t in data["tools"]),
         max_tokens=data["max_tokens"],
+        cache_breakpoints=tuple(data.get("cache_breakpoints", ())),
+    )
+
+
+def tool_result_from_dict(data: dict) -> ToolResult:
+    return ToolResult(
+        **{
+            **data,
+            "spill": SpillRef(**data["spill"]) if data.get("spill") is not None else None,
+        }
     )
 
 

@@ -3,15 +3,41 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from ..agent import AgentFactory, ReactLoopFactory
+from ..budget import ApproximateTokenCounter, TokenCounter
+from ..compaction import Compactor, ExtractiveCompactor
 from ..core import Context, plugin
 from ..di import Inject
 from ..events import ToolPolicy
 from ..models import LLM, Approver, Decision
 from ..prompt import SystemPrompt
 from ..session import SessionPersistence
+from ..spill import LocalSpillStore, SpillStore
 from ..tools import ToolRegistry
 from .local import fs_local, fs_tools, shell_local, shell_tools
 from .persistence import JsonlPersistence
+
+
+@plugin
+async def token_counter(ctx: Context, implementation: TokenCounter | None = None):
+    ctx.provide(TokenCounter, implementation or ApproximateTokenCounter())
+    yield
+
+
+@plugin
+async def compactor(
+    ctx: Context,
+    implementation: Compactor | None = None,
+    *,
+    counter: Inject[TokenCounter],
+):
+    ctx.provide(Compactor, implementation or ExtractiveCompactor(counter))
+    yield
+
+
+@plugin
+async def spill_store(ctx: Context, implementation: SpillStore | None = None):
+    ctx.provide(SpillStore, implementation or LocalSpillStore())
+    yield
 
 
 @plugin()
@@ -127,6 +153,9 @@ def deepseek(*, model: str | None = None, api_key: str | None = None, **kwargs):
 
 
 __all__ = [
+    "compactor",
+    "spill_store",
+    "token_counter",
     "agent_loop",
     "agents_md",
     "approval_gate",

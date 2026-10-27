@@ -1,4 +1,6 @@
 from .agent import Agent, AgentFactory, AgentHandle, AgentOptions, RunResult
+from .budget import ApproximateTokenCounter, TokenCounter
+from .compaction import Compactor, ExtractiveCompactor, LLMCompactor
 from .context import File, Image
 from .core import (
     Bail,
@@ -25,7 +27,9 @@ from .models import (
     Message,
     ModelChunk,
     ModelRequest,
+    ModelUsage,
     Observation,
+    SpillRef,
     TextPart,
     ToolCall,
     ToolDefinition,
@@ -35,11 +39,35 @@ from .models import (
 )
 from .plugins import Bundle, Plugin, hook, tool
 from .prompt import SystemPrompt
+from .rules import Rule, Rules, when
 from .seams import FS, ProcResult, Shell
 from .session import Inbox, Session, SessionPersistence, derive_messages
+from .spill import LocalSpillStore, SpillStore
+from .strategies import (
+    CacheBreakpoints,
+    LatestObservationOnly,
+    SpillLargeResults,
+    ThresholdCompaction,
+)
 from .tools import ToolRegistry
 
 __all__ = [
+    "ApproximateTokenCounter",
+    "TokenCounter",
+    "Compactor",
+    "ExtractiveCompactor",
+    "LLMCompactor",
+    "ModelUsage",
+    "SpillRef",
+    "Rule",
+    "Rules",
+    "when",
+    "LocalSpillStore",
+    "SpillStore",
+    "CacheBreakpoints",
+    "LatestObservationOnly",
+    "SpillLargeResults",
+    "ThresholdCompaction",
     "FS",
     "File",
     "Image",

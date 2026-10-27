@@ -307,7 +307,8 @@ JSONL-Append ist synchron und flusht pro Event; `fsync=True` aktiviert zusätzli
 einen Datenträger-Flush. Beschädigte oder unbekannte Records werden abgewiesen.
 Das Log-Format ist ein eigenes, versioniertes Cordify-Format. Aktuell wird beim
 Projizieren die Historie vollständig gelesen; große Sessions brauchen später
-inkrementelle Projektionen und Compaction.
+inkrementelle Projektionen. Compaction verkleinert die Modell-Historie, nicht das
+append-only Log.
 
 Sync-Tools laufen im Threadpool. Ein Timeout beendet dort das Warten, nicht den
 Python-Thread. `fs_local` prüft auf Pfade außerhalb des Workspace, bietet aber
@@ -327,5 +328,108 @@ Die Modell-ID ist über `deepseek(model=...)`, `Harness(model=...)` oder
 das kleine `LLM.stream(ModelRequest)`-Protocol.
 
 Diese erste Version führt Tools seriell aus. Sie enthält keinen MCP-Client,
-Realtime-Transport, Docker-Backend, automatische Compaction oder Subagenten.
+Realtime-Transport, Docker-Backend oder Subagenten. Compaction und die folgenden
+Kontextstrategien werden explizit als Plugins ausgewählt.
 Die entsprechenden Erweiterungen können auf denselben Services und Events aufbauen.
+
+## Rules und Kontextstrategien
+
+```python
+from cordify import (
+    CacheBreakpoints,
+    LatestObservationOnly,
+    Rules,
+    SpillLargeResults,
+    ThresholdCompaction,
+    when,
+)
+
+rules = Rules(
+    [
+        when(tool="run_command", command_contains="git push").steer(
+            "Never push directly. Open a PR instead."
+        ),
+        when(tool="run_command", exit_code=lambda code: code != 0, repeated=3).inject(
+            "Same command failed three times. Try a different approach."
+        ),
+        when(tool="read_file", result_tokens_over=20_000).note(
+            "File is large. Use a line range next time."
+        ),
+    ],
+    name="coding-policy-v1",
+)
+
+coding = Harness(
+    [
+        # agent_loop(), llm(...), eigene Tools ...
+        rules,
+        SpillLargeResults(max_tokens=8_000),
+        ThresholdCompaction(at=0.8),
+        CacheBreakpoints(),
+    ],
+    context_window=128_000,
+)
+
+browser = Harness(
+    [
+        # agent_loop(), llm(...), BrowserObserver(), browser_tools ...
+        LatestObservationOnly(max_summaries=8),
+        ThresholdCompaction(at=0.6),
+    ]
+)
+```
+
+`Rules` ist ein normales Klassenplugin mit einem `ReviewToolResult`-Hook. Aktionen
+können verkettet werden und laufen in Deklarationsreihenfolge. `repeated=3` zählt
+aufeinanderfolgende Matches je Tool und Befehl und löst beim dritten Match einmal
+aus; ein Nicht-Match desselben Befehls setzt den Zähler zurück. Andere Befehle
+haben eigene Zähler. Ohne `repeated` wird jedes Match behandelt. Der Befehl kommt
+aus `ToolCall.command` (Argument `command` oder `argv`). `ToolResult.exit_code`
+wird bei nativen `ProcResult`-Rückgaben automatisch übernommen und bleibt bei
+`with_note()` und Spill erhalten.
+
+`RuleEvaluated` und `RuleTriggered` protokollieren Zähler und ausgelöste Aktionen.
+Ein Resume stellt Zähler wieder her, ohne alte Aktionen erneut auszuführen.
+Namen und Regelpositionen identifizieren die Policy: bei inhaltlichen Änderungen
+einen neuen `name` wählen, ebenso für mehrere unabhängige Rules-Instanzen.
+
+- `LatestObservationOnly` behält den aktuellen Zustand voll und höchstens
+  `max_summaries` frühere Kurzfassungen je Quelle. Die Auswahl ist im Log
+  festgehalten; Unload stellt die vorherige Einstellung wieder her.
+- `SpillLargeResults` speichert große Ergebnisse im `SpillStore`. Das Modell
+  bekommt Pfad, Hash, Vorschau und einen Hinweis auf das registrierte `read_spill`-
+  Tool. Die Dateien bleiben für spätere Reads und Forks bestehen und sollten mit
+  der Session aufbewahrt werden. Standardpfad: `.cordify/spills`.
+- `ThresholdCompaction` prüft den vollständigen Request plus reservierte
+  Output-Tokens. Ab `at * context_window` fasst es ältere abgeschlossene Turns
+  zusammen und erhält standardmäßig die letzten zwei. Ein erfolgreicher Austausch
+  schreibt genau ein `CompactionApplied`-Event. Replay und Fork leiten dieselbe
+  Historie ab; laufende Turns, Eingaben und Tool-Paare werden nicht angeschnitten.
+- `CacheBreakpoints` markiert das Ende des Prefix als exklusive Message-Position
+  in `ModelRequest.cache_breakpoints`; volle aktuelle Observations bleiben im
+  Tail. Es schreibt `CacheMetrics` nur aus gemeldeter Provider-Usage.
+
+`TokenCounter`, `Compactor` und `SpillStore` sind austauschbare Services. Der
+Standard zählt Tokens näherungsweise über UTF-8-Bytes und verwendet einen
+`ExtractiveCompactor`, der Textauszüge ohne zusätzlichen Modellaufruf verdichtet.
+`context_window` ist ein SDK-Budget (Standard 128000), keine automatisch erkannte
+Modellgrenze. Für genaue Budgets einen passenden TokenCounter montieren.
+Semantische Zusammenfassungen sind explizit möglich:
+
+```python
+from cordify import LLMCompactor, LocalSpillStore
+from cordify.std import compactor, spill_store, token_counter
+
+# Zu den Harness-Plugins hinzufügen:
+# compactor(LLMCompactor(summary_llm, model="your-summary-model"))
+# token_counter(your_tokenizer)
+# spill_store(LocalSpillStore("./artifacts/spills"))
+```
+
+`PrepareRequest` läuft nach Kontextaufnahme und Prompt-Rendering; dort arbeitet
+Compaction. `ConfigureRequest` folgt danach und plant Cache-Metadaten auf dem
+fertigen Request. Provider-Adapter entscheiden, wie sie Breakpoints umsetzen.
+DeepSeek cached Prefixe automatisch und erhält keine erfundenen Cache-Parameter;
+sein Adapter übernimmt die gemeldeten `prompt_cache_hit_tokens` und
+`prompt_cache_miss_tokens`. Eine bestimmte Anzahl Cache-Misses ist nicht
+garantiert. Siehe [DeepSeek Context Caching](https://api-docs.deepseek.com/guides/kv_cache/).

@@ -9,9 +9,16 @@ from .session import Session, SessionPersistence
 
 
 class Harness:
-    def __init__(self, plugins: Iterable[PluginLike], *, model: str | None = None):
+    def __init__(
+        self,
+        plugins: Iterable[PluginLike],
+        *,
+        model: str | None = None,
+        context_window: int = 128_000,
+    ):
         self.plugins = tuple(plugins)
         self.model = model
+        self.context_window = context_window
         self._active: set[str] = set()
         self._bundle = Bundle("harness")
 
@@ -36,8 +43,9 @@ class Harness:
         model: str | None = None,
         max_steps: int = 32,
         max_tokens: int | None = None,
+        context_window: int | None = None,
     ):
-        from .std import system_prompt, tools
+        from .std import compactor, spill_store, system_prompt, token_counter, tools
 
         if session_id in self._active:
             raise RuntimeError(f"Session {session_id!r} already has a live owner")
@@ -48,6 +56,9 @@ class Harness:
                     [
                         tools(),
                         system_prompt(),
+                        token_counter(),
+                        compactor(),
+                        spill_store(),
                         *self.plugins,
                         self._bundle,
                     ]
@@ -59,7 +70,12 @@ class Harness:
                     or self.model
                     or (getattr(ctx[LLM], "model", "default") if LLM in ctx else "default")
                 )
-                options = AgentOptions(selected_model, max_steps, max_tokens)
+                options = AgentOptions(
+                    selected_model,
+                    max_steps,
+                    max_tokens,
+                    self.context_window if context_window is None else context_window,
+                )
                 persistence = ctx[SessionPersistence] if SessionPersistence in ctx else None
                 seed = await persistence.load(session_id) if persistence is not None else ()
                 session = Session(session_id, ctx=ctx, seed=seed, persistence=persistence)

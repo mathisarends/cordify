@@ -2,7 +2,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 from .core import Bail, Emit, Waterfall
-from .models import Decision, Message, ModelRequest, Observation, ToolCall, ToolResult
+from .models import (
+    Decision,
+    Message,
+    ModelRequest,
+    ModelUsage,
+    Observation,
+    SpillRef,
+    ToolCall,
+    ToolResult,
+)
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -57,6 +66,18 @@ class ReviewToolResult(Waterfall[ToolResult]):
     call: ToolCall
     result: ToolResult
     agent: "Agent"
+
+
+@dataclass(frozen=True)
+class PrepareRequest(Waterfall[ModelRequest]):
+    agent: "Agent"
+    request: ModelRequest
+
+
+@dataclass(frozen=True)
+class ConfigureRequest(Waterfall[ModelRequest]):
+    agent: "Agent"
+    request: ModelRequest
 
 
 @dataclass(frozen=True)
@@ -142,6 +163,69 @@ class ModelRequested(SessionEvent):
 
 
 @dataclass(frozen=True)
+class ModelUsageRecorded(SessionEvent):
+    type: ClassVar[str] = "model/usage"
+    usage: ModelUsage
+
+
+@dataclass(frozen=True)
+class CacheMetrics(SessionEvent):
+    type: ClassVar[str] = "model/cache"
+    usage: ModelUsage
+    hit_rate: float | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "hit_rate", self.usage.cache_hit_rate)
+
+
+@dataclass(frozen=True)
+class CompactionApplied(SessionEvent):
+    type: ClassVar[str] = "context/compacted"
+    through: int
+    summary: str
+
+
+@dataclass(frozen=True)
+class ObservationPolicyApplied(SessionEvent):
+    type: ClassVar[str] = "context/observation-policy"
+    max_summaries: int | None = None
+
+    def __post_init__(self):
+        if self.max_summaries is not None and (
+            type(self.max_summaries) is not int or self.max_summaries < 0
+        ):
+            raise ValueError("max_summaries must be a non-negative integer or None")
+
+
+@dataclass(frozen=True)
+class SpillCreated(SessionEvent):
+    type: ClassVar[str] = "tools/spilled"
+    call_id: str
+    ref: SpillRef
+    tokens: int
+
+
+@dataclass(frozen=True)
+class RuleTriggered(SessionEvent):
+    type: ClassVar[str] = "rules/triggered"
+    rule: str
+    call_id: str
+    occurrence: int
+    actions: tuple[str, ...]
+
+    def __post_init__(self):
+        object.__setattr__(self, "actions", tuple(self.actions))
+
+
+@dataclass(frozen=True)
+class RuleEvaluated(SessionEvent):
+    type: ClassVar[str] = "rules/evaluated"
+    rule: str
+    key: str
+    occurrence: int
+
+
+@dataclass(frozen=True)
 class AssistantMessage(SessionEvent):
     type: ClassVar[str] = "assistant/message"
     message: Message
@@ -206,6 +290,13 @@ SESSION_EVENT_TYPES = {
         ContextMessage,
         ObservationRecorded,
         ModelRequested,
+        ModelUsageRecorded,
+        CacheMetrics,
+        CompactionApplied,
+        ObservationPolicyApplied,
+        SpillCreated,
+        RuleTriggered,
+        RuleEvaluated,
         AssistantMessage,
         ToolCalled,
         ToolReturned,

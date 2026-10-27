@@ -123,3 +123,51 @@ async def test_missing_key_fails_before_network(monkeypatch):
     with pytest.raises(ValueError, match="DEEPSEEK_API_KEY"):
         async for _ in DeepSeekLLM().stream(ModelRequest("test", ())):
             pass
+
+
+async def test_stream_reports_provider_cache_usage_without_sending_custom_breakpoint_fields():
+    bodies = []
+
+    async def respond(request):
+        bodies.append(json.loads(request.content))
+        data = {
+            "choices": [{"delta": {"content": "hello"}}],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 5,
+                "prompt_cache_hit_tokens": 80,
+                "prompt_cache_miss_tokens": 20,
+            },
+        }
+        return httpx.Response(200, text=f"data: {json.dumps(data)}\n\ndata: [DONE]\n\n")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        adapter = DeepSeekLLM(api_key="test", client=client)
+        request = ModelRequest(
+            "test", (Message("system", "rules"), Message("user", "hello")), cache_breakpoints=(1,)
+        )
+        chunks = [chunk async for chunk in adapter.stream(request)]
+        usage = next(chunk.usage for chunk in chunks if chunk.usage is not None)
+        assert usage.cache_hit_rate == 0.8
+        assert bodies[0]["stream_options"] == {"include_usage": True}
+        assert "cache_breakpoints" not in bodies[0]
+
+
+async def test_usage_only_final_chunk_is_accepted_and_missing_cache_fields_stay_unknown():
+    async def respond(request):
+        final = {"choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+        return httpx.Response(
+            200,
+            text=sse({"content": "hello"}, done=False)
+            + f"data: {json.dumps(final)}\n\ndata: [DONE]\n\n",
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        chunks = [
+            chunk
+            async for chunk in DeepSeekLLM(api_key="test", client=client).stream(
+                ModelRequest("test", ())
+            )
+        ]
+        assert chunks[-1].usage.prompt_tokens == 3
+        assert chunks[-1].usage.cache_hit_rate is None

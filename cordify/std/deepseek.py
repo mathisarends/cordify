@@ -3,7 +3,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 
-from ..models import ImagePart, ModelChunk, ModelRequest, TextPart, ToolCall, to_dict
+from ..models import ImagePart, ModelChunk, ModelRequest, ModelUsage, TextPart, ToolCall, to_dict
 
 
 class DeepSeekLLM:
@@ -55,7 +55,12 @@ class DeepSeekLLM:
                     for call in message.tool_calls
                 ]
             messages.append(item)
-        payload = {"model": request.model, "messages": messages, "stream": True}
+        payload = {
+            "model": request.model,
+            "messages": messages,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
         if request.tools:
             payload["tools"] = [
                 {"type": "function", "function": to_dict(tool)} for tool in request.tools
@@ -114,6 +119,16 @@ class DeepSeekLLM:
                         function = fragment.get("function", {})
                         call["name"] += function.get("name") or ""
                         call["arguments"] += function.get("arguments") or ""
+                if data.get("usage") is not None:
+                    usage = data["usage"]
+                    yield ModelChunk(
+                        usage=ModelUsage(
+                            prompt_tokens=usage["prompt_tokens"],
+                            completion_tokens=usage.get("completion_tokens", 0),
+                            prompt_cache_hit_tokens=usage.get("prompt_cache_hit_tokens"),
+                            prompt_cache_miss_tokens=usage.get("prompt_cache_miss_tokens"),
+                        )
+                    )
         if not done:
             raise RuntimeError("DeepSeek stream ended before [DONE]")
         for index in sorted(calls):
