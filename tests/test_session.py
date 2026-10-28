@@ -38,7 +38,7 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
         ]
     records = [json.loads(line) for line in (tmp_path / "resume.jsonl").read_text().splitlines()]
     assert [record["seq"] for record in records] == list(range(len(records)))
-    assert all(record["version"] == 1 for record in records)
+    assert all(record["version"] == 2 for record in records)
 
 
 async def test_jsonl_excludes_other_writers_and_releases_lock(tmp_path):
@@ -66,7 +66,7 @@ async def test_jsonl_rejects_unsafe_session_ids(tmp_path, session_id):
     "content",
     [
         '{"version":1,',
-        '{"version":2,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
+        '{"version":3,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
         '{"version":1,"seq":5,"type":"turn/start","data":{"turn_id":"x"}}\n',
         '{"version":1,"seq":0,"type":"unknown","data":{}}\n',
     ],

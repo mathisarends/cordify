@@ -238,7 +238,7 @@ async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_i
     "record",
     [
         b'{"version":1,\n',
-        b'{"version":2,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
+        b'{"version":3,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
         b'{"version":1,"seq":0,"type":"unknown","data":{}}\n',
         b"\xff\n",
     ],

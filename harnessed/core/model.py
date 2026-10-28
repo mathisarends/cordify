@@ -93,6 +93,8 @@ def sum_usage(usages: Iterable[ModelUsage]) -> ModelUsage:
 
 def usage_from_dict(data: dict) -> ModelUsage:
     """Decode legacy logs without treating their cache misses as cache writes."""
+    if not isinstance(data, dict):
+        raise ValueError("Usage data must be an object")
     if "prompt_tokens" in data:
         legacy = dict(data)
         data = {
@@ -100,7 +102,9 @@ def usage_from_dict(data: dict) -> ModelUsage:
             "output_tokens": legacy.pop("completion_tokens", 0),
             "cache_read_tokens": legacy.pop("prompt_cache_hit_tokens", None),
         }
-        legacy.pop("prompt_cache_miss_tokens", None)
+        missed = legacy.pop("prompt_cache_miss_tokens", None)
+        if missed is not None and (type(missed) is not int or missed < 0):
+            raise ValueError("Legacy cache misses must be non-negative integers")
         if legacy:
             raise ValueError(f"Unknown legacy usage fields: {', '.join(legacy)}")
     return ModelUsage(**data)

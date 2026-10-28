@@ -61,13 +61,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   application path no longer installs implicit compaction or spill stores.
 - Keep the tested single-install/single-disposer behavior and public settle barrier.
 
-### P1-7 — Events, names and codec
-
-- Use consistent class-derived type tags with legacy decoding aliases.
-- Register event kinds once, add version/migration support and a Pydantic union
-  codec. Keep frozen immutable values and reject corrupt/unknown records.
-- Type step/turn/control outcomes rather than accepting arbitrary strings.
-
 ### P1-8 — Boundary validation
 
 - Use Pydantic for external options/configuration and the persistence codec;

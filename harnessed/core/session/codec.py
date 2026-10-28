@@ -1,32 +1,19 @@
+import json
 import math
 from dataclasses import fields, is_dataclass
 from types import MappingProxyType
 
+from pydantic import ConfigDict, TypeAdapter
+
 from harnessed.core.messages import (
-    Observation,
-    SpillRef,
-    ToolCall,
-    message_from_dict,
+    freeze,
     to_dict,
-    tool_result_from_dict,
 )
-from harnessed.core.model import request_from_dict, usage_from_dict
+from harnessed.core.model import usage_from_dict
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
-    ApprovalRequested,
-    AssistantMessage,
-    CacheMetrics,
-    ContextMessage,
-    InboxAdded,
-    ModelRequested,
-    ModelUsageRecorded,
-    ObservationRecorded,
+    LogEvent,
     SessionEvent,
-    SpillCreated,
-    ToolCalled,
-    ToolCompleted,
-    ToolReturned,
-    UserMessage,
 )
 
 
@@ -62,32 +49,96 @@ def _validate_event(event: SessionEvent) -> None:
     immutable(event)
 
 
+CURRENT_VERSION = 2
+_LEGACY_TYPES = {
+    "agent/control": "AgentControlChanged",
+    "approvals/requested": "ApprovalRequested",
+    "approvals/resolved": "ApprovalResolved",
+    "approvals/revoked": "ApprovalRevoked",
+    "tools/policy": "ToolPolicyApplied",
+    "tools/execution-started": "ToolExecutionStarted",
+    "session/log-tail-recovered": "LogTailRecovered",
+    "assistant/chunk": "AssistantChunk",
+    "agent/inbox/inserted": "InboxAdded",
+    "agent/inbox/removed": "InboxRemoved",
+    "turn/start": "TurnStart",
+    "step/start": "StepStart",
+    "system/message": "SystemMessage",
+    "user/message": "UserMessage",
+    "context/message": "ContextMessage",
+    "context/value-changed": "ContextValueChanged",
+    "agent/observation": "ObservationRecorded",
+    "model/requested": "ModelRequested",
+    "model/usage": "ModelUsageRecorded",
+    "model/cache": "CacheMetrics",
+    "context/compacted": "CompactionApplied",
+    "context/observation-policy": "ObservationPolicyApplied",
+    "tools/spilled": "SpillCreated",
+    "rules/triggered": "RuleTriggered",
+    "rules/evaluated": "RuleEvaluated",
+    "assistant/message": "AssistantMessage",
+    "tools/called": "ToolCalled",
+    "tools/result": "ToolReturned",
+    "tools/completed": "ToolCompleted",
+    "tools/progress": "ToolProgress",
+    "step/end": "StepEnd",
+    "turn/end": "TurnEnd",
+}
+_ADAPTER = TypeAdapter(
+    LogEvent,
+    config=ConfigDict(
+        extra="forbid",
+        strict=True,
+        allow_inf_nan=False,
+        hide_input_in_errors=True,
+    ),
+)
+
+
+def event_schema() -> dict:
+    """Return the discriminated JSON schema of the current durable event values."""
+    return _ADAPTER.json_schema()
+
+
 def encode_event(event: SessionEvent) -> dict:
+    """Encode a canonical class tag and the current version without mutable state."""
     _validate_event(event)
-    return {"type": event.type, "data": to_dict(event)}
+    data = to_dict(event)
+    data.pop("type")
+    return {"version": CURRENT_VERSION, "type": event.type, "data": data}
 
 
 def decode_event(record: dict) -> SessionEvent:
-    kind = SESSION_EVENT_TYPES[record["type"]]
-    data = dict(record["data"])
-    if kind in (UserMessage, AssistantMessage, InboxAdded, ContextMessage):
-        data["message"] = message_from_dict(data["message"])
-        if kind is InboxAdded:
-            data["context"] = tuple(
-                message_from_dict(message) for message in data.get("context", ())
-            )
-    elif kind is ObservationRecorded:
-        data["observation"] = Observation(**data["observation"])
-    elif kind is ModelRequested:
-        data["request"] = request_from_dict(data["request"])
-    elif kind in (ModelUsageRecorded, CacheMetrics):
-        data["usage"] = usage_from_dict(data["usage"])
-    elif kind is SpillCreated:
-        data["ref"] = SpillRef(**data["ref"])
-    elif kind in (ToolCalled, ApprovalRequested):
-        data["call"] = ToolCall(**data["call"])
-    elif kind in (ToolReturned, ToolCompleted):
-        data["result"] = tool_result_from_dict(data["result"])
-    event = kind(**data)
+    """Validate a frozen tagged union, migrating the original version-one tags."""
+    if not isinstance(record, dict) or set(record) - {"version", "seq", "type", "data"}:
+        raise ValueError("Invalid session record envelope")
+    version = record.get("version", 1)
+    if type(version) is not int or version not in (1, CURRENT_VERSION):
+        raise ValueError("Unsupported session record version")
+    if "seq" in record and (type(record["seq"]) is not int or record["seq"] < 0):
+        raise ValueError("Session sequence must be a non-negative integer")
+    tag = record.get("type")
+    if not isinstance(tag, str):
+        raise ValueError("Session records require a type tag")
+    if version == 1:
+        tag = _LEGACY_TYPES.get(tag, tag)
+    if tag not in SESSION_EVENT_TYPES:
+        raise ValueError(f"Unknown session event type: {tag}")
+    body = record.get("data")
+    if not isinstance(body, dict):
+        raise ValueError("Session record data must be an object")
+    freeze(record)  # A Python caller must not smuggle non-JSON keys or non-finite values.
+    body = dict(body)
+    if "type" in body and body["type"] != tag:
+        raise ValueError("Session envelope and payload type tags disagree")
+    if version == 1 and tag in ("ModelUsageRecorded", "CacheMetrics") and "usage" in body:
+        body["usage"] = to_dict(usage_from_dict(body["usage"]))
+    elif version == 1 and tag == "ModelRequested" and isinstance(body.get("request"), dict):
+        body["request"] = dict(body["request"])
+        body["request"].pop("cache_breakpoints", None)  # The v1 marker never affected a provider.
+    elif version == 1 and tag == "ToolPolicyApplied" and body.get("decision") == "always":
+        body["decision"] = "allow"
+        body.setdefault("source", "approval")
+    event = _ADAPTER.validate_json(json.dumps({**body, "type": tag}, allow_nan=False), strict=True)
     _validate_event(event)
     return event

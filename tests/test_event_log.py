@@ -45,7 +45,7 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
         def observe(event):
             assert event not in agent.session.events
             records = (tmp_path / "durable-chunks.jsonl").read_text().splitlines()
-            assert all(record["type"] != "assistant/chunk" for record in map(json.loads, records))
+            assert all(record["type"] != AssistantChunk.type for record in map(json.loads, records))
             observed.append(event)
 
         live = [event async for event in agent.stream("hello")]

@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from harnessed.core.errors import SessionLocked
 from harnessed.core.plugin import Plugin, PluginConfig
-from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.codec import CURRENT_VERSION, decode_event, encode_event
 from harnessed.core.session.events import LogTailRecovered, SessionEvent
 from harnessed.core.session.session import Session
 from harnessed.core.session.store import SessionPersistence, SessionStore
@@ -109,7 +109,7 @@ class JsonlPersistence:
                         record = json.loads(line)
                         if (
                             type(record["version"]) is not int
-                            or record["version"] != 1
+                            or record["version"] not in (1, CURRENT_VERSION)
                             or type(record["seq"]) is not int
                             or record["seq"] != seq
                         ):
@@ -192,7 +192,7 @@ class JsonlPersistence:
         stream, lock, expected = self._files[session_id]
         if seq != expected:
             raise ValueError(f"Session sequence mismatch: expected {expected}, got {seq}")
-        record = {"version": 1, "seq": seq, **encode_event(event)}
+        record = {"seq": seq, **encode_event(event)}
         # No await between writing and advancing the in-process append position.
         stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
         if self.durability != "buffered":

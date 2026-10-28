@@ -1,7 +1,9 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args
 from uuid import uuid4
+
+from pydantic import Field
 
 from harnessed.core.messages import (
     ApprovalAnswer,
@@ -13,7 +15,7 @@ from harnessed.core.messages import (
     ToolResult,
     freeze,
 )
-from harnessed.core.model import ModelRequest, ModelUsage
+from harnessed.core.model import ModelRequest, ModelUsage, StopReason
 from harnessed.kernel.events import Emit
 
 if TYPE_CHECKING:
@@ -23,6 +25,12 @@ if TYPE_CHECKING:
 type InboxMode = Literal["followup", "steer", "inject"]
 type InboxTarget = Literal["next-turn", "next-step"]
 type ControlState = Literal["active", "pausing", "paused", "stopping", "stopped"]
+type StepOutcome = Literal["completed", "interrupted", "aborted"]
+type TurnOutcome = Literal[
+    "completed", "interrupted", "stopped", "max_steps", "rejected", "aborted", "discarded"
+]
+type Identifier = Annotated[str, Field(min_length=1)]
+type StepNumber = Annotated[int, Field(ge=1)]
 _INBOX_ROUTES: dict[InboxMode, tuple[InboxTarget, bool]] = {
     "followup": ("next-turn", True),
     "steer": ("next-step", True),
@@ -31,12 +39,14 @@ _INBOX_ROUTES: dict[InboxMode, tuple[InboxTarget, bool]] = {
 
 
 class SessionEvent(Emit):
-    type: ClassVar[str]
+    @property
+    def type(self) -> str:
+        return type(self).__name__
 
 
 @dataclass(frozen=True)
 class AgentControlChanged(SessionEvent):
-    type: ClassVar[str] = "agent/control"
+    type: Literal["AgentControlChanged"] = field(default="AgentControlChanged", kw_only=True)
     state: ControlState
     keep_inbox: bool = False
 
@@ -51,8 +61,8 @@ class AgentControlChanged(SessionEvent):
 
 @dataclass(frozen=True)
 class ApprovalRequested(SessionEvent):
-    type: ClassVar[str] = "approvals/requested"
-    request_id: str
+    type: Literal["ApprovalRequested"] = field(default="ApprovalRequested", kw_only=True)
+    request_id: Identifier
     call: ToolCall
     reason: str
     scope: str
@@ -72,8 +82,8 @@ class ApprovalRequested(SessionEvent):
 
 @dataclass(frozen=True)
 class ApprovalResolved(SessionEvent):
-    type: ClassVar[str] = "approvals/resolved"
-    request_id: str
+    type: Literal["ApprovalResolved"] = field(default="ApprovalResolved", kw_only=True)
+    request_id: Identifier
     decision: ApprovalAnswer | None = None
     status: Literal["answered", "interrupted", "unavailable"] = "answered"
     reason: str | None = None
@@ -96,21 +106,20 @@ class ApprovalResolved(SessionEvent):
 
 @dataclass(frozen=True)
 class ApprovalRevoked(SessionEvent):
-    type: ClassVar[str] = "approvals/revoked"
-    request_id: str
+    type: Literal["ApprovalRevoked"] = field(default="ApprovalRevoked", kw_only=True)
+    request_id: Identifier
     reason: str = "revoked"
 
 
 @dataclass(frozen=True)
 class ToolPolicyApplied(SessionEvent):
-    type: ClassVar[str] = "tools/policy"
-    call_id: str
+    type: Literal["ToolPolicyApplied"] = field(default="ToolPolicyApplied", kw_only=True)
+    call_id: Identifier
     decision: PolicyDecision
     source: Literal["policy", "approval", "unavailable"] = "policy"
 
     def __post_init__(self):
-        value = "allow" if self.decision == "always" else self.decision
-        object.__setattr__(self, "decision", PolicyDecision(value))
+        object.__setattr__(self, "decision", PolicyDecision(self.decision))
         if self.decision is PolicyDecision.ASK:
             raise ValueError("ToolPolicyApplied requires a final decision")
         if self.source not in ("policy", "approval", "unavailable"):
@@ -119,13 +128,13 @@ class ToolPolicyApplied(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolExecutionStarted(SessionEvent):
-    type: ClassVar[str] = "tools/execution-started"
-    call_id: str
+    type: Literal["ToolExecutionStarted"] = field(default="ToolExecutionStarted", kw_only=True)
+    call_id: Identifier
 
 
 @dataclass(frozen=True)
 class LogTailRecovered(SessionEvent):
-    type: ClassVar[str] = "session/log-tail-recovered"
+    type: Literal["LogTailRecovered"] = field(default="LogTailRecovered", kw_only=True)
     offset: int
     discarded_bytes: int
     sha256: str
@@ -143,7 +152,7 @@ class LogTailRecovered(SessionEvent):
 
 @dataclass(frozen=True)
 class AssistantChunk(SessionEvent):
-    type: ClassVar[str] = "assistant/chunk"
+    type: Literal["AssistantChunk"] = field(default="AssistantChunk", kw_only=True)
     text: str = ""
     reasoning: str = ""
     message_id: str = field(kw_only=True)
@@ -157,7 +166,7 @@ class AssistantChunk(SessionEvent):
 
 @dataclass(frozen=True)
 class InboxAdded(SessionEvent):
-    type: ClassVar[str] = "agent/inbox/inserted"
+    type: Literal["InboxAdded"] = field(default="InboxAdded", kw_only=True)
     message: Message
     target: InboxTarget
     wakeup: bool
@@ -193,15 +202,15 @@ class InboxAdded(SessionEvent):
 
 @dataclass(frozen=True)
 class InboxRemoved(SessionEvent):
-    type: ClassVar[str] = "agent/inbox/removed"
-    message_id: str
+    type: Literal["InboxRemoved"] = field(default="InboxRemoved", kw_only=True)
+    message_id: Identifier
     reason: Literal["claimed", "canceled", "stopped"] = "claimed"
 
 
 @dataclass(frozen=True)
 class TurnStart(SessionEvent):
-    type: ClassVar[str] = "turn/start"
-    turn_id: str
+    type: Literal["TurnStart"] = field(default="TurnStart", kw_only=True)
+    turn_id: Identifier
     input_id: str | None = None
     settings: Mapping[str, Any] = field(default_factory=dict)
 
@@ -211,26 +220,26 @@ class TurnStart(SessionEvent):
 
 @dataclass(frozen=True)
 class StepStart(SessionEvent):
-    type: ClassVar[str] = "step/start"
-    turn_id: str
-    step: int
+    type: Literal["StepStart"] = field(default="StepStart", kw_only=True)
+    turn_id: Identifier
+    step: StepNumber
 
 
 @dataclass(frozen=True)
 class SystemMessage(SessionEvent):
-    type: ClassVar[str] = "system/message"
+    type: Literal["SystemMessage"] = field(default="SystemMessage", kw_only=True)
     content: str
 
 
 @dataclass(frozen=True)
 class UserMessage(SessionEvent):
-    type: ClassVar[str] = "user/message"
+    type: Literal["UserMessage"] = field(default="UserMessage", kw_only=True)
     message: Message
 
 
 @dataclass(frozen=True)
 class ContextMessage(SessionEvent):
-    type: ClassVar[str] = "context/message"
+    type: Literal["ContextMessage"] = field(default="ContextMessage", kw_only=True)
     message: Message
     lifetime: Literal["session", "turn"] = "session"
     turn_id: str | None = None
@@ -238,7 +247,7 @@ class ContextMessage(SessionEvent):
 
 @dataclass(frozen=True)
 class ContextValueChanged(SessionEvent):
-    type: ClassVar[str] = "context/value-changed"
+    type: Literal["ContextValueChanged"] = field(default="ContextValueChanged", kw_only=True)
     name: str
     value: str | None
     id: str = field(default_factory=lambda: uuid4().hex)
@@ -246,27 +255,27 @@ class ContextValueChanged(SessionEvent):
 
 @dataclass(frozen=True)
 class ObservationRecorded(SessionEvent):
-    type: ClassVar[str] = "agent/observation"
+    type: Literal["ObservationRecorded"] = field(default="ObservationRecorded", kw_only=True)
     observation: Observation
-    turn_id: str
-    step: int
+    turn_id: Identifier
+    step: StepNumber
 
 
 @dataclass(frozen=True)
 class ModelRequested(SessionEvent):
-    type: ClassVar[str] = "model/requested"
+    type: Literal["ModelRequested"] = field(default="ModelRequested", kw_only=True)
     request: ModelRequest
 
 
 @dataclass(frozen=True)
 class ModelUsageRecorded(SessionEvent):
-    type: ClassVar[str] = "model/usage"
+    type: Literal["ModelUsageRecorded"] = field(default="ModelUsageRecorded", kw_only=True)
     usage: ModelUsage
 
 
 @dataclass(frozen=True)
 class CacheMetrics(SessionEvent):
-    type: ClassVar[str] = "model/cache"
+    type: Literal["CacheMetrics"] = field(default="CacheMetrics", kw_only=True)
     usage: ModelUsage
     hit_rate: float | None = None
 
@@ -276,7 +285,7 @@ class CacheMetrics(SessionEvent):
 
 @dataclass(frozen=True)
 class CompactionApplied(SessionEvent):
-    type: ClassVar[str] = "context/compacted"
+    type: Literal["CompactionApplied"] = field(default="CompactionApplied", kw_only=True)
     through: int
     summary: str
     preserve_turns: tuple[str, ...] = ()
@@ -303,7 +312,9 @@ class CompactionApplied(SessionEvent):
 
 @dataclass(frozen=True)
 class ObservationPolicyApplied(SessionEvent):
-    type: ClassVar[str] = "context/observation-policy"
+    type: Literal["ObservationPolicyApplied"] = field(
+        default="ObservationPolicyApplied", kw_only=True
+    )
     max_summaries: int | None = None
 
     def __post_init__(self):
@@ -315,17 +326,17 @@ class ObservationPolicyApplied(SessionEvent):
 
 @dataclass(frozen=True)
 class SpillCreated(SessionEvent):
-    type: ClassVar[str] = "tools/spilled"
-    call_id: str
+    type: Literal["SpillCreated"] = field(default="SpillCreated", kw_only=True)
+    call_id: Identifier
     ref: SpillRef
     tokens: int
 
 
 @dataclass(frozen=True)
 class RuleTriggered(SessionEvent):
-    type: ClassVar[str] = "rules/triggered"
+    type: Literal["RuleTriggered"] = field(default="RuleTriggered", kw_only=True)
     rule: str
-    call_id: str
+    call_id: Identifier
     occurrence: int
     actions: tuple[str, ...]
 
@@ -335,7 +346,7 @@ class RuleTriggered(SessionEvent):
 
 @dataclass(frozen=True)
 class RuleEvaluated(SessionEvent):
-    type: ClassVar[str] = "rules/evaluated"
+    type: Literal["RuleEvaluated"] = field(default="RuleEvaluated", kw_only=True)
     rule: str
     key: str
     occurrence: int
@@ -343,15 +354,15 @@ class RuleEvaluated(SessionEvent):
 
 @dataclass(frozen=True)
 class AssistantMessage(SessionEvent):
-    type: ClassVar[str] = "assistant/message"
+    type: Literal["AssistantMessage"] = field(default="AssistantMessage", kw_only=True)
     message: Message
     interrupted: bool = False
-    stop_reason: str | None = None
+    stop_reason: StopReason | None = None
 
 
 @dataclass(frozen=True)
 class ToolCalled(SessionEvent):
-    type: ClassVar[str] = "tools/called"
+    type: Literal["ToolCalled"] = field(default="ToolCalled", kw_only=True)
     call: ToolCall
 
     @property
@@ -361,74 +372,97 @@ class ToolCalled(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolReturned(SessionEvent):
-    type: ClassVar[str] = "tools/result"
-    call_id: str
+    type: Literal["ToolReturned"] = field(default="ToolReturned", kw_only=True)
+    call_id: Identifier
     result: ToolResult
 
 
 @dataclass(frozen=True)
 class ToolCompleted(SessionEvent):
-    type: ClassVar[str] = "tools/completed"
-    call_id: str
+    type: Literal["ToolCompleted"] = field(default="ToolCompleted", kw_only=True)
+    call_id: Identifier
     result: ToolResult
 
 
 @dataclass(frozen=True)
 class ToolProgress(SessionEvent):
-    type: ClassVar[str] = "tools/progress"
-    call_id: str
+    type: Literal["ToolProgress"] = field(default="ToolProgress", kw_only=True)
+    call_id: Identifier
     text: str
 
 
 @dataclass(frozen=True)
 class StepEnd(SessionEvent):
-    type: ClassVar[str] = "step/end"
-    turn_id: str
-    step: int
-    reason: str = "completed"
+    type: Literal["StepEnd"] = field(default="StepEnd", kw_only=True)
+    turn_id: Identifier
+    step: StepNumber
+    reason: StepOutcome = "completed"
+
+    def __post_init__(self):
+        if self.reason not in ("completed", "interrupted", "aborted"):
+            raise ValueError("Unknown step outcome")
 
 
 @dataclass(frozen=True)
 class TurnEnd(SessionEvent):
-    type: ClassVar[str] = "turn/end"
-    turn_id: str
-    reason: str = "completed"
+    type: Literal["TurnEnd"] = field(default="TurnEnd", kw_only=True)
+    turn_id: Identifier
+    reason: TurnOutcome = "completed"
+
+    def __post_init__(self):
+        if self.reason not in (
+            "completed",
+            "interrupted",
+            "stopped",
+            "max_steps",
+            "rejected",
+            "aborted",
+            "discarded",
+        ):
+            raise ValueError("Unknown turn outcome")
 
 
-SESSION_EVENT_TYPES = {
-    cls.type: cls
-    for cls in (
-        AgentControlChanged,
-        ApprovalRequested,
-        ApprovalResolved,
-        ApprovalRevoked,
-        ToolPolicyApplied,
-        ToolExecutionStarted,
-        LogTailRecovered,
-        InboxAdded,
-        InboxRemoved,
-        TurnStart,
-        StepStart,
-        SystemMessage,
-        UserMessage,
-        ContextMessage,
-        ContextValueChanged,
-        ObservationRecorded,
-        ModelRequested,
-        ModelUsageRecorded,
-        CacheMetrics,
-        CompactionApplied,
-        ObservationPolicyApplied,
-        SpillCreated,
-        RuleTriggered,
-        RuleEvaluated,
-        AssistantChunk,
-        AssistantMessage,
-        ToolCalled,
-        ToolReturned,
-        ToolCompleted,
-        ToolProgress,
-        StepEnd,
-        TurnEnd,
-    )
+# A closed tagged union is the persistence boundary, separate from in-memory hooks.
+type LogEvent = Annotated[
+    (
+        AgentControlChanged
+        | ApprovalRequested
+        | ApprovalResolved
+        | ApprovalRevoked
+        | ToolPolicyApplied
+        | ToolExecutionStarted
+        | LogTailRecovered
+        | AssistantChunk
+        | InboxAdded
+        | InboxRemoved
+        | TurnStart
+        | StepStart
+        | SystemMessage
+        | UserMessage
+        | ContextMessage
+        | ContextValueChanged
+        | ObservationRecorded
+        | ModelRequested
+        | ModelUsageRecorded
+        | CacheMetrics
+        | CompactionApplied
+        | ObservationPolicyApplied
+        | SpillCreated
+        | RuleTriggered
+        | RuleEvaluated
+        | AssistantMessage
+        | ToolCalled
+        | ToolReturned
+        | ToolCompleted
+        | ToolProgress
+        | StepEnd
+        | TurnEnd
+    ),
+    Field(discriminator="type"),
+]
+
+
+# The union is the single registration point for persistable event kinds.
+SESSION_EVENT_TYPES: dict[str, type[SessionEvent]] = {
+    kind.type: kind for kind in get_args(get_args(LogEvent.__value__)[0])
 }

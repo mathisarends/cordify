@@ -6,8 +6,10 @@ from harnessed.core.session.events import (
     ModelRequested,
     SessionEvent,
     StepEnd,
+    StepOutcome,
     StepStart,
     TurnEnd,
+    TurnOutcome,
     TurnStart,
 )
 
@@ -17,7 +19,7 @@ class Step:
     turn_id: str
     number: int
     events: tuple[SessionEvent, ...]
-    reason: str | None = None
+    reason: StepOutcome | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "events", tuple(self.events))
@@ -41,7 +43,7 @@ class Turn:
     id: str
     events: tuple[SessionEvent, ...]
     steps: tuple[Step, ...]
-    reason: str | None = None
+    reason: TurnOutcome | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "events", tuple(self.events))
