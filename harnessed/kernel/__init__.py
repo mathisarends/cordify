@@ -1,5 +1,5 @@
 from .context import Context, ContextClosed, Key, MissingService
-from .declarations import Bundle, Plugin, Registration
+from .declarations import Bundle, PluginBase, Registration
 from .di import Inject, InjectMarker
 from .effects import Disposer, effect
 from .events import (
@@ -22,7 +22,7 @@ __all__ = [
     "Key",
     "MissingService",
     "Bundle",
-    "Plugin",
+    "PluginBase",
     "Registration",
     "Inject",
     "InjectMarker",

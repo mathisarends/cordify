@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from harnessed.kernel import Context, Key
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.kernel.declarations import HookEntry, Registration
-from harnessed.kernel.declarations import Plugin as KernelPlugin
+from harnessed.kernel.declarations import PluginBase as KernelPlugin
 from harnessed.kernel.events import on as hook
 from harnessed.kernel.plugin import PluginLike
 

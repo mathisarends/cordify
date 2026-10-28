@@ -77,7 +77,7 @@ def test_optional_integrations_and_features_are_isolated():
 def test_kernel_import_is_independent_of_agents_adapters_and_third_party_packages():
     code = """
 import sys
-from harnessed.kernel import Context, Plugin, Bundle, Event, Key, plugin
+from harnessed.kernel import Context, PluginBase, Bundle, Event, Key, plugin
 for layer in ('core', 'seams', 'plugins', 'adapters', 'presets'):
     assert not any(name == 'harnessed.' + layer or name.startswith('harnessed.' + layer + '.')
                    for name in sys.modules), (layer, sorted(sys.modules))
@@ -146,7 +146,8 @@ async def test_typed_keys_have_identity_and_work_with_temporal_needs():
 
 
 async def test_kernel_registration_recipes_extend_lifetimes_without_agent_imports():
-    from harnessed.kernel import Context, Plugin
+    from harnessed.kernel import Context
+    from harnessed.kernel import PluginBase as Plugin
 
     class Sink:
         def __init__(self):

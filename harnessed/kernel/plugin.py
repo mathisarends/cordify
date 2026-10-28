@@ -1,23 +1,23 @@
 import asyncio
 import inspect
 import logging
-from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
-from types import MappingProxyType
+from functools import wraps
 from typing import TYPE_CHECKING, Any, Concatenate, Literal, overload
 
-from .declarations import Bundle, Plugin
+from .declarations import Bundle, PluginBase
 from .di import bind_injected, injections
 from .events import PluginActivated, PluginFailed
 from .events import on as hook
-from .keys import ServiceKey
+from .keys import MissingService, ServiceKey
+from .spec import PluginSpec
 
 log = logging.getLogger(__name__)
 
 __all__ = [
     "Bundle",
-    "Plugin",
+    "PluginBase",
     "PluginSpec",
     "PluginLike",
     "PluginHandle",
@@ -88,10 +88,8 @@ class PluginHandle:
     """An owned recipe. Dependency loss suspends it; aclose permanently removes it."""
 
     def __init__(self, spec: "PluginSpec", mount: "Context"):
-        from .context import Context
-
         self.name, self.spec, self._mount = spec.name, spec, mount
-        self.ctx = Context._child(mount._scope)
+        self.ctx = mount._child(mount._scope)
         self.ctx._closed = True
         self.status: Literal["waiting", "starting", "active", "stopping", "failed", "disposed"] = (
             "waiting"
@@ -106,8 +104,6 @@ class PluginHandle:
         self._dependents: set[PluginHandle] = set()
 
     def _signature(self):
-        from .context import MissingService
-
         try:
             bindings = tuple(self._mount._binding(key, exclude=self) for key in self.spec.needs)
         except MissingService:
@@ -165,8 +161,6 @@ class PluginHandle:
                 raise
 
     async def _activate_worker(self):
-        from .context import Context
-
         async with self._transition:
             signature = self._signature()
             if (
@@ -178,7 +172,7 @@ class PluginHandle:
                 self.status = "waiting"
                 return
             self.status = "starting"
-            self.ctx = child = Context._child(self._mount._scope)
+            self.ctx = child = self._mount._child(self._mount._scope)
             child._handle = self
             for binding in signature:
                 provider = binding.owner._handle
@@ -274,20 +268,6 @@ class PluginHandle:
         await self.aclose()
 
 
-@dataclass(frozen=True)
-class PluginSpec:
-    name: str
-    factory: Callable[..., AsyncGenerator[None, None]]
-    needs: tuple[ServiceKey[Any], ...]
-    args: tuple[Any, ...]
-    kwargs: Mapping[str, Any]
-    slot: str | None = None
-    guidance: Any = None
-
-    def __post_init__(self):
-        object.__setattr__(self, "kwargs", MappingProxyType(dict(self.kwargs)))
-
-
 @overload
 def plugin[**P](
     fn: Callable[Concatenate[Any, P], AsyncGenerator[None, None]], /
@@ -316,8 +296,6 @@ def plugin(
     """Turn an async-generator function into a configured plugin factory."""
 
     def decorate(factory):
-        from functools import wraps
-
         @wraps(factory)
         def configure(*args, **kwargs):
             dependencies = tuple(
@@ -331,13 +309,13 @@ def plugin(
     return decorate(fn) if fn is not None else decorate
 
 
-type PluginLike = PluginSpec | Bundle | Plugin | Callable[..., PluginSpec]
+type PluginLike = PluginSpec | Bundle | PluginBase | Callable[..., PluginSpec]
 
 
 def as_plugin_spec(value: PluginLike) -> PluginSpec:
     if isinstance(value, PluginSpec):
         return value
-    if isinstance(value, Bundle | Plugin):
+    if isinstance(value, Bundle | PluginBase):
         return value._as_plugin_spec()
     if callable(value) and getattr(value, "_harnessed_plugin", False):
         return value()

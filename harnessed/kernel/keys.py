@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(eq=False, frozen=True)
@@ -11,3 +12,9 @@ class Key[T]:
 
 
 type ServiceKey[T] = type[T] | Key[T]
+
+
+class MissingService(LookupError):
+    def __init__(self, key: ServiceKey[Any]):
+        self.key = key
+        super().__init__(f"Service {key.__name__} is not available")

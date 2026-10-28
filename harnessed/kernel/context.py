@@ -3,21 +3,15 @@ from collections.abc import Callable, Iterable
 from contextlib import AsyncExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Self, cast
 
 from .effects import Disposer, effect
 from .events import Event, EventBus
 from .keys import Key as Key
-from .keys import ServiceKey
-from .plugin import PluginHandle, PluginLike, _Runtime
+from .keys import MissingService, ServiceKey
+from .plugin import PluginHandle, PluginLike, _Runtime, as_plugin_spec
 
 _current: ContextVar["Context | None"] = ContextVar("harnessed_context", default=None)
-
-
-class MissingService(LookupError):
-    def __init__(self, key: ServiceKey[Any]):
-        self.key = key
-        super().__init__(f"Service {key.__name__} is not available")
 
 
 class ContextClosed(RuntimeError):
@@ -52,7 +46,7 @@ class Context:
         self._handle: PluginHandle | None = None
 
     @classmethod
-    def _child(cls, scope: _Scope) -> "Context":
+    def _child(cls, scope: _Scope) -> Self:
         child = cls()
         child._scope = scope
         return child
@@ -128,9 +122,9 @@ class Context:
 
         return self.effect(remove)
 
-    def extend(self) -> "Context":
+    def extend(self) -> Self:
         self._check_open()
-        child = Context._child(
+        child = self._child(
             _Scope(
                 parent=self._scope,
                 runtime=self._scope.runtime,
@@ -158,6 +152,12 @@ class Context:
     ) -> Disposer:
         return self._scope.event_bus.on(self, event, callback, prepend=prepend, priority=priority)
 
+    def hook[E: Event[Any]](
+        self, event: type[E], fn=None, *, prepend: bool = False, priority: int = 0
+    ):
+        """Register an owned hook; direct calls return a disposer, decorators keep the function."""
+        return self.on(event, fn, prepend=prepend, priority=priority)
+
     def _listeners(self, event):
         return self._scope.event_bus.matching(event)
 
@@ -167,8 +167,6 @@ class Context:
     async def plugin(self, spec: "PluginLike") -> "PluginHandle":
         """Retain a plugin recipe; activate it while its declared needs are available."""
         self._check_open()
-        from .plugin import as_plugin_spec
-
         spec = as_plugin_spec(spec)
         handle = PluginHandle(spec, self)
         self._scope.runtime.handles.append(handle)
@@ -226,8 +224,6 @@ class Context:
             raise ExceptionGroup("Plugin composition failed", errors)
 
     async def _install_ready(self, plugins):
-        from .plugin import as_plugin_spec
-
         pending = [as_plugin_spec(spec) for spec in plugins]
         mounted: list[PluginHandle] = []
         try:

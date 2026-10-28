@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Any, Protocol
 from .di import bind_injected, injections
 from .effects import resolve
 from .events import Event
+from .spec import PluginSpec
 
 if TYPE_CHECKING:
     from .context import Context
-    from .plugin import PluginSpec
 
 type HookEntry = tuple[type[Event], Callable] | tuple[type[Event], Callable, int]
 
@@ -55,7 +55,6 @@ class Bundle:
         return callback
 
     def _as_plugin_spec(self) -> "PluginSpec":
-        from .plugin import PluginSpec
 
         hooks, registrations = tuple(self._hooks), tuple(self._registrations)
         needs = [
@@ -78,7 +77,7 @@ class Bundle:
         return PluginSpec(self.name, mount, tuple(dict.fromkeys(needs)), (), {})
 
 
-class Plugin:
+class PluginBase:
     """Agent-independent lifecycle with extensible registration recipes."""
 
     needs: tuple[Any, ...] = ()
@@ -102,14 +101,6 @@ class Plugin:
         self.needs = tuple(self.needs if needs is None else needs)
         self.registrations = tuple(registrations)
 
-    def clone(self):
-        """Create a mount instance, sharing configuration without copying clients/locks.
-
-        Allocate mutable per-mount state in setup(), and register resources with
-        ctx.effect() immediately so failed setup also releases them.
-        """
-        return copy.copy(self)
-
     async def setup(self, *args: Any, **kwargs: Any):
         pass
 
@@ -120,7 +111,6 @@ class Plugin:
         return tuple(getattr(self, "registrations", ()))
 
     def _as_plugin_spec(self) -> "PluginSpec":
-        from .plugin import PluginSpec
 
         members = {}
         for base in reversed(type(self).__mro__):
@@ -146,7 +136,7 @@ class Plugin:
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
         async def mount(ctx):
-            instance = self.clone()
+            instance = copy.copy(self)
             bound = _lifecycle_arguments(instance.setup, ctx)
             await resolve(instance.setup(*bound.args, **bound.kwargs))
             try:
