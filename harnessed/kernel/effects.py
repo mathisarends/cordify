@@ -36,7 +36,7 @@ async def run_sync[T](
 def effect(cleanup: Callable[[], Any]) -> Disposer:
     active = True
 
-    async def dispose():
+    async def dispose() -> None:
         nonlocal active
         if active:
             active = False

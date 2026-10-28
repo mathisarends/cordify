@@ -87,7 +87,7 @@ class ToolCall:
     id: str = field(default_factory=lambda: uuid4().hex)
     malformed: MalformedArguments | None = field(default=None, kw_only=True)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.arguments, Mapping):
             raise TypeError("Tool arguments must be a JSON object")
         if self.malformed is not None and (
@@ -121,7 +121,7 @@ class OutputTruncation:
     retained_chars: int
     max_chars: int
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if (
             type(self.original_chars) is not int
             or type(self.retained_chars) is not int
@@ -142,7 +142,7 @@ class ToolResult:
     denied_by: DenialSource | None = None
     rule_matches: tuple[tuple[str, bool], ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "status", ToolStatus(self.status))
         if self.denied_by is not None:
             object.__setattr__(self, "denied_by", DenialSource(self.denied_by))
@@ -279,7 +279,7 @@ class System(_PlainMessage, _NoCallID):
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
     role: Literal[Role.SYSTEM] = field(default=Role.SYSTEM, kw_only=True)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.role != Role.SYSTEM or not isinstance(self.content, str):
             raise ValueError("System messages require the system role and text content")
 
@@ -291,7 +291,7 @@ class User(_PlainMessage, _NoCallID):
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
     role: Literal[Role.USER] = field(default=Role.USER, kw_only=True)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.role != Role.USER:
             raise ValueError("User messages require the user role")
         object.__setattr__(self, "content", _content(self.content))
@@ -307,7 +307,7 @@ class Assistant(_MessageText, _NoCallID):
     provider_state: JSONMapping = field(default_factory=dict, kw_only=True)
     role: Literal[Role.ASSISTANT] = field(default=Role.ASSISTANT, kw_only=True)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.role != Role.ASSISTANT or not isinstance(self.content, str):
             raise ValueError("Assistant messages require the assistant role and text content")
         if not isinstance(self.reasoning, str):
@@ -326,7 +326,7 @@ class ToolReply(_PlainMessage):
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
     role: Literal[Role.TOOL] = field(default=Role.TOOL, kw_only=True)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if (
             self.role != Role.TOOL
             or not isinstance(self.tool_call_id, str)
@@ -357,7 +357,7 @@ class Observation:
     full: str
     summary: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.source:
             raise ValueError("Observations require a source")
 

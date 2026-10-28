@@ -1,5 +1,6 @@
 import json
 from collections import Counter
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, cast, get_origin
@@ -121,7 +122,7 @@ class OutputValues:
         self._active: Counter[str] = Counter()
 
     @contextmanager
-    def expect(self, schema: OutputSchema | None):
+    def expect(self, schema: OutputSchema | None) -> Generator[None]:
         if schema is not None:
             self._active[schema.id] += 1
         try:

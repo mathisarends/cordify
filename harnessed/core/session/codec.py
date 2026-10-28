@@ -78,7 +78,7 @@ def event_schema(*, registry: EventRegistry | None = None) -> dict[str, Any]:
 
 
 def encode_event(event: SessionEvent, *, registry: EventRegistry | None = None) -> dict[str, Any]:
-    """Encode a canonical class tag and the current version without mutable state."""
+    """Encode a canonical dotted tag and the current version without mutable state."""
     if not isinstance(event, SessionEvent):
         raise TypeError("Only durable events can be persisted")
     registry.validate(event) if registry is not None else _validate_event(event)

@@ -17,7 +17,6 @@ from harnessed.core.messages import (
     SpillRef,
     ToolCall,
     ToolResult,
-    ToolStatus,
     User,
     freeze,
 )
@@ -60,6 +59,12 @@ class TurnOutcome(StrEnum):
     REJECTED = "rejected"
     ABORTED = "aborted"
     DISCARDED = "discarded"
+
+
+class RuleAction(StrEnum):
+    NOTE = "note"
+    CONTEXT = "context"
+    STEER = "steer"
 
 
 class ContextLifetime(StrEnum):
@@ -120,17 +125,8 @@ class AgentControlChanged(SessionEvent):
     state: ControlState
     keep_inbox: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "state", ControlState(self.state))
-        if self.state not in (
-            ControlState.ACTIVE,
-            ControlState.PAUSING,
-            ControlState.PAUSED,
-            ControlState.STOPPING,
-            ControlState.ABORTING,
-            ControlState.STOPPED,
-        ):
-            raise ValueError("Unknown agent control state")
         if type(self.keep_inbox) is not bool or (
             self.keep_inbox
             and self.state
@@ -152,7 +148,7 @@ class ApprovalRequested(SessionEvent):
     scope: str
     grant_id: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if (
             not isinstance(self.request_id, str)
             or not self.request_id
@@ -176,19 +172,22 @@ class ApprovalResolved(SessionEvent):
     status: ApprovalStatus = ApprovalStatus.ANSWERED
     reason: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "status", ApprovalStatus(self.status))
         if self.decision is not None:
             object.__setattr__(self, "decision", ApprovalAnswer(self.decision))
         if self.reason is not None and not isinstance(self.reason, str):
             raise TypeError("Approval resolution reason must be a string")
-        if self.status == "answered" and self.decision in (
+        if self.status == ApprovalStatus.ANSWERED and self.decision in (
             ApprovalAnswer.ALLOW,
             ApprovalAnswer.DENY,
             ApprovalAnswer.ALWAYS,
         ):
             return
-        if self.status in ("interrupted", ToolStatus.UNAVAILABLE) and self.decision is None:
+        if (
+            self.status in (ApprovalStatus.INTERRUPTED, ApprovalStatus.UNAVAILABLE)
+            and self.decision is None
+        ):
             return
         raise ValueError("Approval must be answered, interrupted or unavailable")
 
@@ -215,17 +214,11 @@ class ToolPolicyApplied(SessionEvent):
     decision: PolicyDecision
     source: PolicySource = PolicySource.POLICY
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "source", PolicySource(self.source))
         object.__setattr__(self, "decision", PolicyDecision(self.decision))
         if self.decision is PolicyDecision.ASK:
             raise ValueError("ToolPolicyApplied requires a final decision")
-        if self.source not in (
-            PolicySource.POLICY,
-            PolicySource.APPROVAL,
-            PolicySource.UNAVAILABLE,
-        ):
-            raise ValueError("Unknown tool policy source")
 
 
 @dataclass(frozen=True)
@@ -250,7 +243,7 @@ class LogTailRecovered(SessionEvent):
     sha256: str
     archive: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if (
             type(self.offset) is not int
             or self.offset < 0
@@ -274,7 +267,7 @@ class InboxAdded(SessionEvent):
     created_at: Annotated[float, Field(ge=0)] = field(default=0.0, kw_only=True)
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "mode", InboxMode(self.mode))
         object.__setattr__(self, "target", InboxTarget(self.target))
         if self.mode not in _INBOX_ROUTES:
@@ -333,7 +326,7 @@ class TurnStart(SessionEvent):
     settings: Mapping[str, Any] = field(default_factory=dict)
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "settings", freeze(self.settings))
 
 
@@ -361,7 +354,7 @@ class UserMessage(SessionEvent):
     type: Literal[EventKind.USER_MESSAGE] = field(default=EventKind.USER_MESSAGE, kw_only=True)
     message: User
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.message, User):
             raise TypeError("UserMessage requires a user message value")
 
@@ -430,7 +423,7 @@ class CacheMetrics(SessionEvent):
     usage: ModelUsage
     hit_rate: float | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "hit_rate", self.usage.cache_hit_rate)
 
 
@@ -449,7 +442,7 @@ class CompactionApplied(SessionEvent):
     after_tokens: int | None = None
     id: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.id is not None and (not isinstance(self.id, str) or not self.id):
             raise ValueError("Compaction ids must be non-empty strings or None")
         turns = tuple(self.preserve_turns)
@@ -474,7 +467,7 @@ class ObservationPolicyApplied(SessionEvent):
     )
     max_summaries: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.max_summaries is not None and (
             type(self.max_summaries) is not int or self.max_summaries < 0
         ):
@@ -507,20 +500,10 @@ class RuleTriggered(SessionEvent):
     rule: str
     call_id: Identifier
     occurrence: int
-    actions: tuple[str, ...]
+    actions: tuple[RuleAction, ...]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "actions", tuple(self.actions))
-
-
-@dataclass(frozen=True)
-class RuleEvaluated(SessionEvent):
-    __hash__ = None
-
-    type: Literal[EventKind.RULE_EVALUATED] = field(default=EventKind.RULE_EVALUATED, kw_only=True)
-    rule: str
-    key: str
-    occurrence: int
 
 
 @dataclass(frozen=True)
@@ -534,7 +517,7 @@ class AssistantMessage(SessionEvent):
     interrupted: bool = False
     stop_reason: StopReason | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.message, Assistant):
             raise TypeError("AssistantMessage requires an assistant message value")
         if self.stop_reason is not None:
@@ -589,10 +572,8 @@ class StepEnd(SessionEvent):
     step: StepNumber
     reason: StepOutcome = StepOutcome.COMPLETED
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "reason", StepOutcome(self.reason))
-        if self.reason not in StepOutcome:
-            raise ValueError("Unknown step outcome")
 
 
 @dataclass(frozen=True)
@@ -603,18 +584,8 @@ class TurnEnd(SessionEvent):
     turn_id: Identifier
     reason: TurnOutcome = TurnOutcome.COMPLETED
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "reason", TurnOutcome(self.reason))
-        if self.reason not in (
-            TurnOutcome.COMPLETED,
-            TurnOutcome.INTERRUPTED,
-            TurnOutcome.STOPPED,
-            TurnOutcome.MAX_STEPS,
-            TurnOutcome.REJECTED,
-            TurnOutcome.ABORTED,
-            TurnOutcome.DISCARDED,
-        ):
-            raise ValueError("Unknown turn outcome")
 
 
 @dataclass(frozen=True)
@@ -632,7 +603,7 @@ class OutputValidated(SessionEvent):
     call_id: str | None = None
     id: Identifier = field(default_factory=lambda: uuid4().hex)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "data", freeze(self.data))
 
 
@@ -679,7 +650,6 @@ type LogEvent = Annotated[
         | SpillCreated
         | SpillExpired
         | RuleTriggered
-        | RuleEvaluated
         | AssistantMessage
         | ToolCalled
         | ToolReturned

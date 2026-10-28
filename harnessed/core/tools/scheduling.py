@@ -14,7 +14,7 @@ class ToolScheduling:
     parallel: bool = False
     resources: tuple[str, ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if type(self.parallel) is not bool:
             raise ValueError("parallel must be a bool")
         if isinstance(self.resources, str):

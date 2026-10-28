@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass, field
+from enum import StrEnum
 from tempfile import TemporaryDirectory
 from typing import Annotated, Literal
 
@@ -12,10 +13,14 @@ from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
 
 
+class ProjectEventKind(StrEnum):
+    INDEXED = "project.indexed"
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectIndexed(events.DurableEvent):
     files: int
-    type: Literal["project.indexed"] = field(default="project.indexed", kw_only=True)
+    type: Literal[ProjectEventKind.INDEXED] = field(default=ProjectEventKind.INDEXED, kw_only=True)
 
 
 class Indexer(Plugin):

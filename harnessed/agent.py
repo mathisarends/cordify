@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Unpack, overload
 from uuid import uuid4
@@ -103,7 +103,7 @@ class Agent:
         session_id: str | SessionLog | None = None,
         *,
         restore_outputs: Iterable[type[Any] | OutputContract[Any]] = (),
-    ):
+    ) -> AsyncGenerator[LiveSession]:
         """Open or resume a conversation; omit its ID to create a new one."""
         async with PluginContext() as ctx:
             ctx.provide(EventRegistry, self._events.copy())

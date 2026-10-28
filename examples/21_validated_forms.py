@@ -67,14 +67,15 @@ async def validated_tool():
             "Issue created after correcting the form.",
         ]
     )
-    async with Agent(model=model, plugins=[tools, Approvals(trust=["create_issue"])]).session(
-        "forms"
-    ) as agent:
+    async with Agent(
+        model=model, plugins=[tools, Approvals(trust=[IssuesTools.create_issue])]
+    ).session("forms") as agent:
         result = await agent.run("Create an authentication issue for alice.")
         results = [event.result for event in result.events if isinstance(event, ToolReturned)]
         assert results[0].is_error and "ValidationError" in results[0].content
         assert not results[1].is_error and len(created) == 1
         print("Invalid form rejected before the tool body ran.")
+        assert isinstance(results[1].content, str)
         print("Validated result:", json.loads(results[1].content))
 
         definition = model.requests[0].tools[0]

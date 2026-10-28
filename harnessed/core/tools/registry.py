@@ -56,21 +56,23 @@ class ToolSpec:
     override: bool = False
     output_limit: OutputLimitSetting = OutputLimit.INHERIT
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         validate_output_limit(self.output_limit)
 
     @property
     def needs(self) -> tuple[type, ...]:
         return (ToolRegistry,)
 
-    def mount(self, ctx: Context, callback: Callable):
+    def mount(self, ctx: Context, callback: Callable) -> Disposer:
         return ctx[ToolRegistry].register(callback, spec=self, owner=ctx)
 
 
 type ErrorFormatter = Callable[[ToolCall, Exception], str]
 
 
-def format_tool_error(call: ToolCall, error: Exception, formatter: ErrorFormatter | None = None):
+def format_tool_error(
+    call: ToolCall, error: Exception, formatter: ErrorFormatter | None = None
+) -> str:
     logger.error("Tool %s failed", call.name, exc_info=error)
     if formatter is not None:
         return formatter(call, error)

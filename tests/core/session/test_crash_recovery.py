@@ -217,7 +217,7 @@ async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_i
     tmp_path, tail
 ):
     original = InboxAdded.create(user("queued"), InboxMode.FOLLOWUP)
-    writer = JsonlPersistence(tmp_path, fsync=True)
+    writer = JsonlPersistence(tmp_path, durability=Durability.FSYNC)
     await writer.load("tail")
     await writer.append("tail", 0, original)
     await writer.aclose()
@@ -228,7 +228,7 @@ async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_i
     with pytest.raises(ValueError, match="Truncated"):
         await strict.load("tail")
     assert await asyncio.to_thread(path.read_bytes) == prefix + tail
-    recovered = JsonlPersistence(tmp_path, fsync=True, recover_tail=True)
+    recovered = JsonlPersistence(tmp_path, durability=Durability.FSYNC, recover_tail=True)
     try:
         events = await recovered.load("tail")
         assert events[0] == original and len(events) == 2
@@ -308,7 +308,7 @@ async def test_recovery_rejects_invalid_approval_prefix_without_modifying_the_fi
 
 
 async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(tmp_path):
-    writer = JsonlPersistence(tmp_path, fsync=True)
+    writer = JsonlPersistence(tmp_path, durability=Durability.FSYNC)
     await writer.load("answer")
     request = ApprovalRequested("approval", ToolCall("work"), "reason", "scope")
     await writer.append("answer", 0, request)

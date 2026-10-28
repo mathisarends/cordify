@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from contextlib import asynccontextmanager
 
 from harnessed.core.errors import SessionClosed
@@ -64,7 +64,7 @@ class SessionControl:
         self._changed = asyncio.Event()
 
     @asynccontextmanager
-    async def _request(self):
+    async def _request(self) -> AsyncGenerator[None]:
         task = asyncio.current_task()
         if self._request_owner is task:
             yield
@@ -141,7 +141,7 @@ class SessionControl:
         self.wake()
 
     @asynccontextmanager
-    async def maintenance(self):
+    async def maintenance(self) -> AsyncGenerator[None]:
         """Reserve an idle/paused boundary while permitting durable queued input."""
         self._check_external()
         task = asyncio.current_task()

@@ -28,7 +28,6 @@ class EventKind(StrEnum):
     SPILL_CREATED = "spill.created"
     SPILL_EXPIRED = "spill.expired"
     RULE_TRIGGERED = "rule.triggered"
-    RULE_EVALUATED = "rule.evaluated"
     ASSISTANT_MESSAGE = "assistant.message"
     TOOL_CALLED = "tool.called"
     TOOL_RETURNED = "tool.returned"

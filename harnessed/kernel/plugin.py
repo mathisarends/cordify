@@ -39,7 +39,7 @@ class _Runtime:
         self.dirty = False
         self.errors: list[Exception] = []
 
-    def changed(self):
+    def changed(self) -> None:
         self.dirty = True
         for handle in tuple(self.handles):
             if (
@@ -56,7 +56,7 @@ class _Runtime:
             return
         self.task = loop.create_task(self.reconcile(), name="harnessed:composition")
 
-    async def reconcile(self):
+    async def reconcile(self) -> None:
         blocked = set()
         while self.dirty:
             self.dirty = False
@@ -96,7 +96,9 @@ class PluginHandle:
     """An owned recipe. Dependency loss suspends it; aclose permanently removes it."""
 
     def __init__(self, spec: PluginSpec, mount: Context) -> None:
-        self.name, self.spec, self._mount = spec.name, spec, mount
+        self.name = spec.name
+        self.spec = spec
+        self._mount = mount
         self.ctx = mount._child(mount._scope)
         self.ctx._closed = True
         self.status: PluginStatus = PluginStatus.WAITING
@@ -140,7 +142,7 @@ class PluginHandle:
                 return cycle
         return None
 
-    async def _activate(self):
+    async def _activate(self) -> None:
         if self._disposed or self._mount._closed or self.status == PluginStatus.ACTIVE:
             return
         if self._start_task is None or self._start_task.done():
@@ -167,7 +169,7 @@ class PluginHandle:
             ):
                 raise
 
-    async def _activate_worker(self):
+    async def _activate_worker(self) -> None:
         async with self._transition:
             signature = self._signature()
             if (
@@ -231,7 +233,7 @@ class PluginHandle:
                 await child.aclose()
                 raise
 
-    async def _suspend(self, visited: set | None = None):
+    async def _suspend(self, visited: set | None = None) -> None:
         if self.status == PluginStatus.STARTING and self._start_task is not None:
             self._start_task.cancel()
             try:
@@ -271,7 +273,7 @@ class PluginHandle:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, *exc):
+    async def __aexit__(self, *exc) -> None:
         await self.aclose()
 
 

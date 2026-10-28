@@ -15,7 +15,7 @@ from harnessed.core.session.files import SessionFiles, validate_file_key
 
 
 def artifact_refs(events: Iterable[SessionEvent]) -> tuple[SpillRef, ...]:
-    """Ignore expired references and legacy external paths without opening them."""
+    """Ignore expired references and invalid external paths without opening them."""
     active: dict[str, SpillRef] = {}
     expired: set[str] = set()
     for event in events:

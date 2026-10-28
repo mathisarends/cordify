@@ -14,7 +14,7 @@ import re
 
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from harnessed import Agent, Plugin, events, tool
+from harnessed import Agent, OutputContract, Plugin, events, tool
 from harnessed.plugins import Skill, Skills
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
 from pydantic import BaseModel
@@ -27,6 +27,7 @@ assert installed.metadata['Name'] == 'harnessed'
 assert (installed.read_text('top_level.txt') or '').split() == ['harnessed']
 assert installed.locate_file('harnessed/__init__.py').resolve() == package
 assert (package.parent / 'py.typed').is_file()
+assert (package.parent / '__init__.pyi').is_file()
 requirements = {
     re.split(r'[\s\[<>=!~;(]', requirement, maxsplit=1)[0].lower().replace('_', '-')
     for requirement in installed.requires or ()
@@ -51,7 +52,7 @@ async def main():
         assert assert_tool_called(result, 'add', a=19, b=23)[1].content == '42'
         assert await session.prompt.render() == 'Fixed instructions.'
     typed = await Agent(model=ScriptedModel([call('final_answer', value=42)])).run(
-        'Answer', output=Answer)
+        'Answer', output=OutputContract('answer.v1', Answer))
     assert isinstance(typed.output, Answer) and typed.output.value == 42
     async with Agent(model=ScriptedModel([call('final_answer', value=43)])).session() as session:
         notifications = [event async for event in session.stream('Answer', output=Answer)]

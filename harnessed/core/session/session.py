@@ -56,7 +56,7 @@ from harnessed.core.stream import SessionPublished, TransientEvent
 from harnessed.kernel.context import Context
 
 
-def _validate_compaction(events, event: CompactionApplied, seq: int):
+def _validate_compaction(events, event: CompactionApplied, seq: int) -> None:
     if type(event.through) is not int or not 0 < event.through <= seq:
         raise ValueError("Compaction must replace an existing event prefix")
     if not isinstance(events[event.through - 1], TurnEnd):
@@ -174,12 +174,12 @@ class SessionLog:
         finally:
             self._observers.pop(queue, None)
 
-    def _notify(self, event: SessionEvent | TransientEvent):
+    def _notify(self, event: SessionEvent | TransientEvent) -> None:
         for queue, transient in tuple(self._observers.items()):
             if isinstance(event, SessionEvent) or transient:
                 queue.put_nowait(event)
 
-    def finish_subscriptions(self):
+    def finish_subscriptions(self) -> None:
         """Finish audit subscriptions after dependent plugins have torn down."""
         self._subscriptions_closed = True
         for queue in tuple(self._observers):
@@ -283,7 +283,7 @@ class SessionLog:
             if self._persistence is not None:
                 persistence = self._persistence
 
-                async def persist():
+                async def persist() -> None:
                     await persistence.append(self.id, seq, event)
                     if isinstance(event, TurnEnd):
                         await persistence.flush()

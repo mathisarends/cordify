@@ -72,7 +72,7 @@ class LocalShell:
         terminated = False
         protocol = _ProcessProtocol(self.options.max_output_bytes)
 
-        def terminate():
+        def terminate() -> None:
             nonlocal terminated
             if terminated:
                 return
@@ -116,7 +116,7 @@ class LocalShell:
             return ProcResult(returncode, protocol.stdout.text(), protocol.stderr.text())
         finally:
 
-            async def cleanup():
+            async def cleanup() -> None:
                 nonlocal process
                 try:
                     if process is None:
@@ -143,13 +143,13 @@ class _ProcessProtocol(asyncio.SubprocessProtocol):
         self.exited = asyncio.Event()
         self.closed = asyncio.Event()
 
-    def pipe_data_received(self, fd: int, data: bytes):
+    def pipe_data_received(self, fd: int, data: bytes) -> None:
         (self.stdout if fd == 1 else self.stderr).feed(data)
 
-    def process_exited(self):
+    def process_exited(self) -> None:
         self.exited.set()
 
-    def connection_lost(self, exc):
+    def connection_lost(self, exc) -> None:
         self.closed.set()
 
 
@@ -160,7 +160,7 @@ class _Capture:
         self.data = bytearray()
         self.total = 0
 
-    def feed(self, chunk: bytes):
+    def feed(self, chunk: bytes) -> None:
         self.total += len(chunk)
         self.data.extend(chunk[: max(0, self.limit - len(self.data))])
 
@@ -194,10 +194,8 @@ class ShellToolsConfig(_Options):
         return self
 
 
-class ShellTools(Plugin):
+class ShellTools(Plugin, needs=(ShellBackend, ToolRegistry)):
     """Expose commands through a separately owned, replaceable ShellBackend."""
-
-    needs = (ShellBackend, ToolRegistry)
 
     Config = ShellToolsConfig
 

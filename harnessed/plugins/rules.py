@@ -5,21 +5,20 @@ import json
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import replace
-from enum import StrEnum
 from typing import Annotated
 
 from pydantic import AfterValidator, ConfigDict, Field, StringConstraints, TypeAdapter
 from pydantic.dataclasses import dataclass
 
 from harnessed.core.hooks import ReviewToolResult
-from harnessed.core.messages import ToolCall, ToolResult, ToolStatus, to_dict, user
+from harnessed.core.messages import ToolCall, ToolResult, to_dict, user
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.runtime.inbox import SessionInbox
-from harnessed.core.session.events import RuleEvaluated, RuleTriggered, ToolCalled, ToolReturned
+from harnessed.core.session.events import RuleAction, RuleTriggered, ToolCalled, ToolReturned
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter, count_content
-from harnessed.kernel import Inject, hook
+from harnessed.kernel import Inject, Next, hook
 
 
 def _synchronous(callback):
@@ -28,12 +27,6 @@ def _synchronous(callback):
     ):
         raise ValueError("Rule conditions must be synchronous")
     return callback
-
-
-class ActionKind(StrEnum):
-    NOTE = "note"
-    CONTEXT = "context"
-    STEER = "steer"
 
 
 type RuleText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
@@ -61,20 +54,20 @@ class Rule:
     repeated: Annotated[int, Field(ge=1)] = 1
     result_tokens_over: Annotated[int, Field(ge=0)] | None = None
     predicate: ResultCondition | None = None
-    actions: tuple[tuple[ActionKind, RuleText], ...] = ()
+    actions: tuple[tuple[RuleAction, RuleText], ...] = ()
 
-    def _action(self, kind: ActionKind, text: str) -> Rule:
+    def _action(self, kind: RuleAction, text: str) -> Rule:
         return replace(self, actions=(*self.actions, (kind, text)))
 
     def note(self, text: str) -> Rule:
-        return self._action(ActionKind.NOTE, text)
+        return self._action(RuleAction.NOTE, text)
 
     def context(self, text: str) -> Rule:
         """Keep a named context fact while the rule condition remains active."""
-        return self._action(ActionKind.CONTEXT, text)
+        return self._action(RuleAction.CONTEXT, text)
 
     def steer(self, text: str) -> Rule:
-        return self._action(ActionKind.STEER, text)
+        return self._action(RuleAction.STEER, text)
 
     def matches(self, call: ToolCall, result: ToolResult, counter: TokenCounter) -> bool:
         if self.command_contains is not None and self.command_contains not in call.command:
@@ -124,7 +117,7 @@ class Rules(Plugin):
         counter: TokenCounter,
         *,
         matched: bool | None = None,
-    ):
+    ) -> tuple[tuple[int, str] | None, int]:
         if rule.tools and call.name not in rule.tools:
             return None, 0
         arguments = call.command or json.dumps(to_dict(call.arguments), sort_keys=True)
@@ -141,21 +134,10 @@ class Rules(Plugin):
         context: Inject[DynamicContext],
         counter: Inject[TokenCounter],
     ) -> None:
-        self._counts: Counter = Counter()
-        self._last_counts = {}
-        # Legacy per-evaluation records are read only during migration. New logs
-        # keep match bits with the canonical result, surviving notes/spill/limits.
-        stored = [
-            event
-            for event in session.events
-            if isinstance(event, RuleEvaluated) and event.rule.startswith(f"{self.name}:")
-        ]
-        for index in range(len(self.rules)):
-            for event in stored:
-                if event.rule == f"{self.name}:{index}":
-                    self._counts[(index, event.key)] = event.occurrence
-                    self._last_counts[index] = event.occurrence
-        calls = {}
+        self._counts: Counter[tuple[int, str]] = Counter()
+        self._last_counts: dict[int, int] = {}
+        # Match bits are recorded with the canonical tool result.
+        calls: dict[str, ToolCall] = {}
         for event in session.events:
             if isinstance(event, ToolCalled):
                 calls[event.call.id] = event.call
@@ -172,26 +154,21 @@ class Rules(Plugin):
                             counter,
                             matched=recorded[rule_id],
                         )
-                    elif not stored and event.result.status not in (
-                        ToolStatus.DENIED,
-                        ToolStatus.UNAVAILABLE,
-                    ):
-                        self._count(index, rule, calls[event.call_id], event.result, counter)
         for index, rule in enumerate(self.rules):
             for kind, text in rule.actions:
-                if kind == "context" and self._last_counts.get(index, 0) >= rule.repeated:
+                if kind is RuleAction.CONTEXT and self._last_counts.get(index, 0) >= rule.repeated:
                     await context.set(f"rule:{self.name}:{index}", text)
 
     @hook(ReviewToolResult)
     async def review(
         self,
-        event,
-        next_,
+        event: ReviewToolResult,
+        next_: Next[ToolResult],
         session: Inject[SessionLog],
         context: Inject[DynamicContext],
         inbox: Inject[SessionInbox],
         counter: Inject[TokenCounter],
-    ):
+    ) -> ToolResult:
         result = await next_()
         matches = list(result.rule_matches)
         for index, rule in enumerate(self.rules):
@@ -205,7 +182,7 @@ class Rules(Plugin):
                 if (
                     key is not None
                     and count == 0
-                    and any(kind == "context" for kind, _ in rule.actions)
+                    and any(kind is RuleAction.CONTEXT for kind, _ in rule.actions)
                 ):
                     await context.remove(f"rule:{self.name}:{index}")
                 continue
@@ -218,9 +195,9 @@ class Rules(Plugin):
                 )
             )
             for kind, text in rule.actions:
-                if kind == "note":
+                if kind is RuleAction.NOTE:
                     result = result.with_note(text)
-                elif kind == "context":
+                elif kind is RuleAction.CONTEXT:
                     await context.set(f"rule:{self.name}:{index}", text)
                 else:
                     await inbox.steer(user(text))
@@ -228,5 +205,5 @@ class Rules(Plugin):
 
     async def teardown(self, context: Inject[DynamicContext]) -> None:
         for index, rule in enumerate(self.rules):
-            if any(kind == "context" for kind, _ in rule.actions):
+            if any(kind is RuleAction.CONTEXT for kind, _ in rule.actions):
                 await context.remove(f"rule:{self.name}:{index}")

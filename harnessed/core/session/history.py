@@ -50,7 +50,7 @@ class MessageProjection:
         for source, indices in self._observations.items():
             self._visible_observations[source] = set(indices) & self._entries.keys()
 
-    def _index(self, event: SessionEvent, seq: int):
+    def _index(self, event: SessionEvent, seq: int) -> None:
         if isinstance(event, TurnStart):
             self._turn = event.turn_id
         if isinstance(
@@ -96,12 +96,12 @@ class MessageProjection:
             or self._origins.get(seq) in applied.preserve_turns
         )
 
-    def _put(self, seq: int, message: Message):
+    def _put(self, seq: int, message: Message) -> None:
         if seq not in self._entries and seq != self._offset:
             self._order_dirty = True
         self._entries[seq] = message
 
-    def _refresh_observations(self, source: str, changed=(), *, all_entries=False):
+    def _refresh_observations(self, source: str, changed=(), *, all_entries=False) -> None:
         indices = self._observations[source]
         active = set(self._by_step.get(self._step, {}).get(source, ()))
         visible = self._visible_observations.setdefault(source, set())
@@ -278,7 +278,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
     entries: list[tuple[int, Message]] = []
     originals: list[tuple[int, Message]] = []
 
-    def add(seq, message):
+    def add(seq, message) -> None:
         entries.append((seq, message))
         originals.append((seq, message))
 

@@ -46,7 +46,7 @@ class ToolDefinition:
     description: str
     parameters: Mapping[str, Any]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "parameters", freeze(self.parameters))
 
 
@@ -61,7 +61,7 @@ class OutputSchema:
     wrapped: bool = False
     mode: OutputMode = OutputMode.AUTO
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "json_schema", freeze(self.json_schema))
 
 
@@ -75,7 +75,7 @@ class ModelRequest:
     settings: Mapping[str, Any] = field(default_factory=dict)
     output_schema: OutputSchema | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
         object.__setattr__(self, "settings", freeze(self.settings))
@@ -106,17 +106,24 @@ class ModelUsage:
 def sum_usage(usages: Iterable[ModelUsage]) -> ModelUsage:
     values = tuple(usages)
 
-    def optional(name):
-        counts = [getattr(value, name) for value in values]
-        return sum(counts) if counts and all(value is not None for value in counts) else None
+    def optional[N: (int, float)](counts: Iterable[N | None]) -> N | None:
+        values = iter(counts)
+        total = next(values, None)
+        if total is None:
+            return None
+        for value in values:
+            if value is None:
+                return None
+            total += value
+        return total
 
     return ModelUsage(
         sum(value.input_tokens for value in values),
         sum(value.output_tokens for value in values),
-        optional("cache_read_tokens"),
-        optional("cache_write_tokens"),
-        optional("reasoning_tokens"),
-        optional("cost"),
+        optional(value.cache_read_tokens for value in values),
+        optional(value.cache_write_tokens for value in values),
+        optional(value.reasoning_tokens for value in values),
+        optional(value.cost for value in values),
     )
 
 
@@ -129,7 +136,7 @@ class ModelChunk:
     usage: ModelUsage | None = None
     stop_reason: StopReason | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.stop_reason is not None:
             object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
 
@@ -150,7 +157,7 @@ class ModelResponse:
     usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
     stop_reason: StopReason = StopReason.END
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.message, Assistant):
             raise TypeError("A model response must contain an assistant message")
         object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))

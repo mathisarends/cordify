@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from harnessed.core.prompt.values import Section
 from harnessed.core.session.events import SessionEvent
 from harnessed.core.stream import TransientEvent
-from harnessed.kernel import Context, Key
+from harnessed.kernel import Context, Key, ServiceKey
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.kernel.declarations import HookEntry, Registration
 from harnessed.kernel.declarations import PluginBase as KernelPlugin
@@ -53,7 +53,7 @@ class Plugin(KernelPlugin):
         *,
         name: str | None = None,
         hooks: Iterable[HookEntry] = (),
-        needs: Iterable | None = None,
+        needs: Iterable[ServiceKey[Any]] | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
         guidance: str | Section | None | _DefaultGuidance = _DEFAULT_GUIDANCE,
         **configuration: Any,

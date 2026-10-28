@@ -14,6 +14,9 @@ from harnessed.testing import ScriptedModel
 
 
 class Notes(Protocol):
+    @property
+    def entries(self) -> list[str]: ...
+
     async def save(self, text: str) -> str: ...
 
 
@@ -37,9 +40,7 @@ class NotesConfig:
     instruction: str = "Use save_note to save notes."
 
 
-class NotesTools(Plugin):
-    needs = (Notes,)
-
+class NotesTools(Plugin, needs=(Notes,)):
     def __init__(self, config: NotesConfig):
         super().__init__(guidance=config.instruction)
 

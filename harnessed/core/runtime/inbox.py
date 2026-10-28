@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -46,7 +46,7 @@ class SessionInbox:
         self._sender: asyncio.Task | None = None
 
     @asynccontextmanager
-    async def _sending(self):
+    async def _sending(self) -> AsyncGenerator[None]:
         task = asyncio.current_task()
         if self._sender is task:
             yield

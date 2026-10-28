@@ -31,7 +31,7 @@ def compose(root: Path, model, answer):
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
             tools,
-            ApprovalGate(risky={"work"}, ask=answer, scope="demo-work"),
+            ApprovalGate(risky=[WorkTools.work], ask=answer, scope="demo-work"),
             JsonlSessions(root, recover_tail=True, durability=Durability.FSYNC),
         ],
     )

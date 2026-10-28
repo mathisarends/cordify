@@ -106,7 +106,7 @@ async def test_cancelled_copy_removes_acknowledged_files_and_releases_the_writer
             assert await fork.ctx[SpillStore].read(ref.path) == "cancelled" * 200
 
 
-async def test_legacy_absolute_spill_paths_are_never_opened_by_a_fork(tmp_path):
+async def test_invalid_absolute_spill_paths_are_never_opened_by_a_fork(tmp_path):
     outside = tmp_path / "private.txt"
     outside.write_text("private", encoding="utf-8")
     source = SessionLog("source", seed=[SpillCreated("call", SpillRef(str(outside), "unused"), 1)])

@@ -99,7 +99,7 @@ class WindowsJob:
             self.close()
             raise
 
-    def attach_and_resume(self, pid: int):
+    def attach_and_resume(self, pid: int) -> None:
         process = _checked(_open_process(0x0101, False, pid))  # SET_QUOTA | TERMINATE
         try:
             _checked(_assign(self.handle, process))
@@ -126,7 +126,7 @@ class WindowsJob:
         finally:
             _close(snapshot)
 
-    def close(self):
+    def close(self) -> None:
         if self.handle:
             _close(self.handle)
             self.handle = None

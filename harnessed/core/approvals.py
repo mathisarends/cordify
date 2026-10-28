@@ -13,6 +13,7 @@ from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
+    ApprovalStatus,
     SessionEvent,
 )
 from harnessed.core.tools.references import ToolReference, ToolSelector, tool_selector
@@ -192,7 +193,7 @@ def approval_transition(records, event: SessionEvent) -> Approval | None:
         record = records.get(event.request_id)
         if record is None or not record.pending:
             raise ValueError("Approval resolution requires a pending request")
-        if record.request.grant_id is not None and event.status == "answered":
+        if record.request.grant_id is not None and event.status == ApprovalStatus.ANSWERED:
             grant = records[record.request.grant_id]
             if not grant.is_grant or event.decision is not ApprovalAnswer.ALWAYS:
                 raise ValueError("Cached approval grant is no longer active")
@@ -242,13 +243,14 @@ class Approvals(Plugin, slot="approvals"):
         self.policy = policy
 
     async def setup(self, ctx: Context, tools: Inject[ToolRegistry]) -> None:
-        for rule in ("trust", "require", "deny"):
-            setattr(
-                self, rule, tuple(tools.reference(item, owner=ctx) for item in getattr(self, rule))
-            )
+        self.trust = tuple(tools.reference(item, owner=ctx) for item in self.trust)
+        self.require = tuple(tools.reference(item, owner=ctx) for item in self.require)
+        self.deny = tuple(tools.reference(item, owner=ctx) for item in self.deny)
 
     @hook(ToolPolicy, priority=Priority.GUARD)
-    async def authorize(self, event, next_, tools: Inject[ToolRegistry]):
+    async def authorize(
+        self, event: ToolPolicy, next_: Next[PolicyDecision], tools: Inject[ToolRegistry]
+    ) -> PolicyDecision:
         agent = event.agent
         if any(tools.matches(item, event.call.name) for item in self.deny):
             return PolicyDecision.DENY

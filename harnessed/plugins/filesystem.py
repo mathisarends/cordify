@@ -54,7 +54,7 @@ class LocalFileSystem:
         if offset < 0 or (limit is not None and limit < 0):
             raise ValueError("File ranges must be non-negative")
 
-        def read():
+        def read() -> str:
             with self._path(path).open(encoding="utf-8", newline="") as stream:
                 remaining = offset
                 while remaining:
@@ -66,7 +66,7 @@ class LocalFileSystem:
 
         return await run_sync(read)
 
-    def _write(self, path: PurePath, text: str):
+    def _write(self, path: PurePath, text: str) -> None:
         resolved = self._path(path)
         resolved.parent.mkdir(parents=True, exist_ok=True)
         temporary = None
@@ -96,7 +96,7 @@ class LocalFileSystem:
         return await run_sync(lambda: self._stat(self._path(path)))
 
     async def list(self, path: PurePath = Path(".")) -> tuple[FileStat, ...]:
-        def entries():
+        def entries() -> tuple[FileStat, ...]:
             return tuple(
                 self._stat(self._path(item)) for item in sorted(self._path(path).iterdir())
             )
@@ -109,7 +109,7 @@ class LocalFileSystem:
         if limit < 1:
             raise ValueError("Glob limit must be positive")
 
-        def matches():
+        def matches() -> tuple[PurePath, ...]:
             items = islice(self.root.glob(pattern), limit)
             return tuple(self._path(item).relative_to(self.root) for item in sorted(items))
 
@@ -125,7 +125,7 @@ class LocalFileSystem:
         if not old:
             raise ToolError("The text to replace must not be empty.")
 
-        def edit():
+        def edit() -> None:
             with self._path(path).open(encoding="utf-8", newline="") as stream:
                 text = stream.read()
             count = text.count(old)
@@ -151,10 +151,8 @@ class SearchResult:
     notes: tuple[str, ...] = ()
 
 
-class FilesystemTools(Plugin):
+class FilesystemTools(Plugin, needs=(FileSystemBackend, ToolRegistry)):
     """Expose bounded reads and writes through a separately owned FileSystemBackend service."""
-
-    needs = (FileSystemBackend, ToolRegistry)
 
     @tool(readonly=True, parallel=True)
     async def read_file(

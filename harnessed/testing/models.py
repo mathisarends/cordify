@@ -137,7 +137,7 @@ class _Stream:
             raise RuntimeError("Finish the stream before reading its response")
         return self._response
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         if self._closed:
             return
         self._closed = True

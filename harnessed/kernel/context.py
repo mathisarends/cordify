@@ -159,7 +159,7 @@ class Context:
         bindings.append(binding)
         self._scope.runtime.changed()
 
-        def remove():
+        def remove() -> None:
             bindings.remove(binding)
             if not bindings:
                 del self._scope.services[key]
@@ -325,5 +325,5 @@ class Context:
         self._check_open()
         return self
 
-    async def __aexit__(self, *exc):
+    async def __aexit__(self, *exc) -> None:
         await self.aclose()

@@ -93,7 +93,7 @@ class _Factory(ReactLoopFactory):
         super().__init__(error_formatter=error_formatter)
         self.config = config
 
-    def create(self, ctx, session, options=None):
+    def create(self, ctx: Context, session: Session, options: AgentOptions | None = None) -> Agent:
         if options is None:
             model = ctx[Model]
             options = AgentOptions(

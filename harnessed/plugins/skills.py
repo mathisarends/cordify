@@ -198,7 +198,7 @@ def _directory(path: Path) -> Path:
 def _discover(sources) -> _Catalog:
     entries: dict[str, SkillEntry] = {}
 
-    def add(entry: SkillEntry):
+    def add(entry: SkillEntry) -> None:
         name = entry.info.name
         if name in entries:
             prior = entries[name]
@@ -340,7 +340,7 @@ class Skills(Plugin, slot="skills"):
         if session.last(CompactionApplied) is not None:
             await self._retain()
 
-    def _remember(self, event):
+    def _remember(self, event) -> None:
         if isinstance(event, ToolCalled):
             if event.call.name == "load_skill":
                 self._calls.add(event.call.id)
@@ -358,12 +358,12 @@ class Skills(Plugin, slot="skills"):
             if isinstance(event, ToolReturned):
                 self._calls.discard(event.call_id)
 
-    async def _retain(self):
+    async def _retain(self) -> None:
         for name, instructions in self._loaded.items():
             await self._context.set(f"skill:{name}", instructions)
 
     @hook(SessionAppended)
-    async def recorded(self, event: SessionAppended):
+    async def recorded(self, event: SessionAppended) -> None:
         if event.log is not self._log:
             return
         self._remember(event.event)

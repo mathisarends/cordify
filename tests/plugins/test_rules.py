@@ -8,7 +8,6 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ContextValueChanged,
     InboxAdded,
-    RuleEvaluated,
     RuleTriggered,
     ToolReturned,
 )
@@ -56,7 +55,6 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
         assert inbox[-1].message.role == Role.USER
         assert any("Consider the failure." in m.text for m in model.requests[-1].messages)
         assert agent.context.values["rule:rules:1"] == "Consider the failure."
-        assert not any(isinstance(e, RuleEvaluated) for e in agent.events)
         triggered = [e for e in agent.log.events if isinstance(e, RuleTriggered)]
         assert triggered[0].actions == ("note", "steer")
         assert Session("replay", seed=agent.log.events).messages == agent.log.messages
@@ -281,7 +279,6 @@ async def test_canonical_match_metadata_survives_output_limits_and_context_reset
         source[0] = "fixed"
         await session.run("Success")
         assert "rule:rules:0" not in session.context.values
-        assert not any(isinstance(event, RuleEvaluated) for event in session.events)
 
 
 def test_rules_are_immutable_and_require_actions():

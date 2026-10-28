@@ -57,7 +57,7 @@ async def structured_consumer(agent: AppAgent, session: Agent) -> None:
 
 
 async def typed_stream(session: Agent) -> None:
-    async for event in session.stream("Triage", output=Triage):
+    async for event in session.stream("Triage", output=OutputContract("triage.v1", Triage)):
         assert_type(event, EventStream[Triage])
         if isinstance(event, TurnFinished):
             assert_type(event, TurnFinished[Triage])

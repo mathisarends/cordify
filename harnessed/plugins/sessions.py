@@ -51,7 +51,6 @@ class JsonlPersistence:
         root: str | Path,
         *,
         registry: EventRegistry | None = None,
-        fsync: bool = False,
         recover_tail: bool = False,
         durability: Durability = Durability.FLUSH,
     ) -> None:
@@ -60,8 +59,7 @@ class JsonlPersistence:
         self._root_ready = False
         if durability not in (Durability.BUFFERED, Durability.FLUSH, Durability.FSYNC):
             raise ValueError("Unknown durability mode")
-        self.durability = Durability.FSYNC if fsync else durability
-        self.fsync = self.durability == Durability.FSYNC
+        self.durability = Durability(durability)
         self._operation = asyncio.Lock()
         self._closed = False
         self._failure: Exception | None = None
@@ -79,7 +77,7 @@ class JsonlPersistence:
             raise ValueError("Session log path is outside its namespace")
         return path
 
-    def _check_open(self):
+    def _check_open(self) -> None:
         if self._closed:
             raise RuntimeError("Persistence is closed")
         if self._failure is not None:
@@ -128,7 +126,7 @@ class JsonlPersistence:
                 with path.open("r+b") as stream:
                     stream.truncate(offset)
                     stream.flush()
-                    if self.fsync:
+                    if self.durability is Durability.FSYNC:
                         os.fsync(stream.fileno())
             stream = path.open("a", encoding="utf-8", newline="\n")
             self._files[session_id] = (stream, lock, len(events))
@@ -224,14 +222,14 @@ class JsonlPersistence:
             with temporary.open("xb") as stream:
                 stream.write(data)
                 stream.flush()
-                if self.fsync:
+                if self.durability is Durability.FSYNC:
                     os.fsync(stream.fileno())
             os.replace(temporary, archive)
         finally:
             temporary.unlink(missing_ok=True)
         return archive
 
-    async def append(self, session_id: str, seq: int, event: SessionEvent):
+    async def append(self, session_id: str, seq: int, event: SessionEvent) -> None:
         async with self._operation:
             self._check_open()
             try:
@@ -240,7 +238,7 @@ class JsonlPersistence:
                 self._failure = exc
                 raise
 
-    def _append(self, session_id: str, seq: int, event: SessionEvent):
+    def _append(self, session_id: str, seq: int, event: SessionEvent) -> None:
         stream, lock, expected = self._files[session_id]
         if seq != expected:
             raise ValueError(f"Session sequence mismatch: expected {expected}, got {seq}")
@@ -249,7 +247,7 @@ class JsonlPersistence:
         stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
         if self.durability != Durability.BUFFERED:
             stream.flush()
-        if self.fsync:
+        if self.durability is Durability.FSYNC:
             os.fsync(stream.fileno())
         self._files[session_id] = (stream, lock, seq + 1)
 
@@ -263,13 +261,13 @@ class JsonlPersistence:
                 self._failure = exc
                 raise
 
-    def _flush(self):
+    def _flush(self) -> None:
         for stream, _, _ in self._files.values():
             stream.flush()
-            if self.fsync:
+            if self.durability is Durability.FSYNC:
                 os.fsync(stream.fileno())
 
-    def _close_session(self, session_id: str):
+    def _close_session(self, session_id: str) -> None:
         writer = self._files.pop(session_id, None)
         if writer is not None:
             stream, lock, _ = writer
@@ -278,20 +276,20 @@ class JsonlPersistence:
             finally:
                 lock.close()
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         async with self._operation:
             if self._closed:
                 return
             self._closed = True
             await run_sync(self._close)
 
-    def _close(self):
+    def _close(self) -> None:
         try:
             self._flush()
         finally:
             self._close_files()
 
-    def _close_files(self):
+    def _close_files(self) -> None:
         try:
             for stream, lock, _ in self._files.values():
                 try:

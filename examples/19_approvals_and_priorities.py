@@ -25,7 +25,11 @@ async def without_ui():
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Approval unavailable."])
     async with Agent(
         model=model,
-        plugins=[Approvals(default=PolicyDecision.ALLOW), tools, ApprovalGate(risky={"publish"})],
+        plugins=[
+            Approvals(default=PolicyDecision.ALLOW),
+            tools,
+            ApprovalGate(risky=[HeadlessTools.publish]),
+        ],
     ).session("no-ui") as session:
         result = await session.run("Publish the artifact.")
         returned = next(event for event in result.events if isinstance(event, ToolReturned))
@@ -71,7 +75,7 @@ async def listener_and_priorities():
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
             ApprovedTools(),
-            ApprovalGate(risky={"publish"}, priority=-100),
+            ApprovalGate(risky=[ApprovedTools.publish], priority=-100),
         ],
     )
 
@@ -103,7 +107,8 @@ async def response_timeout():
         except ApprovalUnavailable as error:
             print(f"SDK: {error}")
         assert stopped.is_set() and (not session.log.approvals.pending)
-        assert session.log.approvals.records[-1].resolution.status == ApprovalStatus.UNAVAILABLE
+        resolution = session.approvals.records[-1].resolution
+        assert resolution is not None and resolution.status is ApprovalStatus.UNAVAILABLE
 
 
 async def main():

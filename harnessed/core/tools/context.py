@@ -26,7 +26,7 @@ class ToolContext:
     def cancelled(self) -> bool:
         return self.signal.is_set()
 
-    async def progress(self, text: str):
+    async def progress(self, text: str) -> None:
         await self.session.append(ToolProgress(self.call.id, text))
 
     async def emit(self, event: SessionEvent | TransientEvent) -> None:

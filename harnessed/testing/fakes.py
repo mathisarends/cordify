@@ -54,7 +54,7 @@ class _MemoryFiles:
             raise FileNotFoundError(key)
         return self.files[key][offset : None if limit is None else offset + limit]
 
-    async def write(self, path: PurePath, text: str):
+    async def write(self, path: PurePath, text: str) -> None:
         key = _path(path)
         if not key or (key in self._entries() and self._entries()[key].is_dir):
             raise IsADirectoryError(key)
@@ -92,7 +92,7 @@ class _MemoryFiles:
     async def exists(self, path: PurePath):
         return _path(path) in self._entries()
 
-    async def delete(self, path: PurePath):
+    async def delete(self, path: PurePath) -> None:
         key = _path(path)
         if key not in self.files:
             if key in self._entries():
@@ -100,7 +100,7 @@ class _MemoryFiles:
             raise FileNotFoundError(key)
         del self.files[key]
 
-    async def replace(self, path: PurePath, old: str, new: str):
+    async def replace(self, path: PurePath, old: str, new: str) -> None:
         text = await self.read(path)
         if not old or text.count(old) != 1:
             raise ToolError("An edit must match exactly one non-empty text fragment")
@@ -161,7 +161,7 @@ class InMemoryPersistence(MemoryPersistence):
         self.flushes = 0
         self.closed = False
 
-    def _check_open(self):
+    def _check_open(self) -> None:
         if self.closed:
             raise RuntimeError("Persistence is closed")
 
@@ -169,16 +169,16 @@ class InMemoryPersistence(MemoryPersistence):
         self._check_open()
         return await super().load(session_id)
 
-    async def append(self, session_id, seq, event):
+    async def append(self, session_id, seq, event) -> None:
         self._check_open()
         if self.fail_after is not None and self.writes >= self.fail_after:
             raise OSError("Injected persistence failure")
         await super().append(session_id, seq, event)
         self.writes += 1
 
-    async def flush(self):
+    async def flush(self) -> None:
         self._check_open()
         self.flushes += 1
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         self.closed = True

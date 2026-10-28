@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Protocol, Self
 from .di import bind_injected, injections
 from .effects import resolve
 from .events import Event
+from .keys import ServiceKey
 from .spec import PluginSpec
 
 if TYPE_CHECKING:
@@ -27,14 +28,15 @@ def _hooks(entries: Iterable[HookEntry]):
 
 class Registration(Protocol):
     @property
-    def needs(self) -> tuple[Any, ...]: ...
+    def needs(self) -> tuple[ServiceKey[Any], ...]: ...
 
     def mount(self, ctx: Context, callback: Callable) -> Any: ...
 
 
 class Bundle:
-    def __init__(self, name: str, *, needs: Iterable = ()) -> None:
-        self.name, self.needs = name, tuple(needs)
+    def __init__(self, name: str, *, needs: Iterable[ServiceKey[Any]] = ()) -> None:
+        self.name = name
+        self.needs = tuple(needs)
         self._hooks: list[tuple] = []
         self._registrations: list[tuple[Registration, Callable]] = []
 
@@ -82,12 +84,12 @@ class Bundle:
 class PluginBase:
     """Agent-independent lifecycle with extensible registration recipes."""
 
-    needs: tuple[Any, ...] = ()
+    needs: tuple[ServiceKey[Any], ...] = ()
     _recipe: Self
     slot: str | None = None
 
     def __init_subclass__(
-        cls, *, slot: str | None = None, needs: Iterable | None = None, **kwargs
+        cls, *, slot: str | None = None, needs: Iterable[ServiceKey[Any]] | None = None, **kwargs
     ) -> None:
         super().__init_subclass__(**kwargs)
         if slot is not None:
@@ -100,7 +102,7 @@ class PluginBase:
         *,
         name: str | None = None,
         hooks: Iterable[HookEntry] = (),
-        needs: Iterable | None = None,
+        needs: Iterable[ServiceKey[Any]] | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
     ) -> None:
         self.name = name or type(self).__name__

@@ -25,10 +25,12 @@ class Step:
     events: tuple[SessionEvent, ...]
     reason: StepOutcome | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "events", tuple(self.events))
         count = sum(isinstance(event, ModelRequested) for event in self.events)
-        if count > 1 or (self.reason in (TurnOutcome.COMPLETED, "context_limit") and count != 1):
+        if count > 1 or (
+            self.reason in (StepOutcome.COMPLETED, StepOutcome.CONTEXT_LIMIT) and count != 1
+        ):
             raise ValueError("A completed step must contain exactly one model request")
 
     @property
@@ -50,7 +52,7 @@ class Turn:
     steps: tuple[Step, ...]
     reason: TurnOutcome | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "events", tuple(self.events))
         object.__setattr__(self, "steps", tuple(self.steps))
 
@@ -149,7 +151,10 @@ class TurnProjection:
                 len(self._steps) + 1,
             ):
                 raise ValueError("StepEnd must close the current step")
-            if event.reason in (TurnOutcome.COMPLETED, "context_limit") and self._requests != 1:
+            if (
+                event.reason in (StepOutcome.COMPLETED, StepOutcome.CONTEXT_LIMIT)
+                and self._requests != 1
+            ):
                 raise ValueError("A completed step must contain exactly one model request")
         elif isinstance(event, TurnEnd):
             if self._turn is None or event.turn_id != self._turn or self._step is not None:
@@ -159,13 +164,16 @@ class TurnProjection:
 
     def apply(self, event: SessionEvent) -> None:
         if isinstance(event, TurnStart):
-            self._turn, self._events, self._steps = event.turn_id, [], []
+            self._turn = event.turn_id
+            self._events = []
+            self._steps = []
         if self._turn is None:
             return
         self._snapshot = self._open_snapshot = None
         self._events.append(event)
         if isinstance(event, StepStart):
-            self._step, self._requests = [], 0
+            self._step = []
+            self._requests = 0
         if self._step is not None:
             self._step.append(event)
             if isinstance(event, ModelRequested):
@@ -178,7 +186,9 @@ class TurnProjection:
             self._closed.append(
                 Turn(self._turn, tuple(self._events), tuple(self._steps), event.reason)
             )
-            self._turn, self._events, self._steps = None, [], []
+            self._turn = None
+            self._events = []
+            self._steps = []
 
     @property
     def open_turn(self) -> Turn | None:

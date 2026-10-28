@@ -108,7 +108,7 @@ class ToolExecutor:
             finally:
                 reviewed[index].set()
 
-        async def commit(call: ToolCall, result: ToolResult):
+        async def commit(call: ToolCall, result: ToolResult) -> None:
             await self.log.append(ToolReturned(call.id, result))
 
         await scheduler.run(plans, worker, commit)

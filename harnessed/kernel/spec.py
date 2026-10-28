@@ -17,5 +17,5 @@ class PluginSpec:
     slot: str | None = None
     guidance: Any = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "kwargs", MappingProxyType(dict(self.kwargs)))

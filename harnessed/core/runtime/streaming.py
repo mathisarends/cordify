@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import ApprovalRequest, SessionAppended
-from harnessed.core.messages import ToolCall
+from harnessed.core.messages import ApprovalAnswer, ToolCall
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.approvals import _PendingApproval
 from harnessed.core.runtime.control import SessionStatus
@@ -56,14 +56,14 @@ class StreamApprovals:
     def prepared(self, item: InboxAdded) -> None:
         self.input_id = item.message.id
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         self._remove_answer = self.session.ctx.on(
             ApprovalRequest, self._answer, priority=Priority.OBSERVE
         )
         self._remove_ack = self.session.ctx.on(SessionAppended, self._ack)
         return self
 
-    async def _answer(self, event: ApprovalRequest):
+    async def _answer(self, event: ApprovalRequest) -> ApprovalAnswer | None:
         turn = self.session.log.open_turn
         start = turn.events[0] if turn is not None else None
         if (
@@ -87,7 +87,7 @@ class StreamApprovals:
             )
             raise
 
-    def _ack(self, event: SessionAppended):
+    def _ack(self, event: SessionAppended) -> None:
         if event.log is not self.session.log or not isinstance(event.event, ApprovalResolved):
             return
         record = event.event
@@ -100,7 +100,7 @@ class StreamApprovals:
                 else ApprovalUnavailable(record.reason or "The approval was interrupted"),
             )
 
-    async def __aexit__(self, *exc):
+    async def __aexit__(self, *exc) -> None:
         await self._remove_answer()
         await self._remove_ack()
         for request in self.pending.values():

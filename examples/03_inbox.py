@@ -48,6 +48,7 @@ async def main():
         for number, turn in enumerate(turns, 1):
             print(f"Turn {number}: {len(turn.steps)} steps, reason: {turn.reason}")
             for step in turn.steps:
+                assert step.request is not None
                 print(f"  Step {step.number}: model {step.request.model}, closed: {step.closed}")
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Mapping
 from contextvars import ContextVar
 from typing import Any, Unpack, overload
 
@@ -58,7 +58,7 @@ from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 from harnessed.kernel.hooks import HookFactory, ListenerFactory
-from harnessed.kernel.plugin import PluginHandle, PluginStatus
+from harnessed.kernel.plugin import PluginHandle, PluginLike, PluginStatus
 
 type AgentEvent = SessionEvent | TransientEvent
 _driving: ContextVar[Session | None] = ContextVar("harnessed_driving", default=None)
@@ -137,12 +137,12 @@ class Session:
         self.control.check_open()
         await self.log.emit(event)
 
-    async def subscribe(self, *, transient: bool = False):
+    async def subscribe(self, *, transient: bool = False) -> AsyncIterator[AgentEvent]:
         """Observe the raw log independently of any individual run/stream call."""
         async for event in self.log.subscribe(transient=transient):
             yield event
 
-    async def use(self, plugin):
+    async def use(self, plugin: PluginLike) -> PluginHandle:
         """Mount a recipe at runtime; its guidance is context, never system text."""
         self.log.registry.register(getattr(plugin, "events", ()))
         handle = await self.ctx.plugin(plugin)
@@ -285,7 +285,7 @@ class Session:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
     ) -> str:
-        def prepared(item: InboxAdded):
+        def prepared(item: InboxAdded) -> None:
             self._steps.prepare_input(item)
 
         item = await self.inbox._send(
@@ -420,7 +420,7 @@ class Session:
         submitted = None
         offset = len(self.log.events)
 
-        def prepared(item: InboxAdded):
+        def prepared(item: InboxAdded) -> None:
             nonlocal submitted
             submitted = SubmittedRun(RunHandle(item.message.id), item, schema, expectation)
             self._submissions[item.message.id] = submitted

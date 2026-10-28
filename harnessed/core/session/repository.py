@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
 
 from harnessed.core.errors import ConfigError
@@ -25,7 +25,7 @@ class SessionRepository:
         )
 
     @asynccontextmanager
-    async def _store(self):
+    async def _store(self) -> AsyncGenerator[SessionStore]:
         async with Context() as ctx:
             ctx.provide(EventRegistry, self._registry.copy())
             await ctx.install(self._plugins, settle=True)

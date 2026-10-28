@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Annotated, Literal
 
 import pytest
@@ -13,10 +14,14 @@ from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
 
 
+class ProjectEventKind(StrEnum):
+    INDEXED = "project.indexed"
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectIndexed(events.DurableEvent):
     files: int
-    type: Literal["project.indexed"] = field(default="project.indexed", kw_only=True)
+    type: Literal[ProjectEventKind.INDEXED] = field(default=ProjectEventKind.INDEXED, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +107,7 @@ def test_custom_event_schema_is_strict_and_registry_rejects_collisions_atomicall
 
     @dataclass(frozen=True)
     class Collision(events.DurableEvent):
-        type: Literal["project.indexed"] = "project.indexed"
+        type: Literal[ProjectEventKind.INDEXED] = "project.indexed"
 
     with pytest.raises(ValueError, match="Duplicate"):
         registry.register([IndexProgress, Collision])

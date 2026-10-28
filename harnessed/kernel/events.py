@@ -130,7 +130,7 @@ class EventBus:
         else:
             self.listeners.append(listener)
 
-        def remove():
+        def remove() -> None:
             listener.active = False
             self.listeners.remove(listener)
 
