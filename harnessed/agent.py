@@ -24,6 +24,7 @@ from harnessed.core.session.repository import SessionRepository
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import MemorySessions, SessionPersistence, SessionStore
 from harnessed.core.tools.output_limit import ToolOutputLimit
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.core.tracing import NoopTracer
 from harnessed.kernel import PluginLike
 from harnessed.kernel.plugin import as_plugin_spec
@@ -149,6 +150,7 @@ class Agent:
                 raise
             ctx.effect(runtime.aclose)
             await ctx.settle()
+            ctx[ToolRegistry].validate_references()
             runtime.start()
             yield runtime
 

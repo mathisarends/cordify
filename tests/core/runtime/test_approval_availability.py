@@ -35,7 +35,7 @@ async def test_removing_an_approver_never_removes_the_scoped_guard():
         [call("publish"), "first", call("publish"), "blocked", call("publish"), "third"]
     )
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), Publish()]
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), Publish()]
     ).session() as session:
         guard = await session.use(ApprovalGate(risky={"publish"}))
         provider = await session.use(Service(Approver, CallbackApprover(lambda call: True)))
@@ -65,7 +65,8 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
     calls = [ToolCall("risky"), ToolCall("safe")]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"risky"})]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), tools, ApprovalGate(risky={"risky"})],
     ).session("no-ui") as agent:
         await asyncio.wait_for(agent.run("go"), 2)
         results = [event.result for event in agent.log.events if isinstance(event, ToolReturned)]
@@ -83,9 +84,9 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
 
 
 async def test_direct_sdk_approval_raises_typed_unavailable_and_leaves_no_pending_question():
-    async with Application(model=ScriptedModel([]), plugins=[Approvals(trust="all")]).session(
-        "direct"
-    ) as agent:
+    async with Application(
+        model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session("direct") as agent:
         with pytest.raises(ApprovalUnavailable, match="No approval responder"):
             await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
         record = agent.log.approvals.records[-1]
@@ -99,12 +100,12 @@ async def test_explicit_approver_then_service_take_precedence_over_request_liste
         def __init__(self, decision):
             self.decision = decision
 
-        async def ask(self, call, reason):
+        async def ask(self, request):
             return self.decision
 
-    async with Application(model=ScriptedModel([]), plugins=[Approvals(trust="all")]).session(
-        "precedence"
-    ) as agent:
+    async with Application(
+        model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session("precedence") as agent:
         agent.ctx.provide(Approver, Answer(ApprovalAnswer.DENY))
         agent.on(ApprovalRequest, lambda ev: pytest.fail("Explicit approver was bypassed"))
         assert (
@@ -118,9 +119,9 @@ async def test_explicit_approver_then_service_take_precedence_over_request_liste
 
 async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or_deny():
     asked = []
-    async with Application(model=ScriptedModel([]), plugins=[Approvals(trust="all")]).session(
-        "listeners"
-    ) as agent:
+    async with Application(
+        model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session("listeners") as agent:
         agent.on(ApprovalRequest, lambda ev: asked.append("late"), priority=100)
 
         def answer(event):
@@ -158,7 +159,11 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
     plugins = [Service(Approver, CallbackApprover(wait))] if transport == "callback" else []
     harness = Application(
         model=ScriptedModel([]),
-        plugins=[AgentLoop(approval_timeout=0.02), Approvals(trust="all", timeout=0.02), *plugins],
+        plugins=[
+            AgentLoop(approval_timeout=0.02),
+            Approvals(default=PolicyDecision.ALLOW, timeout=0.02),
+            *plugins,
+        ],
     )
     async with harness.session("timeout") as agent:
         if transport == "listener":
@@ -180,9 +185,9 @@ async def test_responder_abstention_invalid_answers_and_failures_are_unavailable
             raise answer
         return answer
 
-    async with Application(model=ScriptedModel([]), plugins=[Approvals(trust="all")]).session(
-        "bad-answer"
-    ) as agent:
+    async with Application(
+        model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session("bad-answer") as agent:
         agent.on(ApprovalRequest, respond)
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
@@ -201,7 +206,7 @@ async def test_gate_stays_active_after_approver_service_is_removed():
         return "ok"
 
     class AllowOnce:
-        async def ask(self, call, reason):
+        async def ask(self, request):
             return ApprovalAnswer.ALLOW
 
     model = ScriptedModel(
@@ -213,7 +218,8 @@ async def test_gate_stays_active_after_approver_service_is_removed():
         ]
     )
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"work"})]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), tools, ApprovalGate(risky={"work"})],
     ).session("disconnect") as agent:
         remove = agent.ctx.provide(Approver, AllowOnce())
         await agent.run("first")
@@ -227,7 +233,8 @@ async def test_gate_stays_active_after_approver_service_is_removed():
 
 async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_new_request(tmp_path):
     async with Application(
-        model=ScriptedModel([]), plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)]
+        model=ScriptedModel([]),
+        plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)],
     ).session("resume") as agent:
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
@@ -235,7 +242,7 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
     async with Application(
         model=ScriptedModel([]),
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             JsonlSessions(tmp_path),
             Service(Approver, CallbackApprover(lambda call: ApprovalAnswer.ALWAYS)),
         ],
@@ -247,7 +254,8 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
         assert len(resumed.log.approvals.records) == 2
         grant = resumed.log.approvals.grants[0]
     async with Application(
-        model=ScriptedModel([]), plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)]
+        model=ScriptedModel([]),
+        plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)],
     ).session("resume") as resumed:
         assert (
             await resumed.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
@@ -286,9 +294,9 @@ async def test_approval_priority_places_wait_outside_downstream_policy_timing(ga
     gate = ApprovalGate(risky={"work"}, ask=answer)
     plugins = [gate, tools] if gate_first else [tools, gate]
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))], "done"])
-    async with Application(model=model, plugins=[Approvals(trust="all"), *plugins]).session(
-        "timing"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), *plugins]
+    ).session("timing") as agent:
         await agent.run("go")
     assert order == ["approval", "timer", "policy"]
     assert measured == [2]
@@ -299,7 +307,10 @@ def test_approval_timeout_must_be_finite_and_positive(timeout):
     with pytest.raises(ValueError, match="approval_timeout"):
         Application(
             model=ScriptedModel([]),
-            plugins=[AgentLoop(approval_timeout=timeout), Approvals(trust="all", timeout=timeout)],
+            plugins=[
+                AgentLoop(approval_timeout=timeout),
+                Approvals(default=PolicyDecision.ALLOW, timeout=timeout),
+            ],
         )
     with pytest.raises(ValueError, match="approval_timeout"):
         AgentOptions("model", approval_timeout=timeout)

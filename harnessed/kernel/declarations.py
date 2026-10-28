@@ -81,6 +81,7 @@ class PluginBase:
     """Agent-independent lifecycle with extensible registration recipes."""
 
     needs: tuple[Any, ...] = ()
+    _recipe: "PluginBase"
     slot: str | None = None
 
     def __init_subclass__(cls, *, slot: str | None = None, **kwargs):
@@ -137,6 +138,7 @@ class PluginBase:
 
         async def mount(ctx):
             instance = copy.copy(self)
+            instance._recipe = self
             bound = _lifecycle_arguments(instance.setup, ctx)
             await resolve(instance.setup(*bound.args, **bound.kwargs))
             try:

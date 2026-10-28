@@ -2,20 +2,18 @@
 
 import asyncio
 
-from examples.features.workspace import FailureNudge, workspace_tools
-from harnessed import Agent, ApprovalAnswer, ToolCall
-from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
+from examples.features.workspace import FailureNudge, WorkspaceTools
+from harnessed import Agent, ApprovalAnswer, PolicyDecision, ToolCall
 from harnessed.events import ToolFinished, ToolProgress
 from harnessed.models import ModelChunk
-from harnessed.plugins import Approvals, Service
-from harnessed.plugins.filesystem import FS, LocalFS
+from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel
 
 
 async def main():
 
-    async def approve(call):
-        print(f"Approval: allow {call.name} for the rest of this session")
+    async def approve(request):
+        print(f"Approval: allow {request.call.name} for the rest of this session")
         return ApprovalAnswer.ALWAYS
 
     model = ScriptedModel(
@@ -28,12 +26,14 @@ async def main():
     agent = Agent(
         model=model,
         plugins=[
-            Approvals(trust="all"),
-            Service(FS, LocalFS(".")),
-            workspace_tools,
+            Filesystem(root="."),
+            WorkspaceTools(),
             FailureNudge(threshold=2),
-            Service(Approver, CallbackApprover(approve)),
-            ApprovalGate(risky={"count_lines"}),
+            Approvals(
+                default=PolicyDecision.ALLOW,
+                require=[WorkspaceTools.count_lines],
+                approver=approve,
+            ),
         ],
     )
     async with agent.session("bundles") as session:

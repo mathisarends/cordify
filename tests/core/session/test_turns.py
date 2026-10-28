@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ToolCall
+from harnessed import PolicyDecision, ToolCall
 from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.model import ModelChunk, ModelRequest
 from harnessed.core.plugin import Bundle
@@ -38,9 +38,9 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
     model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("wait"))], "corrected answer", "followup answer"]
     )
-    async with Application(model=model, plugins=[Approvals(trust="all"), features]).session(
-        "turns"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), features]
+    ).session("turns") as agent:
         await agent.followup("first task")
         await started.wait()
         live = agent.log.turns[-1]
@@ -76,7 +76,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
 
 async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
     model = ScriptedModel([])
-    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "rejected"
     ) as agent:
 
@@ -103,9 +103,9 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
             await asyncio.Event().wait()
             yield ModelChunk(text="never")
 
-    async with Application(model=WaitingModel(), plugins=[Approvals(trust="all")]).session(
-        "canceled-turn"
-    ) as agent:
+    async with Application(
+        model=WaitingModel(), plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session("canceled-turn") as agent:
         await agent.followup("task")
         await started.wait()
         await agent.cancel()

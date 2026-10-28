@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Inject, Plugin, Section, ToolCall, tool
+from harnessed import Agent, Inject, Plugin, PolicyDecision, Section, ToolCall, tool
 from harnessed.core.session.events import ToolReturned
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals, Filesystem, Instructions
@@ -36,7 +36,8 @@ async def independent_calls():
     calls = [ToolCall("lookup", {"index": index}) for index in range(3)]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Lookups finished."])
     async with Agent(
-        model=model, plugins=[AgentLoop(max_parallel_tools=3), Approvals(trust="all"), tools]
+        model=model,
+        plugins=[AgentLoop(max_parallel_tools=3), Approvals(default=PolicyDecision.ALLOW), tools],
     ).session("lookups") as session:
         result = await session.run("Look up records 0, 1 and 2.")
         returned = [event for event in result.events if isinstance(event, ToolReturned)]
@@ -77,7 +78,7 @@ async def writes_with_resource_keys(root: Path):
     async with Agent(
         model=model,
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             Filesystem(root),
             Instructions([Section.from_file(Path(root) / "AGENTS.md", missing_ok=True)]),
             tools,

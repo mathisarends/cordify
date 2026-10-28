@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Inject, Plugin, ToolCall, ToolResult, hook, tool
+from harnessed import Agent, Inject, Plugin, PolicyDecision, ToolCall, ToolResult, hook, tool
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.hooks import ExecuteTool
@@ -64,7 +64,7 @@ async def main():
         agent = Agent(
             model=model,
             plugins=[
-                Approvals(trust="all"),
+                Approvals(default=PolicyDecision.ALLOW),
                 budget,
                 Service(FS, LocalFS(directory)),
                 FilesystemTools(),

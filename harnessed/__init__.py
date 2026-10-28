@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from harnessed.core.errors import SessionClosed as SessionClosed
     from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
     from harnessed.core.messages import Observation as Observation
+    from harnessed.core.messages import PolicyDecision as PolicyDecision
     from harnessed.core.messages import ToolCall as ToolCall
     from harnessed.core.messages import ToolResult as ToolResult
     from harnessed.core.model import StopReason as StopReason
@@ -38,6 +39,7 @@ _EXPORTS = {
     "Image": ("harnessed.core.attachments", "Image"),
     "Inject": ("harnessed.kernel", "Inject"),
     "Observation": ("harnessed.core.messages", "Observation"),
+    "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
     "Plugin": ("harnessed.core.plugin", "Plugin"),
     "PluginConflict": ("harnessed.agent", "PluginConflict"),
     "RunResult": ("harnessed.core.runtime.result", "RunResult"),
@@ -63,6 +65,7 @@ __all__ = [
     "Image",
     "Inject",
     "Observation",
+    "PolicyDecision",
     "Plugin",
     "PluginConflict",
     "RunResult",

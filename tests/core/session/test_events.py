@@ -6,7 +6,7 @@ from typing import ClassVar
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ToolCall, ToolResult
+from harnessed import PolicyDecision, ToolCall, ToolResult
 from harnessed.core.hooks import PrepareRequest
 from harnessed.core.messages import System, User
 from harnessed.core.model import ModelChunk
@@ -43,7 +43,9 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
     model = ScriptedModel(
         [[ModelChunk(reasoning="think"), ModelChunk(text="hello "), ModelChunk(text="world")]]
     )
-    harness = Application(model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)])
+    harness = Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
+    )
     observed = []
     async with harness.session("durable-chunks") as agent:
 
@@ -86,9 +88,9 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
             [ModelChunk(reasoning="done"), ModelChunk(text="3")],
         ]
     )
-    async with Application(model=model, plugins=[Approvals(trust="all"), features]).session(
-        "prefixes"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), features]
+    ).session("prefixes") as agent:
         await agent.run("Add", context={"ticket": "one"})
         log = agent.log.events
         restored = roundtrip(log)
@@ -107,7 +109,9 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
 async def test_exact_requests_include_request_hook_changes_without_rerunning_the_hook():
     extensions = Bundle("configured")
     model = ScriptedModel(["done"])
-    harness = Application(model=model, plugins=[Approvals(trust="all"), extensions])
+    harness = Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), extensions]
+    )
     invocations = []
 
     @extensions.on(PrepareRequest)
@@ -145,7 +149,7 @@ async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_m
     await persistence.aclose()
     model = ScriptedModel([])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)]
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
     ).session("crashed") as resumed:
         assert resumed.log.events[: len(prefix)] == prefix
         final = next(e for e in resumed.log.events if isinstance(e, AssistantMessage))
@@ -209,9 +213,9 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
         yield
 
     model = ScriptedModel(["not committed"])
-    async with Application(model=model, plugins=[Approvals(trust="all"), persistence()]).session(
-        "failed-write"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), persistence()]
+    ).session("failed-write") as agent:
         live = []
         with pytest.raises(OSError, match="storage unavailable"):
             async for event in agent.stream("hello"):

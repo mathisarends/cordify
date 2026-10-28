@@ -1,7 +1,7 @@
 import inspect
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
-from typing import Annotated, Protocol
+from typing import Annotated, Protocol, Self, cast
 
 from pydantic import ConfigDict, Field, TypeAdapter
 
@@ -15,6 +15,7 @@ from harnessed.core.session.events import (
     ApprovalRevoked,
     SessionEvent,
 )
+from harnessed.core.tools.references import ToolSelector, tool_selector
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context, Inject, Next, Priority, hook
 
@@ -22,22 +23,22 @@ from .messages import ToolCall
 
 
 class Approver(Protocol):
-    async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer | None: ...
+    async def ask(self, request: ApprovalRequested) -> ApprovalAnswer | None: ...
 
 
 type ApprovalCallback = Callable[
-    [ToolCall], ApprovalAnswer | bool | None | Awaitable[ApprovalAnswer | bool | None]
+    [ApprovalRequested], ApprovalAnswer | bool | None | Awaitable[ApprovalAnswer | bool | None]
 ]
 
 
 class CallbackApprover:
-    """Adapt an explicit ToolCall callback to the narrow Approver service."""
+    """Adapt a request callback to the narrow Approver service."""
 
     def __init__(self, callback: ApprovalCallback):
         self.callback = callback
 
-    async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer | None:
-        value = self.callback(call)
+    async def ask(self, request: ApprovalRequested) -> ApprovalAnswer | None:
+        value = self.callback(request)
         value = await value if inspect.isawaitable(value) else value
         if value is None or isinstance(value, ApprovalAnswer):
             return value
@@ -47,8 +48,6 @@ class CallbackApprover:
 
 
 class ApprovalGateConfig(PluginConfig):
-    risky: Annotated[frozenset[Annotated[str, Field(min_length=1)]], Field(strict=False)]
-    ask: ApprovalCallback | None = None
     scope: Annotated[str, Field(min_length=1)] = "approval-gate"
     priority: int = Priority.GUARD
 
@@ -63,24 +62,29 @@ class ApprovalGate(Plugin):
     def __init__(
         self,
         *,
-        risky: Iterable[str],
+        risky: Iterable[ToolSelector],
         ask: ApprovalCallback | None = None,
         scope: str = "approval-gate",
         priority: int = Priority.GUARD,
     ):
-        super().__init__(risky=risky, ask=ask, scope=scope, priority=priority)
+        super().__init__(scope=scope, priority=priority)
+        self.risky = tuple(tool_selector(item) for item in risky)
+        self.ask = ask
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context, tools: Inject[ToolRegistry]):
+        self.risky = tuple(tools.reference(item, owner=ctx) for item in self.risky)
         ctx.on(ToolPolicy, self._gate, priority=self.config.priority)
 
-    async def _gate(self, event: ToolPolicy, next_: Next[PolicyDecision]) -> PolicyDecision:
-        if event.call.name not in self.config.risky:
+    async def _gate(
+        self, event: ToolPolicy, next_: Next[PolicyDecision], tools: Inject[ToolRegistry]
+    ) -> PolicyDecision:
+        if not any(tools.matches(item, event.call.name) for item in self.risky):
             return await next_()
         answer = await event.agent.request_approval(
             event.call,
             f"{event.call.name} is marked risky",
             scope=self.config.scope,
-            approver=CallbackApprover(self.config.ask) if self.config.ask is not None else None,
+            approver=CallbackApprover(self.ask) if self.ask is not None else None,
         )
         if answer not in (ApprovalAnswer.ALLOW, ApprovalAnswer.ALWAYS):
             return PolicyDecision.DENY
@@ -131,7 +135,7 @@ class ApprovalState:
     records: tuple[Approval, ...]
 
     @classmethod
-    def from_records(cls, records: Iterable[Approval]) -> "ApprovalState":
+    def from_records(cls, records: Iterable[Approval]) -> Self:
         snapshot = object.__new__(cls)
         object.__setattr__(snapshot, "records", tuple(records))
         return snapshot
@@ -196,23 +200,12 @@ def approval_transition(records, event: SessionEvent) -> Approval | None:
     return None
 
 
-class _Callback:
-    def __init__(self, callback: Callable, agent):
-        self.callback, self.agent = callback, agent
-
-    async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer:
-        record = self.agent.log.latest_approval(call.id)
-        assert record is not None
-        value = self.callback(record.request)
-        return await value if inspect.isawaitable(value) else value
-
-
 class ApprovalsConfig(PluginConfig):
     timeout: Annotated[float, Field(gt=0)] = 300.0
 
 
 class Approvals(Plugin, slot="approvals"):
-    """Opt out explicitly with trust='all'; missing responders fail as unavailable."""
+    """Compose default decisions and explicit tool rules; required approval wins trust."""
 
     Config = ApprovalsConfig
 
@@ -221,39 +214,58 @@ class Approvals(Plugin, slot="approvals"):
     def __init__(
         self,
         *,
-        approver: Approver | Callable | None = None,
-        trust: Iterable[str] = (),
-        deny: Iterable[str] = (),
+        approver: Approver | ApprovalCallback | None = None,
+        default: PolicyDecision = PolicyDecision.ASK,
+        trust: Iterable[ToolSelector] = (),
+        require: Iterable[ToolSelector] = (),
+        deny: Iterable[ToolSelector] = (),
         policy: Callable[[ToolCall], PolicyDecision | None] | None = None,
         timeout: float = 300.0,
     ):
         super().__init__(timeout=timeout)
         self.approver = approver
-        self.trust_all = trust == "all"
-        self.trust = frozenset((trust,) if isinstance(trust, str) else trust)
-        self.deny = frozenset((deny,) if isinstance(deny, str) else deny)
+        if not isinstance(default, PolicyDecision):
+            raise TypeError("default must be a PolicyDecision")
+        if any(isinstance(items, str) for items in (trust, require, deny)):
+            raise TypeError(
+                "Tool rules must be collections; use default=PolicyDecision.ALLOW to allow all"
+            )
+        self.default = default
+        self.trust = tuple(tool_selector(item) for item in trust)
+        self.require = tuple(tool_selector(item) for item in require)
+        self.deny = tuple(tool_selector(item) for item in deny)
         self.policy = policy
+
+    async def setup(self, ctx: Context, tools: Inject[ToolRegistry]):
+        for rule in ("trust", "require", "deny"):
+            setattr(
+                self, rule, tuple(tools.reference(item, owner=ctx) for item in getattr(self, rule))
+            )
 
     @hook(ToolPolicy, priority=Priority.GUARD)
     async def authorize(self, event, next_, tools: Inject[ToolRegistry]):
         agent = event.agent
-        if event.call.name in self.deny:
+        if any(tools.matches(item, event.call.name) for item in self.deny):
             return PolicyDecision.DENY
-        decision = self.policy(event.call) if self.policy is not None else None
+        required = any(tools.matches(item, event.call.name) for item in self.require)
+        decision = (
+            PolicyDecision.ASK
+            if required
+            else (self.policy(event.call) if self.policy is not None else None)
+        )
         if decision is None:
             decision = (
                 PolicyDecision.ALLOW
-                if self.trust_all
-                or event.call.name in self.trust
+                if any(tools.matches(item, event.call.name) for item in self.trust)
                 or tools.is_readonly(event.call.name)
-                else PolicyDecision.ASK
+                else self.default
             )
         if decision is not None and not isinstance(decision, PolicyDecision):
             raise TypeError("Approval policies must return PolicyDecision or None")
         if decision is PolicyDecision.ASK:
             selected = self.approver
             if selected is not None and callable(selected):
-                selected = _Callback(selected, agent)
+                selected = CallbackApprover(cast(ApprovalCallback, selected))
             answer = await agent.request_approval(
                 event.call,
                 "Tool may have side effects",

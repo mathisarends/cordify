@@ -1,7 +1,7 @@
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ToolCall, ToolResult
+from harnessed import PolicyDecision, ToolCall, ToolResult
 from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
@@ -42,9 +42,9 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
         ]
     )
     model = ScriptedModel(scripted_commands(["git push origin main"]))
-    async with Application(model=model, plugins=[Approvals(trust="all"), tools, rules]).session(
-        "rules"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
+    ).session("rules") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert result.exit_code == 1 and result.content == "failed\n\nOpen a PR."
@@ -81,9 +81,9 @@ async def test_repeated_failures_are_grouped_by_command_reset_on_success_and_fir
     rules = Rules(
         [when(tool="bash", exit_code=lambda c: c != 0, repeated=3).context("Third failure")]
     )
-    async with Application(model=model, plugins=[Approvals(trust="all"), tools, rules]).session(
-        "repeated"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
+    ).session("repeated") as agent:
         await agent.run("go")
         triggers = [e for e in agent.log.events if isinstance(e, RuleTriggered)]
         assert len(triggers) == 1 and triggers[0].occurrence == 3
@@ -103,7 +103,8 @@ async def test_repeat_state_recovers_from_log_without_replaying_actions(tmp_path
     )
     rules = Rules([when(tool="bash", exit_code=1, repeated=3).context("Third")])
     harness = Application(
-        model=model, plugins=[Approvals(trust="all"), tools, rules, JsonlSessions(tmp_path)]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules, JsonlSessions(tmp_path)],
     )
     async with harness.session("resume-rules") as agent:
         await agent.run("first two")
@@ -122,7 +123,9 @@ async def test_rules_have_independent_state_in_different_sessions():
 
     model = ScriptedModel([*scripted_commands(["same"]), *scripted_commands(["same"])])
     rules = Rules([when(tool="bash", repeated=2).note("twice")])
-    harness = Application(model=model, plugins=[Approvals(trust="all"), tools, rules])
+    harness = Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
+    )
     for session_id in ("one", "two"):
         async with harness.session(session_id) as agent:
             await agent.run("go")
@@ -146,7 +149,8 @@ async def test_repeat_resume_uses_recorded_matches_even_when_notes_change_predic
     )
     model = ScriptedModel([*scripted_commands(["same"]), *scripted_commands(["same"])])
     harness = Application(
-        model=model, plugins=[Approvals(trust="all"), tools, rules, JsonlSessions(tmp_path)]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules, JsonlSessions(tmp_path)],
     )
     async with harness.session("matched") as agent:
         await agent.run("one")
@@ -170,9 +174,9 @@ async def test_size_predicate_and_missing_exit_code_and_tool_filters():
         ]
     )
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("read_file"))], "done"])
-    async with Application(model=model, plugins=[Approvals(trust="all"), tools, rules]).session(
-        "size"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
+    ).session("size") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert result.content.endswith("Use a line range.")
@@ -202,7 +206,7 @@ async def test_process_return_values_are_normalized_with_exit_codes():
         ]
     )
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), tools, converters()]
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, converters()]
     ).session("process") as agent:
         await agent.run("go")
         event = next(e for e in agent.log.events if isinstance(e, ToolReturned))

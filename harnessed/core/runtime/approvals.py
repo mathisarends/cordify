@@ -80,7 +80,7 @@ async def _wait_for_approval(
                 else (self.ctx[Approver] if Approver in self.ctx else None)
             )
             if selected is not None:
-                decision = await selected.ask(request.call, request.reason)
+                decision = await selected.ask(request)
             else:
                 decision = await self.ctx.dispatch(ApprovalRequest(request, self))
         if decision is None:

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, tool
+from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate
 from harnessed.core.session.events import InboxAdded, LogTailRecovered, ToolReturned
 from harnessed.models import ModelChunk
@@ -28,7 +28,7 @@ def compose(root: Path, model, answer):
     return Agent(
         model=model,
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             tools,
             ApprovalGate(risky={"work"}, ask=answer, scope="demo-work"),
             JsonlSessions(root, recover_tail=True, durability="fsync"),

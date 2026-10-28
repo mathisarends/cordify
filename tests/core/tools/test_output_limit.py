@@ -4,7 +4,7 @@ import sys
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ToolCall, ToolResult
+from harnessed import PolicyDecision, ToolCall, ToolResult
 from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
@@ -54,7 +54,8 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("cat"))], "done"])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), features, JsonlSessions(tmp_path)]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), features, JsonlSessions(tmp_path)],
     ).session("bounded") as agent:
         await agent.run("inspect")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
@@ -87,7 +88,8 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), ToolOutputLimit(512), features]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), ToolOutputLimit(512), features],
     ).session("enriched") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
@@ -108,7 +110,8 @@ async def test_output_budget_is_configured_with_the_plugin_slot():
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     harness = Application(
-        model=model, plugins=[Approvals(trust="all"), ToolOutputLimit(512), features]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), ToolOutputLimit(512), features],
     )
     async with harness.session("small-budget") as agent:
         await agent.run("go")
@@ -128,7 +131,7 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
     async with Application(
         model=model,
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             ToolOutputLimit(4096),
             features,
             JsonlSessions(tmp_path),
@@ -152,7 +155,11 @@ async def test_read_file_supports_bounded_unicode_character_ranges_and_continuat
     (tmp_path / "large.txt").write_text(original, encoding="utf-8")
     async with Application(
         model=ScriptedModel([]),
-        plugins=[Approvals(trust="all"), Service(FS, LocalFS(tmp_path)), FilesystemTools()],
+        plugins=[
+            Approvals(default=PolicyDecision.ALLOW),
+            Service(FS, LocalFS(tmp_path)),
+            FilesystemTools(),
+        ],
     ).session("ranges") as agent:
         registry = agent.ctx[ToolRegistry]
         result = await registry.execute(ToolCall("read_file", {"path": "large.txt"}))
@@ -197,7 +204,7 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
     async with Application(
         model=model,
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             ToolOutputLimit(1024),
             Service(ShellBackend, LocalShell()),
             ShellTools(tmp_path),

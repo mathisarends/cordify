@@ -43,7 +43,8 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
         executed.append(True)
         return "ok"
 
-    def answer(call):
+    def answer(request):
+        call = request.call
         asked.append(call.id)
         return ApprovalAnswer.ALWAYS
 
@@ -51,7 +52,7 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
         return Application(
             model=tool_model(),
             plugins=[
-                Approvals(trust="all"),
+                Approvals(default=PolicyDecision.ALLOW),
                 tools,
                 ApprovalGate(risky={"work"}, ask=answer),
                 JsonlSessions(tmp_path),
@@ -96,7 +97,8 @@ async def test_single_call_answers_are_logged_without_becoming_persistent_grants
         executed.append(True)
         return "ok"
 
-    def answer(call):
+    def answer(request):
+        call = request.call
         asked.append(call.id)
         return decision
 
@@ -104,7 +106,7 @@ async def test_single_call_answers_are_logged_without_becoming_persistent_grants
         harness = Application(
             model=tool_model(),
             plugins=[
-                Approvals(trust="all"),
+                Approvals(default=PolicyDecision.ALLOW),
                 tools,
                 ApprovalGate(risky={"work"}, ask=answer),
                 JsonlSessions(tmp_path),
@@ -128,7 +130,8 @@ async def test_gate_scopes_do_not_share_persistent_permissions(tmp_path):
     async def work() -> str:
         return "ok"
 
-    def answer(call):
+    def answer(request):
+        call = request.call
         asked.append(call.id)
         return ApprovalAnswer.ALWAYS
 
@@ -136,7 +139,7 @@ async def test_gate_scopes_do_not_share_persistent_permissions(tmp_path):
         async with Application(
             model=tool_model(),
             plugins=[
-                Approvals(trust="all"),
+                Approvals(default=PolicyDecision.ALLOW),
                 tools,
                 ApprovalGate(risky={"work"}, ask=answer, scope=scope),
                 JsonlSessions(tmp_path),
@@ -158,7 +161,8 @@ async def test_tool_policy_ask_uses_the_same_durable_approval_path(tmp_path):
     async def ask_policy(event, next_):
         return PolicyDecision.ASK
 
-    def answer(call):
+    def answer(request):
+        call = request.call
         asked.append(call.id)
         return ApprovalAnswer.ALWAYS
 
@@ -166,7 +170,7 @@ async def test_tool_policy_ask_uses_the_same_durable_approval_path(tmp_path):
         async with Application(
             model=tool_model(),
             plugins=[
-                Approvals(trust="all"),
+                Approvals(default=PolicyDecision.ALLOW),
                 tools,
                 Service(Approver, CallbackApprover(answer)),
                 JsonlSessions(tmp_path),
@@ -191,7 +195,11 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
 
     async with Application(
         model=tool_model(),
-        plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"work"}, ask=wait)],
+        plugins=[
+            Approvals(default=PolicyDecision.ALLOW),
+            tools,
+            ApprovalGate(risky={"work"}, ask=wait),
+        ],
     ).session("cancel-approval") as agent:
         await agent.followup("task")
         await asked.wait()
@@ -244,7 +252,7 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
     async with Application(
         model=tool_model(),
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             tools,
             persistence(),
             ApprovalGate(risky={"work"}, ask=lambda call: ApprovalAnswer.ALWAYS),

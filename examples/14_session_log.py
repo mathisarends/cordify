@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-from harnessed import Agent, Plugin, ToolCall, tool
+from harnessed import Agent, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.messages import User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import AssistantMessage, UserMessage
@@ -30,7 +30,7 @@ async def main():
             [ModelChunk(text="The result "), ModelChunk(text="is 5.")],
         ]
     )
-    async with Agent(model=model, plugins=[Approvals(trust="all"), math]).session(
+    async with Agent(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), math]).session(
         "source"
     ) as session:
         async for event in session.stream("Add 2 and 3"):

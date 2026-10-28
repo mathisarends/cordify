@@ -12,6 +12,7 @@ from harnessed.core.model import (
     ModelUsage,
     StopReason,
 )
+from harnessed.core.tools.references import ToolSelector, call_arguments, tool_reference
 
 
 class ScriptedModel:
@@ -149,8 +150,12 @@ def reply(text: str, *, reasoning: str = "", usage: ModelUsage | None = None) ->
     return ModelResponse(Assistant(text, reasoning=reasoning), usage or ModelUsage(0))
 
 
-def call(name: str, /, **arguments) -> ModelResponse:
+def call(name: ToolSelector, /, **arguments) -> ModelResponse:
     """Script one model tool call; keyword arguments are its model-supplied form."""
+    if not isinstance(name, str):
+        reference = tool_reference(name)
+        arguments = call_arguments(reference, arguments)
+        name = reference.name
     return ModelResponse(
         Assistant(tool_calls=(ToolCall(name, arguments),)),
         stop_reason=StopReason.TOOL_CALLS,

@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
+from harnessed import PolicyDecision
 from harnessed.core.messages import system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
@@ -83,7 +84,7 @@ class PausingModel(CallbackModel):
 @pytest.mark.parametrize("mode", ["inject", "steer"])
 async def test_steering_requests_another_step_while_injection_waits_for_one(mode):
     model = PausingModel()
-    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "routing"
     ) as agent:
         await agent.followup("task")
@@ -111,7 +112,9 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
 
 async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent():
     model = ScriptedModel(["awake"])
-    async with Application(model=model, plugins=[Approvals(trust="all")]).session("quiet") as agent:
+    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
+        "quiet"
+    ) as agent:
         await agent.inject(system("door opened"))
         snapshot = agent.inbox.pending
         await agent.when_idle()
@@ -133,7 +136,7 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
     await persistence.aclose()
     model = ScriptedModel(["processed"])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)]
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
     ).session("pending") as agent:
         await agent.when_idle()
         if mode == "inject":

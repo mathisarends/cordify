@@ -2,7 +2,7 @@
 
 import asyncio
 
-from harnessed import Agent
+from harnessed import Agent, PolicyDecision
 from harnessed.kernel import Context, Key, plugin
 from harnessed.plugins import Approvals
 from harnessed.plugins.rules import Rules, when
@@ -30,7 +30,7 @@ async def main():
     agent = Agent(
         model=ScriptedModel(["The layered SDK is ready."]),
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             Rules([when(tool="read_file", result_tokens_over=1000).note("Read a range.")]),
         ],
     )

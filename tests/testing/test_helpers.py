@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from harnessed import Agent
+from harnessed import Agent, PolicyDecision
 from harnessed.core.session.events import TurnEnd, TurnStart
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, Filesystem, Shell
@@ -23,7 +23,9 @@ pytest_plugins = ["harnessed.testing.pytest_plugin"]
 async def test_scripted_replies_and_fake_shell_keep_process_results_and_arguments():
     shell = FakeShell({"pytest": "1 passed"})
     model = ScriptedModel([call("run_command", argv=["pytest"]), reply("done")])
-    result = await Agent(model=model, plugins=[shell, Approvals(trust="all")]).run("Test")
+    result = await Agent(model=model, plugins=[shell, Approvals(default=PolicyDecision.ALLOW)]).run(
+        "Test"
+    )
     _, output = assert_tool_called(result, "run_command", argv=["pytest"])
     assert output.exit_code == 0 and "1 passed" in output.content
     assert shell.calls[0].argv == ("pytest",)

@@ -10,6 +10,7 @@ from harnessed import (
     Inject,
     Observation,
     Plugin,
+    PolicyDecision,
     Session,
     ToolCall,
     hook,
@@ -101,7 +102,12 @@ async def main():
     )
     agent = Agent(
         model=model,
-        plugins=[Approvals(trust="all"), browser_backend(), BrowserObserver(), browser_tools],
+        plugins=[
+            Approvals(default=PolicyDecision.ALLOW),
+            browser_backend(),
+            BrowserObserver(),
+            browser_tools,
+        ],
     )
     async with agent.session("browser") as session:
         print((await session.run("Open Settings.")).text)

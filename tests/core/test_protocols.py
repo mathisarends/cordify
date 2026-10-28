@@ -83,7 +83,8 @@ async def test_foreign_fs_and_model_work_through_di_without_framework_inheritanc
     assert ForeignFiles.__bases__ == (object,)
     assert ForeignModel.__bases__ == (object,)
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), foreign_files(), FilesystemTools()]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), foreign_files(), FilesystemTools()],
     ).session("foreign") as agent:
         result = await agent.run("Write and read the note.")
         assert result.text == "done"
@@ -109,7 +110,8 @@ class ForeignApprover:
         self.decision = decision
         self.calls = []
 
-    async def ask(self, call, reason):
+    async def ask(self, request):
+        call, reason = request.call, request.reason
         self.calls.append((call, reason))
         return self.decision
 
@@ -139,7 +141,12 @@ async def test_foreign_shell_and_approver_are_accepted_structurally(tmp_path):
     assert ForeignApprover.__bases__ == (object,)
     harness = Application(
         model=model,
-        plugins=[Approvals(trust="all"), foreign_services(), ShellTools(tmp_path), policy()],
+        plugins=[
+            Approvals(default=PolicyDecision.ALLOW),
+            foreign_services(),
+            ShellTools(tmp_path),
+            policy(),
+        ],
     )
     async with harness.session("foreign-shell") as agent:
         result = await agent.run("Run the tests.")

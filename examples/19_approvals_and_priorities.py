@@ -3,7 +3,7 @@
 import asyncio
 from time import perf_counter
 
-from harnessed import Agent, ApprovalAnswer, Context, Plugin, ToolCall, plugin, tool
+from harnessed import Agent, ApprovalAnswer, Context, Plugin, PolicyDecision, ToolCall, plugin, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.registry import ToolRegistry
@@ -23,7 +23,8 @@ async def without_ui():
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Approval unavailable."])
     async with Agent(
-        model=model, plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"publish"})]
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), tools, ApprovalGate(risky={"publish"})],
     ).session("no-ui") as session:
         result = await session.run("Publish the artifact.")
         returned = next(event for event in result.events if isinstance(event, ToolReturned))
@@ -70,7 +71,7 @@ async def listener_and_priorities():
     agent = Agent(
         model=model,
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             approved_tools(),
             ApprovalGate(risky={"publish"}, priority=-100),
         ],
@@ -86,7 +87,10 @@ async def response_timeout():
     stopped = asyncio.Event()
     async with Agent(
         model=ScriptedModel([]),
-        plugins=[AgentLoop(approval_timeout=0.02), Approvals(trust="all", timeout=0.02)],
+        plugins=[
+            AgentLoop(approval_timeout=0.02),
+            Approvals(default=PolicyDecision.ALLOW, timeout=0.02),
+        ],
     ).session("timeout") as session:
 
         @session.on(ApprovalRequest)

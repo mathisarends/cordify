@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, ToolCall
+from harnessed import ApprovalAnswer, PolicyDecision, ToolCall
 from harnessed.core.approvals import ApprovalGate
 from harnessed.core.messages import user
 from harnessed.core.model import ModelChunk
@@ -150,7 +150,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
         harness = Application(
             model=model,
             plugins=[
-                Approvals(trust="all"),
+                Approvals(default=PolicyDecision.ALLOW),
                 tools,
                 ApprovalGate(risky={"work"}, ask=answer),
                 JsonlSessions(tmp_path, durability="fsync"),
@@ -318,7 +318,7 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     async with Application(
         model=ScriptedModel([]),
         plugins=[
-            Approvals(trust="all"),
+            Approvals(default=PolicyDecision.ALLOW),
             JsonlSessions(tmp_path, recover_tail=True, durability="fsync"),
         ],
     ).session("answer") as agent:

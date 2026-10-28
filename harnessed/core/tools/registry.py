@@ -14,6 +14,7 @@ from harnessed.core.model import ToolDefinition
 from harnessed.core.tools.arguments import ToolArguments, tool_result_content
 from harnessed.core.tools.context import ToolContext, ToolContexts
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting, validate_output_limit
+from harnessed.core.tools.references import ToolReference, ToolSelector, tool_selector
 from harnessed.core.tools.scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
 from harnessed.kernel.context import Context
 from harnessed.kernel.di import BindingPlan, Dependency, binding_plan
@@ -97,6 +98,29 @@ class ToolRegistry:
         self._default_timeout = _TIMEOUT.validate_python(default_timeout)
         self._tools: dict[str, list[_Tool]] = {}
         self._converters: dict[type, list[_Converter]] = {}
+        self._references: list[ToolReference] = []
+
+    def reference(self, selector: ToolSelector, *, owner: Context) -> str | ToolReference:
+        selected = tool_selector(selector)
+        if isinstance(selected, ToolReference):
+            self._references.append(selected)
+            owner.effect(lambda: self._references.remove(selected))
+        return selected
+
+    def validate_references(self) -> None:
+        for reference in self._references:
+            if not any(
+                reference.matches(tool.callback)
+                for entries in self._tools.values()
+                if (tool := self._visible(entries)) is not None
+            ):
+                raise ValueError(f"Referenced tool {reference.name!r} is not registered")
+
+    def matches(self, selector: str | ToolReference, name: str) -> bool:
+        if isinstance(selector, str):
+            return selector == name
+        tool = self._visible(self._tools.get(name, []))
+        return tool is not None and selector.matches(tool.callback)
 
     def result_converter[T](
         self, kind: type[T], callback: Callable[[T], ToolResult], *, owner: Context | None = None

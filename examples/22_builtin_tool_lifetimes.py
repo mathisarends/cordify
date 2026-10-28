@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from harnessed import Agent, Context, ToolCall, plugin
+from harnessed import Agent, Context, PolicyDecision, ToolCall, plugin
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.models import ModelChunk
@@ -36,7 +36,7 @@ async def main():
             "The replacement backend handled the command.",
         ]
     )
-    agent = Agent(model=model, plugins=[Approvals(trust="all"), ShellTools()])
+    agent = Agent(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), ShellTools()])
     async with agent.session("tool-lifetimes") as session:
         registry = session.ctx[ToolRegistry]
         assert registry.definitions == ()

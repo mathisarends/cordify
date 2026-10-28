@@ -2,7 +2,17 @@
 
 import asyncio
 
-from harnessed import Agent, Inject, Plugin, Session, ToolCall, ToolResult, hook, tool
+from harnessed import (
+    Agent,
+    Inject,
+    Plugin,
+    PolicyDecision,
+    Session,
+    ToolCall,
+    ToolResult,
+    hook,
+    tool,
+)
 from harnessed.core.messages import user
 from harnessed.events import InboxAdded, ToolFinished
 from harnessed.hooks import ReviewToolResult
@@ -64,7 +74,7 @@ async def demo(name, policy):
             "I will summarize the attempts before editing again.",
         ]
     )
-    agent = Agent(model=model, plugins=[Approvals(trust="all"), commands, policy])
+    agent = Agent(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), commands, policy])
     print(f"\n{name}")
     async with agent.session(name) as session:
 

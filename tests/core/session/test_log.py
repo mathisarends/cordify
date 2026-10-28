@@ -3,7 +3,7 @@ import json
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ToolCall, ToolResult
+from harnessed import PolicyDecision, ToolCall, ToolResult
 from harnessed.core.messages import Assistant, User
 from harnessed.core.model import ModelRequest, ToolDefinition
 from harnessed.core.session.codec import decode_event, encode_event
@@ -27,7 +27,9 @@ from harnessed.testing import ScriptedModel
 
 async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
     model = ScriptedModel(["first reply", "second reply"])
-    harness = Application(model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)])
+    harness = Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
+    )
     async with harness.session("resume") as agent:
         await agent.run("first")
         prefix = agent.log.events
@@ -109,7 +111,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     await persistence.aclose()
     harness = Application(
         model=ScriptedModel(["recovered"]),
-        plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)],
+        plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)],
     )
     async with harness.session("interrupted") as agent:
         assert isinstance(agent.log.last(TurnEnd), TurnEnd)
@@ -126,7 +128,9 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
     await session.append(InboxAdded(User("queued"), "next-turn", True, "followup"))
     await persistence.aclose()
     model = ScriptedModel(["processed"])
-    harness = Application(model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)])
+    harness = Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
+    )
     async with harness.session("pending") as agent:
         await agent.when_idle()
         assert model.requests[0].messages[0].content == "queued"

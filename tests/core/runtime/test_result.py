@@ -1,6 +1,7 @@
 import asyncio
 
 from harnessed import Agent as Application
+from harnessed import PolicyDecision
 from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.events import InboxAdded
 from harnessed.core.stream import TextDelta, TurnFinished
@@ -26,7 +27,7 @@ class TwoTurns(CallbackModel):
 
 async def test_concurrent_runs_return_their_own_text_usage_and_turn_without_waiting_for_idle():
     model = TwoTurns()
-    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "concurrent"
     ) as session:
         queued = asyncio.Event()
@@ -58,7 +59,7 @@ async def test_concurrent_runs_return_their_own_text_usage_and_turn_without_wait
 
 async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
     model = TwoTurns()
-    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "stream-turn"
     ) as session:
 

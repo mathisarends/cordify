@@ -5,7 +5,7 @@ import pytest
 from pydantic import PydanticSchemaGenerationError
 
 from harnessed import Agent as Application
-from harnessed import Context, Plugin, ToolCall, hook, plugin
+from harnessed import Context, Plugin, PolicyDecision, ToolCall, hook, plugin
 from harnessed import Session as Agent
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tools.decorator import tool
@@ -286,9 +286,9 @@ async def test_agent_registration_facade_uses_the_active_plugin_owner():
 
         yield
 
-    async with Application(model=ScriptedModel([]), plugins=[Approvals(trust="all")]).session(
-        "plugin-effects"
-    ) as agent:
+    async with Application(
+        model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session("plugin-effects") as agent:
         handle = await agent.ctx.plugin(feature())
         assert [definition.name for definition in agent.ctx[ToolRegistry].definitions] == ["read"]
         await agent.ctx.dispatch(Ping())
