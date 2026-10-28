@@ -105,7 +105,7 @@ class JsonlPersistence:
                         record = json.loads(line)
                         if (
                             type(record["version"]) is not int
-                            or record["version"] not in (1, 2, CURRENT_VERSION)
+                            or record["version"] not in (1, 2, 3, CURRENT_VERSION)
                             or type(record["seq"]) is not int
                             or record["seq"] != seq
                         ):

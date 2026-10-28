@@ -43,7 +43,7 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
         ]
     records = [json.loads(line) for line in (tmp_path / "resume.jsonl").read_text().splitlines()]
     assert [record["seq"] for record in records] == list(range(len(records)))
-    assert all(record["version"] == 3 for record in records)
+    assert all(record["version"] == 4 for record in records)
 
 
 async def test_jsonl_excludes_other_writers_and_releases_lock(tmp_path):

@@ -17,8 +17,8 @@ def test_canonical_tags_and_legacy_records_decode_to_the_same_frozen_value():
     assert set(schema["discriminator"]["mapping"]) == set(SESSION_EVENT_TYPES)
     event = TurnStart("one")
     assert encode_event(event) == {
-        "version": 3,
-        "type": "TurnStart",
+        "version": 4,
+        "type": "turn.started",
         "data": {"turn_id": "one", "input_id": None, "settings": {}, "output_schema": None},
     }
     assert decode_event({"version": 1, "type": "turn/start", "data": {"turn_id": "one"}}) == event
@@ -80,7 +80,7 @@ def test_legacy_message_fields_migrate_without_losing_provider_state(version):
     assert event.message.reasoning == "private plan"
     assert event.message.provider_state["opaque"] == ("signature",)
     canonical = encode_event(event)
-    assert canonical["version"] == 3
+    assert canonical["version"] == 4
     assert "reasoning_content" not in canonical["data"]["message"]
     assert "tool_call_id" not in canonical["data"]["message"]
     assert decode_event(canonical) == event

@@ -5,7 +5,12 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
+from harnessed.core.approvals import (
+    Approval,
+    ApprovalUnavailable,
+    Approver,
+    validate_approval_timeout,
+)
 from harnessed.core.hooks import ApprovalRequest
 from harnessed.core.messages import ApprovalAnswer, ToolCall
 from harnessed.core.session.events import ApprovalRequested, ApprovalResolved, ApprovalRevoked
@@ -15,6 +20,90 @@ if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session
 
 log = logging.getLogger(__name__)
+
+
+class _PendingApproval:
+    """A live approval handle; answer() waits for its decision's durable acknowledgement."""
+
+    def __init__(self, request: ApprovalRequested):
+        self.request_id, self.call, self.reason = request.request_id, request.call, request.reason
+        loop = asyncio.get_running_loop()
+        self._decision: asyncio.Future[ApprovalAnswer | None] = loop.create_future()
+        self._ack: asyncio.Future[Exception | None] = loop.create_future()
+
+    async def answer(self, decision: ApprovalAnswer) -> None:
+        if not isinstance(decision, ApprovalAnswer):
+            raise TypeError("Approval answers must be ALLOW, DENY or ALWAYS")
+        if self._decision.done():
+            if self._decision.cancelled() or self._decision.result() is None:
+                raise ApprovalUnavailable("This approval is no longer pending")
+            if self._decision.result() is not decision:
+                raise ValueError("An approval cannot change its submitted decision")
+        else:
+            self._decision.set_result(decision)
+        failure = await asyncio.shield(self._ack)
+        if failure is not None:
+            raise failure
+
+    def _finish(self, failure: Exception | None = None) -> None:
+        if not self._decision.done():
+            self._decision.set_result(None)
+        if not self._ack.done():
+            self._ack.set_result(failure)
+
+
+class SessionApprovals:
+    """Approval snapshots and acknowledged responses addressed by durable request ID."""
+
+    def __init__(self, session: Session):
+        self._session = session
+        self._live: dict[str, _PendingApproval] = {}
+
+    @property
+    def records(self) -> tuple[Approval, ...]:
+        return self._session.log.approvals.records
+
+    @property
+    def pending(self) -> tuple[Approval, ...]:
+        return self._session.log.approvals.pending
+
+    @property
+    def grants(self) -> tuple[Approval, ...]:
+        return self._session.log.approvals.grants
+
+    def grant_for(self, tool: str, *, scope: str) -> Approval | None:
+        return self._session.log.approvals.grant_for(tool, scope=scope)
+
+    async def answer(self, request_id: str, decision: ApprovalAnswer) -> None:
+        if not isinstance(decision, ApprovalAnswer):
+            raise TypeError("Approval answers must be ALLOW, DENY or ALWAYS")
+        pending = self._live.get(request_id)
+        if pending is not None:
+            await pending.answer(decision)
+            return
+        record = self._session.log.approval(request_id)
+        if (
+            record is not None
+            and record.resolution is not None
+            and record.resolution.status == "answered"
+        ):
+            if record.decision is not decision:
+                raise ValueError("An approval cannot change its submitted decision")
+            return
+        raise ApprovalUnavailable("This approval is no longer pending")
+
+    async def revoke(self, request_id: str, *, reason: str = "revoked") -> None:
+        await revoke_approval(self._session, request_id, reason=reason)
+
+    def _open(self, request: ApprovalRequested) -> _PendingApproval:
+        pending = _PendingApproval(request)
+        self._live[request.request_id] = pending
+        return pending
+
+    def _finish(self, request_id: str, failure: Exception | None = None) -> None:
+        pending = self._live.pop(request_id, None)
+        if pending is not None:
+            pending._finish(failure)
 
 
 async def request_approval(

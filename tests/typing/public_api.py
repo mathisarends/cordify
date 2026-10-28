@@ -59,7 +59,7 @@ async def structured_consumer(agent: AppAgent, session: Agent) -> None:
 async def typed_stream(session: Agent) -> None:
     async for event in session.stream("Triage", output=Triage):
         assert_type(event, StreamEvent[Triage])
-        if event.type == "TurnFinished":
+        if event.type == "turn.finished":
             assert_type(event, TurnFinished[Triage])
             assert_type(event.result, RunResult[Triage])
             assert_type(event.result.output.severity, int)

@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import Field
+from pydantic import Field, PlainSerializer
 
 
 def freeze(value: Any) -> Any:
@@ -36,6 +36,11 @@ def to_dict(value: Any) -> Any:
     return value
 
 
+type JSONMapping = Annotated[
+    Mapping[str, Any], PlainSerializer(to_dict, return_type=dict[str, Any], when_used="json")
+]
+
+
 @dataclass(frozen=True)
 class MalformedArguments:
     """Lossless provider input that could not be parsed as a JSON object."""
@@ -47,7 +52,7 @@ class MalformedArguments:
 class ToolCall:
     __hash__ = None
     name: str
-    arguments: Mapping[str, Any] = field(default_factory=dict)
+    arguments: JSONMapping = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
     malformed: MalformedArguments | None = field(default=None, kw_only=True)
 
@@ -268,7 +273,7 @@ class Assistant(_MessageText, _NoCallID):
     tool_calls: tuple[ToolCall, ...] = ()
     reasoning: str = ""
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
-    provider_state: Mapping[str, Any] = field(default_factory=dict, kw_only=True)
+    provider_state: JSONMapping = field(default_factory=dict, kw_only=True)
     role: Literal["assistant"] = field(default="assistant", kw_only=True)
 
     def __post_init__(self):

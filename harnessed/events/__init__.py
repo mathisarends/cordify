@@ -1,3 +1,5 @@
+from typing import Any
+
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalRequested,
@@ -7,6 +9,7 @@ from harnessed.core.session.events import (
     ContextValueChanged,
     InboxAdded,
     InboxRemoved,
+    LogEvent,
     ModelRequested,
     ModelUsageRecorded,
     ObservationRecorded,
@@ -26,15 +29,37 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.stream import (
     ApprovalNeeded,
-    PendingApproval,
     ReasoningDelta,
     StatusChanged,
     StreamEvent,
     TextDelta,
     ToolFinished,
     ToolStarted,
+    TransientEvent,
     TurnFinished,
 )
+
+from . import (
+    approval,
+    compaction,
+    context,
+    inbox,
+    message,
+    model,
+    output,
+    reasoning,
+    rule,
+    session,
+    spill,
+    step,
+    text,
+    tool,
+    turn,
+)
+
+DurableEvent = SessionEvent
+type BuiltinEvent = LogEvent | StreamEvent[Any]
+
 
 __all__ = [
     "AgentControlChanged",
@@ -42,8 +67,10 @@ __all__ = [
     "ApprovalRequested",
     "ApprovalResolved",
     "AssistantMessage",
+    "BuiltinEvent",
     "CompactionApplied",
     "ContextValueChanged",
+    "DurableEvent",
     "InboxAdded",
     "InboxRemoved",
     "ModelRequested",
@@ -51,7 +78,6 @@ __all__ = [
     "ObservationRecorded",
     "OutputValidated",
     "OutputValidationFailed",
-    "PendingApproval",
     "ReasoningDelta",
     "SessionEvent",
     "SpillCreated",
@@ -66,8 +92,24 @@ __all__ = [
     "ToolProgress",
     "ToolReturned",
     "ToolStarted",
+    "TransientEvent",
     "TurnEnd",
     "TurnFinished",
     "TurnStart",
     "UserMessage",
+    "approval",
+    "compaction",
+    "context",
+    "inbox",
+    "message",
+    "model",
+    "output",
+    "reasoning",
+    "rule",
+    "session",
+    "spill",
+    "step",
+    "text",
+    "tool",
+    "turn",
 ]

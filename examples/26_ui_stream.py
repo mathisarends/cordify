@@ -60,10 +60,10 @@ async def main():
                         print("Progress:", text)
                     case ToolFinished(call=call, result=result):
                         print(call.name, result.status)
-                    case ApprovalNeeded(request=request):
+                    case ApprovalNeeded(request_id=request_id, call=call):
                         # A UI would present this choice; the demo explicitly approves.
-                        print("Approving:", request.call.name)
-                        await request.answer(ApprovalAnswer.ALLOW)
+                        print("Approving:", call.name)
+                        await session.approvals.answer(request_id, ApprovalAnswer.ALLOW)
                     case TurnFinished(result=result):
                         print("Report:", result.output.summary)
                         print("Stop reason:", result.stop_reason)

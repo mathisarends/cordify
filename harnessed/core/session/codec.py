@@ -50,40 +50,84 @@ def _validate_event(event: SessionEvent) -> None:
     immutable(event)
 
 
-CURRENT_VERSION = 3
+CURRENT_VERSION = 4
+_CLASS_TAGS = {
+    "AgentControlChanged": "session.control.changed",
+    "ApprovalRequested": "approval.requested",
+    "ApprovalResolved": "approval.resolved",
+    "ApprovalRevoked": "approval.revoked",
+    "ToolPolicyApplied": "tool.policy.applied",
+    "ToolExecutionStarted": "tool.execution.started",
+    "LogTailRecovered": "session.log.recovered",
+    "AssistantChunk": "assistant.chunk",
+    "InboxAdded": "inbox.added",
+    "InboxRemoved": "inbox.removed",
+    "TurnStart": "turn.started",
+    "StepStart": "step.started",
+    "SystemMessage": "message.system",
+    "UserMessage": "message.user",
+    "ContextMessage": "message.context",
+    "ContextValueChanged": "context.changed",
+    "ObservationRecorded": "observation.recorded",
+    "ModelRequested": "model.requested",
+    "ModelUsageRecorded": "model.usage",
+    "CacheMetrics": "model.cache",
+    "CompactionApplied": "compaction.applied",
+    "ObservationPolicyApplied": "observation.policy.applied",
+    "SpillCreated": "spill.created",
+    "SpillExpired": "spill.expired",
+    "RuleTriggered": "rule.triggered",
+    "RuleEvaluated": "rule.evaluated",
+    "AssistantMessage": "message.assistant",
+    "ToolCalled": "tool.called",
+    "ToolReturned": "tool.returned",
+    "ToolCompleted": "tool.completed",
+    "ToolProgress": "tool.progress",
+    "StepEnd": "step.finished",
+    "TurnEnd": "turn.ended",
+    "OutputValidated": "output.validated",
+    "OutputValidationFailed": "output.validation.failed",
+    "TextDelta": "text.delta",
+    "ReasoningDelta": "reasoning.delta",
+    "ToolStarted": "tool.started",
+    "ToolFinished": "tool.finished",
+    "ApprovalNeeded": "approval.needed",
+    "StatusChanged": "session.status.changed",
+    "TurnFinished": "turn.finished",
+}
 _LEGACY_TYPES = {
-    "agent/control": "AgentControlChanged",
-    "approvals/requested": "ApprovalRequested",
-    "approvals/resolved": "ApprovalResolved",
-    "approvals/revoked": "ApprovalRevoked",
-    "tools/policy": "ToolPolicyApplied",
-    "tools/execution-started": "ToolExecutionStarted",
-    "session/log-tail-recovered": "LogTailRecovered",
-    "assistant/chunk": "AssistantChunk",
-    "agent/inbox/inserted": "InboxAdded",
-    "agent/inbox/removed": "InboxRemoved",
-    "turn/start": "TurnStart",
-    "step/start": "StepStart",
-    "system/message": "SystemMessage",
-    "user/message": "UserMessage",
-    "context/message": "ContextMessage",
-    "context/value-changed": "ContextValueChanged",
-    "agent/observation": "ObservationRecorded",
-    "model/requested": "ModelRequested",
-    "model/usage": "ModelUsageRecorded",
-    "model/cache": "CacheMetrics",
-    "context/compacted": "CompactionApplied",
-    "context/observation-policy": "ObservationPolicyApplied",
-    "tools/spilled": "SpillCreated",
-    "rules/triggered": "RuleTriggered",
-    "rules/evaluated": "RuleEvaluated",
-    "assistant/message": "AssistantMessage",
-    "tools/called": "ToolCalled",
-    "tools/result": "ToolReturned",
-    "tools/completed": "ToolCompleted",
-    "tools/progress": "ToolProgress",
-    "step/end": "StepEnd",
-    "turn/end": "TurnEnd",
+    "agent/control": "session.control.changed",
+    "approvals/requested": "approval.requested",
+    "approvals/resolved": "approval.resolved",
+    "approvals/revoked": "approval.revoked",
+    "tools/policy": "tool.policy.applied",
+    "tools/execution-started": "tool.execution.started",
+    "session/log-tail-recovered": "session.log.recovered",
+    "assistant/chunk": "assistant.chunk",
+    "agent/inbox/inserted": "inbox.added",
+    "agent/inbox/removed": "inbox.removed",
+    "turn/start": "turn.started",
+    "step/start": "step.started",
+    "system/message": "message.system",
+    "user/message": "message.user",
+    "context/message": "message.context",
+    "context/value-changed": "context.changed",
+    "agent/observation": "observation.recorded",
+    "model/requested": "model.requested",
+    "model/usage": "model.usage",
+    "model/cache": "model.cache",
+    "context/compacted": "compaction.applied",
+    "context/observation-policy": "observation.policy.applied",
+    "tools/spilled": "spill.created",
+    "rules/triggered": "rule.triggered",
+    "rules/evaluated": "rule.evaluated",
+    "assistant/message": "message.assistant",
+    "tools/called": "tool.called",
+    "tools/result": "tool.returned",
+    "tools/completed": "tool.completed",
+    "tools/progress": "tool.progress",
+    "step/end": "step.finished",
+    "turn/end": "turn.ended",
 }
 _ADAPTER = TypeAdapter(
     LogEvent,
@@ -114,7 +158,7 @@ def decode_event(record: dict) -> SessionEvent:
     if not isinstance(record, dict) or set(record) - {"version", "seq", "type", "data"}:
         raise ValueError("Invalid session record envelope")
     version = record.get("version", 1)
-    if type(version) is not int or version not in (1, 2, CURRENT_VERSION):
+    if type(version) is not int or version not in (1, 2, 3, CURRENT_VERSION):
         raise ValueError("Unsupported session record version")
     if "seq" in record and (type(record["seq"]) is not int or record["seq"] < 0):
         raise ValueError("Session sequence must be a non-negative integer")
@@ -123,6 +167,8 @@ def decode_event(record: dict) -> SessionEvent:
         raise ValueError("Session records require a type tag")
     if version == 1:
         tag = _LEGACY_TYPES.get(tag, tag)
+    if version < 4:
+        tag = _CLASS_TAGS.get(tag, tag)
     if tag not in SESSION_EVENT_TYPES:
         raise ValueError(f"Unknown session event type: {tag}")
     body = record.get("data")
@@ -130,29 +176,31 @@ def decode_event(record: dict) -> SessionEvent:
         raise ValueError("Session record data must be an object")
     freeze(record)  # A Python caller must not smuggle non-JSON keys or non-finite values.
     body = dict(body)
+    if "type" in body and version < 4:
+        body["type"] = _CLASS_TAGS.get(body["type"], body["type"])
     if "type" in body and body["type"] != tag:
         raise ValueError("Session envelope and payload type tags disagree")
     if version < 3:
         if tag in (
-            "InboxAdded",
-            "UserMessage",
-            "ContextMessage",
-            "AssistantMessage",
+            "inbox.added",
+            "message.user",
+            "message.context",
+            "message.assistant",
         ) and isinstance(body.get("message"), dict):
             body["message"] = migrate_message(body["message"])
-        if tag == "InboxAdded":
+        if tag == "inbox.added":
             body["context"] = [migrate_message(message) for message in body.get("context", ())]
-        if tag == "ModelRequested" and isinstance(body.get("request"), dict):
+        if tag == "model.requested" and isinstance(body.get("request"), dict):
             body["request"] = dict(body["request"])
             body["request"]["messages"] = [
                 migrate_message(message) for message in body["request"].get("messages", ())
             ]
-    if version == 1 and tag in ("ModelUsageRecorded", "CacheMetrics") and "usage" in body:
+    if version == 1 and tag in ("model.usage", "model.cache") and "usage" in body:
         body["usage"] = to_dict(usage_from_dict(body["usage"]))
-    elif version == 1 and tag == "ModelRequested" and isinstance(body.get("request"), dict):
+    elif version == 1 and tag == "model.requested" and isinstance(body.get("request"), dict):
         body["request"] = dict(body["request"])
         body["request"].pop("cache_breakpoints", None)  # The v1 marker never affected a provider.
-    elif version == 1 and tag == "ToolPolicyApplied" and body.get("decision") == "always":
+    elif version == 1 and tag == "tool.policy.applied" and body.get("decision") == "always":
         body["decision"] = "allow"
         body.setdefault("source", "approval")
     event = _ADAPTER.validate_json(json.dumps({**body, "type": tag}, allow_nan=False), strict=True)

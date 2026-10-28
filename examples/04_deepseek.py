@@ -26,10 +26,11 @@ async def main():
                     print(text, end="", flush=True)
                 case ToolStarted(call=call):
                     print(f"\n-> {call.name}")
-                case ApprovalNeeded(request=request):
-                    answer = await asyncio.to_thread(input, f"Allow {request.call.name}? [y/N] ")
-                    await request.answer(
-                        ApprovalAnswer.ALLOW if answer.lower() == "y" else ApprovalAnswer.DENY
+                case ApprovalNeeded(request_id=request_id, call=call):
+                    answer = await asyncio.to_thread(input, f"Allow {call.name}? [y/N] ")
+                    await session.approvals.answer(
+                        request_id,
+                        ApprovalAnswer.ALLOW if answer.lower() == "y" else ApprovalAnswer.DENY,
                     )
         print()
 

@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from time import time
-from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self, get_args
 from uuid import uuid4
 
 from pydantic import Field
@@ -51,7 +51,9 @@ class SessionEvent(Emit):
 class AgentControlChanged(SessionEvent):
     __hash__ = None
 
-    type: Literal["AgentControlChanged"] = field(default="AgentControlChanged", kw_only=True)
+    type: Literal["session.control.changed"] = field(
+        default="session.control.changed", kw_only=True
+    )
     state: ControlState
     keep_inbox: bool = False
 
@@ -68,7 +70,7 @@ class AgentControlChanged(SessionEvent):
 class ApprovalRequested(SessionEvent):
     __hash__ = None
 
-    type: Literal["ApprovalRequested"] = field(default="ApprovalRequested", kw_only=True)
+    type: Literal["approval.requested"] = field(default="approval.requested", kw_only=True)
     request_id: Identifier
     call: ToolCall
     reason: str
@@ -91,7 +93,7 @@ class ApprovalRequested(SessionEvent):
 class ApprovalResolved(SessionEvent):
     __hash__ = None
 
-    type: Literal["ApprovalResolved"] = field(default="ApprovalResolved", kw_only=True)
+    type: Literal["approval.resolved"] = field(default="approval.resolved", kw_only=True)
     request_id: Identifier
     decision: ApprovalAnswer | None = None
     status: Literal["answered", "interrupted", "unavailable"] = "answered"
@@ -117,7 +119,7 @@ class ApprovalResolved(SessionEvent):
 class ApprovalRevoked(SessionEvent):
     __hash__ = None
 
-    type: Literal["ApprovalRevoked"] = field(default="ApprovalRevoked", kw_only=True)
+    type: Literal["approval.revoked"] = field(default="approval.revoked", kw_only=True)
     request_id: Identifier
     reason: str = "revoked"
 
@@ -126,7 +128,7 @@ class ApprovalRevoked(SessionEvent):
 class ToolPolicyApplied(SessionEvent):
     __hash__ = None
 
-    type: Literal["ToolPolicyApplied"] = field(default="ToolPolicyApplied", kw_only=True)
+    type: Literal["tool.policy.applied"] = field(default="tool.policy.applied", kw_only=True)
     call_id: Identifier
     decision: PolicyDecision
     source: Literal["policy", "approval", "unavailable"] = "policy"
@@ -143,7 +145,7 @@ class ToolPolicyApplied(SessionEvent):
 class ToolExecutionStarted(SessionEvent):
     __hash__ = None
 
-    type: Literal["ToolExecutionStarted"] = field(default="ToolExecutionStarted", kw_only=True)
+    type: Literal["tool.execution.started"] = field(default="tool.execution.started", kw_only=True)
     call_id: Identifier
 
 
@@ -151,7 +153,7 @@ class ToolExecutionStarted(SessionEvent):
 class LogTailRecovered(SessionEvent):
     __hash__ = None
 
-    type: Literal["LogTailRecovered"] = field(default="LogTailRecovered", kw_only=True)
+    type: Literal["session.log.recovered"] = field(default="session.log.recovered", kw_only=True)
     offset: int
     discarded_bytes: int
     sha256: str
@@ -171,7 +173,7 @@ class LogTailRecovered(SessionEvent):
 class AssistantChunk(SessionEvent):
     __hash__ = None
 
-    type: Literal["AssistantChunk"] = field(default="AssistantChunk", kw_only=True)
+    type: Literal["assistant.chunk"] = field(default="assistant.chunk", kw_only=True)
     text: str = ""
     reasoning: str = ""
     message_id: str = field(kw_only=True)
@@ -187,7 +189,7 @@ class AssistantChunk(SessionEvent):
 class InboxAdded(SessionEvent):
     __hash__ = None
 
-    type: Literal["InboxAdded"] = field(default="InboxAdded", kw_only=True)
+    type: Literal["inbox.added"] = field(default="inbox.added", kw_only=True)
     message: Message
     target: InboxTarget
     wakeup: bool
@@ -219,7 +221,7 @@ class InboxAdded(SessionEvent):
         context: tuple[Message, ...] = (),
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
-    ) -> "InboxAdded":
+    ) -> Self:
         if mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {mode!r}")
         target, wakeup = _INBOX_ROUTES[mode]
@@ -239,7 +241,7 @@ class InboxAdded(SessionEvent):
 class InboxRemoved(SessionEvent):
     __hash__ = None
 
-    type: Literal["InboxRemoved"] = field(default="InboxRemoved", kw_only=True)
+    type: Literal["inbox.removed"] = field(default="inbox.removed", kw_only=True)
     message_id: Identifier
     reason: Literal["claimed", "canceled", "stopped", "discarded"] = "claimed"
 
@@ -248,7 +250,7 @@ class InboxRemoved(SessionEvent):
 class TurnStart(SessionEvent):
     __hash__ = None
 
-    type: Literal["TurnStart"] = field(default="TurnStart", kw_only=True)
+    type: Literal["turn.started"] = field(default="turn.started", kw_only=True)
     turn_id: Identifier
     input_id: str | None = None
     settings: Mapping[str, Any] = field(default_factory=dict)
@@ -262,7 +264,7 @@ class TurnStart(SessionEvent):
 class StepStart(SessionEvent):
     __hash__ = None
 
-    type: Literal["StepStart"] = field(default="StepStart", kw_only=True)
+    type: Literal["step.started"] = field(default="step.started", kw_only=True)
     turn_id: Identifier
     step: StepNumber
 
@@ -271,7 +273,7 @@ class StepStart(SessionEvent):
 class SystemMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["SystemMessage"] = field(default="SystemMessage", kw_only=True)
+    type: Literal["message.system"] = field(default="message.system", kw_only=True)
     content: str
 
 
@@ -279,7 +281,7 @@ class SystemMessage(SessionEvent):
 class UserMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["UserMessage"] = field(default="UserMessage", kw_only=True)
+    type: Literal["message.user"] = field(default="message.user", kw_only=True)
     message: User
 
     def __post_init__(self):
@@ -291,7 +293,7 @@ class UserMessage(SessionEvent):
 class ContextMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["ContextMessage"] = field(default="ContextMessage", kw_only=True)
+    type: Literal["message.context"] = field(default="message.context", kw_only=True)
     message: Message
     lifetime: Literal["session", "turn"] = "session"
     turn_id: str | None = None
@@ -301,7 +303,7 @@ class ContextMessage(SessionEvent):
 class ContextValueChanged(SessionEvent):
     __hash__ = None
 
-    type: Literal["ContextValueChanged"] = field(default="ContextValueChanged", kw_only=True)
+    type: Literal["context.changed"] = field(default="context.changed", kw_only=True)
     name: str
     value: str | None
     id: str = field(default_factory=lambda: uuid4().hex)
@@ -311,7 +313,7 @@ class ContextValueChanged(SessionEvent):
 class ObservationRecorded(SessionEvent):
     __hash__ = None
 
-    type: Literal["ObservationRecorded"] = field(default="ObservationRecorded", kw_only=True)
+    type: Literal["observation.recorded"] = field(default="observation.recorded", kw_only=True)
     observation: Observation
     turn_id: Identifier
     step: StepNumber
@@ -321,7 +323,7 @@ class ObservationRecorded(SessionEvent):
 class ModelRequested(SessionEvent):
     __hash__ = None
 
-    type: Literal["ModelRequested"] = field(default="ModelRequested", kw_only=True)
+    type: Literal["model.requested"] = field(default="model.requested", kw_only=True)
     request: ModelRequest
 
 
@@ -329,7 +331,7 @@ class ModelRequested(SessionEvent):
 class ModelUsageRecorded(SessionEvent):
     __hash__ = None
 
-    type: Literal["ModelUsageRecorded"] = field(default="ModelUsageRecorded", kw_only=True)
+    type: Literal["model.usage"] = field(default="model.usage", kw_only=True)
     usage: ModelUsage
 
 
@@ -337,7 +339,7 @@ class ModelUsageRecorded(SessionEvent):
 class CacheMetrics(SessionEvent):
     __hash__ = None
 
-    type: Literal["CacheMetrics"] = field(default="CacheMetrics", kw_only=True)
+    type: Literal["model.cache"] = field(default="model.cache", kw_only=True)
     usage: ModelUsage
     hit_rate: float | None = None
 
@@ -349,7 +351,7 @@ class CacheMetrics(SessionEvent):
 class CompactionApplied(SessionEvent):
     __hash__ = None
 
-    type: Literal["CompactionApplied"] = field(default="CompactionApplied", kw_only=True)
+    type: Literal["compaction.applied"] = field(default="compaction.applied", kw_only=True)
     through: int
     summary: str
     preserve_turns: tuple[str, ...] = ()
@@ -378,8 +380,8 @@ class CompactionApplied(SessionEvent):
 class ObservationPolicyApplied(SessionEvent):
     __hash__ = None
 
-    type: Literal["ObservationPolicyApplied"] = field(
-        default="ObservationPolicyApplied", kw_only=True
+    type: Literal["observation.policy.applied"] = field(
+        default="observation.policy.applied", kw_only=True
     )
     max_summaries: int | None = None
 
@@ -394,7 +396,7 @@ class ObservationPolicyApplied(SessionEvent):
 class SpillCreated(SessionEvent):
     __hash__ = None
 
-    type: Literal["SpillCreated"] = field(default="SpillCreated", kw_only=True)
+    type: Literal["spill.created"] = field(default="spill.created", kw_only=True)
     call_id: Identifier
     ref: SpillRef
     tokens: int
@@ -403,7 +405,7 @@ class SpillCreated(SessionEvent):
 @dataclass(frozen=True)
 class SpillExpired(SessionEvent):
     __hash__ = None
-    type: Literal["SpillExpired"] = field(default="SpillExpired", kw_only=True)
+    type: Literal["spill.expired"] = field(default="spill.expired", kw_only=True)
     ref: SpillRef
     reason: Literal["retention", "missing"] = "retention"
 
@@ -412,7 +414,7 @@ class SpillExpired(SessionEvent):
 class RuleTriggered(SessionEvent):
     __hash__ = None
 
-    type: Literal["RuleTriggered"] = field(default="RuleTriggered", kw_only=True)
+    type: Literal["rule.triggered"] = field(default="rule.triggered", kw_only=True)
     rule: str
     call_id: Identifier
     occurrence: int
@@ -426,7 +428,7 @@ class RuleTriggered(SessionEvent):
 class RuleEvaluated(SessionEvent):
     __hash__ = None
 
-    type: Literal["RuleEvaluated"] = field(default="RuleEvaluated", kw_only=True)
+    type: Literal["rule.evaluated"] = field(default="rule.evaluated", kw_only=True)
     rule: str
     key: str
     occurrence: int
@@ -436,7 +438,7 @@ class RuleEvaluated(SessionEvent):
 class AssistantMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["AssistantMessage"] = field(default="AssistantMessage", kw_only=True)
+    type: Literal["message.assistant"] = field(default="message.assistant", kw_only=True)
     message: Assistant
     interrupted: bool = False
     stop_reason: StopReason | None = None
@@ -452,7 +454,7 @@ class AssistantMessage(SessionEvent):
 class ToolCalled(SessionEvent):
     __hash__ = None
 
-    type: Literal["ToolCalled"] = field(default="ToolCalled", kw_only=True)
+    type: Literal["tool.called"] = field(default="tool.called", kw_only=True)
     call: ToolCall
 
     @property
@@ -464,7 +466,7 @@ class ToolCalled(SessionEvent):
 class ToolReturned(SessionEvent):
     __hash__ = None
 
-    type: Literal["ToolReturned"] = field(default="ToolReturned", kw_only=True)
+    type: Literal["tool.returned"] = field(default="tool.returned", kw_only=True)
     call_id: Identifier
     result: ToolResult
 
@@ -473,7 +475,7 @@ class ToolReturned(SessionEvent):
 class ToolCompleted(SessionEvent):
     __hash__ = None
 
-    type: Literal["ToolCompleted"] = field(default="ToolCompleted", kw_only=True)
+    type: Literal["tool.completed"] = field(default="tool.completed", kw_only=True)
     call_id: Identifier
     result: ToolResult
 
@@ -482,7 +484,7 @@ class ToolCompleted(SessionEvent):
 class ToolProgress(SessionEvent):
     __hash__ = None
 
-    type: Literal["ToolProgress"] = field(default="ToolProgress", kw_only=True)
+    type: Literal["tool.progress"] = field(default="tool.progress", kw_only=True)
     call_id: Identifier
     text: str
 
@@ -491,7 +493,7 @@ class ToolProgress(SessionEvent):
 class StepEnd(SessionEvent):
     __hash__ = None
 
-    type: Literal["StepEnd"] = field(default="StepEnd", kw_only=True)
+    type: Literal["step.finished"] = field(default="step.finished", kw_only=True)
     turn_id: Identifier
     step: StepNumber
     reason: StepOutcome = "completed"
@@ -505,7 +507,7 @@ class StepEnd(SessionEvent):
 class TurnEnd(SessionEvent):
     __hash__ = None
 
-    type: Literal["TurnEnd"] = field(default="TurnEnd", kw_only=True)
+    type: Literal["turn.ended"] = field(default="turn.ended", kw_only=True)
     turn_id: Identifier
     reason: TurnOutcome = "completed"
 
@@ -527,7 +529,7 @@ class OutputValidated(SessionEvent):
     """An accepted JSON answer, tied to the exact assistant message it validates."""
 
     __hash__ = None
-    type: Literal["OutputValidated"] = field(default="OutputValidated", kw_only=True)
+    type: Literal["output.validated"] = field(default="output.validated", kw_only=True)
     turn_id: Identifier
     schema_id: Identifier
     message_id: Identifier
@@ -544,7 +546,9 @@ class OutputValidationFailed(SessionEvent):
     """A bounded repair attempt; rejected input values are never echoed here."""
 
     __hash__ = None
-    type: Literal["OutputValidationFailed"] = field(default="OutputValidationFailed", kw_only=True)
+    type: Literal["output.validation.failed"] = field(
+        default="output.validation.failed", kw_only=True
+    )
     turn_id: Identifier
     schema_id: Identifier
     message_id: Identifier

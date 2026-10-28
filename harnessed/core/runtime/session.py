@@ -20,7 +20,7 @@ from harnessed.core.outputs import OutputTypes, OutputValues
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
-from harnessed.core.runtime.approvals import request_approval, revoke_approval
+from harnessed.core.runtime.approvals import SessionApprovals, request_approval, revoke_approval
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.inbox import InboxItem, SessionInbox
 from harnessed.core.runtime.options import AgentOptions, RunOptions
@@ -62,6 +62,7 @@ class Session:
         self.ctx, self.log, self.options = ctx, session, options
         self.id = session.id
         self.context = DynamicContext(session)
+        self.approvals = SessionApprovals(self)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
         self._runtime_guidance = {}
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
@@ -101,10 +102,6 @@ class Session:
 
     def last(self, kind):
         return self.log.last(kind)
-
-    @property
-    def approvals(self):
-        return self.log.approvals
 
     def fork(self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False):
         """Create a branch from a closed log prefix; pass it to Agent.session()."""

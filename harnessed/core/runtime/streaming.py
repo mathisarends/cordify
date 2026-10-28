@@ -9,6 +9,7 @@ from harnessed.core.errors import ApprovalUnavailable, SessionClosed
 from harnessed.core.hooks import ApprovalRequest, SessionAppended
 from harnessed.core.messages import Message
 from harnessed.core.model import OutputSchema
+from harnessed.core.runtime.approvals import _PendingApproval
 from harnessed.core.runtime.control import SessionStatus
 from harnessed.core.session.events import (
     AgentControlChanged,
@@ -26,7 +27,6 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.stream import (
     ApprovalNeeded,
-    PendingApproval,
     ReasoningDelta,
     StatusChanged,
     StreamEvent,
@@ -47,7 +47,7 @@ class StreamApprovals:
     def __init__(self, session: Session):
         self.session = session
         self.input_id: str | None = None
-        self.pending: dict[str, PendingApproval] = {}
+        self.pending: dict[str, _PendingApproval] = {}
 
     def prepared(self, item: InboxAdded) -> None:
         self.input_id = item.message.id
@@ -69,13 +69,18 @@ class StreamApprovals:
             or start.input_id != self.input_id
         ):
             return None
-        request = PendingApproval(event.request)
+        request = self.session.approvals._open(event.request)
         self.pending[request.request_id] = request
         try:
-            await self.session.log.publish(ApprovalNeeded(request))
+            await self.session.log.publish(
+                ApprovalNeeded(request.request_id, request.call, request.reason)
+            )
             return await request._decision
         except BaseException:
-            request._finish(ApprovalUnavailable("The approval wait ended before acknowledgement"))
+            self.session.approvals._finish(
+                request.request_id,
+                ApprovalUnavailable("The approval wait ended before acknowledgement"),
+            )
             raise
 
     def _ack(self, event: SessionAppended):
@@ -84,17 +89,20 @@ class StreamApprovals:
         record = event.event
         request = self.pending.pop(record.request_id, None)
         if request is not None:
-            request._finish(
+            self.session.approvals._finish(
+                request.request_id,
                 None
                 if record.status == "answered"
-                else ApprovalUnavailable(record.reason or "The approval was interrupted")
+                else ApprovalUnavailable(record.reason or "The approval was interrupted"),
             )
 
     async def __aexit__(self, *exc):
         await self._remove_answer()
         await self._remove_ack()
         for request in self.pending.values():
-            request._finish(ApprovalUnavailable("The approval stream was closed"))
+            self.session.approvals._finish(
+                request.request_id, ApprovalUnavailable("The approval stream was closed")
+            )
         self.pending.clear()
 
 
