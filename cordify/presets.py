@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from .core.approvals import validate_approval_timeout
 from .core.features import Bundle
@@ -142,7 +143,7 @@ def minimal(
 def coding(
     implementation: LLM,
     *,
-    root=".",
+    root: str | Path = ".",
     shell: bool = False,
     plugins: Iterable[PluginLike] = (),
     model: str | None = None,
@@ -151,8 +152,6 @@ def coding(
     max_parallel_tools: int = 4,
     approval_timeout: float = 300.0,
 ) -> Harness:
-    from pathlib import Path
-
     from .plugins.context.instructions import agents_md
     from .plugins.tools.fs import fs_local, fs_tools
     from .plugins.tools.shell import shell_local, shell_tools

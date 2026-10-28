@@ -43,6 +43,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.12", "3.13", "3.14"]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win32
+          - os: macos-latest
+            platform: darwin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install uv and matrix Python
@@ -55,6 +62,13 @@ jobs:
           cache-suffix: ${{ matrix.os }}-${{ matrix.python }}
       - name: Install locked dependencies
         run: uv sync --locked --all-extras
+      # Check each target in addition to the portable baseline in pre-commit.
+      - name: Type check Python and platform APIs
+        run: >-
+          uv run --locked --no-sync ty check
+          --python-version ${{ matrix.python }}
+          --python-platform ${{ matrix.platform }}
+          --error-on-warning --output-format github
       - name: Run tests and offline examples
         run: uv run --locked --no-sync pytest --junitxml=build/test-results.xml
       - name: Build distribution artifacts
