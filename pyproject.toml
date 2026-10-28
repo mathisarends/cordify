@@ -47,9 +47,12 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC"]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "TID252"]
 # Shell's public timeout parameter is implemented with asyncio.timeout internally.
 ignore = ["ASYNC109"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
 
 [tool.ty.environment]
 python-version = "3.12"

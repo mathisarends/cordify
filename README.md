@@ -110,6 +110,12 @@ agent = minimal(DeepSeekLLM(model="deepseek-flash"))
 # coding(adapter, root="./repo", shell=True) explicitly adds file tools and a shell.
 ```
 
+For plugin authors, `cordify.kernel` is the public entry point for `Context`,
+`Inject`, `plugin`, `hook`, and the other kernel APIs. Built-in plugins use this
+facade too, so reorganizing kernel modules does not change their imports.
+Cross-package imports use absolute `cordify` paths; single-dot sibling imports
+remain allowed. Ruff enforces this convention locally and in CI.
+
 OTel and extras for unimplemented capabilities are not included. MCP, sandbox
 backends, checkpoints, subagents, additional model adapters, and a voice preset
 can be added within these layers later.
