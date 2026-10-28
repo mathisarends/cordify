@@ -3,7 +3,6 @@ import json
 import pytest
 
 from harnessed import Harness, Message, ModelRequest, Session, ToolCall, ToolDefinition, ToolResult
-from harnessed.adapters.persistence import JsonlPersistence
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -18,8 +17,8 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import derive_messages
 from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.persistence import session_jsonl
 from harnessed.plugins.services import llm
+from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
 from harnessed.testing import ScriptedLLM
 
 

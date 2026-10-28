@@ -22,7 +22,7 @@ from harnessed.core.session.session import Session
 from harnessed.core.tools.registry import ToolError
 from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.filesystem import fs_local, fs_tools
-from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.sessions import session_jsonl
 from harnessed.plugins.shell import shell_local, shell_tools
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM

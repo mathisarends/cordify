@@ -45,6 +45,12 @@ class PromptPlan:
     """InstructionValues first, then guidance in plugin order; no implicit headings."""
 
     def __init__(self, instructions: InstructionValues = (), plugins: Iterable = ()):
+        plugins = tuple(plugins)
+        self.context_entries = tuple(
+            description
+            for plugin in plugins
+            if (description := getattr(plugin, "context_description", None)) is not None
+        )
         values = (instructions,) if isinstance(instructions, str) else tuple(instructions)
         entries: dict[str, PromptEntry] = {}
         literal_values = {value for value in values if isinstance(value, str)}
@@ -84,5 +90,8 @@ class PromptPlan:
         lines = [f"System prompt ({len(self.entries)} sections)"]
         for index, entry in enumerate(self.entries, 1):
             preview = str(entry.section._file) if entry.section._file else entry.section.text[:80]
-            lines.append(f"  {index}. {entry.section.name}: {preview!r} â€” {entry.origin}")
+            lines.append(f"  {index}. {entry.section.name}: {preview!r} - {entry.origin}")
+        if self.context_entries:
+            lines.append("Context (dynamic, outside the system prompt)")
+            lines.extend(f"  - {key}: {preview}" for key, preview in self.context_entries)
         return "\n".join(lines)

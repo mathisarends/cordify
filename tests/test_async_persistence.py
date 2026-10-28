@@ -3,16 +3,16 @@ import threading
 
 import pytest
 
-from harnessed.adapters.persistence import JsonlPersistence
 from harnessed.core.messages import Message
 from harnessed.core.session.events import UserMessage
 from harnessed.core.session.session import Session
+from harnessed.plugins.sessions import JsonlPersistence
 
 
 async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consistent(
     tmp_path, monkeypatch
 ):
-    import harnessed.adapters.persistence as persistence_module
+    import harnessed.plugins.sessions as persistence_module
 
     entered, release = threading.Event(), threading.Event()
     actual_fsync = persistence_module.os.fsync

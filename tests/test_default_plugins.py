@@ -13,7 +13,9 @@ from harnessed.core.tokens import TokenCounter
 from harnessed.plugins import (
     AgentLoop,
     Approvals,
+    ContextValue,
     Instructions,
+    JsonlSessions,
     MemorySessions,
     NoopTracer,
     Service,
@@ -78,3 +80,31 @@ async def test_unknown_model_window_and_async_token_counting_do_not_assume_128k(
         assert session.options.context_window is None
         await session.run("Go")
     assert len(counts) == 1
+
+
+async def test_jsonl_slot_resumes_across_configurations_and_releases_failed_leases(tmp_path):
+    def app(responses):
+        return Agent(model=ScriptedModel(responses), plugins=[JsonlSessions(tmp_path)])
+
+    async with app(["first"]).session("persisted") as session:
+        await session.run("Remember")
+        with pytest.raises(SessionLocked):
+            async with app([]).session("persisted"):
+                pytest.fail("Two JSONL writers acquired one session")
+    async with app(["second"]).session("persisted") as resumed:
+        assert "Remember" in [message.text for message in resumed.messages]
+        await resumed.run("Continue")
+    async with app([]).session("persisted") as resumed:
+        assert resumed.messages[-1].text == "second"
+
+
+async def test_context_plugin_is_inspectable_reversible_and_does_not_wake_idle_sessions():
+    model = ScriptedModel([])
+    app = Agent(model=model, plugins=[ContextValue("date", lambda: "today")])
+    assert "date: <evaluated per step>" in str(app.prompt)
+    async with app.session() as session:
+        mounted = await session.use(ContextValue("temporary", "value"))
+        await session.context.set("temporary", "value")
+        assert session.context.values == {"temporary": "value"}
+        await mounted.aclose()
+        assert session.context.values == {} and not model.requests

@@ -22,7 +22,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import derive_messages, derive_requests
 from harnessed.core.stream import TextDelta
-from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -115,7 +115,7 @@ async def test_exact_requests_include_request_hook_changes_without_rerunning_the
 async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_model_calls(
     tmp_path,
 ):
-    from harnessed.adapters.persistence import JsonlPersistence
+    from harnessed.plugins.sessions import JsonlPersistence
 
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("crashed")

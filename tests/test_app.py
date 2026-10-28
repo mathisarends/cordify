@@ -12,7 +12,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import Session
 from harnessed.models import Model
-from harnessed.plugins import Approvals, Instructions, Service, context
+from harnessed.plugins import Approvals, ContextValue, Instructions, Service
 from harnessed.testing import ScriptedModel
 
 
@@ -80,7 +80,7 @@ async def test_dynamic_context_is_durable_changes_only_and_does_not_change_syste
     app = Agent(
         model=ScriptedModel(["first", "second", "third"]),
         instructions="Fixed rules.",
-        plugins=[context("user", lambda: current[0])],
+        plugins=[ContextValue("user", lambda: current[0])],
     )
     async with app.session() as session:
         await session.run("First")

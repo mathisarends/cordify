@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from harnessed.core.approvals import Approvals as Approvals
     from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
     from harnessed.core.plugin import Service as Service
+    from harnessed.core.prompt.context import ContextValue as ContextValue
     from harnessed.core.prompt.instructions import Instructions as Instructions
     from harnessed.core.runtime.agent_loop import AgentLoop as AgentLoop
     from harnessed.core.session.store import MemorySessions as MemorySessions
@@ -17,7 +18,6 @@ if TYPE_CHECKING:
         SlidingWindowCompaction as SlidingWindowCompaction,
     )
     from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
-    from harnessed.plugins._context.dynamic import context as context
     from harnessed.plugins._context.observations import (
         LatestObservationOnly as LatestObservationOnly,
     )
@@ -28,8 +28,9 @@ if TYPE_CHECKING:
     from harnessed.plugins.observe.cache import CacheBreakpoints as CacheBreakpoints
     from harnessed.plugins.permissions.rules import Rules as Rules
     from harnessed.plugins.permissions.rules import when as when
-    from harnessed.plugins.persistence import session_jsonl as jsonl_sessions
     from harnessed.plugins.services import llm as llm
+    from harnessed.plugins.sessions import JsonlSessions as JsonlSessions
+    from harnessed.plugins.sessions import session_jsonl as jsonl_sessions
     from harnessed.plugins.shell import Shell as Shell
 _EXPORTS = {
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
@@ -41,10 +42,11 @@ _EXPORTS = {
     "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
     "Shell": ("harnessed.plugins.shell", "Shell"),
     "Service": ("harnessed.core.plugin", "Service"),
-    "jsonl_sessions": ("harnessed.plugins.persistence", "session_jsonl"),
+    "jsonl_sessions": ("harnessed.plugins.sessions", "session_jsonl"),
     "agent_loop": ("harnessed.plugins.agents.loop", "agent_loop"),
     "llm": ("harnessed.plugins.services", "llm"),
-    "context": ("harnessed.plugins._context.dynamic", "context"),
+    "ContextValue": ("harnessed.core.prompt.context", "ContextValue"),
+    "JsonlSessions": ("harnessed.plugins.sessions", "JsonlSessions"),
     "instructions": ("harnessed.plugins._context.prompt", "instructions"),
     "Approvals": ("harnessed.core.approvals", "Approvals"),
     "ContextBudgetGuard": ("harnessed.plugins._context.compaction", "ContextBudgetGuard"),
@@ -70,7 +72,8 @@ __all__ = [
     "jsonl_sessions",
     "agent_loop",
     "llm",
-    "context",
+    "ContextValue",
+    "JsonlSessions",
     "instructions",
     "Approvals",
     "ContextBudgetGuard",

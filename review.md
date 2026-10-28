@@ -96,9 +96,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Instructions then plugin guidance, literally and in order, fixed per session;
   placement/replacement/omission, file sections and origins already work.
 - Remove legacy persona/agents_md and order/stable prompt APIs from defaults.
-- Finish ContextValue as a public class plugin and show dynamic context in
-  diagnostics. Keep durable change detection, removal, compaction and resume.
-- Runtime guidance must continue following temporal teardown/restarts.
 
 ### P1-12 — Rule persistence
 

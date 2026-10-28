@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from harnessed import ApprovalAnswer, Bundle, ModelChunk, ToolCall, system
 from harnessed.core.session.events import LogTailRecovered, ToolReturned
 from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

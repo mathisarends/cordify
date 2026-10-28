@@ -1,9 +1,14 @@
 """Changed context values are durable facts, separate from fixed instructions."""
 
 import asyncio
+import inspect
+from collections.abc import Awaitable, Callable
 
+from harnessed.core.hooks import PreStep
+from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import ContextValueChanged
 from harnessed.core.session.session import Session
+from harnessed.kernel import Inject, hook
 
 
 class DynamicContext:
@@ -45,3 +50,34 @@ class DynamicContext:
 
     async def remove(self, name: str) -> None:
         await self.set(name, None)
+
+
+class ContextValue(Plugin):
+    """Refresh one named fact before each step, appending only actual changes."""
+
+    def __init__(
+        self,
+        key: str,
+        value: str | None | Callable[[], str | None | Awaitable[str | None]],
+    ):
+        super().__init__()
+        if not isinstance(key, str) or not key:
+            raise ValueError("Context names must be non-empty strings")
+        self.key, self.value = key, value
+
+    @property
+    def context_description(self) -> tuple[str, str]:
+        return self.key, "<evaluated per step>" if callable(self.value) else repr(self.value)
+
+    @hook(PreStep)
+    async def refresh(self, event, next_, context: Inject[DynamicContext]):
+        value = self.value() if callable(self.value) else self.value
+        if inspect.isawaitable(value):
+            value = await value
+        if value is not None and not isinstance(value, str):
+            raise TypeError("Context providers must return a string or None")
+        await context.set(self.key, value)
+        return await next_()
+
+    async def teardown(self, context: Inject[DynamicContext]):
+        await context.remove(self.key)

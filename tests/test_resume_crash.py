@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from harnessed import ApprovalAnswer, Bundle, ModelChunk, Session, ToolCall, user
-from harnessed.adapters.persistence import JsonlPersistence
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,
@@ -20,7 +19,7 @@ from harnessed.core.session.events import (
     ToolReturned,
 )
 from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -32,7 +31,7 @@ import sys
 from pathlib import Path
 from harnessed import Bundle, ApprovalAnswer, ModelChunk, ToolCall, system
 from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -327,7 +326,7 @@ async def test_failed_tail_archive_does_not_discard_any_bytes(tmp_path, monkeypa
     def fail(source, target):
         raise PermissionError("archive unavailable")
 
-    monkeypatch.setattr("harnessed.adapters.persistence.os.replace", fail)
+    monkeypatch.setattr("harnessed.plugins.sessions.os.replace", fail)
     with pytest.raises(PermissionError, match="archive unavailable"):
         await persistence.load("archive-failure")
     assert await asyncio.to_thread(path.read_bytes) == tail

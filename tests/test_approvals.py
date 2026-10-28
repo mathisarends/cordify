@@ -29,7 +29,7 @@ from harnessed.core.session.events import (
     ToolReturned,
 )
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
-from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

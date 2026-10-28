@@ -3,15 +3,25 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from harnessed.core.errors import SessionLocked
+from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import LogTailRecovered, SessionEvent
 from harnessed.core.session.session import Session
-from harnessed.kernel.effects import run_sync
+from harnessed.core.session.store import SessionPersistence, SessionStore
+from harnessed.kernel import Context, plugin, run_sync
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 class JsonlPersistence:
@@ -30,8 +40,8 @@ class JsonlPersistence:
         recover_tail: bool = False,
         durability: Literal["buffered", "flush", "fsync"] = "flush",
     ):
-        self.root = Path(root).resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root = Path(root)
+        self._root_ready = False
         if durability not in ("buffered", "flush", "fsync"):
             raise ValueError("Unknown durability mode")
         self.durability = "fsync" if fsync else durability
@@ -45,6 +55,10 @@ class JsonlPersistence:
     def _path(self, session_id: str) -> Path:
         if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}", session_id):
             raise ValueError("Session ids must be 1-128 letters, digits, underscores or hyphens")
+        if not self._root_ready:
+            self.root = self.root.resolve()
+            self.root.mkdir(parents=True, exist_ok=True)
+            self._root_ready = True
         return self.root / f"{session_id}.jsonl"
 
     def _check_open(self):
@@ -65,7 +79,7 @@ class JsonlPersistence:
     def _load(self, session_id: str) -> tuple[SessionEvent, ...]:
         path = self._path(session_id)
         if session_id in self._files:
-            raise RuntimeError(f"Session {session_id!r} already has a writer")
+            raise SessionLocked(f"Session {session_id!r} already has a writer")
         lock = path.with_suffix(".lock").open("a+b")
         lock.seek(0, os.SEEK_END)
         if lock.tell() == 0:
@@ -74,16 +88,12 @@ class JsonlPersistence:
         lock.seek(0)
         try:
             if os.name == "nt":
-                import msvcrt
-
                 msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
             else:
-                import fcntl
-
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             lock.close()
-            raise RuntimeError(f"Session {session_id!r} already has a writer") from exc
+            raise SessionLocked(f"Session {session_id!r} already has a writer") from exc
         try:
             events = []
             boundaries = {0}
@@ -238,3 +248,50 @@ class JsonlPersistence:
                     lock.close()
         finally:
             self._files.clear()
+
+
+class JsonlSessions(Plugin, slot="sessions"):
+    """Resume append-only conversations with an exclusive OS writer lock."""
+
+    class Config(PluginConfig):
+        root: Path
+        durability: Literal["buffered", "flush", "fsync"] = "flush"
+        recover_tail: bool = False
+
+    config: Config
+
+    def __init__(self, root: str | Path = ".harnessed/sessions", **options):
+        super().__init__(root=Path(root), **options)
+
+    async def setup(self, ctx: Context):
+        ctx.provide(SessionStore, _JsonlStore(self.config))
+
+
+class _JsonlStore:
+    def __init__(self, config: JsonlSessions.Config):
+        self.config = config
+
+    @asynccontextmanager
+    async def open(self, session_id: str) -> AsyncGenerator[SessionPersistence]:
+        persistence = await run_sync(partial(JsonlPersistence, **self.config.model_dump()))
+        try:
+            yield persistence
+        finally:
+            await persistence.aclose()
+
+
+@plugin()
+async def session_jsonl(
+    ctx: Context,
+    root: str | Path = ".sessions",
+    *,
+    fsync: bool = False,
+    recover_tail: bool = False,
+    durability: Literal["buffered", "flush", "fsync"] = "flush",
+):
+    persistence = JsonlPersistence(
+        root, fsync=fsync, recover_tail=recover_tail, durability=durability
+    )
+    ctx.effect(persistence.aclose)
+    ctx.provide(SessionPersistence, persistence)
+    yield

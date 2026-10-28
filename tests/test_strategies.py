@@ -44,8 +44,8 @@ from harnessed.core.session.events import (
 from harnessed.core.session.session import Session
 from harnessed.plugins._context.providers import compactor, spill_store
 from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.persistence import session_jsonl
 from harnessed.plugins.services import llm
+from harnessed.plugins.sessions import session_jsonl
 from harnessed.testing import ScriptedLLM
 
 
