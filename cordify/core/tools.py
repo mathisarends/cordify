@@ -1,9 +1,9 @@
 import asyncio
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, get_type_hints, overload
+from typing import Any, cast, get_type_hints, overload
 
 from ..kernel.context import Context
 from ..kernel.di import bind_injected, injections
@@ -84,11 +84,10 @@ class ToolRegistry:
         signature = inspect.signature(callback)
         hints = get_type_hints(callback, include_extras=True)
         injected = injections(callback)
-        arguments = ToolArguments.from_signature(
-            name or callback.__name__, signature, hints, injected
-        )
+        tool_name = name or getattr(callback, "__name__", type(callback).__name__)
+        arguments = ToolArguments.from_signature(tool_name, signature, hints, injected)
         definition = ToolDefinition(
-            name or callback.__name__,
+            tool_name,
             inspect.getdoc(callback) or "",
             arguments.schema,
         )
@@ -146,7 +145,9 @@ class ToolRegistry:
             if inspect.iscoroutine(keys):
                 keys.close()
             raise TypeError("Resource resolvers must return resource names, not an awaitable")
-        return ToolPlan(call, ToolScheduling(tool.parallel, keys), binding=tool)
+        return ToolPlan(
+            call, ToolScheduling(tool.parallel, tuple(cast(Iterable[str], keys))), binding=tool
+        )
 
     async def execute(
         self,
@@ -172,7 +173,9 @@ class ToolRegistry:
                 from .loop import Agent
 
                 call_context = ToolCallContext(call, ctx[Agent])
-            extra = {ToolCallContext: call_context} if call_context is not None else {}
+            extra: dict[type, Any] = (
+                {ToolCallContext: call_context} if call_context is not None else {}
+            )
             bound = bind_injected(tool.callback, ctx, kwargs=arguments, extra=extra)
             tool.signature.bind(*bound.args, **bound.kwargs)
             with tool.owner.activate():

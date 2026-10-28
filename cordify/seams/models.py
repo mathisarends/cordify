@@ -242,13 +242,12 @@ def message_from_dict(data: dict) -> Message:
     if not isinstance(content, str):
         kinds = {"text": TextPart, "image_url": ImagePart}
         content = tuple(kinds[part["type"]](**part) for part in content)
-    return Message(
-        **{
-            **data,
-            "content": content,
-            "tool_calls": tuple(ToolCall(**c) for c in data["tool_calls"]),
-        }
-    )
+    payload: dict[str, Any] = {
+        **data,
+        "content": content,
+        "tool_calls": tuple(ToolCall(**c) for c in data["tool_calls"]),
+    }
+    return Message(**payload)
 
 
 def request_from_dict(data: dict) -> ModelRequest:
@@ -262,17 +261,14 @@ def request_from_dict(data: dict) -> ModelRequest:
 
 
 def tool_result_from_dict(data: dict) -> ToolResult:
-    return ToolResult(
-        **{
-            **data,
-            "spill": SpillRef(**data["spill"]) if data.get("spill") is not None else None,
-            "truncation": (
-                OutputTruncation(**data["truncation"])
-                if data.get("truncation") is not None
-                else None
-            ),
-        }
-    )
+    payload: dict[str, Any] = {
+        **data,
+        "spill": SpillRef(**data["spill"]) if data.get("spill") is not None else None,
+        "truncation": (
+            OutputTruncation(**data["truncation"]) if data.get("truncation") is not None else None
+        ),
+    }
+    return ToolResult(**payload)
 
 
 def result_content(value: Any) -> str:

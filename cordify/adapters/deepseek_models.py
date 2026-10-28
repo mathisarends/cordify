@@ -34,7 +34,7 @@ class WireModel(BaseModel):
 class DeepSeekConfig(WireModel):
     model: NonEmpty = "deepseek-flash"
     api_key: SecretStr | None = None
-    base_url: AnyHttpUrl = Field(default="https://api.deepseek.com")
+    base_url: AnyHttpUrl = AnyHttpUrl("https://api.deepseek.com")
     timeout: Annotated[float, Field(gt=0)] = 120.0
 
     @field_validator("model")

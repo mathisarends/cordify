@@ -263,7 +263,7 @@ class InboxAdded(SessionEvent):
 class InboxRemoved(SessionEvent):
     type: ClassVar[str] = "agent/inbox/removed"
     message_id: str
-    reason: Literal["claimed", "canceled"] = "claimed"
+    reason: Literal["claimed", "canceled", "stopped"] = "claimed"
 
 
 @dataclass(frozen=True)

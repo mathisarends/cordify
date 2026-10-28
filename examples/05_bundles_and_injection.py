@@ -1,4 +1,4 @@
-"""Run with: python -m examples.05_bundles_and_injection"""
+"""Run with: uv run python -m examples.05_bundles_and_injection"""
 
 import asyncio
 
@@ -9,8 +9,7 @@ from cordify.plugins.permissions.approval import approval_gate, callback_approve
 from cordify.plugins.services import llm
 from cordify.plugins.tools.fs import fs_local
 from cordify.testing import ScriptedLLM
-
-from .features.workspace import FailureNudge, workspace_tools
+from examples.features.workspace import FailureNudge, workspace_tools
 
 
 async def main():

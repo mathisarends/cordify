@@ -65,14 +65,17 @@ def derive_turns(events: Iterable[SessionEvent]) -> tuple[Turn, ...]:
         elif isinstance(event, StepEnd):
             if step_start is None or (event.turn_id, event.step) != (turn_id, step_number):
                 raise ValueError("StepEnd must close the current step")
+            assert turn_id is not None
             steps.append(Step(turn_id, step_number, events[step_start : seq + 1], event.reason))
             step_start = None
         elif isinstance(event, TurnEnd):
             if turn_start is None or event.turn_id != turn_id or step_start is not None:
                 raise ValueError("TurnEnd must close the current turn after its last step")
+            assert turn_id is not None
             turns.append(Turn(turn_id, events[turn_start : seq + 1], tuple(steps), event.reason))
             turn_start, turn_id = None, None
     if turn_start is not None:
+        assert turn_id is not None
         if step_start is not None:
             steps.append(Step(turn_id, step_number, events[step_start:]))
         turns.append(Turn(turn_id, events[turn_start:], tuple(steps)))

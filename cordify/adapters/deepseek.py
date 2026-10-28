@@ -58,11 +58,13 @@ class DeepSeekLLM(LLM):
         retry: RetryPolicy | None = None,
     ):
         super().__init__(retry=retry)
-        self.config = DeepSeekConfig(
-            model="deepseek-flash" if model is None else model,
-            api_key=api_key,
-            base_url=base_url,
-            timeout=timeout,
+        self.config = DeepSeekConfig.model_validate(
+            {
+                "model": "deepseek-flash" if model is None else model,
+                "api_key": api_key,
+                "base_url": base_url,
+                "timeout": timeout,
+            }
         )
         self.client = client
 

@@ -27,8 +27,10 @@ class LocalShell:
                     pass
             await process.communicate()
             raise
+        returncode = process.returncode
+        assert returncode is not None
         return ProcResult(
-            process.returncode,
+            returncode,
             stdout.decode(errors="replace"),
             stderr.decode(errors="replace"),
         )

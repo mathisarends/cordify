@@ -1,4 +1,4 @@
-"""Run with: python -m examples.21_validated_forms"""
+"""Run with: uv run python -m examples.21_validated_forms"""
 
 import asyncio
 import json
@@ -83,7 +83,9 @@ async def validated_tool():
                 (definition,),
             )
         )
-        assert wire.tools[0].function.parameters["$defs"]["IssueForm"]
+        assert wire.tools
+        definitions = wire.tools[0].function.parameters["$defs"]
+        assert isinstance(definitions, dict) and "IssueForm" in definitions
         print("The same schema is included in a validated DeepSeek request.")
 
 

@@ -142,7 +142,8 @@ class PluginHandle:
         try:
             await asyncio.shield(self._start_task)
         except asyncio.CancelledError:
-            if asyncio.current_task().cancelling():
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
                 self._start_task.cancel()
                 try:
                     await self._start_task
@@ -291,7 +292,7 @@ def plugin(fn=None, /, *, needs: Iterable[ServiceKey[Any]] = (), name: str | Non
             dependencies = tuple(dict.fromkeys((*needs, *injections(factory).values())))
             return PluginSpec(name or factory.__name__, factory, dependencies, args, kwargs)
 
-        configure._cordify_plugin = True
+        vars(configure)["_cordify_plugin"] = True
         return configure
 
     return decorate(fn) if fn is not None else decorate

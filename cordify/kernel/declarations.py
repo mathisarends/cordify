@@ -24,7 +24,8 @@ def _hooks(entries: Iterable[HookEntry]):
 
 
 class Registration(Protocol):
-    needs: tuple[Any, ...]
+    @property
+    def needs(self) -> tuple[Any, ...]: ...
 
     def mount(self, ctx: "Context", callback: Callable) -> Any: ...
 
@@ -94,10 +95,10 @@ class Plugin:
     def clone(self):
         return copy.deepcopy(self)
 
-    async def setup(self, ctx):
+    async def setup(self, *args: Any, **kwargs: Any):
         pass
 
-    async def teardown(self, ctx):
+    async def teardown(self, *args: Any, **kwargs: Any):
         pass
 
     def _registration_entries(self):

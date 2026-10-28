@@ -168,7 +168,12 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                 observations.setdefault(observation.source, []).append(seq)
     visible_observations = set()
     for indices in observations.values():
-        older = [seq for seq in indices if (events[seq].turn_id, events[seq].step) != active_step]
+        older = [
+            seq
+            for seq in indices
+            if isinstance(observation := events[seq], ObservationRecorded)
+            and (observation.turn_id, observation.step) != active_step
+        ]
         visible_observations.update(
             older if max_summaries is None else older[-max_summaries:] if max_summaries else ()
         )

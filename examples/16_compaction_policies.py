@@ -1,6 +1,7 @@
-"""Run with: python -m examples.16_compaction_policies"""
+"""Run with: uv run python -m examples.16_compaction_policies"""
 
 import asyncio
+from typing import TypedDict
 
 from cordify import (
     ContextBudgetExceeded,
@@ -14,6 +15,12 @@ from cordify import (
 from cordify.core.events import CompactionApplied
 from cordify.presets import minimal
 from cordify.testing import ScriptedLLM
+
+
+class Retention(TypedDict):
+    keep_turns: int
+    keep_first_turns: int
+    summary_tokens: int
 
 
 async def compare(name, policy):
@@ -45,7 +52,7 @@ async def compare(name, policy):
 
 
 async def main():
-    retention = {"keep_turns": 1, "keep_first_turns": 1, "summary_tokens": 48}
+    retention: Retention = {"keep_turns": 1, "keep_first_turns": 1, "summary_tokens": 48}
     await compare("threshold", ThresholdCompaction(at=0.6, **retention))
     await compare("window", SlidingWindowCompaction(**retention))
     await compare("periodic", PeriodicCompaction(every=3, **retention))
