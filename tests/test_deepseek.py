@@ -5,6 +5,7 @@ import pytest
 
 from harnessed import Message, ModelRequest, RetryPolicy, ToolCall, ToolDefinition
 from harnessed.adapters.deepseek import DeepSeekLLM
+from harnessed.seams.errors import ProviderError
 
 
 def sse(*deltas, done=True):
@@ -193,7 +194,7 @@ async def test_http_retries_close_failed_responses_and_leave_borrowed_clients_op
             ] == ["ok"]
             assert len(responses) == 2
         else:
-            with pytest.raises(httpx.HTTPStatusError):
+            with pytest.raises(ProviderError):
                 _ = [
                     chunk
                     async for chunk in adapter.stream(

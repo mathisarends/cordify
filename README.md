@@ -1737,3 +1737,20 @@ Legacy `Harness` and `minimal` composition remain available. The runtime object
 is imported explicitly as `AgentHandle` for service injection; `Agent` now names
 the application configuration. See examples 01 and 02 for the application API,
 and example 23 for the lower-level lifecycle and service composition.
+
+### Provider lifecycle and failures
+
+The DeepSeek adapter reuses an owned HTTP client and exposes `aclose()` and an
+async context manager. The public LLM service leases managed adapters across
+sessions and closes owned resources after the final session releases its lease.
+A supplied HTTP client stays owned by its caller. Custom structural adapters
+may optionally implement `harnessed.seams.llm.ManagedLLM`.
+
+Provider-neutral errors live in `harnessed.seams`: `ProviderError`, `AuthError`,
+`RateLimited`, `ContextLengthExceeded`, `InvalidRequest`, `ProviderUnavailable`.
+HTTP errors expose `status_code`, `body`, and optional `retry_after`. Retries use
+full jitter, honor Retry-After, and stop once a chunk has become visible.
+DeepSeek finish reasons map to neutral `ModelChunk.stop_reason` values.
+
+Adapter behavior is checked against the [DeepSeek API contract](https://api-docs.deepseek.com/api/create-chat-completion/)
+and [HTTPX client lifecycle guidance](https://www.python-httpx.org/async/).

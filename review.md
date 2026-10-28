@@ -20,6 +20,7 @@
 - P0-7 / 3.1 (partial): `Agent(llm=..., instructions=..., plugins=...)` is available, with explicit slot replacement/conflict checks and an ephemeral `run`. It uses the same public plugins as the expanded composition. Low-level runtime imports are explicit `AgentHandle` imports; the broad compatibility exports remain.
 - P0-5 (partial): the application Agent defaults to read-only ALLOW / side-effect ASK; no approval responder yields unavailable. `Approvals(trust="all")` is the explicit opt-out. Legacy presets and shell hardening remain open.
 - P0-1 (partial): event snapshots are cached; exact-kind `last` and `since` indexes avoid repeated backward scans. Full incremental projection reducers remain open.
+- P1-10 (partial): pooled owned HTTP clients with explicit close and shared session leases; borrowed clients stay open. HTTP failures have typed neutral errors and readable bodies; Retry-After wins over full-jitter backoff. Provider stop reasons reach the log. Generic/Anthropic adapters and the legacy constructor's default model remain open.
 - P2-9: first examples now show the application facade and its expanded plugin composition; the previous lifecycle example remains as example 23.
 - Remaining findings: open; implementation and verification are in progress.
 
@@ -435,13 +436,13 @@ Regel für Contributor: *„Kommt der Wert von außen (User-Config, Datei, Netzw
   **→ Empfehlung:** Mit `functools.cached_property` cachen.
 
 #### P1-10 · DeepSeek-Adapter
-- **Neuer `httpx.AsyncClient` pro Request,** wenn kein `client` übergeben wird (`adapters/deepseek.py:121`). Ohne `aclose`.
+~~- **Neuer `httpx.AsyncClient` pro Request,** wenn kein `client` übergeben wird (`adapters/deepseek.py:121`). Ohne `aclose`.~~
   **→ Empfehlung:** Ein Client pro Adapter-Instanz, lazy erzeugt und über `aclose()` bzw. den Plugin-Disposer geschlossen.
-- **Der Fehlerbody wird nicht gelesen** (`raise_for_status()` im Stream, `:130`).
+~~- **Der Fehlerbody wird nicht gelesen** (`raise_for_status()` im Stream, `:130`).~~
   **→ Empfehlung:** Vorher `await response.aread()` und den Body in die Exception packen.
-- **Keine typisierte Fehlerhierarchie.**
+~~- **Keine typisierte Fehlerhierarchie.**~~
   **→ Empfehlung:** `ProviderError` mit den Unterklassen `RateLimited(retry_after)`, `ContextLengthExceeded`, `AuthError` und `InvalidRequest` in `seams`. Damit wird reaktive Compaction möglich (4.2).
-- **`Retry-After` wird ignoriert, Retries laufen ohne Jitter** (`adapters/base.py:34-50`).
+~~- **`Retry-After` wird ignoriert, Retries laufen ohne Jitter** (`adapters/base.py:34-50`).~~
   **→ Empfehlung:** Exponentielles Backoff mit Full-Jitter, wobei `Retry-After` Vorrang hat.
 - Der Default-Modellname `"deepseek-flash"` ist hart kodiert (`:63`).
   **→ Empfehlung:** Den Modellnamen als Pflichtparameter verlangen.

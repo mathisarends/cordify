@@ -6,6 +6,12 @@ if TYPE_CHECKING:
     from harnessed.seams.approver import ApprovalUnavailable as ApprovalUnavailable
     from harnessed.seams.approver import Approver as Approver
     from harnessed.seams.compaction import Compactor as Compactor
+    from harnessed.seams.errors import AuthError as AuthError
+    from harnessed.seams.errors import ContextLengthExceeded as ContextLengthExceeded
+    from harnessed.seams.errors import InvalidRequest as InvalidRequest
+    from harnessed.seams.errors import ProviderError as ProviderError
+    from harnessed.seams.errors import ProviderUnavailable as ProviderUnavailable
+    from harnessed.seams.errors import RateLimited as RateLimited
     from harnessed.seams.fs import FS as FS
     from harnessed.seams.llm import LLM as LLM
     from harnessed.seams.models import ContentPart as ContentPart
@@ -35,6 +41,12 @@ if TYPE_CHECKING:
     from harnessed.seams.spill import SpillStore as SpillStore
     from harnessed.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "ProviderUnavailable": ("harnessed.seams.errors", "ProviderUnavailable"),
+    "InvalidRequest": ("harnessed.seams.errors", "InvalidRequest"),
+    "ContextLengthExceeded": ("harnessed.seams.errors", "ContextLengthExceeded"),
+    "RateLimited": ("harnessed.seams.errors", "RateLimited"),
+    "AuthError": ("harnessed.seams.errors", "AuthError"),
+    "ProviderError": ("harnessed.seams.errors", "ProviderError"),
     "ApprovalUnavailable": ("harnessed.seams.approver", "ApprovalUnavailable"),
     "OutputTruncation": ("harnessed.seams.models", "OutputTruncation"),
     "freeze": ("harnessed.seams.models", "freeze"),
@@ -68,6 +80,12 @@ _EXPORTS = {
     "SpillStore": ("harnessed.seams.spill", "SpillStore"),
 }
 __all__ = [
+    "ProviderUnavailable",
+    "InvalidRequest",
+    "ContextLengthExceeded",
+    "RateLimited",
+    "AuthError",
+    "ProviderError",
     "ApprovalUnavailable",
     "OutputTruncation",
     "freeze",

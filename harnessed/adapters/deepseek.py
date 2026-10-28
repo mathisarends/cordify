@@ -1,9 +1,21 @@
+import math
 import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from typing import cast
 
-from harnessed.seams.models import ModelChunk, ModelRequest, ModelUsage, ToolCall
+from harnessed.seams.errors import (
+    AuthError,
+    ContextLengthExceeded,
+    InvalidRequest,
+    ProviderError,
+    ProviderUnavailable,
+    RateLimited,
+)
+from harnessed.seams.models import ModelChunk, ModelRequest, ModelUsage, StopReason, ToolCall
 
 from .base import LLM, RetryPolicy
 from .deepseek_models import (
@@ -63,6 +75,18 @@ class DeepSeekLLM(LLM):
             }
         )
         self.client = client
+        self._owned_client = None
+
+    async def aclose(self) -> None:
+        if self._owned_client is not None:
+            client, self._owned_client = self._owned_client, None
+            await client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.aclose()
 
     @property
     def model(self) -> str:
@@ -114,7 +138,9 @@ class DeepSeekLLM(LLM):
         async with AsyncExitStack() as stack:
             client = self.client
             if client is None:
-                client = await stack.enter_async_context(httpx.AsyncClient(timeout=self.timeout))
+                if self._owned_client is None:
+                    self._owned_client = httpx.AsyncClient(timeout=self.timeout)
+                client = self._owned_client
             response = await stack.enter_async_context(
                 client.stream(
                     "POST",
@@ -123,7 +149,9 @@ class DeepSeekLLM(LLM):
                     headers={"Authorization": f"Bearer {api_key}"},
                 )
             )
-            response.raise_for_status()
+            if response.is_error:
+                await response.aread()
+                raise _response_error(response)
             async for content in iter_sse_data(response.aiter_lines()):
                 if content == "[DONE]":
                     done = True
@@ -140,6 +168,16 @@ class DeepSeekLLM(LLM):
                         )
                     for fragment in delta.tool_calls or ():
                         calls.setdefault(fragment.index, _PendingToolCall()).add(fragment)
+                    if choice.finish_reason is not None:
+                        reason = {
+                            "stop": "end",
+                            "length": "max_tokens",
+                            "tool_calls": "tool_calls",
+                            "content_filter": "content_filter",
+                            "insufficient_system_resource": "error",
+                            "aborted": "error",
+                        }.get(choice.finish_reason, "error")
+                        yield ModelChunk(stop_reason=cast(StopReason, reason))
                 if data.usage is not None:
                     usage = data.usage
                     yield ModelChunk(
@@ -164,7 +202,51 @@ def deepseek(*, model: str | None = None, api_key: str | None = None, **kwargs):
 
     @plugin(name="llm")
     async def provide(ctx):
+        ctx.effect(implementation.acquire())
         ctx.provide(LLM, implementation)
         yield
 
     return provide()
+
+
+def _response_error(response) -> ProviderError:
+    status = response.status_code
+    body = response.text
+    kind = ProviderError
+    if status in (401, 403):
+        kind = AuthError
+    elif status == 429:
+        kind = RateLimited
+    elif status in (408, 504) or status >= 500:
+        kind = ProviderUnavailable
+    elif status in (400, 413, 422):
+        kind = (
+            ContextLengthExceeded
+            if any(
+                term in body.lower()
+                for term in ("context_length_exceeded", "context length", "maximum context")
+            )
+            else InvalidRequest
+        )
+    return kind(
+        f"DeepSeek request failed (HTTP {status})",
+        status_code=status,
+        body=body,
+        retry_after=_retry_after(response.headers.get("retry-after")),
+    )
+
+
+def _retry_after(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            timestamp = parsedate_to_datetime(value)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=UTC)
+            seconds = (timestamp - datetime.now(UTC)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0.0, seconds) if math.isfinite(seconds) else None

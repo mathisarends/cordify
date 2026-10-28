@@ -1,10 +1,15 @@
 import asyncio
+import logging
 import math
+import random
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
+from harnessed.seams.errors import ProviderUnavailable, RateLimited
 from harnessed.seams.models import ModelChunk, ModelRequest
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,12 +33,32 @@ class LLM:
 
     def __init__(self, *, retry: RetryPolicy | None = None):
         self.retry = retry if retry is not None else RetryPolicy()
+        self._leases = 0
+
+    def acquire(self):
+        """Lease shared adapters across sessions; the final release closes owned resources."""
+        self._leases += 1
+        active = True
+
+        async def release():
+            nonlocal active
+            if active:
+                active = False
+                self._leases -= 1
+                if self._leases == 0:
+                    await self.aclose()
+
+        return release
+
+    async def aclose(self) -> None:
+        """Optional resource cleanup for provider implementations."""
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelChunk]:
         """Retry transient failures only before the first emitted chunk."""
         delay = min(self.retry.initial_delay, self.retry.max_delay)
         for attempt in range(1, self.retry.max_attempts + 1):
             emitted = False
+            retry_after = None
             try:
                 async with AsyncExitStack() as stack:
                     chunks = self._stream_once(request)
@@ -46,12 +71,18 @@ class LLM:
             except Exception as error:
                 if emitted or attempt == self.retry.max_attempts or not self.is_retryable(error):
                     raise
-            await asyncio.sleep(delay)
+                retry_after = getattr(error, "retry_after", None)
+                log.warning(
+                    "Retrying model request after %s (attempt %d)", type(error).__name__, attempt
+                )
+            await asyncio.sleep(
+                retry_after if retry_after is not None else random.uniform(0, delay)
+            )
             delay = min(self.retry.max_delay, delay * self.retry.multiplier)
 
     def is_retryable(self, error: Exception) -> bool:
         """Override to classify provider-specific transient failures."""
-        return isinstance(error, TimeoutError | ConnectionError)
+        return isinstance(error, TimeoutError | ConnectionError | RateLimited | ProviderUnavailable)
 
     def _stream_once(self, request: ModelRequest) -> AsyncIterator[ModelChunk]:
         raise NotImplementedError

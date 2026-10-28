@@ -1,7 +1,7 @@
 from harnessed.core.prompt import SystemPrompt
 from harnessed.core.tools import ToolRegistry
 from harnessed.kernel import Context, plugin
-from harnessed.seams.llm import LLM
+from harnessed.seams.llm import LLM, ManagedLLM
 
 
 @plugin()
@@ -18,5 +18,7 @@ async def system_prompt(ctx: Context):
 
 @plugin(slot="llm")
 async def llm(ctx: Context, implementation: LLM):
+    if isinstance(implementation, ManagedLLM):
+        ctx.effect(implementation.acquire())
     ctx.provide(LLM, implementation)
     yield

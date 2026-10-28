@@ -7,6 +7,8 @@ from types import MappingProxyType
 from typing import Any, Literal
 from uuid import uuid4
 
+type StopReason = Literal["end", "tool_calls", "max_tokens", "content_filter", "error"]
+
 
 def freeze(value: Any) -> Any:
     if value is None or isinstance(value, str | bool | int):
@@ -247,7 +249,7 @@ class ModelChunk:
     reasoning: str = ""
     tool_call: ToolCall | None = None
     usage: ModelUsage | None = None
-    stop_reason: Literal["end", "tool_calls", "max_tokens", "content_filter", "error"] | None = None
+    stop_reason: StopReason | None = None
 
 
 def message_from_dict(data: dict) -> Message:

@@ -33,6 +33,7 @@ class FlakyLLM(LLM):
 
 
 async def test_retry_backoff_is_capped_and_attempts_close_before_waiting(monkeypatch):
+    monkeypatch.setattr("harnessed.adapters.base.random.uniform", lambda low, high: high)
     adapter = FlakyLLM(
         failures=3,
         retry=RetryPolicy(max_attempts=4, initial_delay=0.5, max_delay=0.75),
