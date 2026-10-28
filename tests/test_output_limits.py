@@ -1,7 +1,5 @@
-import asyncio
 import json
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -12,13 +10,14 @@ from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolReturned
+from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.plugins import Approvals, JsonlSessions, Service
 from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
 from harnessed.plugins.shell import LocalShell, ShellBackend, ShellTools
-from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, SpillStore
+from harnessed.plugins.spill import Spill
 from harnessed.testing import ScriptedModel
 
 
@@ -125,7 +124,6 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
     async def large() -> str:
         return original
 
-    store = LocalSpillStore(tmp_path)
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     async with Application(
         model=model,
@@ -133,16 +131,19 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
             Approvals(trust="all"),
             ToolOutputLimit(4096),
             features,
-            Service(SpillStore, store),
-            SpillLargeResults(max_tokens=100),
+            JsonlSessions(tmp_path),
+            Spill(threshold_tokens=100),
         ],
     ).session("spill-budget") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert result.spill is not None and len(result.content) <= 4096
-        assert (
-            await asyncio.to_thread(Path(result.spill.path).read_text, encoding="utf-8") == original
-        )
+        files = agent.ctx[SessionFiles]
+        chunks = [
+            await files.read(result.spill.path, offset=offset, limit=16000)
+            for offset in range(0, len(original), 16000)
+        ]
+        assert "".join(chunks) == original
         assert "read_spill" in result.content
 
 

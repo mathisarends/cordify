@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from harnessed.plugins.shell import Shell as Shell
     from harnessed.plugins.shell import ShellTools as ShellTools
     from harnessed.plugins.spill import Spill as Spill
-    from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
 
 _EXPORTS = {
     "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
@@ -50,7 +49,6 @@ _EXPORTS = {
     "Shell": ("harnessed.plugins.shell", "Shell"),
     "ShellTools": ("harnessed.plugins.shell", "ShellTools"),
     "Spill": ("harnessed.plugins.spill", "Spill"),
-    "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
     "ToolOutputLimit": ("harnessed.core.tools.output_limit", "ToolOutputLimit"),
     "at_ratio": ("harnessed.plugins.compaction", "at_ratio"),
     "every_turns": ("harnessed.plugins.compaction", "every_turns"),
@@ -76,7 +74,6 @@ __all__ = [
     "Shell",
     "ShellTools",
     "Spill",
-    "SpillLargeResults",
     "ToolOutputLimit",
     "at_ratio",
     "every_turns",

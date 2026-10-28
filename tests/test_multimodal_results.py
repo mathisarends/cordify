@@ -7,14 +7,13 @@ import pytest
 from harnessed import Agent, Plugin
 from harnessed.core.messages import ImagePart, TextPart, ToolReply, ToolResult
 from harnessed.core.model import ModelInfo, ModelRequest
-from harnessed.core.plugin import Service
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import ApproximateTokenCounter, count_content
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.plugins import Rules, when
-from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, SpillStore
+from harnessed.plugins.spill import Spill, SpillStore
 from harnessed.testing import ScriptedModel, call
 
 IMAGE = ImagePart("data:image/png;base64,aW1hZ2U=", detail="high")
@@ -28,12 +27,11 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
         def screenshot(self) -> ToolResult:
             return ToolResult((TextPart(TEXT), IMAGE), exit_code=0)
 
-    files = LocalSpillStore(tmp_path)
     plugins = [Screenshot(), Rules([when(tool="screenshot").note("Keep the image.")])]
     if policy == "limit":
         plugins.append(ToolOutputLimit(max_chars=256))
     elif policy == "spill":
-        plugins += [Service(SpillStore, files), SpillLargeResults(max_tokens=32, preview_tokens=4)]
+        plugins.append(Spill(threshold_tokens=32, preview_tokens=4))
     model = ScriptedModel(
         [call("screenshot"), "I can see it."],
         info=ModelInfo("vision", context_window=128_000, supports_images=True),
@@ -54,7 +52,7 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
             assert ToolOutputLimit(256).apply(tool_result) is tool_result
         elif policy == "spill":
             assert tool_result.spill
-            full = await files.read(tool_result.spill.path, limit=16000)
+            full = await session.ctx[SpillStore].read(tool_result.spill.path, limit=16000)
             assert TEXT in full and "Keep the image." in tool_result.text
         else:
             assert "Keep the image." in tool_result.text

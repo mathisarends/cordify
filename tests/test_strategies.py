@@ -1,6 +1,5 @@
 import asyncio
 import json
-from pathlib import Path
 
 import pytest
 
@@ -19,27 +18,27 @@ from harnessed.core.session.events import (
     ObservationPolicyApplied,
     SpillCreated,
     SystemMessage,
-    ToolReturned,
     TurnEnd,
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.tools.registry import ToolError
 from harnessed.plugins import (
     AgentLoop,
     Approvals,
     Compaction,
     JsonlSessions,
-    Service,
     at_ratio,
     every_turns,
 )
 from harnessed.plugins.observations import LatestObservationOnly
-from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, SpillStore
+from harnessed.plugins.spill import Spill, SpillStore
 from harnessed.testing import ExtractiveSummarizer, ScriptedModel
 
 
-async def test_large_results_spill_to_persistent_file_and_keep_structured_metadata(tmp_path):
+async def test_large_results_spill_to_session_files_and_keep_structured_metadata(tmp_path):
     tools = Bundle("large")
     original = "output\n" * 4000
 
@@ -48,24 +47,25 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
         return ToolResult(original, "error", exit_code=3)
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
-    store = LocalSpillStore(tmp_path)
-    harness = Application(
+    app = Application(
         model=model,
         plugins=[
             Approvals(trust="all"),
             tools,
-            Service(SpillStore, store),
-            SpillLargeResults(100, preview_tokens=8),
+            JsonlSessions(tmp_path),
+            Spill(threshold_tokens=100, preview_tokens=8),
         ],
     )
-    async with harness.session("spill") as agent:
-        await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+    async with app.session("spill") as agent:
+        result = (await agent.run("go")).tool_calls[0][1]
         assert result.exit_code == 3 and result.status == "error"
         assert result.spill is not None and result.content != original
-        assert (
-            await asyncio.to_thread(Path(result.spill.path).read_text, encoding="utf-8") == original
-        )
+        files = agent.ctx[SessionFiles]
+        chunks = [
+            await files.read(result.spill.path, offset=offset, limit=16000)
+            for offset in range(0, len(original), 16000)
+        ]
+        assert "".join(chunks) == original
         assert "read_spill" in result.content and len(result.content) < len(original)
         assert {t.name for t in model.requests[0].tools} == {"large", "read_spill"}
         assert model.requests[1].messages[-1].text == result.content
@@ -76,59 +76,50 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
         assert Session("replay", seed=events).messages == agent.log.messages
         assert any(isinstance(e, SpillCreated) for e in events)
         ref = result.spill
-    assert await store.read(ref.path, offset=7, limit=6) == "output"
+    async with Application(
+        model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path), Spill()]
+    ).session("spill") as restored:
+        assert await restored.ctx[SpillStore].read(ref.path, offset=7, limit=6) == "output"
 
 
-async def test_spill_reads_unicode_character_ranges_reject_escape_and_reuse_content(tmp_path):
-    store = LocalSpillStore(tmp_path)
-    refs = await asyncio.gather(*(store.put("ä😀abc") for _ in range(20)))
-    first = refs[0]
-    assert all(ref == first for ref in refs)
-    assert await store.read(first.path, offset=1, limit=2) == "😀a"
-    assert await store.read(first.path, offset=100) == ""
-    with pytest.raises(ValueError, match="outside"):
-        await store.read(str(tmp_path.parent / "outside.txt"))
-    with pytest.raises(ValueError, match="limit"):
-        await store.read(first.path, limit=16001)
+async def test_session_spill_reads_unicode_ranges_reject_escape_and_reuse_content(tmp_path):
+    async with Application(model=ScriptedModel([]), plugins=[Spill()]).session() as session:
+        store = session.ctx[SpillStore]
+        refs = await asyncio.gather(*(store.put("ä😀abc") for _ in range(20)))
+        first = refs[0]
+        assert all(ref == first for ref in refs)
+        assert await store.read(first.path, offset=1, limit=2) == "😀a"
+        assert await store.read(first.path, offset=100) == ""
+        with pytest.raises(ToolError, match="does not belong"):
+            await store.read(str(tmp_path.parent / "outside.txt"))
+        with pytest.raises(ValueError):
+            await store.read(first.path, limit=16001)
 
 
-async def test_spill_reuses_verified_concurrent_winner_on_windows_replace_race(
-    tmp_path, monkeypatch
-):
-
-    def racing_replace(source, destination):
-        destination.write_bytes(source.read_bytes())
-        raise PermissionError("target opened by concurrent writer")
-
-    monkeypatch.setattr("harnessed.plugins.spill.os.replace", racing_replace)
-    ref = await LocalSpillStore(tmp_path).put("concurrent content")
-    assert await LocalSpillStore(tmp_path).read(ref.path) == "concurrent content"
-    assert not list(tmp_path.glob("*.tmp"))
-
-
-async def test_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatch):
-
+async def test_session_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatch):
     def denied(source, destination):
         raise PermissionError("write denied")
 
-    monkeypatch.setattr("harnessed.plugins.spill.os.replace", denied)
-    with pytest.raises(PermissionError, match="write denied"):
-        await LocalSpillStore(tmp_path).put("content")
-    assert not list(tmp_path.glob("*.tmp"))
-
-
-async def test_read_spill_tool_returns_bounded_ranges_without_respilling(tmp_path):
-    store = LocalSpillStore(tmp_path)
-    ref = await store.put("x" * 100)
-    model = ScriptedModel(
-        [[ModelChunk(tool_call=ToolCall("read_spill", {"path": ref.path, "limit": 40}))], "done"]
-    )
     async with Application(
-        model=model,
-        plugins=[Approvals(trust="all"), Service(SpillStore, store), SpillLargeResults(1)],
-    ).session("read-spill") as agent:
-        await agent.run("read")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path), Spill()]
+    ).session() as session:
+        monkeypatch.setattr("harnessed.plugins.sessions.os.replace", denied)
+        with pytest.raises(PermissionError, match="write denied"):
+            await session.ctx[SpillStore].put("content")
+        assert not list(tmp_path.rglob("*.tmp"))
+
+
+async def test_read_spill_tool_returns_bounded_ranges_without_respilling():
+    model = ScriptedModel([])
+    async with Application(model=model, plugins=[Spill(threshold_tokens=1)]).session() as agent:
+        ref = await agent.ctx[SpillStore].put("x" * 100)
+        model.responses.extend(
+            [
+                [ModelChunk(tool_call=ToolCall("read_spill", {"path": ref.path, "limit": 40}))],
+                "done",
+            ]
+        )
+        result = (await agent.run("read")).tool_calls[0][1]
         assert result.content == "x" * 40 and result.spill is None
         assert not any(isinstance(e, SpillCreated) for e in agent.log.events)
 
@@ -374,7 +365,7 @@ async def test_model_summarizer_keeps_tool_names_and_arguments_in_summary_input(
         lambda: Compaction(trigger=at_ratio(0), summarizer=ExtractiveSummarizer()),
         lambda: Compaction(trigger=at_ratio(1.1), summarizer=ExtractiveSummarizer()),
         lambda: Compaction(trigger=at_ratio(0.8), summarizer=ExtractiveSummarizer(), keep_turns=-1),
-        lambda: SpillLargeResults(0),
+        lambda: Spill(threshold_tokens=0),
         lambda: LatestObservationOnly(max_summaries=-1),
         lambda: ModelUsage(-1),
     ],
