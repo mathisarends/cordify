@@ -121,3 +121,17 @@ Disk reads, atomic replacements, flushes and directory scans run off the event
 loop. Cancellation drains an in-flight worker before a following operation obtains
 the same storage lock. The optional Spill plugin can build retention and content
 addressing over this shared storage contract without importing the JSONL plugin.
+
+## List and delete stored conversations
+
+```python
+ids = await agent.sessions.list()       # Sorted tuple of session IDs.
+await agent.sessions.delete("old-task") # Log, artifacts and recovery sidecars.
+```
+
+Deleting a live session raises SessionLocked, including when another process owns
+its JSONL writer. Deleting a missing ID is idempotent. Other sessions' files are
+untouched. Metadata operations mount the sessions slot and explicitly configured
+Service dependencies; they do not start the model or unrelated capabilities.
+A custom sessions plugin should own its backend setup or use those explicit services.
+The log and artifact directory are removed under the same exclusive writer lock.

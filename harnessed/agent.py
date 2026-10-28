@@ -17,6 +17,7 @@ from harnessed.core.prompt.values import InstructionValues, PromptPlan
 from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
 from harnessed.core.runtime.session import Session as LiveSession
 from harnessed.core.session.files import SessionFiles
+from harnessed.core.session.repository import SessionRepository
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import MemorySessions, SessionPersistence, SessionStore
 from harnessed.core.tools.output_limit import ToolOutputLimit
@@ -82,6 +83,7 @@ class Agent:
                 occupied[spec.slot] = len(defaults)
             defaults.append(value)
         self.plugins = tuple(defaults)
+        self.sessions = SessionRepository(self.plugins)
 
     @asynccontextmanager
     async def session(self, session_id: str | SessionLog | None = None):

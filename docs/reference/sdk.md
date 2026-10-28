@@ -17,6 +17,7 @@ examples live in the topic guides. Optional features are imported from
 | agent.prompt | Inspectable instruction/guidance plan |
 | agent.session(id=None) | Async context manager opening/resuming a Session |
 | agent.run(prompt, **options) | One run in a fresh session |
+| agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
 
 ## Session
 

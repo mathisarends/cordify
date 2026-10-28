@@ -83,7 +83,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Unify compaction into Compaction(trigger, summarizer, focus, retention). Provide
   at_ratio/every_turns triggers, model summarization, pre-request side-effect
   boundaries and one reactive context-error retry.
-- Add session list/delete management and remove session artifacts when deleting a session.
 - Add the approved Subagent child-session/log mechanism and inherited approvals.
 - Add Skill/Skills with lazy discovery/load/read, safe path handling and optional
   YAML as specified in api-target.md. MCP, OTel, UI, RAG and eval systems remain

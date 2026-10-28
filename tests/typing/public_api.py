@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 from typing import assert_type
 
+from harnessed import Agent as AppAgent
 from harnessed import Context as PluginContext
 from harnessed import ToolContext
 from harnessed.core.messages import Assistant, ToolReply, User
@@ -52,3 +53,8 @@ def invalid_message_shapes() -> None:
     Assistant("answer", tool_call_id="wrong role")  # ty: ignore[unknown-argument]
     ToolReply("missing call ID")  # ty: ignore[missing-argument]
     ModelResponse(User("wrong model response role"))  # ty: ignore[invalid-argument-type]
+
+
+async def repository_consumer(agent: AppAgent) -> None:
+    assert_type(await agent.sessions.list(), tuple[str, ...])
+    assert_type(await agent.sessions.delete("stored"), None)

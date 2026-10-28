@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from functools import partial
@@ -64,7 +65,10 @@ class JsonlPersistence:
             self.root = self.root.resolve()
             self.root.mkdir(parents=True, exist_ok=True)
             self._root_ready = True
-        return self.root / f"{session_id}.jsonl"
+        path = self.root / f"{session_id}.jsonl"
+        if path.is_symlink() or path.is_junction():
+            raise ValueError("Session log path is outside its namespace")
+        return path
 
     def _check_open(self):
         if self._closed:
@@ -85,20 +89,7 @@ class JsonlPersistence:
         path = self._path(session_id)
         if session_id in self._files:
             raise SessionLocked(f"Session {session_id!r} already has a writer")
-        lock = path.with_suffix(".lock").open("a+b")
-        lock.seek(0, os.SEEK_END)
-        if lock.tell() == 0:
-            lock.write(b"\0")
-            lock.flush()
-        lock.seek(0)
-        try:
-            if os.name == "nt":
-                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            lock.close()
-            raise SessionLocked(f"Session {session_id!r} already has a writer") from exc
+        lock = self._lock(path)
         try:
             events = []
             boundaries = {0}
@@ -164,6 +155,53 @@ class JsonlPersistence:
             finally:
                 lock.close()
             raise
+
+    def _lock(self, path: Path):
+        location = path.with_suffix(".lock")
+        if location.is_symlink() or location.is_junction():
+            raise ValueError("Session lock path is outside its namespace")
+        lock = location.open("a+b")
+        lock.seek(0, os.SEEK_END)
+        if lock.tell() == 0:
+            lock.write(b"\0")
+            lock.flush()
+        lock.seek(0)
+        try:
+            if os.name == "nt":
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            lock.close()
+            raise SessionLocked(f"Session {path.stem!r} already has a writer") from exc
+        return lock
+
+    def _delete(self, session_id: str) -> None:
+        session_id = validate_session_id(session_id)
+        if not self.root.resolve().exists():
+            return
+        path = self._path(session_id)
+        lock = self._lock(path)
+        try:
+            root = self.root.resolve()
+            directory = root / f"{session_id}.files"
+            resolved = directory.resolve()
+            if directory.is_symlink() or directory.is_junction() or resolved != directory:
+                raise ValueError("Session artifact directory is outside its namespace")
+            if not resolved.is_relative_to(root) or resolved == root:
+                raise ValueError("Invalid session artifact deletion target")
+            if resolved.exists():
+                shutil.rmtree(resolved)
+            archive_pattern = re.compile(
+                re.escape(session_id) + r"\.incomplete-\d+-[a-f0-9]{64}\.bin"
+            )
+            for archive in root.glob(f"{session_id}.incomplete-*.bin"):
+                if archive_pattern.fullmatch(archive.name):
+                    archive.unlink(missing_ok=True)
+            path.unlink(missing_ok=True)
+        finally:
+            # The lock inode remains stable for racing writers on POSIX too.
+            lock.close()
 
     def _archive_tail(self, session_id: str, offset: int, data: bytes) -> Path:
         digest = hashlib.sha256(data).hexdigest()
@@ -279,6 +317,24 @@ class _JsonlStore:
     def files(self, session_id: str) -> SessionFiles:
         session_id = validate_session_id(session_id)
         return DirectoryFiles(self.config.root / f"{session_id}.files")
+
+    async def list(self) -> tuple[str, ...]:
+        def collect():
+            result = []
+            for path in self.config.root.resolve().glob("*.jsonl"):
+                if not path.is_file():
+                    continue
+                try:
+                    result.append(validate_session_id(path.stem))
+                except ValueError:
+                    continue
+            return tuple(sorted(result))
+
+        return await run_sync(collect)
+
+    async def delete(self, session_id: str) -> None:
+        persistence = JsonlPersistence(**self.config.model_dump())
+        await run_sync(partial(persistence._delete, validate_session_id(session_id)))
 
     @asynccontextmanager
     async def open(self, session_id: str) -> AsyncGenerator[SessionPersistence]:
