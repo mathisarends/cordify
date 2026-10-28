@@ -46,6 +46,8 @@ class SessionEvent(Emit):
 
 @dataclass(frozen=True)
 class AgentControlChanged(SessionEvent):
+    __hash__ = None
+
     type: Literal["AgentControlChanged"] = field(default="AgentControlChanged", kw_only=True)
     state: ControlState
     keep_inbox: bool = False
@@ -61,6 +63,8 @@ class AgentControlChanged(SessionEvent):
 
 @dataclass(frozen=True)
 class ApprovalRequested(SessionEvent):
+    __hash__ = None
+
     type: Literal["ApprovalRequested"] = field(default="ApprovalRequested", kw_only=True)
     request_id: Identifier
     call: ToolCall
@@ -82,6 +86,8 @@ class ApprovalRequested(SessionEvent):
 
 @dataclass(frozen=True)
 class ApprovalResolved(SessionEvent):
+    __hash__ = None
+
     type: Literal["ApprovalResolved"] = field(default="ApprovalResolved", kw_only=True)
     request_id: Identifier
     decision: ApprovalAnswer | None = None
@@ -106,6 +112,8 @@ class ApprovalResolved(SessionEvent):
 
 @dataclass(frozen=True)
 class ApprovalRevoked(SessionEvent):
+    __hash__ = None
+
     type: Literal["ApprovalRevoked"] = field(default="ApprovalRevoked", kw_only=True)
     request_id: Identifier
     reason: str = "revoked"
@@ -113,6 +121,8 @@ class ApprovalRevoked(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolPolicyApplied(SessionEvent):
+    __hash__ = None
+
     type: Literal["ToolPolicyApplied"] = field(default="ToolPolicyApplied", kw_only=True)
     call_id: Identifier
     decision: PolicyDecision
@@ -128,12 +138,16 @@ class ToolPolicyApplied(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolExecutionStarted(SessionEvent):
+    __hash__ = None
+
     type: Literal["ToolExecutionStarted"] = field(default="ToolExecutionStarted", kw_only=True)
     call_id: Identifier
 
 
 @dataclass(frozen=True)
 class LogTailRecovered(SessionEvent):
+    __hash__ = None
+
     type: Literal["LogTailRecovered"] = field(default="LogTailRecovered", kw_only=True)
     offset: int
     discarded_bytes: int
@@ -152,6 +166,8 @@ class LogTailRecovered(SessionEvent):
 
 @dataclass(frozen=True)
 class AssistantChunk(SessionEvent):
+    __hash__ = None
+
     type: Literal["AssistantChunk"] = field(default="AssistantChunk", kw_only=True)
     text: str = ""
     reasoning: str = ""
@@ -166,6 +182,8 @@ class AssistantChunk(SessionEvent):
 
 @dataclass(frozen=True)
 class InboxAdded(SessionEvent):
+    __hash__ = None
+
     type: Literal["InboxAdded"] = field(default="InboxAdded", kw_only=True)
     message: Message
     target: InboxTarget
@@ -202,6 +220,8 @@ class InboxAdded(SessionEvent):
 
 @dataclass(frozen=True)
 class InboxRemoved(SessionEvent):
+    __hash__ = None
+
     type: Literal["InboxRemoved"] = field(default="InboxRemoved", kw_only=True)
     message_id: Identifier
     reason: Literal["claimed", "canceled", "stopped"] = "claimed"
@@ -209,6 +229,8 @@ class InboxRemoved(SessionEvent):
 
 @dataclass(frozen=True)
 class TurnStart(SessionEvent):
+    __hash__ = None
+
     type: Literal["TurnStart"] = field(default="TurnStart", kw_only=True)
     turn_id: Identifier
     input_id: str | None = None
@@ -220,6 +242,8 @@ class TurnStart(SessionEvent):
 
 @dataclass(frozen=True)
 class StepStart(SessionEvent):
+    __hash__ = None
+
     type: Literal["StepStart"] = field(default="StepStart", kw_only=True)
     turn_id: Identifier
     step: StepNumber
@@ -227,18 +251,24 @@ class StepStart(SessionEvent):
 
 @dataclass(frozen=True)
 class SystemMessage(SessionEvent):
+    __hash__ = None
+
     type: Literal["SystemMessage"] = field(default="SystemMessage", kw_only=True)
     content: str
 
 
 @dataclass(frozen=True)
 class UserMessage(SessionEvent):
+    __hash__ = None
+
     type: Literal["UserMessage"] = field(default="UserMessage", kw_only=True)
     message: Message
 
 
 @dataclass(frozen=True)
 class ContextMessage(SessionEvent):
+    __hash__ = None
+
     type: Literal["ContextMessage"] = field(default="ContextMessage", kw_only=True)
     message: Message
     lifetime: Literal["session", "turn"] = "session"
@@ -247,6 +277,8 @@ class ContextMessage(SessionEvent):
 
 @dataclass(frozen=True)
 class ContextValueChanged(SessionEvent):
+    __hash__ = None
+
     type: Literal["ContextValueChanged"] = field(default="ContextValueChanged", kw_only=True)
     name: str
     value: str | None
@@ -255,6 +287,8 @@ class ContextValueChanged(SessionEvent):
 
 @dataclass(frozen=True)
 class ObservationRecorded(SessionEvent):
+    __hash__ = None
+
     type: Literal["ObservationRecorded"] = field(default="ObservationRecorded", kw_only=True)
     observation: Observation
     turn_id: Identifier
@@ -263,18 +297,24 @@ class ObservationRecorded(SessionEvent):
 
 @dataclass(frozen=True)
 class ModelRequested(SessionEvent):
+    __hash__ = None
+
     type: Literal["ModelRequested"] = field(default="ModelRequested", kw_only=True)
     request: ModelRequest
 
 
 @dataclass(frozen=True)
 class ModelUsageRecorded(SessionEvent):
+    __hash__ = None
+
     type: Literal["ModelUsageRecorded"] = field(default="ModelUsageRecorded", kw_only=True)
     usage: ModelUsage
 
 
 @dataclass(frozen=True)
 class CacheMetrics(SessionEvent):
+    __hash__ = None
+
     type: Literal["CacheMetrics"] = field(default="CacheMetrics", kw_only=True)
     usage: ModelUsage
     hit_rate: float | None = None
@@ -285,6 +325,8 @@ class CacheMetrics(SessionEvent):
 
 @dataclass(frozen=True)
 class CompactionApplied(SessionEvent):
+    __hash__ = None
+
     type: Literal["CompactionApplied"] = field(default="CompactionApplied", kw_only=True)
     through: int
     summary: str
@@ -312,6 +354,8 @@ class CompactionApplied(SessionEvent):
 
 @dataclass(frozen=True)
 class ObservationPolicyApplied(SessionEvent):
+    __hash__ = None
+
     type: Literal["ObservationPolicyApplied"] = field(
         default="ObservationPolicyApplied", kw_only=True
     )
@@ -326,6 +370,8 @@ class ObservationPolicyApplied(SessionEvent):
 
 @dataclass(frozen=True)
 class SpillCreated(SessionEvent):
+    __hash__ = None
+
     type: Literal["SpillCreated"] = field(default="SpillCreated", kw_only=True)
     call_id: Identifier
     ref: SpillRef
@@ -334,6 +380,8 @@ class SpillCreated(SessionEvent):
 
 @dataclass(frozen=True)
 class RuleTriggered(SessionEvent):
+    __hash__ = None
+
     type: Literal["RuleTriggered"] = field(default="RuleTriggered", kw_only=True)
     rule: str
     call_id: Identifier
@@ -346,6 +394,8 @@ class RuleTriggered(SessionEvent):
 
 @dataclass(frozen=True)
 class RuleEvaluated(SessionEvent):
+    __hash__ = None
+
     type: Literal["RuleEvaluated"] = field(default="RuleEvaluated", kw_only=True)
     rule: str
     key: str
@@ -354,6 +404,8 @@ class RuleEvaluated(SessionEvent):
 
 @dataclass(frozen=True)
 class AssistantMessage(SessionEvent):
+    __hash__ = None
+
     type: Literal["AssistantMessage"] = field(default="AssistantMessage", kw_only=True)
     message: Message
     interrupted: bool = False
@@ -362,6 +414,8 @@ class AssistantMessage(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolCalled(SessionEvent):
+    __hash__ = None
+
     type: Literal["ToolCalled"] = field(default="ToolCalled", kw_only=True)
     call: ToolCall
 
@@ -372,6 +426,8 @@ class ToolCalled(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolReturned(SessionEvent):
+    __hash__ = None
+
     type: Literal["ToolReturned"] = field(default="ToolReturned", kw_only=True)
     call_id: Identifier
     result: ToolResult
@@ -379,6 +435,8 @@ class ToolReturned(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolCompleted(SessionEvent):
+    __hash__ = None
+
     type: Literal["ToolCompleted"] = field(default="ToolCompleted", kw_only=True)
     call_id: Identifier
     result: ToolResult
@@ -386,6 +444,8 @@ class ToolCompleted(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolProgress(SessionEvent):
+    __hash__ = None
+
     type: Literal["ToolProgress"] = field(default="ToolProgress", kw_only=True)
     call_id: Identifier
     text: str
@@ -393,6 +453,8 @@ class ToolProgress(SessionEvent):
 
 @dataclass(frozen=True)
 class StepEnd(SessionEvent):
+    __hash__ = None
+
     type: Literal["StepEnd"] = field(default="StepEnd", kw_only=True)
     turn_id: Identifier
     step: StepNumber
@@ -405,6 +467,8 @@ class StepEnd(SessionEvent):
 
 @dataclass(frozen=True)
 class TurnEnd(SessionEvent):
+    __hash__ = None
+
     type: Literal["TurnEnd"] = field(default="TurnEnd", kw_only=True)
     turn_id: Identifier
     reason: TurnOutcome = "completed"

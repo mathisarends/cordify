@@ -10,6 +10,7 @@ from .keys import ServiceKey
 
 @dataclass(frozen=True)
 class PluginSpec:
+    __hash__ = None
     name: str
     factory: Callable[..., AsyncGenerator[None, None]]
     needs: tuple[ServiceKey[Any], ...]

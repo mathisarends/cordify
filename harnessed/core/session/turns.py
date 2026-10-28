@@ -16,6 +16,7 @@ from harnessed.core.session.events import (
 
 @dataclass(frozen=True)
 class Step:
+    __hash__ = None
     turn_id: str
     number: int
     events: tuple[SessionEvent, ...]
@@ -40,6 +41,7 @@ class Step:
 
 @dataclass(frozen=True)
 class Turn:
+    __hash__ = None
     id: str
     events: tuple[SessionEvent, ...]
     steps: tuple[Step, ...]

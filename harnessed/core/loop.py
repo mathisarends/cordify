@@ -98,6 +98,7 @@ class AgentOptions:
 
 @dataclass(frozen=True)
 class RunResult:
+    __hash__ = None
     text: str
     events: tuple[SessionEvent, ...]
     usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))

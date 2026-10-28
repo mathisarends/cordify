@@ -36,6 +36,7 @@ def to_dict(value: Any) -> Any:
 
 @dataclass(frozen=True)
 class ToolCall:
+    __hash__ = None
     name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
@@ -150,6 +151,7 @@ type ContentPart = TextPart | ImagePart
 
 @dataclass(frozen=True)
 class Message:
+    __hash__ = None
     role: Literal["system", "user", "assistant", "tool"]
     content: str | tuple[ContentPart, ...] = ""
     tool_calls: tuple[ToolCall, ...] = ()

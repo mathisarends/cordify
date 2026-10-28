@@ -103,11 +103,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Finish runtime/tool/kernel dependency cleanup, then enforce PLC0415. Delayed
   optional SDK imports in models/pydantic_ai.py need an explicit exception.
 
-### P2-4 — Frozen value hashing
-
-- Define/document deliberate hashability for values containing immutable
-  mappings; frozen does not imply that all payloads can be hashed.
-
 ### P2-5 — Typed message roles
 
 - Replace freely combinable role/field values with the approved tagged message

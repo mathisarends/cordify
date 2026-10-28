@@ -19,6 +19,9 @@ Python **3.12–3.14**, PEP 695 generics, and Pydantic v2 for boundary validatio
 The agent-independent kernel uses only the standard library.
 The package lives directly in `harnessed/`.
 
+See [immutable values and hashing](docs/concepts/values.md) for the value and
+versioned persistence contracts.
+
 ## Package structure
 
 ```text

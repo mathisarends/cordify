@@ -15,6 +15,7 @@ type StopReason = Literal["end", "tool_calls", "max_tokens", "content_filter", "
 
 @dataclass(frozen=True)
 class ToolDefinition:
+    __hash__ = None
     name: str
     description: str
     parameters: Mapping[str, Any]
@@ -25,6 +26,7 @@ class ToolDefinition:
 
 @dataclass(frozen=True)
 class ModelRequest:
+    __hash__ = None
     model: str
     messages: tuple[Message, ...]
     tools: tuple[ToolDefinition, ...] = ()
@@ -112,6 +114,7 @@ def usage_from_dict(data: dict) -> ModelUsage:
 
 @dataclass(frozen=True)
 class ModelChunk:
+    __hash__ = None
     text: str = ""
     reasoning: str = ""
     tool_call: ToolCall | None = None
@@ -129,6 +132,7 @@ class ModelInfo:
 
 @dataclass(frozen=True, slots=True)
 class ModelResponse:
+    __hash__ = None
     message: Message
     usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
     stop_reason: StopReason = "end"
