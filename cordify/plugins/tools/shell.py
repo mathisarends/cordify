@@ -15,8 +15,9 @@ async def shell_local(ctx: Context):
     yield
 
 
-@plugin
-async def shell_tools(ctx: Context, cwd: str | Path = ".", *, registry: Inject[ToolRegistry]):
+@plugin(needs=[Shell, ToolRegistry])
+async def shell_tools(ctx: Context, cwd: str | Path = "."):
+    registry = ctx[ToolRegistry]
     cwd = await asyncio.to_thread(Path(cwd).resolve)
 
     @registry.tool

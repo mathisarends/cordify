@@ -14,8 +14,9 @@ async def fs_local(ctx: Context, root: str | Path = "."):
     yield
 
 
-@plugin
-async def fs_tools(ctx: Context, registry: Inject[ToolRegistry]):
+@plugin(needs=[FS, ToolRegistry])
+async def fs_tools(ctx: Context):
+    registry = ctx[ToolRegistry]
 
     @registry.tool(parallel=True)
     async def read_file(path: str, limit: int = 8000, offset: int = 0, *, fs: Inject[FS]) -> str:
