@@ -49,9 +49,15 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC", "TID252"]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "TID252", "PLC0415"]
 # Shell's public timeout parameter is implemented with asyncio.timeout internally.
 ignore = ["ASYNC109"]
+
+[tool.ruff.lint.per-file-ignores]
+# Provider SDKs are optional; importing the core must not require an extra.
+"harnessed/models/pydantic_ai.py" = ["PLC0415"]
+# Tests import optional integrations and patch import failures in their own scope.
+"tests/**/*.py" = ["PLC0415"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "parents"

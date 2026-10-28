@@ -23,6 +23,7 @@ from harnessed.core.messages import (
 from harnessed.core.model import Model, ModelRequest, ModelUsage
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.values import Section
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.inbox import InboxItem, SessionInbox
 from harnessed.core.runtime.options import AgentOptions
@@ -124,7 +125,6 @@ class Session:
         return handle
 
     async def _plugin_activated(self, event: PluginActivated):
-        from harnessed.core.prompt.values import Section
 
         handle = event.handle
         name = self._runtime_guidance.get(handle)

@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Callable, Iterable
 
 from harnessed.core.approvals import Approver
@@ -45,7 +46,6 @@ class CallbackApprover:
         self.callback = ask
 
     async def ask(self, call, reason: str) -> ApprovalAnswer | None:
-        import inspect
 
         value = self.callback(call)
         value = await value if inspect.isawaitable(value) else value

@@ -56,11 +56,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## P2 — Structure, typing, docs and testing
 
-### P2-2 — Remove local-import cycle workarounds
-
-- Finish runtime/tool/kernel dependency cleanup, then enforce PLC0415. Delayed
-  optional SDK imports in models/pydantic_ai.py need an explicit exception.
-
 ### P2-6 — Testing package
 
 - Move the extractive fake compactor into testing; production compaction must

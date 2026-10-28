@@ -2,6 +2,8 @@ from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from harnessed.core.approvals import validate_approval_timeout
+from harnessed.core.model import Model
 from harnessed.core.plugin import Bundle
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.runtime.agent_loop import AgentFactory
@@ -10,12 +12,16 @@ from harnessed.core.runtime.session import Session as Agent
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionPersistence
 from harnessed.core.tools.output_limit import ToolOutputLimit
-
-from .core.approvals import validate_approval_timeout
-from .core.model import Model
-from .kernel.context import Context
-from .kernel.plugin import PluginLike, plugin
-from .seams.llm import LLM
+from harnessed.kernel import Context, PluginLike, plugin
+from harnessed.plugins._context.instructions import agents_md
+from harnessed.plugins._context.providers import compactor
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.filesystem import fs_local, fs_tools
+from harnessed.plugins.observe.tokens import token_counter
+from harnessed.plugins.services import llm, system_prompt, tools
+from harnessed.plugins.shell import shell_local, shell_tools
+from harnessed.plugins.spill import spill_store
+from harnessed.seams.llm import LLM
 
 __all__ = ["Harness", "minimal", "coding", "headless"]
 
@@ -80,11 +86,6 @@ class Harness:
         max_parallel_tools: int | None = None,
         approval_timeout: float | None = None,
     ):
-        from harnessed.plugins.spill import spill_store
-
-        from .plugins._context.providers import compactor
-        from .plugins.observe.tokens import token_counter
-        from .plugins.services import system_prompt, tools
 
         if session_id in self._active:
             raise RuntimeError(f"Session {session_id!r} already has a live owner")
@@ -144,8 +145,6 @@ def minimal(
     max_parallel_tools: int = 4,
     approval_timeout: float = 300.0,
 ) -> Harness:
-    from .plugins.agents.loop import agent_loop
-    from .plugins.services import llm
 
     return Harness(
         [agent_loop(), llm(implementation), *plugins],
@@ -169,9 +168,6 @@ def coding(
     max_parallel_tools: int = 4,
     approval_timeout: float = 300.0,
 ) -> Harness:
-    from .plugins._context.instructions import agents_md
-    from .plugins.filesystem import fs_local, fs_tools
-    from .plugins.shell import shell_local, shell_tools
 
     workspace = Path(root).resolve()
     capabilities = [fs_local(workspace), fs_tools(), agents_md(workspace / "AGENTS.md")]

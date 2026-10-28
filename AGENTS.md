@@ -33,3 +33,9 @@ imports; remove old re-exports once consumers have migrated.
 Ruff enforces the parent-relative import rule with `TID252` and
 `ban-relative-imports = "parents"`. Run `uv run ruff check .` before committing;
 the same rule also runs through pre-commit and CI.
+
+Keep production imports at module scope. Ruff enforces `PLC0415`; the explicit
+exception is `models/pydantic_ai.py`, which delays optional SDK imports. Test-local
+imports used for optional integration and import-failure tests are also exempt.
+Do not add local imports to work around dependency cycles; move shared types or
+change the dependency direction instead.
