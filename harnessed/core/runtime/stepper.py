@@ -12,6 +12,7 @@ from harnessed.core.model import ModelRequest
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.executor import run_tools
 from harnessed.core.runtime.output import prepare_output, validate_output
+from harnessed.core.runtime.respond import respond
 from harnessed.core.session.events import (
     AssistantMessage,
     ContextMessage,
@@ -106,7 +107,7 @@ async def run_step(self: Agent, turn: str, step: int, settings, preparing: Conte
         )
     await self.log.append(ModelRequested(request))
     try:
-        response = await self._respond(request)
+        response = await respond(self, request)
     except ContextLengthExceeded:
         current = self.log.open_turn
         assert current is not None

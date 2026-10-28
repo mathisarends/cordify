@@ -1,66 +1,50 @@
 import asyncio
-import logging
-from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Iterable, Mapping
 from contextvars import ContextVar
-from dataclasses import replace
 from typing import Any, Unpack, overload
-from uuid import uuid4
 
-from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
+from harnessed.core.approvals import Approver
 from harnessed.core.attachments import Attachment
 from harnessed.core.compaction import CompactionManager
-from harnessed.core.errors import SessionClosed
 from harnessed.core.hooks import (
-    ApprovalRequest,
     SessionAppended,
-    TurnStopping,
 )
 from harnessed.core.messages import (
     ApprovalAnswer,
-    Assistant,
     Message,
     Observation,
     ToolCall,
 )
-from harnessed.core.model import Model, ModelRequest, ModelUsage, OutputSchema
+from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema
 from harnessed.core.outputs import OutputTypes, OutputValues
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
+from harnessed.core.runtime.approvals import request_approval, revoke_approval
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.inbox import InboxItem, SessionInbox
 from harnessed.core.runtime.options import AgentOptions, RunOptions
 from harnessed.core.runtime.result import _NO_OUTPUT, RunResult, result_from_events
-from harnessed.core.runtime.stepper import run_step
-from harnessed.core.runtime.streaming import StreamApprovals, ui_events
+from harnessed.core.runtime.streaming import StreamApprovals, stream_turn, ui_events
+from harnessed.core.runtime.turns import run_turn
 from harnessed.core.session.events import (
     AgentControlChanged,
-    ApprovalRequested,
-    ApprovalResolved,
-    ApprovalRevoked,
     AssistantMessage,
     CompactionApplied,
     InboxAdded,
     InboxMode,
-    InboxRemoved,
-    ModelUsageRecorded,
     OutputValidated,
-    OutputValidationFailed,
     SessionEvent,
-    TurnEnd,
     TurnStart,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.stream import (
-    ReasoningDelta,
     SessionPublished,
     StreamEvent,
-    TextDelta,
     TransientEvent,
 )
 from harnessed.core.tools.context import BoundToolContexts, ToolContexts
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.core.tracing import span
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
@@ -69,7 +53,6 @@ from harnessed.kernel.hooks import HookFactory, ListenerFactory
 type AgentEvent = SessionEvent | TransientEvent
 _preparing: ContextVar["Session | None"] = ContextVar("harnessed_preparing", default=None)
 _driving: ContextVar["Session | None"] = ContextVar("harnessed_driving", default=None)
-log = logging.getLogger(__name__)
 
 
 class Session:
@@ -202,9 +185,6 @@ class Session:
     def start(self):
         self.control.start()
 
-    def _open_turn(self):
-        return self.log.open_turn
-
     def _wake(self):
         self.control.wake()
 
@@ -299,77 +279,12 @@ class Session:
         approver: Approver | None = None,
         timeout: float | None = None,
     ) -> ApprovalAnswer:
-        self.control.check_open()
-        grant = self.log.approval_grant(call.name, scope=scope)
-        request = ApprovalRequested(
-            uuid4().hex, call, reason, scope, grant.request_id if grant else None
+        return await request_approval(
+            self, call, reason, scope=scope, approver=approver, timeout=timeout
         )
-        await self.log.append(request)
-        try:
-            if grant is not None:
-                decision = ApprovalAnswer.ALWAYS
-            else:
-                decision = await self._approval_answer(request, approver, timeout=timeout)
-            await self.log.append(ApprovalResolved(request.request_id, decision))
-            return decision
-        except BaseException as exc:
-            record = self.log.approval(request.request_id)
-            if record is not None and record.pending:
-                await self.log.append(
-                    ApprovalResolved(
-                        request.request_id,
-                        status="unavailable"
-                        if isinstance(exc, ApprovalUnavailable)
-                        else "interrupted",
-                        reason=str(exc) if isinstance(exc, ApprovalUnavailable) else None,
-                    )
-                )
-            raise
-
-    async def _approval_answer(
-        self, request: ApprovalRequested, approver: Approver | None, *, timeout: float | None = None
-    ) -> ApprovalAnswer:
-        with span(self.ctx, "approval_wait", session_id=self.id, tool=request.call.name):
-            return await self._wait_for_approval(request, approver, timeout=timeout)
-
-    async def _wait_for_approval(
-        self, request: ApprovalRequested, approver: Approver | None, *, timeout: float | None = None
-    ) -> ApprovalAnswer:
-        timeout = self.options.approval_timeout if timeout is None else timeout
-        validate_approval_timeout(timeout)
-        try:
-            async with asyncio.timeout(timeout):
-                selected = (
-                    approver
-                    if approver is not None
-                    else (self.ctx[Approver] if Approver in self.ctx else None)
-                )
-                if selected is not None:
-                    decision = await selected.ask(request.call, request.reason)
-                else:
-                    decision = await self.ctx.dispatch(ApprovalRequest(request, self))
-            if decision is None:
-                raise ApprovalUnavailable("No approval responder answered the request")
-            if not isinstance(decision, ApprovalAnswer):
-                raise TypeError("Approvers must return ALLOW, DENY or ALWAYS")
-            return decision
-        except ApprovalUnavailable:
-            raise
-        except TimeoutError as exc:
-            raise ApprovalUnavailable(
-                f"Approval response timed out after {timeout:g} seconds"
-            ) from exc
-        except Exception as exc:
-            log.exception("Approval responder failed for %s", request.call.name)
-            raise ApprovalUnavailable(f"Approval responder failed: {type(exc).__name__}") from exc
 
     async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
-        self.control.check_open()
-        record = self.log.approval(request_id)
-        if record is None:
-            raise KeyError(request_id)
-        if not record.revoked:
-            await self.log.append(ApprovalRevoked(request_id, reason))
+        await revoke_approval(self, request_id, reason=reason)
 
     async def wait_until_idle(self) -> None:
         """Wait for the session to become idle with an empty inbox."""
@@ -419,7 +334,8 @@ class Session:
             events = tuple(
                 [
                     event
-                    async for event in self._stream_turn(
+                    async for event in stream_turn(
+                        self,
                         content,
                         attachments=attachments,
                         context=context,
@@ -478,7 +394,8 @@ class Session:
         schema = compiled.definition if compiled is not None else None
         with self._output_values.expect(schema):
             async with StreamApprovals(self) as approvals:
-                raw = self._stream_turn(
+                raw = stream_turn(
+                    self,
                     content,
                     attachments=attachments,
                     context=context,
@@ -492,62 +409,6 @@ class Session:
                         yield event
                 finally:
                     await ui.aclose()
-
-    async def _stream_turn(
-        self,
-        content: str | Message,
-        *,
-        attachments: Iterable[Attachment] = (),
-        context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
-        output_schema: OutputSchema | None = None,
-        prepared: Callable[[InboxAdded], None] | None = None,
-    ) -> AsyncGenerator[AgentEvent, None]:
-        queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
-        self._subscribers.add(queue)
-        try:
-            item = await self.inbox._send(
-                content,
-                "followup",
-                attachments=attachments,
-                context=context,
-                settings=settings,
-                output_schema=output_schema,
-                prepared=prepared,
-            )
-            input_id = item.id
-            turn_id = None
-            while True:
-                event = await queue.get()
-                if event is None:
-                    if self.control.error is not None:
-                        raise self.control.error
-                    if self.control.closing or self.status is SessionStatus.CLOSED:
-                        raise SessionClosed(
-                            "This handle closed before the turn finished; "
-                            "reopen the session to continue"
-                        )
-                    if any(item.id == input_id for item in self.inbox.pending):
-                        self._wake()
-                        continue
-                    return
-                if isinstance(event, TurnStart):
-                    if event.input_id == input_id:
-                        turn_id = event.turn_id
-                if turn_id is None:
-                    if isinstance(event, InboxAdded) and event.message.id == input_id:
-                        yield event
-                    if isinstance(event, InboxRemoved) and event.message_id == input_id:
-                        yield event
-                        return
-                    continue
-                yield event
-                if isinstance(event, TurnEnd) and event.turn_id == turn_id:
-                    if self.control.error is not None:
-                        raise self.control.error
-                    return
-        finally:
-            self._subscribers.discard(queue)
 
     async def cancel(self, *, keep_inbox: bool = False) -> None:
         """Legacy spelling for immediate abort."""
@@ -568,9 +429,9 @@ class Session:
     async def _drive(self):
         token = _driving.set(self)
         try:
-            while self.log.has_wakeup or self._open_turn() is not None:
+            while self.log.has_wakeup or self.log.open_turn is not None:
                 await self._checkpoint()
-                if not await self._turn():
+                if not await run_turn(self, _preparing):
                     break
         except (StopAtBoundary, asyncio.CancelledError):
             try:
@@ -592,114 +453,3 @@ class Session:
                 self.control.error = exc
             _driving.reset(token)
             self._publish(None)
-
-    async def _turn(self) -> bool:
-        with span(self.ctx, "turn", session_id=self.id):
-            return await self._run_turn()
-
-    async def _run_turn(self) -> bool:
-        previous = self._open_turn()
-        turn = previous.id if previous is not None else uuid4().hex
-        first_step = len(previous.steps) + 1 if previous is not None else 1
-        starter = previous.events[0] if previous is not None else None
-        settings = starter.settings if isinstance(starter, TurnStart) else {}
-        if previous is None:
-            candidates = self.log.inbox.next_turn or self.log.inbox.next_step
-            settings = candidates[0].settings if candidates else {}
-            await self.log.append(
-                TurnStart(
-                    turn,
-                    candidates[0].message.id if candidates else None,
-                    settings,
-                    output_schema=candidates[0].output_schema if candidates else None,
-                )
-            )
-        elif previous.steps and not await self._continue_turn(previous.steps[-1]):
-            await self.log.append(TurnEnd(turn))
-            return True
-        for step in range(first_step, self.options.max_steps + 1):
-            with span(self.ctx, "step", session_id=self.id, turn_id=turn, step=step):
-                if not await run_step(self, turn, step, settings, _preparing):
-                    return False
-            await self._checkpoint()
-            current = self.log.open_turn
-            assert current is not None
-            if await self._continue_turn(current.steps[-1]):
-                continue
-            await self.log.append(TurnEnd(turn))
-            return True
-        await self.log.append(TurnEnd(turn, "max_steps"))
-        return True
-
-    async def _continue_turn(self, step) -> bool:
-        if step.reason == "context_limit":
-            return True
-        response = next(
-            (event for event in reversed(step.events) if isinstance(event, AssistantMessage)),
-            None,
-        )
-        if response is not None and response.stop_reason == "max_tokens":
-            if self.options.on_max_tokens == "fail":
-                raise RuntimeError("The model reached its output token limit")
-            if self.options.on_max_tokens == "continue":
-                return True
-        verdicts = [
-            e for e in step.events if isinstance(e, OutputValidated | OutputValidationFailed)
-        ]
-        output_calls = {e.call_id for e in verdicts}
-        invalid = any(isinstance(e, OutputValidationFailed) for e in verdicts)
-        if (
-            step.reason == "interrupted"
-            or response is None
-            or invalid
-            or any(call.id not in output_calls for call in response.message.tool_calls)
-            or self.log.has_step_wakeup
-        ):
-            return True
-        continuation = await self.ctx.dispatch(TurnStopping(self))
-        return bool(continuation or self.log.has_step_wakeup)
-
-    async def _respond(self, request: ModelRequest) -> Assistant:
-        with span(self.ctx, "model", session_id=self.id, model=request.model):
-            return await self._stream_response(request)
-
-    async def _stream_response(self, request: ModelRequest) -> Assistant:
-        message_id, calls = uuid4().hex, []
-        text, reasoning = [], []
-        last_usage = None
-
-        def message():
-            return Assistant(
-                "".join(text),
-                tuple(calls),
-                reasoning="".join(reasoning),
-                id=message_id,
-            )
-
-        try:
-            async with self.ctx[Model].stream(request) as stream:
-                async for chunk in stream:
-                    if chunk.usage is not None:
-                        last_usage = chunk.usage
-                    if chunk.text or chunk.reasoning:
-                        text.append(chunk.text)
-                        reasoning.append(chunk.reasoning)
-                        if chunk.text:
-                            await self.log.publish(TextDelta(message_id, chunk.text))
-                        if chunk.reasoning:
-                            await self.log.publish(ReasoningDelta(message_id, chunk.reasoning))
-                    if chunk.tool_call is not None:
-                        calls.append(chunk.tool_call)
-                response = stream.response()
-        except BaseException:
-            if last_usage is not None:
-                await self.log.append(ModelUsageRecorded(last_usage))
-            if text or reasoning:
-                await self.log.append(AssistantMessage(message(), interrupted=True))
-            raise
-        if len({call.id for call in calls}) != len(calls):
-            raise ValueError("The model returned duplicate tool call ids")
-        await self.log.append(ModelUsageRecorded(response.usage))
-        final = replace(response.message, id=message_id)
-        await self.log.append(AssistantMessage(final, stop_reason=response.stop_reason))
-        return final

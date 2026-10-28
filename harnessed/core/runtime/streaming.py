@@ -1,22 +1,27 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+import asyncio
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from harnessed.core.errors import ApprovalUnavailable
+from harnessed.core.attachments import Attachment
+from harnessed.core.errors import ApprovalUnavailable, SessionClosed
 from harnessed.core.hooks import ApprovalRequest, SessionAppended
+from harnessed.core.messages import Message
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.control import SessionStatus
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalResolved,
     InboxAdded,
+    InboxRemoved,
     OutputValidated,
     OutputValidationFailed,
     SessionEvent,
     ToolCalled,
     ToolProgress,
     ToolReturned,
+    TurnEnd,
     TurnStart,
 )
 from harnessed.core.stream import (
@@ -135,3 +140,60 @@ async def ui_events(
         yield TurnFinished(session._result(tuple(events), schema=schema))
     finally:
         await raw.aclose()
+
+
+async def stream_turn(
+    self: Session,
+    content: str | Message,
+    *,
+    attachments: Iterable[Attachment] = (),
+    context: Mapping[str, Any] | None = None,
+    settings: Mapping[str, Any] | None = None,
+    output_schema: OutputSchema | None = None,
+    prepared: Callable[[InboxAdded], None] | None = None,
+) -> AsyncGenerator[AgentEvent, None]:
+    queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
+    self._subscribers.add(queue)
+    try:
+        item = await self.inbox._send(
+            content,
+            "followup",
+            attachments=attachments,
+            context=context,
+            settings=settings,
+            output_schema=output_schema,
+            prepared=prepared,
+        )
+        input_id = item.id
+        turn_id = None
+        while True:
+            event = await queue.get()
+            if event is None:
+                if self.control.error is not None:
+                    raise self.control.error
+                if self.control.closing or self.status is SessionStatus.CLOSED:
+                    raise SessionClosed(
+                        "This handle closed before the turn finished; "
+                        "reopen the session to continue"
+                    )
+                if any(item.id == input_id for item in self.inbox.pending):
+                    self._wake()
+                    continue
+                return
+            if isinstance(event, TurnStart):
+                if event.input_id == input_id:
+                    turn_id = event.turn_id
+            if turn_id is None:
+                if isinstance(event, InboxAdded) and event.message.id == input_id:
+                    yield event
+                if isinstance(event, InboxRemoved) and event.message_id == input_id:
+                    yield event
+                    return
+                continue
+            yield event
+            if isinstance(event, TurnEnd) and event.turn_id == turn_id:
+                if self.control.error is not None:
+                    raise self.control.error
+                return
+    finally:
+        self._subscribers.discard(queue)
