@@ -11,7 +11,7 @@ from harnessed.core.messages import (
     ToolCall,
     ToolResult,
 )
-from harnessed.core.model import ModelRequest
+from harnessed.core.model import ModelRequest, ModelUsage, sum_usage
 from harnessed.core.session.codec import _validate_event
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
@@ -26,6 +26,7 @@ from harnessed.core.session.events import (
     InboxAdded,
     InboxRemoved,
     ModelRequested,
+    ModelUsageRecorded,
     ObservationPolicyApplied,
     ObservationRecorded,
     SessionEvent,
@@ -240,9 +241,14 @@ class Session:
             type(event): (seq, event) for seq, event in enumerate(self._events)
         }
         self._persistence = persistence
+        self._usage: ModelUsage | None = None
         self._lock = asyncio.Lock()
         for event in self._events:
             _validate_event(event)
+            if isinstance(event, ModelUsageRecorded):
+                self._usage = (
+                    event.usage if self._usage is None else sum_usage((self._usage, event.usage))
+                )
         self._inbox: Inbox | None = Inbox(self._events)
         self._pending = {item.message.id: item for item in self._inbox.pending}
         self._wakeups = {key for key, item in self._pending.items() if item.wakeup}
@@ -288,6 +294,10 @@ class Session:
     def last_offset(self, kind: type[SessionEvent]) -> int | None:
         record = self._last.get(kind)
         return record[0] if record is not None else None
+
+    @property
+    def usage(self) -> ModelUsage:
+        return self._usage if self._usage is not None else ModelUsage(0)
 
     @property
     def uncompacted_turn_count(self) -> int:
@@ -437,6 +447,10 @@ class Session:
             if isinstance(event, ModelRequested):
                 self._requests.append(event.request)
                 self._request_snapshot = None
+            elif isinstance(event, ModelUsageRecorded):
+                self._usage = (
+                    event.usage if self._usage is None else sum_usage((self._usage, event.usage))
+                )
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
             await self.ctx.dispatch(event)

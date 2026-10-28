@@ -170,7 +170,7 @@ async def test_usage_only_final_chunk_is_accepted_and_missing_cache_fields_stay_
                 ModelRequest("test", (Message("user", "hello"),))
             )
         ]
-        assert chunks[-1].usage.prompt_tokens == 3
+        assert chunks[-1].usage.input_tokens == 3
         assert chunks[-1].usage.cache_hit_rate is None
 
 

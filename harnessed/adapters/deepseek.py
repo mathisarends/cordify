@@ -183,10 +183,9 @@ class DeepSeekLLM(LLM):
                     usage = data.usage
                     yield ModelChunk(
                         usage=ModelUsage(
-                            prompt_tokens=usage.prompt_tokens,
-                            completion_tokens=usage.completion_tokens,
-                            prompt_cache_hit_tokens=usage.prompt_cache_hit_tokens,
-                            prompt_cache_miss_tokens=usage.prompt_cache_miss_tokens,
+                            input_tokens=usage.prompt_tokens,
+                            output_tokens=usage.completion_tokens,
+                            cache_read_tokens=usage.prompt_cache_hit_tokens,
                         )
                     )
         if not done:

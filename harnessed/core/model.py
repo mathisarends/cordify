@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+import math
+from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -47,39 +48,71 @@ class ModelRequest:
 
 @dataclass(frozen=True)
 class ModelUsage:
-    prompt_tokens: int
-    completion_tokens: int = 0
-    prompt_cache_hit_tokens: int | None = None
-    prompt_cache_miss_tokens: int | None = None
+    """Provider-neutral counters; cache writes are distinct from uncached input."""
+
+    input_tokens: int
+    output_tokens: int = 0
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cost: float | None = None
 
     def __post_init__(self):
         values = (
-            self.prompt_tokens,
-            self.completion_tokens,
-            self.prompt_cache_hit_tokens,
-            self.prompt_cache_miss_tokens,
+            self.input_tokens,
+            self.output_tokens,
+            self.cache_read_tokens,
+            self.cache_write_tokens,
+            self.reasoning_tokens,
         )
         if any(value is not None and (type(value) is not int or value < 0) for value in values):
             raise ValueError("Token usage must contain non-negative integers")
+        if self.cost is not None and (
+            type(self.cost) not in (int, float) or not math.isfinite(self.cost) or self.cost < 0
+        ):
+            raise ValueError("Usage cost must be finite and non-negative")
 
     @property
     def cache_hit_rate(self) -> float | None:
-        hit, miss = self.prompt_cache_hit_tokens, self.prompt_cache_miss_tokens
-        if hit is None or miss is None or hit + miss == 0:
+        if self.cache_read_tokens is None or self.input_tokens == 0:
             return None
-        return hit / (hit + miss)
+        return self.cache_read_tokens / self.input_tokens
 
     @property
     def total_tokens(self) -> int:
-        return self.prompt_tokens + self.completion_tokens
+        return self.input_tokens + self.output_tokens
 
-    @property
-    def input_tokens(self) -> int:
-        return self.prompt_tokens
 
-    @property
-    def output_tokens(self) -> int:
-        return self.completion_tokens
+def sum_usage(usages: Iterable[ModelUsage]) -> ModelUsage:
+    values = tuple(usages)
+
+    def optional(name):
+        counts = [getattr(value, name) for value in values]
+        return sum(counts) if counts and all(value is not None for value in counts) else None
+
+    return ModelUsage(
+        sum(value.input_tokens for value in values),
+        sum(value.output_tokens for value in values),
+        optional("cache_read_tokens"),
+        optional("cache_write_tokens"),
+        optional("reasoning_tokens"),
+        optional("cost"),
+    )
+
+
+def usage_from_dict(data: dict) -> ModelUsage:
+    """Decode legacy logs without treating their cache misses as cache writes."""
+    if "prompt_tokens" in data:
+        legacy = dict(data)
+        data = {
+            "input_tokens": legacy.pop("prompt_tokens"),
+            "output_tokens": legacy.pop("completion_tokens", 0),
+            "cache_read_tokens": legacy.pop("prompt_cache_hit_tokens", None),
+        }
+        legacy.pop("prompt_cache_miss_tokens", None)
+        if legacy:
+            raise ValueError(f"Unknown legacy usage fields: {', '.join(legacy)}")
+    return ModelUsage(**data)
 
 
 @dataclass(frozen=True)

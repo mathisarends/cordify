@@ -10,7 +10,7 @@ from harnessed.core.messages import (
     to_dict,
     tool_result_from_dict,
 )
-from harnessed.core.model import ModelUsage, request_from_dict
+from harnessed.core.model import request_from_dict, usage_from_dict
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
     ApprovalRequested,
@@ -81,7 +81,7 @@ def decode_event(record: dict) -> SessionEvent:
     elif kind is ModelRequested:
         data["request"] = request_from_dict(data["request"])
     elif kind in (ModelUsageRecorded, CacheMetrics):
-        data["usage"] = ModelUsage(**data["usage"])
+        data["usage"] = usage_from_dict(data["usage"])
     elif kind is SpillCreated:
         data["ref"] = SpillRef(**data["ref"])
     elif kind in (ToolCalled, ApprovalRequested):

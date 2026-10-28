@@ -13,7 +13,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
   all stream-only LLM compatibility paths. Wire the model's context window into
   budgets; do not silently assume 128k for unknown models.
-- Use neutral reasoning/cache/token names. Stop reasons must be typed throughout;
+- Rename the remaining message reasoning field and type stop reasons throughout;
   verify accept/continue/fail max-token behavior through the public result API.
 - Support multimodal tool results and model history, including the output-limit,
   spill and token-counting paths. Preserve native provider response state.

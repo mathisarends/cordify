@@ -23,7 +23,7 @@ from harnessed.core.messages import (
     ToolCall,
     ToolResult,
 )
-from harnessed.core.model import Model, ModelRequest, ModelUsage
+from harnessed.core.model import Model, ModelRequest, ModelUsage, sum_usage
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.session.events import (
@@ -167,6 +167,10 @@ class Agent:
     @property
     def messages(self) -> tuple[Message, ...]:
         return self.session.messages
+
+    @property
+    def usage(self) -> ModelUsage:
+        return self.session.usage
 
     @property
     def turns(self):
@@ -479,16 +483,7 @@ class Agent:
             "",
         )
         usages = [event.usage for event in events if isinstance(event, ModelUsageRecorded)]
-        usage = ModelUsage(
-            sum(item.prompt_tokens for item in usages),
-            sum(item.completion_tokens for item in usages),
-            sum(item.prompt_cache_hit_tokens or 0 for item in usages)
-            if any(item.prompt_cache_hit_tokens is not None for item in usages)
-            else None,
-            sum(item.prompt_cache_miss_tokens or 0 for item in usages)
-            if any(item.prompt_cache_miss_tokens is not None for item in usages)
-            else None,
-        )
+        usage = sum_usage(usages)
         turn = next((event for event in events if isinstance(event, TurnEnd)), None)
         final = next(
             (event for event in reversed(events) if isinstance(event, AssistantMessage)), None
@@ -835,6 +830,7 @@ class Agent:
     async def _stream_response(self, request: ModelRequest) -> Message:
         message_id, calls = uuid4().hex, []
         text, reasoning = [], []
+        last_usage = None
 
         def message():
             return Message(
@@ -849,7 +845,7 @@ class Agent:
             async with self.ctx[Model].stream(request) as stream:
                 async for chunk in stream:
                     if chunk.usage is not None:
-                        await self.session.append(ModelUsageRecorded(chunk.usage))
+                        last_usage = chunk.usage
                     if chunk.text or chunk.reasoning:
                         text.append(chunk.text)
                         reasoning.append(chunk.reasoning)
@@ -860,11 +856,14 @@ class Agent:
                         calls.append(chunk.tool_call)
                 response = stream.response()
         except BaseException:
+            if last_usage is not None:
+                await self.session.append(ModelUsageRecorded(last_usage))
             if text or reasoning:
                 await self.session.append(AssistantMessage(message(), interrupted=True))
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
+        await self.session.append(ModelUsageRecorded(response.usage))
         final = replace(response.message, id=message_id)
         await self.session.append(AssistantMessage(final, stop_reason=response.stop_reason))
         return final

@@ -251,6 +251,7 @@ def _response(response: NativeResponse) -> ModelResponse:
             usage.output_tokens,
             usage.cache_read_tokens,
             usage.cache_write_tokens,
+            usage.details.get("reasoning_tokens"),
         ),
         cast(StopReason, reason),
     )
