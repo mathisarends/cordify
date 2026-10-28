@@ -53,7 +53,7 @@ from .events import (
     TurnStopping,
     UserMessage,
 )
-from .execution import ToolCallContext
+from .execution import BoundToolContexts, InboxSender, ToolContexts
 from .outputs import ToolOutputLimit
 from .prompt import SystemPrompt
 from .scheduling import ToolPlan, ToolScheduler, ToolScheduling
@@ -130,6 +130,10 @@ class Agent:
         self.ctx, self.session, self.options = ctx, session, options
         self.id = session.id
         self.context = DynamicContext(session)
+        ctx.provide(
+            ToolContexts,
+            BoundToolContexts(session, InboxSender(self.followup, self.steer, self.inject)),
+        )
         self._runtime_guidance = {}
         self.status: Literal[
             "idle", "running", "pausing", "paused", "stopping", "stopped", "disposed"
@@ -821,7 +825,7 @@ class Agent:
 
     async def _invoke_tool(self, plan: ToolPlan) -> tuple[ToolResult, bool]:
         call = plan.call
-        execution = ToolCallContext(call, self)
+        execution = self.ctx[ToolContexts].create(call)
         try:
             await self.session.append(ToolExecutionStarted(call.id))
             await self.session.flush()

@@ -3,8 +3,12 @@ from typing import Annotated, Protocol
 
 import pytest
 
-from harnessed import Bundle, Context, Inject, ToolCall, ToolRegistry, tool
+from harnessed import Agent, Bundle, Context, Inject, Plugin, ToolCall, ToolRegistry, tool
+from harnessed.core.execution import ToolContext
+from harnessed.core.messages import ToolResult
+from harnessed.core.model import ModelChunk
 from harnessed.kernel.di import InjectMarker
+from harnessed.testing import ScriptedModel
 
 
 class Backend(Protocol):
@@ -140,3 +144,37 @@ def test_model_data_is_deeply_detached_and_immutable():
         call.arguments["nested"]["new"] = True
     with pytest.raises(TypeError):
         ToolCall("bad", {"value": float("nan")})
+
+
+async def test_result_converters_follow_their_owner_lifetime():
+    class ForeignResult:
+        pass
+
+    async with Context() as ctx:
+        registry = ToolRegistry(ctx)
+
+        @registry.tool
+        def custom() -> str:
+            return ForeignResult()
+
+        owner = ctx.extend()
+        registry.result_converter(ForeignResult, lambda value: ToolResult("converted"), owner=owner)
+        assert (await registry.execute(ToolCall("custom"))).content == "converted"
+        await owner.aclose()
+        assert (await registry.execute(ToolCall("custom"))).is_error
+
+
+async def test_tool_context_exposes_log_inbox_and_progress_without_the_driver():
+    class Inspect(Plugin):
+        @tool(readonly=True)
+        async def inspect(self, call: Inject[ToolContext]) -> str:
+            assert not hasattr(call, "agent")
+            assert call.session.id == "tool-context"
+            await call.progress("working")
+            await call.inbox.inject("The workspace changed.")
+            return "ready"
+
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("inspect"))], "done"])
+    async with Agent(model=model, plugins=[Inspect()]).session("tool-context") as session:
+        await session.run("Inspect")
+        assert "The workspace changed." in [message.text for message in model.requests[-1].messages]

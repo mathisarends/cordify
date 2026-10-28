@@ -15,7 +15,7 @@ from harnessed import (
     Plugin,
     ReviewToolResult,
     ToolCall,
-    ToolCallContext,
+    ToolContext,
     ToolPolicy,
     ToolRegistry,
     hook,
@@ -43,7 +43,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
     features = Bundle("math")
 
     @features.tool
-    async def add(a: int, b: int, call: Inject[ToolCallContext]) -> int:
+    async def add(a: int, b: int, call: Inject[ToolContext]) -> int:
         await call.progress("adding")
         return a + b
 
@@ -315,7 +315,7 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
     bundle = Bundle("blocking")
 
     @bundle.tool
-    async def wait(call: Inject[ToolCallContext]) -> str:
+    async def wait(call: Inject[ToolContext]) -> str:
         calls.append(call)
         started.set()
         await asyncio.Event().wait()

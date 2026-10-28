@@ -14,7 +14,7 @@ from harnessed import (
     RunControl,
     Session,
     ToolCall,
-    ToolCallContext,
+    ToolContext,
     system,
 )
 from harnessed import (
@@ -157,7 +157,7 @@ async def test_stop_cancels_current_activity_and_closes_the_turn_without_repeati
     tools = Bundle("stop-tools")
 
     @tools.tool(parallel=True)
-    async def wait(call: Inject[ToolCallContext]) -> str:
+    async def wait(call: Inject[ToolContext]) -> str:
         if phase == "approval":
             pytest.fail("Tool executed before approval")
         contexts.append(call)

@@ -111,9 +111,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-9 — Tool declarations and context
 
-- Consolidate tool metadata into one ToolSpec consumed by all registration forms.
-- Remove the shell-specific ProcResult branch from core using result converters.
-- ToolContext exposes session/inbox/signal/progress, not the entire driver.
 - Document cooperative cancellation of sync tools; keep resources and stable
   result ordering. Preserve explicit ownership and override=True conflicts.
 

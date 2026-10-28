@@ -8,14 +8,13 @@ from typing import Any, cast, overload
 
 from pydantic import ValidationError
 
-from harnessed.core.messages import ToolCall, ToolResult, result_content, to_dict
+from harnessed.core.messages import ToolCall, ToolResult
 from harnessed.core.model import ToolDefinition
 from harnessed.kernel.context import Context
 from harnessed.kernel.di import BindingPlan, binding_plan
 from harnessed.kernel.effects import Disposer, run_sync
-from harnessed.seams.shell import ProcResult
 
-from .execution import ToolCallContext
+from .execution import ToolContext, ToolContexts
 from .scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
 from .validation import ToolArguments, tool_result_content
 
@@ -30,6 +29,25 @@ class ToolNameConflict(ValueError):
 
 class ToolError(Exception):
     """An intentional, safe error message that may be shown to the model."""
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """One declaration shared by method, bundle and functional registration."""
+
+    name: str | None = None
+    timeout: float | None = None
+    parallel: bool = False
+    resources: ResourceSpec = ()
+    readonly: bool = False
+    override: bool = False
+
+    @property
+    def needs(self) -> tuple[type, ...]:
+        return (ToolRegistry,)
+
+    def mount(self, ctx: Context, callback: Callable):
+        return ctx[ToolRegistry].register(callback, spec=self, owner=ctx)
 
 
 type ErrorFormatter = Callable[[ToolCall, Exception], str]
@@ -52,11 +70,14 @@ class _Tool:
     callback: Callable
     owner: Context
     plan: BindingPlan
-    timeout: float | None
-    parallel: bool
-    resources: ResourceSpec
+    spec: ToolSpec
     arguments: ToolArguments
-    readonly: bool = False
+
+
+@dataclass(eq=False)
+class _Converter:
+    callback: Callable[[Any], ToolResult]
+    owner: Context
 
 
 class ToolRegistry:
@@ -64,6 +85,33 @@ class ToolRegistry:
         self._ctx = ctx
         self._default_timeout = default_timeout
         self._tools: dict[str, list[_Tool]] = {}
+        self._converters: dict[type, list[_Converter]] = {}
+
+    def result_converter[T](
+        self, kind: type[T], callback: Callable[[T], ToolResult], *, owner: Context | None = None
+    ) -> Disposer:
+        """Own a converter for a feature's result value for the plugin lifetime."""
+        owner = owner if owner is not None else Context.current() or self._ctx
+        owner._check_open()
+        entries = self._converters.setdefault(kind, [])
+        entry = _Converter(callback, owner)
+        entries.append(entry)
+
+        def remove():
+            entries.remove(entry)
+            if not entries:
+                self._converters.pop(kind, None)
+
+        return owner.effect(remove)
+
+    def _result(self, value: Any) -> ToolResult:
+        if isinstance(value, ToolResult):
+            return value
+        for kind in type(value).__mro__:
+            for entry in reversed(self._converters.get(kind, ())):
+                if entry.owner._registrations_active():
+                    return entry.callback(value)
+        return ToolResult(tool_result_content(value))
 
     @overload
     def tool[F: Callable[..., Any]](self, fn: F, /) -> F: ...
@@ -120,7 +168,11 @@ class ToolRegistry:
         readonly: bool = False,
         override: bool = False,
         owner: Context | None = None,
+        spec: ToolSpec | None = None,
     ) -> Disposer:
+        spec = spec or ToolSpec(name, timeout, parallel, resources, readonly, override)
+        name, timeout, parallel = spec.name, spec.timeout, spec.parallel
+        resources, readonly, override = spec.resources, spec.readonly, spec.override
         owner = owner if owner is not None else Context.current() or self._ctx
         owner._check_open()
         ToolScheduling(parallel)
@@ -149,11 +201,8 @@ class ToolRegistry:
             callback,
             owner,
             plan,
-            timeout,
-            parallel,
-            resources,
+            spec,
             arguments,
-            readonly,
         )
         entries = self._tools.setdefault(definition.name, [])
         entries.append(entry)
@@ -172,19 +221,17 @@ class ToolRegistry:
 
     def is_readonly(self, name: str) -> bool:
         tool = self._visible(self._tools.get(name, []))
-        return tool is not None and tool.readonly
+        return tool is not None and tool.spec.readonly
 
     @property
     def definitions(self) -> tuple[ToolDefinition, ...]:
         return self.visible_definitions(self._ctx)
 
     def _available(self, tool: _Tool, ctx: Context) -> bool:
-        from .loop import Agent
-
         return all(
             dependency.optional
             or dependency.key in ctx
-            or (dependency.key is ToolCallContext and Agent in ctx)
+            or (dependency.key is ToolContext and ToolContexts in ctx)
             for dependency in tool.plan.dependencies.values()
         )
 
@@ -204,13 +251,14 @@ class ToolRegistry:
         tool = self._visible(self._tools.get(call.name, []))
         if tool is None:
             return ToolPlan(call, ToolScheduling())
-        keys = tool.resources(call) if callable(tool.resources) else tool.resources
+        resources = tool.spec.resources
+        keys = resources(call) if callable(resources) else resources
         if inspect.isawaitable(keys):
             if inspect.iscoroutine(keys):
                 keys.close()
             raise TypeError("Resource resolvers must return resource names, not an awaitable")
         return ToolPlan(
-            call, ToolScheduling(tool.parallel, tuple(cast(Iterable[str], keys))), binding=tool
+            call, ToolScheduling(tool.spec.parallel, tuple(cast(Iterable[str], keys))), binding=tool
         )
 
     async def execute(
@@ -218,7 +266,7 @@ class ToolRegistry:
         call: ToolCall,
         *,
         ctx: Context | None = None,
-        call_context: ToolCallContext | None = None,
+        call_context: ToolContext | None = None,
         _expected: object = _UNSPECIFIED,
         error_formatter: ErrorFormatter | None = None,
     ) -> ToolResult:
@@ -235,18 +283,14 @@ class ToolRegistry:
         try:
             arguments = tool.arguments.parse(call.arguments)
             if call_context is None and any(
-                dependency.key is ToolCallContext for dependency in tool.plan.dependencies.values()
+                dependency.key is ToolContext for dependency in tool.plan.dependencies.values()
             ):
-                from .loop import Agent
-
-                call_context = ToolCallContext(call, ctx[Agent])
-            extra: dict[type, Any] = (
-                {ToolCallContext: call_context} if call_context is not None else {}
-            )
+                call_context = ctx[ToolContexts].create(call)
+            extra: dict[type, Any] = {ToolContext: call_context} if call_context is not None else {}
             bound = tool.plan.bind(ctx, kwargs=arguments, extra=extra)
             with tool.owner.activate():
                 async with asyncio.timeout(
-                    tool.timeout if tool.timeout is not None else self._default_timeout
+                    tool.spec.timeout if tool.spec.timeout is not None else self._default_timeout
                 ):
                     if inspect.iscoroutinefunction(tool.callback):
                         value = await tool.callback(*bound.args, **bound.kwargs)
@@ -257,15 +301,7 @@ class ToolRegistry:
                         )
                         if inspect.isawaitable(value):
                             value = await value
-            if isinstance(value, ProcResult):
-                return ToolResult(
-                    result_content(to_dict(value)),
-                    "ok" if value.returncode == 0 else "error",
-                    exit_code=value.returncode,
-                )
-            return (
-                value if isinstance(value, ToolResult) else ToolResult(tool_result_content(value))
-            )
+            return self._result(value)
         except asyncio.CancelledError:
             if call_context is not None:
                 call_context.signal.set()

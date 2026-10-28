@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from harnessed import Bundle, Inject, ModelChunk, ModelRequest, ToolCall, ToolCallContext, user
+from harnessed import Bundle, Inject, ModelChunk, ModelRequest, ToolCall, ToolContext, user
 from harnessed.adapters.deepseek import DeepSeekLLM
 from harnessed.adapters.deepseek_models import ChatCompletionChunk, ChatCompletionRequest
 from harnessed.core.events import ToolReturned
@@ -44,7 +44,7 @@ async def validated_tool():
     created = []
 
     @tools.tool
-    async def create_issue(form: IssueForm, call: Inject[ToolCallContext]) -> IssueReceipt:
+    async def create_issue(form: IssueForm, call: Inject[ToolContext]) -> IssueReceipt:
         """Create an issue after validating its title, assignee and priority."""
         assert isinstance(form.assignee, Assignee) and isinstance(form.priority, Priority)
         await call.progress(f"Creating issue for {form.assignee.handle}")

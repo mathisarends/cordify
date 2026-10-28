@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from harnessed.core.events import PreStep as PreStep
     from harnessed.core.events import ReviewToolResult as ReviewToolResult
     from harnessed.core.events import ToolPolicy as ToolPolicy
-    from harnessed.core.execution import ToolCallContext as ToolCallContext
+    from harnessed.core.execution import ToolContext as ToolContext
     from harnessed.core.features import Bundle as Bundle
     from harnessed.core.features import Plugin as Plugin
     from harnessed.core.features import tool as tool
@@ -153,7 +153,7 @@ _EXPORTS = {
     "PreStep": ("harnessed.core.events", "PreStep"),
     "ReviewToolResult": ("harnessed.core.events", "ReviewToolResult"),
     "ToolPolicy": ("harnessed.core.events", "ToolPolicy"),
-    "ToolCallContext": ("harnessed.core.execution", "ToolCallContext"),
+    "ToolContext": ("harnessed.core.execution", "ToolContext"),
     "Harness": ("harnessed.presets", "Harness"),
     "LLM": ("harnessed.seams.llm", "LLM"),
     "Approver": ("harnessed.core.approvals", "Approver"),
@@ -247,7 +247,7 @@ __all__ = [
     "PreStep",
     "ReviewToolResult",
     "ToolPolicy",
-    "ToolCallContext",
+    "ToolContext",
     "Harness",
     "LLM",
     "Approver",

@@ -12,7 +12,7 @@ from harnessed import (
     ModelChunk,
     Session,
     ToolCall,
-    ToolCallContext,
+    ToolContext,
     plugin,
 )
 from harnessed.core.events import (
@@ -42,7 +42,7 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
     reviews = []
 
     @tools.tool(parallel=True)
-    async def lookup(index: int, call: Inject[ToolCallContext]) -> str:
+    async def lookup(index: int, call: Inject[ToolContext]) -> str:
         started.add(index)
         if len(started) == 3:
             all_started.set()
@@ -260,7 +260,7 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
     started, contexts, cleaned = asyncio.Event(), [], []
 
     @tools.tool(parallel=True)
-    async def wait(index: int, call: Inject[ToolCallContext]) -> str:
+    async def wait(index: int, call: Inject[ToolContext]) -> str:
         contexts.append(call)
         if len(contexts) == 3:
             started.set()
@@ -320,7 +320,7 @@ async def test_sync_timeout_keeps_resource_until_the_worker_finishes():
     context, order = [], []
 
     @tools.tool(parallel=True, resources=("file:x",), timeout=0.02)
-    def slow(call: Inject[ToolCallContext]) -> str:
+    def slow(call: Inject[ToolContext]) -> str:
         context.append(call)
         order.append("first-enter")
         entered.set()

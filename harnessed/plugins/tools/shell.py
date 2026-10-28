@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 
 from harnessed.adapters.shell import LocalShell
+from harnessed.core.messages import ToolResult, result_content, to_dict
 from harnessed.core.tools import ToolRegistry
 from harnessed.kernel import Context, Inject, plugin
 from harnessed.seams.shell import ProcResult, Shell
@@ -16,6 +17,7 @@ async def shell_local(ctx: Context):
 @plugin(needs=[Shell, ToolRegistry])
 async def shell_tools(ctx: Context, cwd: str | Path = "."):
     registry = ctx[ToolRegistry]
+    registry.result_converter(ProcResult, proc_result, owner=ctx)
     cwd = await asyncio.to_thread(Path(cwd).resolve)
 
     @registry.tool
@@ -29,3 +31,11 @@ async def shell_tools(ctx: Context, cwd: str | Path = "."):
         return await shell.run(argv, cwd=cwd, timeout=timeout)
 
     yield
+
+
+def proc_result(value: ProcResult) -> ToolResult:
+    return ToolResult(
+        result_content(to_dict(value)),
+        "ok" if value.returncode == 0 else "error",
+        exit_code=value.returncode,
+    )

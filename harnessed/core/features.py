@@ -1,7 +1,6 @@
 from collections.abc import Callable, Iterable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
-from typing import Any, ClassVar, overload
+from typing import Any, overload
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,7 +14,7 @@ from harnessed.kernel.plugin import PluginLike
 from .instructions import Section
 from .model import Model
 from .scheduling import ResourceSpec, resource_spec
-from .tools import ToolRegistry
+from .tools import ToolSpec
 
 
 class _DefaultGuidance:
@@ -23,29 +22,6 @@ class _DefaultGuidance:
 
 
 _DEFAULT_GUIDANCE = _DefaultGuidance()
-
-
-@dataclass(frozen=True)
-class ToolRegistration:
-    name: str | None = None
-    timeout: float | None = None
-    parallel: bool = False
-    resources: ResourceSpec = ()
-    readonly: bool = False
-    override: bool = False
-    needs: ClassVar[tuple] = (ToolRegistry,)
-
-    def mount(self, ctx: Context, callback: Callable):
-        ctx[ToolRegistry].register(
-            callback,
-            name=self.name,
-            timeout=self.timeout,
-            parallel=self.parallel,
-            resources=self.resources,
-            readonly=self.readonly,
-            override=self.override,
-            owner=ctx,
-        )
 
 
 @overload
@@ -78,17 +54,11 @@ def tool(
     resources = resource_spec(resources)
 
     def decorate(callback):
-        callback._harnessed_tool = {
-            "name": name,
-            "timeout": timeout,
-            "parallel": parallel,
-            "resources": resources,
-            "readonly": readonly,
-            "override": override,
-        }
+        spec = ToolSpec(name, timeout, parallel, resources, readonly, override)
+        callback._harnessed_tool = spec
         callback._harnessed_registrations = [
             *getattr(callback, "_harnessed_registrations", ()),
-            ToolRegistration(name, timeout, parallel, resources, readonly, override),
+            spec,
         ]
         return callback
 
@@ -108,7 +78,7 @@ class Bundle(KernelBundle):
         override: bool = False,
     ):
         return self.add_registration(
-            ToolRegistration(name, timeout, parallel, resource_spec(resources), readonly, override),
+            ToolSpec(name, timeout, parallel, resource_spec(resources), readonly, override),
             callback,
         )
 
@@ -190,7 +160,7 @@ class Plugin(KernelPlugin):
         return (
             *super()._registration_entries(),
             *(
-                (ToolRegistration(**getattr(callback, "_harnessed_tool", {})), callback)
+                (getattr(callback, "_harnessed_tool", ToolSpec()), callback)
                 for callback in getattr(self, "tools", ())
             ),
         )

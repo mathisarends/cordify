@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from harnessed import FS, Bundle, Inject, Plugin, ReviewToolResult, ToolCallContext, hook
+from harnessed import FS, Bundle, Inject, Plugin, ReviewToolResult, ToolContext, hook
 from harnessed import AgentHandle as Agent
 
 workspace_tools = Bundle("workspace-tools")
 
 
 @workspace_tools.tool(name="count_lines", timeout=5)
-async def count_lines(path: str, fs: Inject[FS], call: Inject[ToolCallContext]) -> int:
+async def count_lines(path: str, fs: Inject[FS], call: Inject[ToolContext]) -> int:
     """Count the lines in a workspace file."""
     await call.progress(f"Reading {path}")
     return len((await fs.read(Path(path))).splitlines())
