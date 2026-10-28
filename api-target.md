@@ -2,13 +2,14 @@
 
 > **Status:** Vom Nutzer bestätigtes Zielbild. Der Umsetzungsstand steht in `review.md`. Alle Namen und Signaturen folgen den Empfehlungen in [`review.md`](review.md) (IDs wie P0-5 verweisen dorthin).
 > **Zweck:** Die Developer Experience beurteilen, bevor gebaut wird. Wenn ein Abschnitt hier zu viel Code für das braucht, was er tut, ist das ein DX-Problem.
+> **Aktueller Umfang:** Subagents sind auf Nutzerwunsch zurückgestellt. Abschnitt 11 bleibt eine spätere Designskizze; `Subagent`, Kind-Session-Logs, `session.children` und geerbte Parent-Approvals werden in dieser Iteration nicht implementiert.
 
 ## Prinzip: Everything is a plugin
 
 Harnessed bleibt beim Prinzip von Cordis und DSH: Ein Agent ist eine Liste von Plugins. Auch der Loop, das Model, die Tools, die Persistenz und die Approval-Policy sind Plugins. `Agent(...)` ist nur **Zucker** darüber und kein zweites System.
 
 **Regeln:**
-1. **`Agent` hat genau drei Parameter:** `model`, `instructions` und `plugins`. Alles andere ist ein Plugin in `plugins=[...]`: Tools, Persistenz, Approvals, Compaction, Spill, Subagents, Skills und Services.
+1. **`Agent` hat genau drei Parameter:** `model`, `instructions` und `plugins`. Alles andere ist ein Plugin in `plugins=[...]`: Tools, Persistenz, Approvals, Compaction, Spill, Skills und Services; später auch Subagents.
 2. **Tools leben immer in Plugins**, als `@tool`-Methoden. Lose Funktionen als Tools gibt es nicht, und es gibt genau einen Registrierungsweg.
 3. **Jeder Parameter entspricht 1:1 einem öffentlichen Plugin.** Ein Test sichert das ab:
    ```python
@@ -58,7 +59,7 @@ from harnessed import (
 from harnessed.hooks import Next, PrepareRequest, ToolPolicy, ReviewToolResult, Priority   # level 2
 from harnessed.models import PydanticAIModel          # only for own options; settings: pydantic_ai.settings.ModelSettings
 from harnessed.plugins import (                                         # every built-in plugin lives here
-    AgentLoop, JsonlSessions, Service, Subagent, ContextValue,
+    AgentLoop, JsonlSessions, Service, ContextValue,
     Approvals, ApprovalAnswer, Compaction, at_ratio, every_turns, Spill, ToolOutputLimit,
     Filesystem, Shell, Skills, Skill,
 )
@@ -310,7 +311,7 @@ dispose()                                  # removes plugin and tools again
 ```
 
 - Gibt es einen Tool-Namen doppelt, scheitert der Start mit **`ToolNameConflict`**, es sei denn, das spätere Tool setzt `override=True` (P1-9).
-- Subagents sind ebenfalls Plugins, die Tools beisteuern (Abschnitt 11).
+- Spätere Subagents sollen ebenfalls Plugins sein, die Tools beisteuern (zurückgestellt, Abschnitt 11).
 
 ---
 
@@ -850,9 +851,14 @@ Compaction(trigger=trigger, summarizer="deepseek:deepseek-chat")  # cheaper mode
 
 ---
 
-## 11. Subagents
+## 11. Subagents (später)
 
-Ein Subagent ist ein Plugin, das genau ein Tool beisteuert:
+**Zurückgestellt:** Diese Erweiterung ist nicht Teil der aktuellen Umsetzung. Die
+folgende Skizze dokumentiert nur das mögliche spätere Design; die gezeigte API ist
+nicht verfügbar. Für diese Iteration sind weder ein Subagent-Plugin noch
+Kind-Session-Verwaltung oder geerbte Parent-Approvals vorgesehen.
+
+Ein späterer Subagent wäre ein Plugin, das genau ein Tool beisteuert:
 
 ```python
 from harnessed.plugins import Subagent

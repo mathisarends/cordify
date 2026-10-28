@@ -119,7 +119,7 @@ harnessed/
     spill.py               # SpillStore protocol, local store, Spill plugin (read_spill)
     compaction.py          # Compaction plugin, at_ratio, every_turns, model summarizer
     sessions.py            # JsonlSessions
-    subagent.py            # Subagent
+    # subagent.py          # later: Subagent; deferred from the current iteration
     rules.py               # Rules, when
     skills.py              # Skill, Skills (SKILL.md, load_skill, read_skill_file); yaml via harnessed[skills]
     observations.py        # LatestObservationOnly
@@ -162,7 +162,7 @@ Der bestehende Test in `tests/test_architecture.py` (`LAYERS = {...}`) wird auf 
 
 Die Regeln aus `AGENTS.md` bleiben: absolute Imports über Paketgrenzen, `harnessed.kernel` als Fassade für Plugins, Ruff `TID252`.
 
-**Sonderfall `Subagent`:** Das Plugin bekommt einen `Agent`, der eine Schicht höher liegt. `plugins/subagent.py` typisiert deshalb gegen ein kleines Protokoll in `core` (etwa `SessionFactory` mit `session()`) und importiert `harnessed.agent` nicht.
+**Späterer Sonderfall `Subagent` (zurückgestellt):** Diese Erweiterung wird in der aktuellen Iteration nicht gebaut. Falls sie später umgesetzt wird, bekommt das Plugin einen `Agent`, der eine Schicht höher liegt. `plugins/subagent.py` würde deshalb gegen ein kleines Protokoll in `core` (etwa `SessionFactory` mit `session()`) typisieren und `harnessed.agent` nicht importieren.
 
 ---
 
