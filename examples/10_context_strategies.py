@@ -24,7 +24,7 @@ from harnessed.core.session.events import CompactionApplied, SpillCreated
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.plugins.spill import spill_store
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class WorkspaceState(Plugin):
@@ -55,7 +55,7 @@ async def read_file(path: str) -> str:
 
 async def main():
     with TemporaryDirectory(prefix="harnessed-spills-") as directory:
-        model = ScriptedLLM(
+        model = ScriptedModel(
             [
                 [ModelChunk(text="Initial context accepted.", usage=ModelUsage(500, 10, 300, 200))],
                 [ModelChunk(tool_call=ToolCall("read_file", {"path": "report.txt"}))],

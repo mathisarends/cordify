@@ -8,12 +8,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## P0 — Runtime and public contracts
 
-### P0-6 — Complete neutral model/message contracts
-
-- Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
-  all stream-only LLM compatibility paths.
-- Collocate the remaining compaction contract with its consumer.
-
 ### P0-7 — Finish the public facade and remove duplicate paths
 
 - Remove presets.py, Harness and the old presets after their remaining

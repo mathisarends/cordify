@@ -2,10 +2,10 @@
 
 import asyncio
 
-from harnessed.adapters.replay import ScriptedLLM
 from harnessed.kernel import Context, Key, plugin
 from harnessed.plugins.rules import Rules, when
 from harnessed.presets import minimal
+from harnessed.testing import ScriptedModel
 
 backend = Key[str]("backend")
 
@@ -28,7 +28,7 @@ async def main():
         print("After service removal:", handle.status)
 
     harness = minimal(
-        ScriptedLLM(["The layered SDK is ready."]),
+        ScriptedModel(["The layered SDK is ready."]),
         plugins=[Rules([when(tool="read_file", result_tokens_over=1000).note("Read a range.")])],
     )
     async with harness.session("layered") as agent:

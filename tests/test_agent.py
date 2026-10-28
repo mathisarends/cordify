@@ -34,7 +34,7 @@ from harnessed.core.stream import TextDelta
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import CallbackModel, ScriptedModel
 
 
 async def test_streaming_tool_loop_and_exact_recorded_requests():
@@ -45,7 +45,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
         await call.progress("adding")
         return a + b
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("add", {"a": 1, "b": 2}))],
             [ModelChunk(text="The result "), ModelChunk(text="is 3.")],
@@ -65,14 +65,13 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
     assert agent.status == "closed"
 
 
-class PausingLLM:
+class PausingModel(CallbackModel):
     def __init__(self):
+        super().__init__(self._chunks)
         self.started = asyncio.Event()
         self.release = asyncio.Event()
-        self.requests = []
 
-    async def stream(self, request):
-        self.requests.append(request)
+    async def _chunks(self, request):
         if len(self.requests) == 1:
             self.started.set()
             await self.release.wait()
@@ -80,7 +79,7 @@ class PausingLLM:
 
 
 async def test_inject_stays_idle_steering_enters_next_step_followup_gets_own_turn():
-    model = PausingLLM()
+    model = PausingModel()
     async with Harness([agent_loop(), llm(model)]).session("inbox") as agent:
         await agent.inject("quiet")
         await asyncio.sleep(0)
@@ -121,7 +120,7 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
         stages.append("tool")
         return "removed"
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("remove"))], "Denied."])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("remove"))], "Denied."])
     harness = Harness(
         [
             agent_loop(),
@@ -161,7 +160,7 @@ async def test_approval_always_is_session_local_and_review_can_inject_nudges():
         asked.append(call.name)
         return ApprovalAnswer.ALWAYS
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("work")), ModelChunk(tool_call=ToolCall("work"))],
             "Final.",
@@ -202,7 +201,7 @@ async def test_class_plugin_state_is_fresh_for_every_session_and_methods_support
             return await next_()
 
     template = Counter()
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("count_calls"))],
             "one",
@@ -229,7 +228,7 @@ async def test_function_plugin_can_inject_current_agent_and_implicit_dependencie
         yield
         assert agent.status == "closed"
 
-    harness = Harness([observer(), agent_loop(), llm(ScriptedLLM(["done"]))])
+    harness = Harness([observer(), agent_loop(), llm(ScriptedModel(["done"]))])
     async with harness.session("injected-agent") as agent:
         assert observed == [(agent.id, agent.ctx[ToolRegistry])]
         await agent.run("go")
@@ -242,7 +241,7 @@ async def test_explicit_and_live_registration():
     async def review(event, next_):
         return (await next_()).with_note("ok")
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("echo", {"text": "hello"}))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("echo", {"text": "hello"}))], "done"])
     harness = Harness(
         [
             agent_loop(),
@@ -261,7 +260,7 @@ async def test_explicit_and_live_registration():
 
 
 async def test_pre_step_rejection_keeps_input_until_another_wake():
-    model = ScriptedLLM(["accepted", "second"])
+    model = ScriptedModel(["accepted", "second"])
     harness = Harness([agent_loop(), llm(model)])
     async with harness.session("reject") as agent:
         reject = True
@@ -280,7 +279,7 @@ async def test_pre_step_rejection_keeps_input_until_another_wake():
 
 
 async def test_cancel_before_driver_starts_and_reuse_agent():
-    model = ScriptedLLM(["after cancel"])
+    model = ScriptedModel(["after cancel"])
     async with Harness([agent_loop(), llm(model)]).session("cancel-before-start") as agent:
         await agent.followup("discard")
         await agent.cancel()
@@ -291,13 +290,16 @@ async def test_cancel_before_driver_starts_and_reuse_agent():
 async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
     started = asyncio.Event()
 
-    class PartialLLM:
-        async def stream(self, request):
+    class PartialModel(CallbackModel):
+        def __init__(self):
+            super().__init__(self._chunks)
+
+        async def _chunks(self, request):
             yield ModelChunk(text="visible prefix")
             started.set()
             await asyncio.Event().wait()
 
-    async with Harness([agent_loop(), llm(PartialLLM())]).session("partial") as agent:
+    async with Harness([agent_loop(), llm(PartialModel())]).session("partial") as agent:
         await agent.followup("go")
         await started.wait()
         await agent.cancel()
@@ -319,7 +321,7 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
         await asyncio.Event().wait()
         return "never"
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("wait"))]])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("wait"))]])
     async with Harness([agent_loop(), llm(model), bundle]).session("cancel-tool") as agent:
         await agent.followup("go")
         await started.wait()
@@ -336,7 +338,7 @@ async def test_same_harness_rejects_two_live_writers_and_max_steps_bounds_the_lo
     async def again() -> str:
         return "again"
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("again"))]] * 2)
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("again"))]] * 2)
     harness = Harness([agent_loop(), llm(model), bundle])
     async with harness.session("same", max_steps=2) as agent:
         with pytest.raises(RuntimeError, match="live owner"):
@@ -349,15 +351,18 @@ async def test_same_harness_rejects_two_live_writers_and_max_steps_bounds_the_lo
 async def test_observer_failure_closes_model_iterator_before_run_returns():
     closed = asyncio.Event()
 
-    class ResourceLLM:
-        async def stream(self, request):
+    class ResourceModel(CallbackModel):
+        def __init__(self):
+            super().__init__(self._chunks)
+
+        async def _chunks(self, request):
             try:
                 yield ModelChunk(text="partial")
                 await asyncio.Event().wait()
             finally:
                 closed.set()
 
-    async with Harness([agent_loop(), llm(ResourceLLM())]).session("resource") as agent:
+    async with Harness([agent_loop(), llm(ResourceModel())]).session("resource") as agent:
 
         @agent.on(TextDelta)
         def broken(event):
@@ -385,7 +390,7 @@ async def test_policy_ask_routes_to_approver_seam():
         asked.append(call.name)
         return ApprovalAnswer.ALLOW
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("approved"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("approved"))], "done"])
     harness = Harness([agent_loop(), llm(model), features, callback_approver(approve)])
     async with harness.session("ask") as agent:
         await agent.run("ask")
@@ -393,7 +398,7 @@ async def test_policy_ask_routes_to_approver_seam():
 
 
 async def test_canceling_when_idle_waiter_does_not_cancel_the_agent():
-    model = PausingLLM()
+    model = PausingModel()
     async with Harness([agent_loop(), llm(model)]).session("waiter") as agent:
         await agent.followup("go")
         await model.started.wait()

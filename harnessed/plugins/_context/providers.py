@@ -1,13 +1,13 @@
 from harnessed.adapters.compaction import ExtractiveCompactor
+from harnessed.core.compaction import Summarizer
 from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Context, plugin
-from harnessed.seams.compaction import Compactor
 
 
 @plugin(needs=[TokenCounter])
 async def compactor(
     ctx: Context,
-    implementation: Compactor | None = None,
+    implementation: Summarizer | None = None,
 ):
-    ctx.provide(Compactor, implementation or ExtractiveCompactor(ctx[TokenCounter]))
+    ctx.provide(Summarizer, implementation or ExtractiveCompactor(ctx[TokenCounter]))
     yield

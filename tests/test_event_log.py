@@ -25,7 +25,7 @@ from harnessed.core.session.session import derive_messages, derive_requests
 from harnessed.core.stream import TextDelta
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 def roundtrip(events):
@@ -35,7 +35,7 @@ def roundtrip(events):
 
 
 async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_replay(tmp_path):
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [[ModelChunk(reasoning="think"), ModelChunk(text="hello "), ModelChunk(text="world")]]
     )
     harness = minimal(model, plugins=[session_jsonl(tmp_path)])
@@ -72,7 +72,7 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
     async def add(a: int, b: int) -> int:
         return a + b
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(text="checking"), ModelChunk(tool_call=ToolCall("add", {"a": 1, "b": 2}))],
             [ModelChunk(reasoning="done"), ModelChunk(text="3")],
@@ -95,7 +95,7 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
 
 
 async def test_exact_requests_include_request_hook_changes_without_rerunning_the_hook():
-    model = ScriptedLLM(["done"])
+    model = ScriptedModel(["done"])
     harness = minimal(model)
     invocations = []
 
@@ -132,7 +132,7 @@ async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_m
     prefix = session.events
     partial = session.messages[-1]
     await persistence.aclose()
-    model = ScriptedLLM([])
+    model = ScriptedModel([])
     async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("crashed") as resumed:
         assert resumed.log.events[: len(prefix)] == prefix
         final = next(e for e in resumed.log.events if isinstance(e, AssistantMessage))
@@ -180,7 +180,7 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
         ctx.provide(SessionPersistence, FailingPersistence())
         yield
 
-    model = ScriptedLLM(["not committed"])
+    model = ScriptedModel(["not committed"])
     async with minimal(model, plugins=[persistence()]).session("failed-write") as agent:
         live = []
         with pytest.raises(OSError, match="storage unavailable"):

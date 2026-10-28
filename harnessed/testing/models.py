@@ -2,7 +2,7 @@
 
 import asyncio
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
 
 from harnessed.core.messages import Assistant, ToolCall
@@ -49,8 +49,37 @@ class ScriptedModel:
             return stream.response()
 
 
+class CallbackModel:
+    """Build a test Model from a controlled asynchronous chunk generator."""
+
+    def __init__(
+        self,
+        callback: Callable[[ModelRequest], AsyncIterator[ModelChunk]],
+        *,
+        info: ModelInfo | None = None,
+    ):
+        self.callback = callback
+        self.info = info or ModelInfo("callback", context_window=128_000)
+        self.requests: list[ModelRequest] = []
+
+    @asynccontextmanager
+    async def stream(self, request: ModelRequest):
+        self.requests.append(request)
+        stream = _Stream(self.callback(request))
+        try:
+            yield stream
+        finally:
+            await stream.aclose()
+
+    async def request(self, request: ModelRequest) -> ModelResponse:
+        async with self.stream(request) as stream:
+            async for _ in stream:
+                pass
+            return stream.response()
+
+
 class _Stream:
-    def __init__(self, chunks: ModelResponse | Iterable[ModelChunk]):
+    def __init__(self, chunks: ModelResponse | Iterable[ModelChunk] | AsyncIterator[ModelChunk]):
         self._provided = chunks if isinstance(chunks, ModelResponse) else None
         if isinstance(chunks, ModelResponse):
             message = chunks.message
@@ -59,22 +88,29 @@ class _Stream:
                 *(ModelChunk(tool_call=call) for call in message.tool_calls),
                 ModelChunk(usage=chunks.usage, stop_reason=chunks.stop_reason),
             )
-        self._chunks = iter(chunks)
+        self._chunks = chunks if isinstance(chunks, AsyncIterator) else iter(chunks)
         self._text: list[str] = []
         self._reasoning: list[str] = []
         self._calls = []
         self._usage = ModelUsage(0)
         self._stop_reason = None
         self._response: ModelResponse | None = None
+        self._closed = False
 
     def __aiter__(self):
         return self
 
     async def __anext__(self) -> ModelChunk:
+        if self._closed or self._response is not None:
+            raise StopAsyncIteration
         await asyncio.sleep(0)
         try:
-            chunk = next(self._chunks)
-        except StopIteration:
+            chunk = (
+                await anext(self._chunks)
+                if isinstance(self._chunks, AsyncIterator)
+                else next(self._chunks)
+            )
+        except (StopIteration, StopAsyncIteration):
             self._response = self._provided or ModelResponse(
                 Assistant(
                     "".join(self._text),
@@ -101,7 +137,12 @@ class _Stream:
         return self._response
 
     async def aclose(self):
-        if close := getattr(self._chunks, "close", None):
+        if self._closed:
+            return
+        self._closed = True
+        if close_async := getattr(self._chunks, "aclose", None):
+            await close_async()
+        elif close := getattr(self._chunks, "close", None):
             close()
 
 

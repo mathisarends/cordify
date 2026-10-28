@@ -27,7 +27,7 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
@@ -37,7 +37,7 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
     async def step() -> str:
         return "done"
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("step"))], "first", "second"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("step"))], "first", "second"])
     async with Harness([agent_loop(), llm(model), tools]).session("context") as agent:
         await agent.run("review", context={"ticket": "Fix login", "details": {"issue": 42}})
         for request in model.requests[:2]:
@@ -55,7 +55,7 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
     diff.write_text("+ fixed login", encoding="utf-8")
     image = tmp_path / "screenshot.png"
     image.write_bytes(b"image-test-bytes")
-    model = ScriptedLLM(["reviewed"])
+    model = ScriptedModel(["reviewed"])
     async with Harness([agent_loop(), llm(model)]).session("attachments") as agent:
         await agent.run("Review", attachments=[File(diff), Image(image)])
         request = model.requests[0]
@@ -73,7 +73,7 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
 
 
 async def test_system_injection_survives_prompt_updates_and_typed_user_steering():
-    model = ScriptedLLM(["first", "second"])
+    model = ScriptedModel(["first", "second"])
     async with Harness([agent_loop(), llm(model)]).session("typed") as agent:
         await agent.inject(system("External change"))
         await agent.steer(user("Check auth"))
@@ -100,7 +100,7 @@ async def test_push_context_from_pre_step_is_in_the_current_request():
                 await agent.inject(system("Relevant memory: prefers Python"))
             return await next_()
 
-    model = ScriptedLLM(["done"])
+    model = ScriptedModel(["done"])
     async with Harness([agent_loop(), llm(model), Recall()]).session("push") as agent:
         await agent.run("my task")
         assert seen == [(True, "my task")]
@@ -117,7 +117,7 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
         async def setup(self, prompt: Inject[SystemPrompt], fs: Inject[FS]):
             prompt.section("project", lambda: fs.read(Path("AGENTS.md")), stable=False)
 
-    model = ScriptedLLM(["one", "two"])
+    model = ScriptedModel(["one", "two"])
     async with Harness([agent_loop(), llm(model), fs_local(tmp_path), Project()]).session(
         "project"
     ) as agent:
@@ -143,7 +143,7 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
     async def click(ref: str) -> str:
         return f"Clicked {ref}"
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("click", {"ref": "button-1"}))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("click", {"ref": "button-1"}))], "done"])
     async with Harness([agent_loop(), llm(model), tools, BrowserObserver()]).session(
         "browser"
     ) as agent:

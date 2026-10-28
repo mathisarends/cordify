@@ -14,7 +14,7 @@ from harnessed import (
 from harnessed.core.session.events import CompactionApplied
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class Retention(TypedDict):
@@ -24,7 +24,7 @@ class Retention(TypedDict):
 
 
 async def compare(name, policy):
-    model = ScriptedLLM([f"answer {index}" for index in range(6)])
+    model = ScriptedModel([f"answer {index}" for index in range(6)])
     harness = minimal(
         model,
         plugins=[policy, ContextBudgetGuard(limit=2500, reserve_tokens=256)],
@@ -57,7 +57,7 @@ async def main():
     await compare("window", SlidingWindowCompaction(**retention))
     await compare("periodic", PeriodicCompaction(every=3, **retention))
 
-    model = ScriptedLLM([])
+    model = ScriptedModel([])
     async with minimal(model, plugins=[ContextBudgetGuard(limit=100)]).session("guard") as agent:
         try:
             await agent.run("Current task that cannot be summarized away: " + "x" * 1000)

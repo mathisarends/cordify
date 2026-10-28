@@ -5,7 +5,7 @@ from dataclasses import replace
 from uuid import uuid4
 
 from harnessed.core.budget import ContextBudget, truncate
-from harnessed.core.compaction import compact_request, plan_compaction
+from harnessed.core.compaction import Summarizer, compact_request, plan_compaction
 from harnessed.core.errors import ConfigError
 from harnessed.core.hooks import PrepareRequest
 from harnessed.core.plugin import Plugin
@@ -14,7 +14,6 @@ from harnessed.core.session.events import CompactionApplied, StepStart
 from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.core.tracing import span
 from harnessed.kernel import Inject, hook
-from harnessed.seams.compaction import Compactor
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +50,7 @@ class _Compaction(Plugin):
         self,
         event,
         next_,
-        compactor: Inject[Compactor],
+        compactor: Inject[Summarizer],
         counter: Inject[TokenCounter],
         agent: Inject[Agent],
     ):
@@ -76,10 +75,10 @@ class _Compaction(Plugin):
         with span(agent.ctx, "compaction", session_id=agent.id, through=plan.through):
             summary = await compactor.summarize(plan.messages, max_tokens=self.summary_tokens)
         if not isinstance(summary, str) or not summary.strip():
-            raise ValueError("Compactor must return a non-empty summary")
+            raise ValueError("Summarizer must return a non-empty summary")
         summary = truncate(summary, self.summary_tokens, counter)
         if not summary.strip():
-            raise ValueError("Compactor produced no content within the summary budget")
+            raise ValueError("Summarizer produced no content within the summary budget")
         events = agent.log.events
         last_compaction = agent.log.last_offset(CompactionApplied)
         if last_compaction is not None and last_compaction > start:

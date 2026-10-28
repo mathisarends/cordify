@@ -18,7 +18,7 @@ from harnessed import (
 from harnessed import Session as Agent
 from harnessed.plugins.services import system_prompt, tools
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 @dataclass
@@ -292,7 +292,7 @@ async def test_agent_registration_facade_uses_the_active_plugin_owner():
 
         yield
 
-    async with minimal(ScriptedLLM([])).session("plugin-effects") as agent:
+    async with minimal(ScriptedModel([])).session("plugin-effects") as agent:
         handle = await agent.ctx.plugin(feature())
         assert [definition.name for definition in agent.ctx[ToolRegistry].definitions] == ["read"]
         await agent.ctx.dispatch(Ping())

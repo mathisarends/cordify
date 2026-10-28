@@ -21,11 +21,11 @@ from harnessed.core.session.session import derive_messages
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
-    model = ScriptedLLM(["first reply", "second reply"])
+    model = ScriptedModel(["first reply", "second reply"])
     harness = Harness([agent_loop(), llm(model), session_jsonl(tmp_path)])
     async with harness.session("resume") as agent:
         await agent.run("first")
@@ -106,7 +106,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     ):
         await session.append(event)
     await persistence.aclose()
-    harness = Harness([agent_loop(), llm(ScriptedLLM(["recovered"])), session_jsonl(tmp_path)])
+    harness = Harness([agent_loop(), llm(ScriptedModel(["recovered"])), session_jsonl(tmp_path)])
     async with harness.session("interrupted") as agent:
         assert isinstance(agent.log.last(TurnEnd), TurnEnd)
         assert agent.log.last(TurnEnd).reason == "aborted"
@@ -121,7 +121,7 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
     session = Session("pending", persistence=persistence)
     await session.append(InboxAdded(User("queued"), "next-turn", True, "followup"))
     await persistence.aclose()
-    model = ScriptedLLM(["processed"])
+    model = ScriptedModel(["processed"])
     harness = Harness([agent_loop(), llm(model), session_jsonl(tmp_path)])
     async with harness.session("pending") as agent:
         await agent.when_idle()

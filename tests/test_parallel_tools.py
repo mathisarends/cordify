@@ -30,7 +30,7 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins.filesystem import LocalFS, fs_tools
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_model_order():
@@ -58,7 +58,7 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
         return await next_()
 
     calls = tuple(ToolCall("lookup", {"index": index}) for index in range(3))
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools], max_parallel_tools=3).session("parallel") as agent:
         running = asyncio.create_task(agent.run("go"))
         try:
@@ -110,7 +110,7 @@ async def test_resource_dependencies_are_fifo_and_do_not_hold_slots_while_waitin
             active.difference_update(current)
 
     calls = tuple(ToolCall("work", {"index": index}) for index in range(5))
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools], max_parallel_tools=2).session("resources") as agent:
         running = asyncio.create_task(agent.run("go"))
         try:
@@ -176,7 +176,7 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
         ToolCall("write_file", {"path": "./target.txt", "text": "SECOND"}),
         ToolCall("read_file", {"path": "target.txt"}),
     )
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[filesystem(), fs_tools()]).session("files") as agent:
         running = asyncio.create_task(agent.run("go"))
         try:
@@ -211,7 +211,7 @@ async def test_global_parallel_limit_bounds_execution_and_can_force_serial_mode(
         return str(index)
 
     calls = [ToolCall("work", {"index": index}) for index in range(8)]
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools], max_parallel_tools=limit).session(
         "bounded"
     ) as agent:
@@ -245,7 +245,7 @@ async def test_tool_errors_and_denials_do_not_cancel_independent_calls():
         return await next_()
 
     calls = [ToolCall("work", {"index": index}) for index in range(3)]
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools]).session("errors") as agent:
         await agent.run("go")
         results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
@@ -269,7 +269,7 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
             cleaned.append(index)
 
     calls = [ToolCall("wait", {"index": index}) for index in range(3)]
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls]])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls]])
     async with minimal(model, plugins=[tools]).session("cancel") as agent:
         await agent.followup("go")
         await asyncio.wait_for(started.wait(), 2)
@@ -333,7 +333,7 @@ async def test_sync_timeout_keeps_resource_until_the_worker_finishes():
         return "done"
 
     calls = (ToolCall("slow"), ToolCall("after"))
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools], max_parallel_tools=2).session("sync") as agent:
         running = asyncio.create_task(agent.run("go"))
         try:
@@ -355,7 +355,7 @@ async def test_invalid_resource_resolver_is_a_bounded_tool_error():
     async def invalid() -> str:
         pytest.fail("Tool with invalid resource scheduling ran")
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("invalid"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("invalid"))], "done"])
     async with minimal(model, plugins=[tools]).session("invalid") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
@@ -388,7 +388,7 @@ async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadat
         return await next_()
 
     calls = (ToolCall("work"), ToolCall("work"))
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools]).session("replacement") as agent:
         await agent.run("go")
         results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
@@ -401,4 +401,4 @@ async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadat
 @pytest.mark.parametrize("limit", [0, -1, True])
 def test_parallel_limit_is_validated(limit):
     with pytest.raises(ValueError, match="max_parallel_tools"):
-        minimal(ScriptedLLM([]), max_parallel_tools=limit)
+        minimal(ScriptedModel([]), max_parallel_tools=limit)

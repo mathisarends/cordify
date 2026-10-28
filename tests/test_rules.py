@@ -22,7 +22,7 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.plugins.sessions import session_jsonl
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 def scripted_commands(commands):
@@ -47,7 +47,7 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
             when(tool="bash", exit_code=lambda code: code != 0).context("Consider the failure."),
         ]
     )
-    model = ScriptedLLM(scripted_commands(["git push origin main"]))
+    model = ScriptedModel(scripted_commands(["git push origin main"]))
     async with Harness([agent_loop(), llm(model), tools, rules]).session("rules") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
@@ -81,7 +81,7 @@ async def test_repeated_failures_are_grouped_by_command_reset_on_success_and_fir
         "pytest a",
         "pytest a",
     ]
-    model = ScriptedLLM(scripted_commands(commands))
+    model = ScriptedModel(scripted_commands(commands))
     rules = Rules(
         [when(tool="bash", exit_code=lambda c: c != 0, repeated=3).context("Third failure")]
     )
@@ -100,7 +100,9 @@ async def test_repeat_state_recovers_from_log_without_replaying_actions(tmp_path
     async def bash(command: str) -> ToolResult:
         return ToolResult("failed", exit_code=1)
 
-    model = ScriptedLLM([*scripted_commands(["pytest", "pytest"]), *scripted_commands(["pytest"])])
+    model = ScriptedModel(
+        [*scripted_commands(["pytest", "pytest"]), *scripted_commands(["pytest"])]
+    )
     rules = Rules([when(tool="bash", exit_code=1, repeated=3).context("Third")])
     harness = Harness([agent_loop(), llm(model), tools, rules, session_jsonl(tmp_path)])
     async with harness.session("resume-rules") as agent:
@@ -118,7 +120,7 @@ async def test_rules_have_independent_state_in_different_sessions():
     async def bash(command: str) -> str:
         return "large output"
 
-    model = ScriptedLLM([*scripted_commands(["same"]), *scripted_commands(["same"])])
+    model = ScriptedModel([*scripted_commands(["same"]), *scripted_commands(["same"])])
     rules = Rules([when(tool="bash", repeated=2).note("twice")])
     harness = Harness([agent_loop(), llm(model), tools, rules])
     for session_id in ("one", "two"):
@@ -142,7 +144,7 @@ async def test_repeat_resume_uses_recorded_matches_even_when_notes_change_predic
             when(tool="bash").note("changed after matching"),
         ]
     )
-    model = ScriptedLLM([*scripted_commands(["same"]), *scripted_commands(["same"])])
+    model = ScriptedModel([*scripted_commands(["same"]), *scripted_commands(["same"])])
     harness = Harness([agent_loop(), llm(model), tools, rules, session_jsonl(tmp_path)])
     async with harness.session("matched") as agent:
         await agent.run("one")
@@ -165,7 +167,7 @@ async def test_size_predicate_and_missing_exit_code_and_tool_filters():
             when(tool="bash").context("wrong tool"),
         ]
     )
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("read_file"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("read_file"))], "done"])
     async with Harness([agent_loop(), llm(model), tools, rules]).session("size") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
@@ -189,7 +191,7 @@ async def test_process_return_values_are_normalized_with_exit_codes():
     async def run_command(argv: list[str]) -> ProcResult:
         return ProcResult(7, "out", "err")
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("run_command", {"argv": ["python", "-m", "pytest"]}))],
             "done",

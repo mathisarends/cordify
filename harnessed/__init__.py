@@ -7,7 +7,6 @@ logging.getLogger("harnessed").addHandler(logging.NullHandler())
 
 if TYPE_CHECKING:
     from harnessed.adapters.compaction import ExtractiveCompactor as ExtractiveCompactor
-    from harnessed.adapters.compaction import LLMCompactor as LLMCompactor
     from harnessed.agent import Agent as Agent
     from harnessed.agent import PluginConflict as PluginConflict
     from harnessed.core.approvals import Approval as Approval
@@ -101,8 +100,6 @@ if TYPE_CHECKING:
     from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
     from harnessed.plugins.spill import SpillStore as SpillStore
     from harnessed.presets import Harness as Harness
-    from harnessed.seams.compaction import Compactor as Compactor
-    from harnessed.seams.llm import LLM as LLM
 _EXPORTS = {
     "SessionStatus": ("harnessed.core.runtime.control", "SessionStatus"),
     "SessionClosed": ("harnessed.core.errors", "SessionClosed"),
@@ -133,9 +130,7 @@ _EXPORTS = {
     "RunResult": ("harnessed.core.runtime.result", "RunResult"),
     "ApproximateTokenCounter": ("harnessed.core.tokens", "ApproximateTokenCounter"),
     "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
-    "Compactor": ("harnessed.seams.compaction", "Compactor"),
     "ExtractiveCompactor": ("harnessed.adapters.compaction", "ExtractiveCompactor"),
-    "LLMCompactor": ("harnessed.adapters.compaction", "LLMCompactor"),
     "File": ("harnessed.core.attachments", "File"),
     "Image": ("harnessed.core.attachments", "Image"),
     "Bail": ("harnessed.kernel.events", "Bail"),
@@ -157,7 +152,6 @@ _EXPORTS = {
     "ToolPolicy": ("harnessed.core.hooks", "ToolPolicy"),
     "ToolContext": ("harnessed.core.tools.context", "ToolContext"),
     "Harness": ("harnessed.presets", "Harness"),
-    "LLM": ("harnessed.seams.llm", "LLM"),
     "Approver": ("harnessed.core.approvals", "Approver"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
@@ -225,9 +219,7 @@ __all__ = [
     "RunResult",
     "ApproximateTokenCounter",
     "TokenCounter",
-    "Compactor",
     "ExtractiveCompactor",
-    "LLMCompactor",
     "File",
     "Image",
     "Bail",
@@ -249,7 +241,6 @@ __all__ = [
     "ToolPolicy",
     "ToolContext",
     "Harness",
-    "LLM",
     "Approver",
     "ApprovalAnswer",
     "PolicyDecision",

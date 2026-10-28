@@ -17,7 +17,7 @@ from harnessed import (
 from harnessed.core.session.events import ToolReturned
 from harnessed.plugins.filesystem import fs_local, fs_tools
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 budget = ToolOutputLimit(max_chars=1024)
 tools = Bundle("large-results")
@@ -40,7 +40,7 @@ async def main():
     with TemporaryDirectory() as directory:
         source = "HEAD\n" + "x" * (2 * 1024 * 1024) + "\nTAIL ERROR"
         await asyncio.to_thread(Path(directory, "large.log").write_text, source, encoding="utf-8")
-        model = ScriptedLLM(
+        model = ScriptedModel(
             [
                 [ModelChunk(tool_call=ToolCall("cat_log"))],
                 [

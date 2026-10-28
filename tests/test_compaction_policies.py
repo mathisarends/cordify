@@ -29,7 +29,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins._context.providers import compactor
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class RecordingCompactor:
@@ -48,7 +48,7 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
     async def work() -> str:
         return "exact result"
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("work"))], "FIRST ANSWER", "second", "third", "current"]
     )
     summaries = RecordingCompactor()
@@ -87,7 +87,7 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
 
 async def test_periodic_compaction_counts_new_closed_turns_since_last_event():
     summaries = RecordingCompactor()
-    model = ScriptedLLM(["answer"] * 6)
+    model = ScriptedModel(["answer"] * 6)
     async with minimal(
         model,
         plugins=[
@@ -106,7 +106,7 @@ async def test_periodic_compaction_counts_new_closed_turns_since_last_event():
 
 async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input():
     summaries = RecordingCompactor()
-    model = ScriptedLLM(["answer"] * 4)
+    model = ScriptedModel(["answer"] * 4)
     async with minimal(model, plugins=[compactor(summaries)]).session("pin") as agent:
         await agent.run("PINNED " + "a" * 400)
         pinned = agent.log.turns[0]
@@ -124,7 +124,7 @@ async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input(
 
 async def test_compaction_preserves_request_hook_context_and_combines_triggers_once_per_step():
     summaries = RecordingCompactor()
-    model = ScriptedLLM(["answer", "answer"])
+    model = ScriptedModel(["answer", "answer"])
     harness = minimal(
         model,
         plugins=[
@@ -157,7 +157,7 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
             await release.wait()
             return "saved summary"
 
-    model = ScriptedLLM(["answer", "answer"])
+    model = ScriptedModel(["answer", "answer"])
     async with minimal(
         model,
         plugins=[compactor(BlockingCompactor()), SlidingWindowCompaction(keep_turns=0)],
@@ -197,7 +197,7 @@ async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
 
 
 async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
-    model = ScriptedLLM([])
+    model = ScriptedModel([])
     harness = minimal(model, plugins=[ContextBudgetGuard(limit=100, reserve_tokens=20)])
 
     @harness.on(ConfigureRequest)
@@ -215,7 +215,7 @@ async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
 
 async def test_threshold_uses_guard_limit_and_reserved_output_budget():
     summaries = RecordingCompactor()
-    model = ScriptedLLM(["answer", "answer"])
+    model = ScriptedModel(["answer", "answer"])
     async with minimal(
         model,
         plugins=[
@@ -237,7 +237,7 @@ async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_b
 
     example.__doc__ = "x" * 1000
     tools.add_tool(example)
-    model = ScriptedLLM([])
+    model = ScriptedModel([])
     async with minimal(
         model,
         plugins=[tools, SlidingWindowCompaction(keep_turns=0), ContextBudgetGuard(limit=100)],
@@ -250,7 +250,7 @@ async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_b
 
 
 async def test_unknown_turn_pins_are_reported_before_the_provider_call():
-    model = ScriptedLLM([])
+    model = ScriptedModel([])
     async with minimal(
         model, plugins=[SlidingWindowCompaction(preserve_turns=["unknown"])]
     ).session("unknown-pin") as agent:
@@ -260,7 +260,7 @@ async def test_unknown_turn_pins_are_reported_before_the_provider_call():
 
 
 async def test_budget_reserve_uses_maximum_and_keeps_the_stricter_window_limit():
-    model = ScriptedLLM(["ok"])
+    model = ScriptedModel(["ok"])
     harness = minimal(
         model, plugins=[ContextBudgetGuard(limit=100, reserve_tokens=20)], context_window=200
     )

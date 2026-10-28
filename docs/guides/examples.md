@@ -16,6 +16,6 @@ requires its provider extra and credentials.
 | Validated forms | `uv run python -m examples.21_validated_forms` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/21_validated_forms.py) |
 
 These examples use the application API and public plugin declarations. Remaining
-older scripts are migrating from the original Harness/LLM API; the repository's
+older scripts are migrating from the original Harness composition API; the repository's
 [open review](https://github.com/mathisarends/cordify/blob/main/review.md) tracks that
 work. Start with the listed examples when building a new application.

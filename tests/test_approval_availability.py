@@ -20,7 +20,7 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import headless, minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 @pytest.mark.parametrize("preset", [minimal, headless])
@@ -38,7 +38,7 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
         return "ok"
 
     calls = [ToolCall("risky"), ToolCall("safe")]
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with preset(model, plugins=[tools, approval_gate(risky={"risky"})]).session(
         "no-ui"
     ) as agent:
@@ -58,7 +58,7 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
 
 
 async def test_direct_sdk_approval_raises_typed_unavailable_and_leaves_no_pending_question():
-    async with minimal(ScriptedLLM([])).session("direct") as agent:
+    async with minimal(ScriptedModel([])).session("direct") as agent:
         with pytest.raises(ApprovalUnavailable, match="No approval responder"):
             await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
         record = agent.log.approvals.records[-1]
@@ -74,7 +74,7 @@ async def test_explicit_approver_then_service_take_precedence_over_request_liste
         async def ask(self, call, reason):
             return self.decision
 
-    async with minimal(ScriptedLLM([])).session("precedence") as agent:
+    async with minimal(ScriptedModel([])).session("precedence") as agent:
         agent.ctx.provide(Approver, Answer(ApprovalAnswer.DENY))
         agent.on(ApprovalRequest, lambda ev: pytest.fail("Explicit approver was bypassed"))
         assert (
@@ -88,7 +88,7 @@ async def test_explicit_approver_then_service_take_precedence_over_request_liste
 
 async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or_deny():
     asked = []
-    async with minimal(ScriptedLLM([])).session("listeners") as agent:
+    async with minimal(ScriptedModel([])).session("listeners") as agent:
         agent.on(ApprovalRequest, lambda ev: asked.append("late"), priority=100)
 
         def answer(event):
@@ -124,7 +124,7 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
         ask = staticmethod(wait)
 
     plugins = [callback_approver(wait)] if transport == "callback" else []
-    harness = minimal(ScriptedLLM([]), plugins=plugins, approval_timeout=10)
+    harness = minimal(ScriptedModel([]), plugins=plugins, approval_timeout=10)
     async with harness.session("timeout", approval_timeout=0.02) as agent:
         if transport == "listener":
             agent.on(ApprovalRequest, wait)
@@ -144,7 +144,7 @@ async def test_responder_abstention_invalid_answers_and_failures_are_unavailable
             raise answer
         return answer
 
-    async with minimal(ScriptedLLM([])).session("bad-answer") as agent:
+    async with minimal(ScriptedModel([])).session("bad-answer") as agent:
         agent.on(ApprovalRequest, respond)
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
@@ -166,7 +166,7 @@ async def test_gate_stays_active_after_approver_service_is_removed():
         async def ask(self, call, reason):
             return ApprovalAnswer.ALLOW
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("work"))],
             "first",
@@ -188,14 +188,14 @@ async def test_gate_stays_active_after_approver_service_is_removed():
 
 
 async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_new_request(tmp_path):
-    async with minimal(ScriptedLLM([]), plugins=[session_jsonl(tmp_path)]).session(
+    async with minimal(ScriptedModel([]), plugins=[session_jsonl(tmp_path)]).session(
         "resume"
     ) as agent:
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
         prefix = agent.log.events
     async with minimal(
-        ScriptedLLM([]),
+        ScriptedModel([]),
         plugins=[session_jsonl(tmp_path), callback_approver(lambda call: ApprovalAnswer.ALWAYS)],
     ).session("resume") as resumed:
         assert resumed.log.events == prefix and not resumed.log.approvals.pending
@@ -204,7 +204,7 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
         )
         assert len(resumed.log.approvals.records) == 2
         grant = resumed.log.approvals.grants[0]
-    async with minimal(ScriptedLLM([]), plugins=[session_jsonl(tmp_path)]).session(
+    async with minimal(ScriptedModel([]), plugins=[session_jsonl(tmp_path)]).session(
         "resume"
     ) as resumed:
         assert (
@@ -243,7 +243,7 @@ async def test_approval_priority_places_wait_outside_downstream_policy_timing(ga
 
     gate = approval_gate(risky={"work"}, ask=answer)
     plugins = [gate, tools] if gate_first else [tools, gate]
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("work"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))], "done"])
     async with minimal(model, plugins=plugins).session("timing") as agent:
         await agent.run("go")
     assert order == ["approval", "timer", "policy"]
@@ -253,7 +253,7 @@ async def test_approval_priority_places_wait_outside_downstream_policy_timing(ga
 @pytest.mark.parametrize("timeout", [0, -1, True, float("nan"), float("inf"), "5"])
 def test_approval_timeout_must_be_finite_and_positive(timeout):
     with pytest.raises(ValueError, match="approval_timeout"):
-        minimal(ScriptedLLM([]), approval_timeout=timeout)
+        minimal(ScriptedModel([]), approval_timeout=timeout)
     with pytest.raises(ValueError, match="approval_timeout"):
         AgentOptions("model", approval_timeout=timeout)
 

@@ -12,7 +12,7 @@ from harnessed.core.session.events import LogTailRecovered, ToolReturned
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 tools = Bundle("work")
 
@@ -45,7 +45,7 @@ async def crash_worker(root: Path):
         print("First process: granting ALWAYS for work.", flush=True)
         return ApprovalAnswer.ALWAYS
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("work"))], "first task finished"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))], "first task finished"])
     async with compose(root, model, answer).session("resumable") as agent:
         await agent.run("First task.")
         await agent.inject(system("External state changed before the crash."))
@@ -63,7 +63,7 @@ async def resume(root: Path):
         asked.append(call.id)
         return ApprovalAnswer.DENY
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         ["Queued task resumed.", [ModelChunk(tool_call=ToolCall("work"))], "Fresh task finished."]
     )
     async with compose(root, model, answer).session("resumable") as agent:

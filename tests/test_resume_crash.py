@@ -22,7 +22,7 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = r"""
@@ -34,7 +34,7 @@ from harnessed import Bundle, ApprovalAnswer, ModelChunk, ToolCall, system
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 root, phase = Path(sys.argv[1]), sys.argv[2]
 started = asyncio.Event()
@@ -62,7 +62,7 @@ async def answer(call):
     return ApprovalAnswer.ALWAYS
 
 async def main():
-    model = ScriptedLLM([
+    model = ScriptedModel([
         [ModelChunk(tool_call=ToolCall("work"))], "first done",
         [ModelChunk(tool_call=ToolCall("work"))],
     ])
@@ -137,7 +137,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
         return ApprovalAnswer.ALWAYS
 
     async def resume():
-        model = ScriptedLLM(
+        model = ScriptedModel(
             ["recovered queued input", [ModelChunk(tool_call=ToolCall("work"))], "done"]
         )
         harness = minimal(
@@ -308,7 +308,7 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     tail = json.dumps(answer).encode()
     await asyncio.to_thread(path.write_bytes, prefix + tail)
     async with minimal(
-        ScriptedLLM([]), plugins=[session_jsonl(tmp_path, fsync=True, recover_tail=True)]
+        ScriptedModel([]), plugins=[session_jsonl(tmp_path, fsync=True, recover_tail=True)]
     ).session("answer") as agent:
         assert not agent.log.approvals.pending and not agent.log.approvals.grants
         assert agent.log.approvals.records[0].resolution.status == "interrupted"

@@ -10,7 +10,7 @@ from harnessed.core.session.events import AssistantMessage, UserMessage
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.stream import TextDelta
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 math = Bundle("math")
 
@@ -21,7 +21,7 @@ async def add(a: int, b: int) -> int:
 
 
 async def main():
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("add", {"a": 2, "b": 3}))],
             [ModelChunk(text="The result "), ModelChunk(text="is 5.")],

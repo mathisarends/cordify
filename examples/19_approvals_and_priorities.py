@@ -15,7 +15,7 @@ from harnessed import (
 from harnessed.core.session.events import ToolReturned
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.presets import headless, minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 async def without_ui():
@@ -25,7 +25,7 @@ async def without_ui():
     async def publish() -> str:
         raise AssertionError("Publishing requires approval")
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("publish"))], "Approval unavailable."])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Approval unavailable."])
     async with headless(model, plugins=[tools, approval_gate(risky={"publish"})]).session(
         "no-ui"
     ) as agent:
@@ -59,7 +59,7 @@ async def listener_and_priorities():
         await asyncio.sleep(0.005)
         return await next_()
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("publish"))], "Published."])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Published."])
     # Register timing first; the explicit priority still places approval outside it.
     harness = minimal(model, plugins=[tools, approval_gate(risky={"publish"}, priority=-100)])
 
@@ -79,7 +79,7 @@ async def listener_and_priorities():
 
 async def response_timeout():
     stopped = asyncio.Event()
-    async with minimal(ScriptedLLM([]), approval_timeout=0.02).session("timeout") as agent:
+    async with minimal(ScriptedModel([]), approval_timeout=0.02).session("timeout") as agent:
 
         @agent.on(ApprovalRequest)
         async def disconnected(event):

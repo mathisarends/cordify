@@ -7,7 +7,7 @@ from harnessed import Context, ModelChunk, Shell, ToolCall, ToolRegistry, plugin
 from harnessed.core.session.events import ToolReturned
 from harnessed.plugins.shell import ProcResult, shell_tools
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class DemoShell:
@@ -26,7 +26,7 @@ async def shell_backend(ctx: Context, name: str):
 
 
 async def main():
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("run_command", {"argv": ["echo", "hello"]}))],
             "The first backend handled the command.",

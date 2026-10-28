@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from harnessed import FS, Bundle, Inject, ModelChunk, ToolCall
 from harnessed.core.session.events import ToolReturned
 from harnessed.presets import coding, minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 async def independent_calls():
@@ -28,7 +28,7 @@ async def independent_calls():
         return f"record {index}"
 
     calls = [ToolCall("lookup", {"index": index}) for index in range(3)]
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "Lookups finished."])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Lookups finished."])
     async with minimal(model, plugins=[tools], max_parallel_tools=3).session("lookups") as agent:
         result = await agent.run("Look up records 0, 1 and 2.")
         returned = [event for event in result.events if isinstance(event, ToolReturned)]
@@ -62,7 +62,7 @@ async def writes_with_resource_keys(root: Path):
         ToolCall("save_document", {"path": "b.txt", "text": "independent document"}),
         ToolCall("save_document", {"path": "./a.txt", "text": "second version"}),
     ]
-    model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "Documents saved."])
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Documents saved."])
     async with coding(model, root=root, plugins=[tools]).session("documents") as agent:
         result = await agent.run("Save both documents and then update a.txt.")
         returned = [event for event in result.events if isinstance(event, ToolReturned)]

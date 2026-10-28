@@ -21,7 +21,6 @@ from harnessed.plugins.observe.tokens import token_counter
 from harnessed.plugins.services import llm, system_prompt, tools
 from harnessed.plugins.shell import shell_local, shell_tools
 from harnessed.plugins.spill import spill_store
-from harnessed.seams.llm import LLM
 
 __all__ = ["Harness", "minimal", "coding", "headless"]
 
@@ -136,7 +135,7 @@ class Harness:
 
 
 def minimal(
-    implementation: LLM,
+    implementation: Model,
     *,
     plugins: Iterable[PluginLike] = (),
     model: str | None = None,
@@ -157,7 +156,7 @@ def minimal(
 
 
 def coding(
-    implementation: LLM,
+    implementation: Model,
     *,
     root: str | Path = ".",
     shell: bool = False,
@@ -185,7 +184,7 @@ def coding(
 
 
 def headless(
-    implementation: LLM,
+    implementation: Model,
     *,
     plugins: Iterable[PluginLike] = (),
     model: str | None = None,

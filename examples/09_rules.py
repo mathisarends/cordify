@@ -20,7 +20,7 @@ from harnessed import Session as Agent
 from harnessed.core.session.events import InboxAdded, ToolReturned
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 def is_pytest(call: ToolCall) -> bool:
@@ -61,7 +61,7 @@ async def run_command(argv: list[str]) -> ProcResult:
 
 
 async def demo(name, policy):
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             *[
                 [

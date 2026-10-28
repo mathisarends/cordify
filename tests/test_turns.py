@@ -18,7 +18,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import CallbackModel, ScriptedModel
 
 
 async def test_turns_group_model_requests_and_tools_while_followups_wait_for_their_turn():
@@ -31,7 +31,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         await release.wait()
         return "finished"
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("wait"))], "corrected answer", "followup answer"]
     )
     async with minimal(model, plugins=[features]).session("turns") as agent:
@@ -69,7 +69,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
 
 
 async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
-    model = ScriptedLLM([])
+    model = ScriptedModel([])
     async with minimal(model).session("rejected") as agent:
 
         @agent.on(PreStep)
@@ -86,13 +86,16 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
 async def test_cancel_closes_the_open_step_and_turn_in_the_log():
     started = asyncio.Event()
 
-    class WaitingLLM:
-        async def stream(self, request):
+    class WaitingModel(CallbackModel):
+        def __init__(self):
+            super().__init__(self._chunks)
+
+        async def _chunks(self, request):
             started.set()
             await asyncio.Event().wait()
             yield ModelChunk(text="never")
 
-    async with minimal(WaitingLLM()).session("canceled-turn") as agent:
+    async with minimal(WaitingModel()).session("canceled-turn") as agent:
         await agent.followup("task")
         await started.wait()
         await agent.cancel()

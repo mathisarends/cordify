@@ -28,7 +28,7 @@ from harnessed.core.session.events import ContextMessage
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class Memory(Protocol):
@@ -93,7 +93,7 @@ async def main():
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
             )
         )
-        model = ScriptedLLM(
+        model = ScriptedModel(
             [
                 [ModelChunk(tool_call=ToolCall("recall", {"query": "authentication"}))],
                 "Reviewed with task context, attachments and memory.",

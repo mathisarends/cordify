@@ -5,10 +5,10 @@ from contextlib import contextmanager
 import pytest
 
 from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, tool
+from harnessed.core.compaction import Summarizer
 from harnessed.core.model import ModelChunk
 from harnessed.core.tracing import Tracer
 from harnessed.plugins import Approvals, Service, SlidingWindowCompaction
-from harnessed.seams.compaction import Compactor
 from harnessed.testing import ScriptedModel
 
 
@@ -89,7 +89,7 @@ async def test_ineffective_compaction_backs_off_and_has_its_own_span(caplog):
         plugins=[
             trace,
             Work(),
-            Service(Compactor, Ineffective()),
+            Service(Summarizer, Ineffective()),
             SlidingWindowCompaction(keep_turns=0, summary_tokens=40_000),
         ],
     )

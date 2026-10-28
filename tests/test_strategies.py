@@ -9,7 +9,6 @@ from harnessed import (
     Harness,
     Inject,
     LatestObservationOnly,
-    LLMCompactor,
     LocalSpillStore,
     ModelChunk,
     ModelUsage,
@@ -23,6 +22,7 @@ from harnessed import (
     hook,
 )
 from harnessed import Session as Agent
+from harnessed.core.compaction import ModelSummarizer
 from harnessed.core.messages import Assistant, User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -42,7 +42,7 @@ from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.plugins.spill import spill_store
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 async def test_large_results_spill_to_persistent_file_and_keep_structured_metadata(tmp_path):
@@ -53,7 +53,7 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
     async def large() -> ToolResult:
         return ToolResult(original, "error", exit_code=3)
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("large"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     store = LocalSpillStore(tmp_path)
     harness = Harness(
         [
@@ -124,7 +124,7 @@ async def test_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatc
 async def test_read_spill_tool_returns_bounded_ranges_without_respilling(tmp_path):
     store = LocalSpillStore(tmp_path)
     ref = await store.put("x" * 100)
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("read_spill", {"path": ref.path, "limit": 40}))], "done"]
     )
     async with Harness(
@@ -143,7 +143,7 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
     async def work() -> str:
         return "ok"
 
-    model = ScriptedLLM(["initial reply", [ModelChunk(tool_call=ToolCall("work"))], "done"])
+    model = ScriptedModel(["initial reply", [ModelChunk(tool_call=ToolCall("work"))], "done"])
     harness = Harness(
         [
             agent_loop(),
@@ -210,7 +210,7 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
             started.set()
             await asyncio.Event().wait()
 
-    model = ScriptedLLM(["first reply"])
+    model = ScriptedModel(["first reply"])
     harness = Harness(
         [
             agent_loop(),
@@ -234,7 +234,7 @@ async def test_compactor_error_is_reported_and_history_is_intact():
         async def summarize(self, messages, *, max_tokens):
             raise ValueError("summary failed")
 
-    model = ScriptedLLM(["reply"])
+    model = ScriptedModel(["reply"])
     harness = Harness(
         [agent_loop(), llm(model), compactor(Broken()), ThresholdCompaction(0.5, keep_turns=0)],
         context_window=100,
@@ -248,7 +248,7 @@ async def test_compactor_error_is_reported_and_history_is_intact():
 
 
 async def test_keep_turns_retains_recent_work_and_later_compaction_merges_old_summary():
-    model = ScriptedLLM(["reply"] * 4)
+    model = ScriptedModel(["reply"] * 4)
     harness = Harness(
         [
             agent_loop(),
@@ -274,7 +274,7 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
         async def summarize(self, messages, *, max_tokens):
             return "z" * 2000
 
-    model = ScriptedLLM(["reply", "reply"])
+    model = ScriptedModel(["reply", "reply"])
     harness = Harness(
         [
             agent_loop(),
@@ -309,7 +309,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
             agent.observe(Observation("browser", f"full {self.index}", f"brief {self.index}"))
             return await next_()
 
-    model = ScriptedLLM(["one", "two", "three"])
+    model = ScriptedModel(["one", "two", "three"])
     async with Harness(
         [agent_loop(), llm(model), Observer(), LatestObservationOnly(max_summaries=1)]
     ).session("observations") as agent:
@@ -325,7 +325,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
 
 async def test_cache_usage_is_preserved_as_provider_reported_usage():
     usage = ModelUsage(100, 10, 80, 20)
-    model = ScriptedLLM([[ModelChunk(text="one", usage=usage)]])
+    model = ScriptedModel([[ModelChunk(text="one", usage=usage)]])
     async with Harness([agent_loop(), llm(model)]).session("cache") as agent:
         await agent.run("one")
         event = agent.log.last(ModelUsageRecorded)
@@ -333,20 +333,22 @@ async def test_cache_usage_is_preserved_as_provider_reported_usage():
         assert decode_event(encode_event(event)) == event
 
 
-async def test_llm_compactor_uses_explicit_model_without_tools_and_closes_stream():
-    llm = ScriptedLLM(["summary"])
+async def test_model_summarizer_uses_explicit_model_without_tools_and_closes_stream():
+    llm = ScriptedModel(["summary"])
     assert (
-        await LLMCompactor(llm, model="summary-model").summarize((User("history"),), max_tokens=32)
+        await ModelSummarizer(llm, model_name="summary-model").summarize(
+            (User("history"),), max_tokens=32
+        )
         == "summary"
     )
     assert llm.requests[0].model == "summary-model"
     assert not llm.requests[0].tools and llm.requests[0].max_tokens == 32
 
 
-async def test_llm_compactor_keeps_tool_names_and_arguments_in_summary_input():
-    llm = ScriptedLLM(["summary"])
+async def test_model_summarizer_keeps_tool_names_and_arguments_in_summary_input():
+    llm = ScriptedModel(["summary"])
     messages = (Assistant(tool_calls=(ToolCall("bash", {"command": "pytest tests/auth"}),)),)
-    await LLMCompactor(llm, model="summary").summarize(messages, max_tokens=32)
+    await ModelSummarizer(llm, model_name="summary").summarize(messages, max_tokens=32)
     transcript = llm.requests[0].messages[-1].text
     assert "bash" in transcript and "pytest tests/auth" in transcript
 

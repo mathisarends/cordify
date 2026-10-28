@@ -39,8 +39,6 @@ if TYPE_CHECKING:
     from harnessed.plugins.shell import ProcResult as ProcResult
     from harnessed.plugins.shell import ShellBackend as Shell
     from harnessed.plugins.spill import SpillStore as SpillStore
-    from harnessed.seams.compaction import Compactor as Compactor
-    from harnessed.seams.llm import LLM as LLM
 _EXPORTS = {
     "ProviderUnavailable": ("harnessed.core.errors", "ProviderUnavailable"),
     "InvalidRequest": ("harnessed.core.errors", "InvalidRequest"),
@@ -68,7 +66,6 @@ _EXPORTS = {
     "ModelRequest": ("harnessed.core.model", "ModelRequest"),
     "ModelUsage": ("harnessed.core.model", "ModelUsage"),
     "ModelChunk": ("harnessed.core.model", "ModelChunk"),
-    "LLM": ("harnessed.seams.llm", "LLM"),
     "message_from_dict": ("harnessed.core.messages", "message_from_dict"),
     "request_from_dict": ("harnessed.core.model", "request_from_dict"),
     "tool_result_from_dict": ("harnessed.core.messages", "tool_result_from_dict"),
@@ -78,7 +75,6 @@ _EXPORTS = {
     "Shell": ("harnessed.plugins.shell", "ShellBackend"),
     "ProcResult": ("harnessed.plugins.shell", "ProcResult"),
     "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
-    "Compactor": ("harnessed.seams.compaction", "Compactor"),
     "SpillStore": ("harnessed.plugins.spill", "SpillStore"),
 }
 __all__ = [
@@ -108,7 +104,6 @@ __all__ = [
     "ModelRequest",
     "ModelUsage",
     "ModelChunk",
-    "LLM",
     "message_from_dict",
     "request_from_dict",
     "tool_result_from_dict",
@@ -118,7 +113,6 @@ __all__ = [
     "Shell",
     "ProcResult",
     "TokenCounter",
-    "Compactor",
     "SpillStore",
 ]
 

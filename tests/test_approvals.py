@@ -29,11 +29,11 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 def tool_model():
-    return ScriptedLLM([[ModelChunk(tool_call=ToolCall("work"))], "done"])
+    return ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))], "done"])
 
 
 async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_revoked(tmp_path):

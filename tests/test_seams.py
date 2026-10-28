@@ -4,8 +4,10 @@ from typing import Protocol
 import pytest
 
 from harnessed import Harness, ModelChunk, ToolCall, plugin
+from harnessed.core.compaction import Summarizer
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
+from harnessed.core.model import Model
 from harnessed.core.runtime.agent_loop import AgentFactory
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.store import SessionPersistence
@@ -16,26 +18,25 @@ from harnessed.plugins.services import llm
 from harnessed.plugins.shell import shell_tools
 from harnessed.seams import (
     FS,
-    LLM,
     ApprovalAnswer,
     Approver,
-    Compactor,
     ProcResult,
     Shell,
     SpillStore,
     TokenCounter,
 )
+from harnessed.testing import ScriptedModel
 
 
 @pytest.mark.parametrize(
     "contract",
     [
         FS,
-        LLM,
+        Model,
         Shell,
         Approver,
         TokenCounter,
-        Compactor,
+        Summarizer,
         SpillStore,
         AgentFactory,
         SessionPersistence,
@@ -58,13 +59,15 @@ class ForeignFiles:
 
 class ForeignModel:
     def __init__(self, responses):
-        self.responses = iter(responses)
-        self.requests = []
+        self.backend = ScriptedModel(responses)
+        self.info = self.backend.info
+        self.requests = self.backend.requests
 
-    async def stream(self, request):
-        self.requests.append(request)
-        for chunk in next(self.responses):
-            yield chunk
+    async def request(self, request):
+        return await self.backend.request(request)
+
+    def stream(self, request):
+        return self.backend.stream(request)
 
 
 async def test_foreign_fs_and_model_work_through_di_without_framework_inheritance():

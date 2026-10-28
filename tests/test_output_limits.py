@@ -24,7 +24,7 @@ from harnessed.plugins.sessions import session_jsonl
 from harnessed.plugins.shell import shell_local, shell_tools
 from harnessed.plugins.spill import LocalSpillStore, spill_store
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 def test_output_limit_includes_notice_keeps_head_and_tail_and_is_idempotent():
@@ -58,7 +58,7 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
     async def cat() -> ToolResult:
         return ToolResult(source, "error", exit_code=3)
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("cat"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("cat"))], "done"])
     async with minimal(model, plugins=[features, session_jsonl(tmp_path)]).session(
         "bounded"
     ) as agent:
@@ -92,7 +92,7 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
         result = await next_()
         return result.with_note(text) if stage == "review" else result
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("large"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     async with minimal(model, plugins=[features], tool_output_limit=ToolOutputLimit(512)).session(
         "enriched"
     ) as agent:
@@ -113,7 +113,7 @@ async def test_session_can_override_the_harness_output_budget():
     async def large() -> str:
         return "x" * 10_000
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("large"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     harness = minimal(model, plugins=[features], tool_output_limit=ToolOutputLimit(4096))
     async with harness.session("small-budget", tool_output_limit=ToolOutputLimit(512)) as agent:
         await agent.run("go")
@@ -130,7 +130,7 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
         return original
 
     store = LocalSpillStore(tmp_path)
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("large"))], "done"])
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     async with minimal(
         model,
         plugins=[features, spill_store(store), SpillLargeResults(max_tokens=100)],
@@ -148,7 +148,7 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
 async def test_read_file_supports_bounded_unicode_character_ranges_and_continuation(tmp_path):
     original = "ä😀abc" * 3000
     (tmp_path / "large.txt").write_text(original, encoding="utf-8")
-    async with minimal(ScriptedLLM([]), plugins=[fs_local(tmp_path), fs_tools()]).session(
+    async with minimal(ScriptedModel([]), plugins=[fs_local(tmp_path), fs_tools()]).session(
         "ranges"
     ) as agent:
         registry = agent.ctx[ToolRegistry]
@@ -171,7 +171,7 @@ async def test_read_file_supports_bounded_unicode_character_ranges_and_continuat
 
 
 async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [
                 ModelChunk(

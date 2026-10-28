@@ -6,7 +6,7 @@ from harnessed import Bundle, Context, Emit, Plugin, Waterfall, hook
 from harnessed.kernel import PluginBase as KernelPlugin
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class Trace(Waterfall[str]):
@@ -99,7 +99,7 @@ async def test_priority_flows_through_all_sdk_declaration_and_imperative_hook_ap
     bundle.on(Ping, lambda ev: seen.append("bundle-decorator"), priority=-40)
     bundle.add_hook(Ping, lambda ev: seen.append("bundle-imperative"), priority=-30)
     explicit = Plugin(hooks=[(Ping, lambda ev: seen.append("tuple"), -20)])
-    harness = minimal(ScriptedLLM([]), plugins=[KernelFeature(), Feature(), bundle, explicit])
+    harness = minimal(ScriptedModel([]), plugins=[KernelFeature(), Feature(), bundle, explicit])
     harness.on(Ping, lambda ev: seen.append("harness-decorator"), priority=-10)
     harness.add_hook(Ping, lambda ev: seen.append("harness-imperative"), priority=10)
     async with harness.session("priorities") as agent:

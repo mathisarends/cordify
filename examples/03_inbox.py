@@ -5,16 +5,16 @@ import asyncio
 from harnessed import Harness, ModelChunk
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
+from harnessed.testing import CallbackModel
 
 
-class PausingLLM:
+class PausingModel(CallbackModel):
     def __init__(self):
+        super().__init__(self._chunks)
         self.started = asyncio.Event()
         self.proceed = asyncio.Event()
-        self.requests = []
 
-    async def stream(self, request):
-        self.requests.append(request)
+    async def _chunks(self, request):
         if len(self.requests) == 1:
             self.started.set()
             await self.proceed.wait()
@@ -23,7 +23,7 @@ class PausingLLM:
 
 
 async def main():
-    model = PausingLLM()
+    model = PausingModel()
     harness = Harness([agent_loop(), llm(model)])
 
     async with harness.session("inbox") as agent:

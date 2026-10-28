@@ -20,7 +20,7 @@ from harnessed import (
 from harnessed import Session as Agent
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 @dataclass(frozen=True)
@@ -93,7 +93,7 @@ async def snapshot(browser: Inject[Browser]) -> str:
 
 
 async def main():
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("click", {"ref": "settings"}))],
             "Settings opened.",

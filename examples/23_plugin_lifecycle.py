@@ -9,7 +9,7 @@ from harnessed.core.hooks import ExecuteTool, SessionAppended
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class Notes(Protocol):
@@ -72,7 +72,7 @@ async def main():
         [
             agent_loop(),
             llm(
-                ScriptedLLM(
+                ScriptedModel(
                     [
                         [ModelChunk(tool_call=ToolCall("save_note", {"text": "Try Harnessed"}))],
                         "The note has been saved.",

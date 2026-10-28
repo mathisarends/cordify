@@ -9,7 +9,7 @@ from harnessed.core.session.events import InboxAdded, InboxRemoved, UserMessage
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
 from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import CallbackModel, ScriptedModel
 
 
 @pytest.mark.parametrize(
@@ -64,14 +64,13 @@ def test_only_injection_accepts_system_messages(mode):
     assert InboxAdded.create(system("context"), "inject").message.role == "system"
 
 
-class PausingLLM:
+class PausingModel(CallbackModel):
     def __init__(self):
+        super().__init__(self._chunks)
         self.started = asyncio.Event()
         self.release = asyncio.Event()
-        self.requests = []
 
-    async def stream(self, request):
-        self.requests.append(request)
+    async def _chunks(self, request):
         if len(self.requests) == 1:
             self.started.set()
             await self.release.wait()
@@ -80,7 +79,7 @@ class PausingLLM:
 
 @pytest.mark.parametrize("mode", ["inject", "steer"])
 async def test_steering_requests_another_step_while_injection_waits_for_one(mode):
-    model = PausingLLM()
+    model = PausingModel()
     async with minimal(model).session("routing") as agent:
         await agent.followup("task")
         await model.started.wait()
@@ -106,7 +105,7 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
 
 
 async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent():
-    model = ScriptedLLM(["awake"])
+    model = ScriptedModel(["awake"])
     async with minimal(model).session("quiet") as agent:
         await agent.inject(system("door opened"))
         snapshot = agent.inbox.pending
@@ -127,7 +126,7 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
     event = InboxAdded.create(system("context") if mode == "inject" else user("task"), mode)
     await session.append(event)
     await persistence.aclose()
-    model = ScriptedLLM(["processed"])
+    model = ScriptedModel(["processed"])
     async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("pending") as agent:
         await agent.when_idle()
         if mode == "inject":

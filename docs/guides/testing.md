@@ -27,6 +27,29 @@ async def check_calculator():
 `assert_tool_called` returns the matching `(ToolCall, ToolResult)` pair. Supplied
 arguments are matched structurally, including nested JSON lists and objects.
 
+For cancellation, concurrency and controlled failures, `CallbackModel(chunks)`
+accepts an asynchronous chunk-generator function. It implements both `request`
+and the managed `stream` context, records requests, and closes the generator when
+the consumer exits or cancels. For example:
+
+```python
+import asyncio
+
+from harnessed.models import ModelChunk
+from harnessed.testing import CallbackModel
+
+started, release = asyncio.Event(), asyncio.Event()
+
+
+async def chunks(request):
+    started.set()
+    await release.wait()
+    yield ModelChunk(text="Finished.")
+
+
+model = CallbackModel(chunks)
+```
+
 ## Replace feature backends
 
 `InMemoryFS` and `FakeShell` are real plugins in the `filesystem` and `shell` slots.

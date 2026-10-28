@@ -4,15 +4,17 @@ from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.events import InboxAdded, TurnEnd
 from harnessed.core.stream import TextDelta
 from harnessed.presets import minimal
+from harnessed.testing import CallbackModel
 
 
-class TwoTurns:
+class TwoTurns(CallbackModel):
     def __init__(self):
+        super().__init__(self._chunks)
         self.started = [asyncio.Event(), asyncio.Event()]
         self.release = [asyncio.Event(), asyncio.Event()]
         self.index = 0
 
-    async def stream(self, request):
+    async def _chunks(self, request):
         index = self.index
         self.index += 1
         self.started[index].set()

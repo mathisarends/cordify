@@ -9,7 +9,7 @@ from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 async def main():
@@ -17,7 +17,7 @@ async def main():
         print(f"Approval: allow {call.name} for the rest of this session")
         return ApprovalAnswer.ALWAYS
 
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("count_lines", {"path": "missing-example-file.txt"}))],
             [ModelChunk(tool_call=ToolCall("count_lines", {"path": "missing-example-file.txt"}))],
