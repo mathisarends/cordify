@@ -28,6 +28,7 @@ import pytest
         "examples.18_parallel_tools",
         "examples.19_approvals_and_priorities",
         "examples.20_pause_resume_stop",
+        "examples.21_validated_forms",
     ],
 )
 def test_offline_sdk_example_runs(module):

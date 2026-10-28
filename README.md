@@ -30,6 +30,7 @@ cordify/
     loop.py, session.py, inbox.py, approvals.py, tools.py, scheduling.py, prompt.py, events.py
     features.py          Tool declarations as kernel registrations
     attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py, control.py
+    validation.py        Pydantic argument models, JSON schemas, result serialization
   plugins/
     context/             Instructions, observations, compaction, spill
     tools/               File and shell tools
@@ -41,6 +42,7 @@ cordify/
   adapters/              DeepSeek, local FS/shell, JSONL, spill, token counter,
                          compactor, and deterministic replay adapter
     base.py              Optional LLM with RetryPolicy
+    deepseek_models.py   Validated provider configuration, requests, and streaming frames
     sse.py               Shared SSE data framing for streaming adapters
   presets.py             Harness, minimal(), coding(), headless()
   testing.py             Test helpers
@@ -141,6 +143,7 @@ Runnable examples (from the repository root):
 | `python -m examples.18_parallel_tools` | Parallel calls, stable results, and file conflicts using resource keys |
 | `python -m examples.19_approvals_and_priorities` | Headless approval, response timeout, and explicit waterfall priorities |
 | `python -m examples.20_pause_resume_stop` | Pause a tool batch, resume the same turn, stop work, and reopen a paused session |
+| `python -m examples.21_validated_forms` | Nested Pydantic forms, enums, constraints, validated DeepSeek payloads, and hidden DI parameters |
 
 Only example 04 needs an API key and the `deepseek` extra. The other examples
 use deterministic model responses to demonstrate the SDK.
@@ -190,6 +193,124 @@ Supported forms include async generators with `@plugin` or `@plugin(...)`,
 `Plugin(hooks=..., tools=...)`, and `add_hook`/`add_tool`.
 Each mount owns its own cleanup stack.
 
+
+## Validation and typed forms
+
+Cordify uses **Pydantic v2** (`pydantic>=2.12,<3`) for tool arguments and
+provider boundaries. The kernel remains independent of Pydantic.
+Seams remain Protocols; their value types and append-only session events remain
+frozen dataclasses. Validated provider data and form models are converted to
+those contracts at the boundary.
+
+Use a `BaseModel` to express a form or nested tool input:
+
+```python
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from cordify import Bundle, Inject, ToolCallContext
+
+
+class Priority(StrEnum):
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+class IssueForm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=3, max_length=80)
+    priority: Priority = Priority.NORMAL
+    labels: list[str] = Field(default_factory=list, max_length=3)
+
+
+issues = Bundle("issues")
+
+
+@issues.tool
+async def create_issue(form: IssueForm, call: Inject[ToolCallContext]) -> IssueForm:
+    """Create an issue from a validated form."""
+    await call.progress(f"Creating {form.title}")
+    # form is an IssueForm instance; form.priority is a Priority member.
+    return form
+```
+
+The JSON schema comes from the annotations, including nested models, enums,
+defaults, and `Field(...)` constraints. `Inject[...]` parameters stay out of
+that schema. Argument models are compiled at registration and reused for each
+call; callbacks remain ordinary, directly callable Python functions.
+
+Validation uses [Pydantic's strict JSON mode](https://docs.pydantic.dev/latest/concepts/strict_mode/).
+Strings such as `"3"` and booleans are rejected for integer parameters.
+JSON representations of enums, dates, and UUIDs become their native Python
+types. Unknown top-level arguments, including attempts to supply injected
+parameters, are rejected. Nested models follow their own extra-field policy;
+use `ConfigDict(extra="forbid")` to reject unknown form fields.
+
+Constraints also work on individual parameters and PEP 695 aliases:
+
+```python
+from typing import Annotated
+
+type PageSize = Annotated[int, Field(ge=1, le=100)]
+
+
+@issues.tool
+async def search_issues(query: str, limit: PageSize = 10) -> list[str]:
+    """Search with a validated page size."""
+    return []
+```
+
+Invalid arguments produce an error `ToolResult` with field paths and validation
+details before the tool body runs. The agent's output limit also bounds these
+errors. Results containing Pydantic models, enums, dates, or UUIDs are serialized
+to JSON; `ToolResult` and `ProcResult` keep their existing behavior.
+
+### DeepSeek wire models
+
+`cordify.adapters.deepseek_models` defines `DeepSeekConfig`,
+`ChatCompletionRequest`, `ChatMessage`, `ChatCompletionChunk`, tool-call deltas,
+and usage models. `DeepSeekLLM` uses them directly, so provider parsing does not
+depend on chains of untyped dictionaries.
+
+```python
+from pydantic import ValidationError
+
+from cordify import ModelRequest, user
+from cordify.adapters.deepseek import DeepSeekLLM
+from cordify.adapters.deepseek_models import ChatCompletionRequest
+
+adapter = DeepSeekLLM(model="deepseek-flash", api_key="example-key", timeout=120)
+print(adapter.config)  # API keys are masked by SecretStr.
+
+request = ChatCompletionRequest.from_request(
+    ModelRequest("deepseek-flash", (user("Hello."),), max_tokens=256)
+)
+payload = request.model_dump(mode="json", exclude_none=True)
+
+try:
+    DeepSeekLLM(timeout=-1)
+except ValidationError as error:
+    print(error.errors(include_input=False))
+```
+
+Configuration validates nonempty model IDs, HTTP(S) base URLs, and finite,
+positive timeouts. Model IDs stay open to custom deployments and future models.
+API keys use `SecretStr` and are masked in configuration representations.
+Requests validate message roles, content parts, tool-call fields, and token
+limits before HTTP execution.
+
+Incoming stream fields are validated strictly, including tool-call indices,
+function fragments, and nonnegative usage counters. Extra provider metadata is
+ignored for forward compatibility. Completed tool arguments must decode to a
+finite JSON object. Invalid frames raise validation errors and are not retried
+as transient network failures. The adapter still preserves its existing retry
+boundary, stream cleanup, and `[DONE]` check. HTTPX remains in the optional
+`deepseek` extra.
+
+[`21_validated_forms.py`](examples/21_validated_forms.py) runs a rejected form
+followed by a corrected call, demonstrates typed return values, and validates
+DeepSeek configuration and wire data without a network request.
 
 ## Turns, steps, and the inbox
 
