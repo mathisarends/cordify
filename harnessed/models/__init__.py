@@ -10,6 +10,9 @@ from harnessed.core.model import (
     ModelRequest,
     ModelResponse,
     ModelStream,
+    ModelUsage,
+    StopReason,
+    ToolDefinition,
 )
 
 if TYPE_CHECKING:
@@ -23,7 +26,10 @@ __all__ = [
     "ModelRequest",
     "ModelResponse",
     "ModelStream",
+    "ModelUsage",
     "PydanticAIModel",
+    "StopReason",
+    "ToolDefinition",
 ]
 
 

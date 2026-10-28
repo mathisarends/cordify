@@ -4,13 +4,15 @@ import json
 
 import pytest
 
-from harnessed import Agent, Plugin, ToolOutputLimit, tool
+from harnessed import Agent, Plugin
 from harnessed.core.messages import ImagePart, TextPart, ToolReply, ToolResult
 from harnessed.core.model import ModelInfo, ModelRequest
 from harnessed.core.plugin import Service
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import ApproximateTokenCounter, count_content
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.plugins import Rules, when
 from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, SpillStore
 from harnessed.testing import ScriptedModel, call

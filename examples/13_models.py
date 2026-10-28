@@ -1,4 +1,4 @@
-"""Run with: uv run python -m examples.13_llm_adapters (offline Model contract)."""
+"""Run with: uv run python -m examples.13_models (offline Model contract)."""
 
 import asyncio
 from contextlib import asynccontextmanager

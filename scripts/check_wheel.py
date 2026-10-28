@@ -16,7 +16,8 @@ import re
 
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from harnessed import Agent, Plugin, tool
+from harnessed import Agent, Plugin
+from harnessed.core.tools.decorator import tool
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
 import harnessed
 

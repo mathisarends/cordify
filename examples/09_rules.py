@@ -2,23 +2,15 @@
 
 import asyncio
 
-from harnessed import Agent as Application
-from harnessed import (
-    Bundle,
-    Inject,
-    ModelChunk,
-    Plugin,
-    ProcResult,
-    ReviewToolResult,
-    Rules,
-    ToolCall,
-    hook,
-    user,
-    when,
-)
-from harnessed import Session as Agent
+from harnessed import Agent, Inject, Plugin, Session, ToolCall, hook
+from harnessed.core.messages import user
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import InboxAdded, ToolReturned
+from harnessed.hooks import ReviewToolResult
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
+from harnessed.plugins.rules import Rules, when
+from harnessed.plugins.shell import ProcResult
 from harnessed.testing import ScriptedModel
 
 
@@ -31,7 +23,7 @@ class TestDiscipline(Plugin):
         self.failures = 0
 
     @hook(ReviewToolResult)
-    async def after_tests(self, event, next_, agent: Inject[Agent]):
+    async def after_tests(self, event, next_, session: Inject[Session]):
         result = await next_()
         if not is_pytest(event.call):
             return result
@@ -42,11 +34,11 @@ class TestDiscipline(Plugin):
         if self.failures == 1:
             return result.with_note("Read the first failure before editing anything.")
         if self.failures == 3:
-            await agent.context.set(
+            await session.context.set(
                 "test-discipline", "Tests failed three times. Reconsider your approach."
             )
         if self.failures >= 5:
-            await agent.steer(user("Stop editing. Summarize what you tried and what is wrong."))
+            await session.steer(user("Stop editing. Summarize what you tried and what is wrong."))
         return result
 
 
@@ -73,10 +65,10 @@ async def demo(name, policy):
             "I will summarize the attempts before editing again.",
         ]
     )
-    harness = Application(model=model, plugins=[Approvals(trust="all"), commands, policy])
+    agent = Agent(model=model, plugins=[Approvals(trust="all"), commands, policy])
     print(f"\n{name}")
-    async with harness.session(name) as agent:
-        async for event in agent.stream("Run the tests and investigate failures."):
+    async with agent.session(name) as session:
+        async for event in session.stream("Run the tests and investigate failures."):
             if isinstance(event, ToolReturned):
                 print(f"exit_code={event.result.exit_code}: {event.result.content}")
             elif isinstance(event, InboxAdded) and event.mode != "followup":

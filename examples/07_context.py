@@ -8,21 +8,21 @@ from typing import Protocol
 
 from harnessed import (
     Agent,
-    Bundle,
     Context,
     File,
     Image,
     Inject,
-    ModelChunk,
     Plugin,
-    PreStep,
     Section,
     Session,
     ToolCall,
     hook,
     plugin,
 )
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import ContextMessage
+from harnessed.hooks import PreStep
+from harnessed.models import ModelChunk
 from harnessed.plugins import ContextValue
 from harnessed.testing import ScriptedModel
 

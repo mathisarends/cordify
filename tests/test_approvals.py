@@ -5,18 +5,13 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import (
-    ApprovalAnswer,
-    Bundle,
-    Inject,
-    ModelChunk,
-    ToolCall,
-    plugin,
-)
+from harnessed import ApprovalAnswer, Inject, ToolCall, plugin
 from harnessed import Session as Agent
 from harnessed.core.approvals import ApprovalState
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
+from harnessed.core.model import ModelChunk
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,

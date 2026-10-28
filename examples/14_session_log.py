@@ -3,13 +3,15 @@
 import asyncio
 import json
 
-from harnessed import Agent as Application
-from harnessed import Bundle, ModelChunk, ToolCall, derive_messages, derive_requests
+from harnessed import Agent, ToolCall
 from harnessed.core.messages import User
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import AssistantMessage, UserMessage
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import derive_messages, derive_requests
 from harnessed.core.stream import TextDelta
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
@@ -28,14 +30,14 @@ async def main():
             [ModelChunk(text="The result "), ModelChunk(text="is 5.")],
         ]
     )
-    async with Application(model=model, plugins=[Approvals(trust="all"), math]).session(
+    async with Agent(model=model, plugins=[Approvals(trust="all"), math]).session(
         "source"
-    ) as agent:
-        async for event in agent.stream("Add 2 and 3"):
+    ) as session:
+        async for event in session.stream("Add 2 and 3"):
             if isinstance(event, TextDelta):
                 print(event.text, end="", flush=True)
         print()
-        log = agent.log.events
+        log = session.log.events
     encoded = json.dumps([encode_event(event) for event in log])
     restored = tuple(decode_event(record) for record in json.loads(encoded))
     replay = Session("replayed", seed=restored)

@@ -5,6 +5,16 @@ from pathlib import Path
 
 import pytest
 
+_RUN_EXAMPLE = """
+import faulthandler
+import runpy
+import sys
+
+module = sys.argv.pop(1)
+faulthandler.dump_traceback_later(15, repeat=True)
+runpy.run_module(module, run_name="__main__", alter_sys=True)
+"""
+
 
 @pytest.mark.parametrize(
     "module",
@@ -20,7 +30,7 @@ import pytest
         "examples.10_context_strategies",
         "examples.11_temporal_needs",
         "examples.12_layered_sdk",
-        "examples.13_llm_adapters",
+        "examples.13_models",
         "examples.14_session_log",
         "examples.15_tool_output_limits",
         "examples.16_compaction_policies",
@@ -35,14 +45,19 @@ import pytest
     ],
 )
 def test_offline_sdk_example_runs(module):
-    result = subprocess.run(
-        [sys.executable, "-m", module],
-        cwd=Path(__file__).resolve().parents[1],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=15,
-        env={**os.environ, "PYTHONUTF8": "1"},
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _RUN_EXAMPLE, module],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=45,
+            env={**os.environ, "PYTHONUTF8": "1"},
+        )
+    except subprocess.TimeoutExpired as error:
+        output = error.stderr or b""
+        details = output.decode("utf-8", errors="replace") if isinstance(output, bytes) else output
+        pytest.fail(f"{module} timed out; child traceback:\n{details[-8000:]}", pytrace=False)
     assert result.returncode == 0, result.stderr
     assert result.stdout

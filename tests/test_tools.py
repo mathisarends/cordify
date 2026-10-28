@@ -3,11 +3,14 @@ from typing import Annotated, Protocol
 
 import pytest
 
-from harnessed import Agent, Bundle, Context, Inject, Plugin, ToolCall, ToolRegistry, plugin, tool
+from harnessed import Agent, Context, Inject, Plugin, ToolCall, plugin
 from harnessed.core.messages import ToolResult
 from harnessed.core.model import ModelChunk
+from harnessed.core.plugin import Bundle
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.tools.context import ToolContext
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel.di import InjectMarker
 from harnessed.testing import ScriptedModel
 

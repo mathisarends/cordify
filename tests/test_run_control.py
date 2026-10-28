@@ -6,7 +6,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from harnessed import Agent, Inject, Plugin, SessionClosed, SessionStatus, StopReason, tool
+from harnessed import Agent, Inject, Plugin, SessionClosed, SessionStatus, StopReason
 from harnessed.core.messages import ApprovalAnswer, ToolCall, User
 from harnessed.core.model import ModelChunk, ModelRequest
 from harnessed.core.runtime.control import SessionControl
@@ -24,6 +24,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.context import ToolContext
+from harnessed.core.tools.decorator import tool
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.testing import ScriptedModel, call
 

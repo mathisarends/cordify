@@ -3,10 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from harnessed import FS, Context, Shell, ToolCall, ToolRegistry, plugin
+from harnessed import Context, ToolCall, plugin
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop
-from harnessed.plugins.filesystem import fs_tools
+from harnessed.plugins.filesystem import FS, fs_tools
 from harnessed.plugins.shell import ProcResult, shell_tools
+from harnessed.plugins.shell import ShellBackend as Shell
 
 
 class MemoryFS:

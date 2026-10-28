@@ -3,11 +3,13 @@
 import asyncio
 from pathlib import Path
 
-from harnessed import Agent as Application
-from harnessed import Context, ModelChunk, Shell, ToolCall, ToolRegistry, plugin
+from harnessed import Agent, Context, ToolCall, plugin
 from harnessed.core.session.events import ToolReturned
+from harnessed.core.tools.registry import ToolRegistry
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.plugins.shell import ProcResult, shell_tools
+from harnessed.plugins.shell import ShellBackend as Shell
 from harnessed.testing import ScriptedModel
 
 
@@ -34,24 +36,24 @@ async def main():
             "The replacement backend handled the command.",
         ]
     )
-    harness = Application(model=model, plugins=[Approvals(trust="all"), shell_tools()])
-    async with harness.session("tool-lifetimes") as agent:
-        registry = agent.ctx[ToolRegistry]
+    agent = Agent(model=model, plugins=[Approvals(trust="all"), shell_tools()])
+    async with agent.session("tool-lifetimes") as session:
+        registry = session.ctx[ToolRegistry]
         assert registry.definitions == ()
         print("Before a backend: no shell tools")
-        first = await agent.ctx.plugin(shell_backend("local"))
-        await agent.ctx.settle()
+        first = await session.ctx.plugin(shell_backend("local"))
+        await session.ctx.settle()
         assert [tool.name for tool in registry.definitions] == ["run_command"]
-        print((await agent.run("Say hello using the shell.")).text)
+        print((await session.run("Say hello using the shell.")).text)
         await first.aclose()
         assert registry.definitions == ()
         print("Backend removed: no shell tools")
-        await agent.ctx.plugin(shell_backend("remote"))
-        await agent.ctx.settle()
+        await session.ctx.plugin(shell_backend("remote"))
+        await session.ctx.settle()
         assert [tool.name for tool in registry.definitions] == ["run_command"]
-        print((await agent.run("Run another command.")).text)
+        print((await session.run("Run another command.")).text)
         outputs = [
-            event.result.content for event in agent.log.events if isinstance(event, ToolReturned)
+            event.result.content for event in session.log.events if isinstance(event, ToolReturned)
         ]
         assert len(outputs) == 2 and "local:" in outputs[0] and ("remote:" in outputs[1])
         print("Recorded outputs:", *outputs, sep="\n")

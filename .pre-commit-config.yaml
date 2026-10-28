@@ -26,11 +26,13 @@ repos:
         name: Ruff lint
         entry: uv run --locked --no-sync ruff check --fix --force-exclude
         language: system
+        require_serial: true
         types_or: [python, pyi]
       - id: ruff-format
         name: Ruff format
         entry: uv run --locked --no-sync ruff format --force-exclude
         language: system
+        require_serial: true
         types_or: [python, pyi]
       - id: ty
         name: ty type check

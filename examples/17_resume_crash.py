@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, Bundle, ModelChunk, ToolCall, system
+from harnessed import Agent, ApprovalAnswer, ToolCall
+from harnessed.core.messages import system
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import LogTailRecovered, ToolReturned
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.testing import ScriptedModel
@@ -23,7 +25,7 @@ async def work() -> str:
 
 
 def compose(root: Path, model, answer):
-    return Application(
+    return Agent(
         model=model,
         plugins=[
             Approvals(trust="all"),
@@ -48,10 +50,10 @@ async def crash_worker(root: Path):
         return ApprovalAnswer.ALWAYS
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))], "first task finished"])
-    async with compose(root, model, answer).session("resumable") as agent:
-        await agent.run("First task.")
-        await agent.inject(system("External state changed before the crash."))
-        await agent.followup("Queued task from the first process.")
+    async with compose(root, model, answer).session("resumable") as session:
+        await session.run("First task.")
+        await session.inject(system("External state changed before the crash."))
+        await session.followup("Queued task from the first process.")
         torn_append(root)
         print("First process: exiting without Context or writer teardown.", flush=True)
         os._exit(0)
@@ -67,8 +69,8 @@ async def resume(root: Path):
     model = ScriptedModel(
         ["Queued task resumed.", [ModelChunk(tool_call=ToolCall("work"))], "Fresh task finished."]
     )
-    async with compose(root, model, answer).session("resumable") as agent:
-        await agent.when_idle()
+    async with compose(root, model, answer).session("resumable") as session:
+        await session.when_idle()
         assert any(
             message.text == "Queued task from the first process."
             for message in model.requests[0].messages
@@ -78,15 +80,15 @@ async def resume(root: Path):
             for message in model.requests[0].messages
         )
         print("Second process: queued followup and silent context restored.")
-        recovered = next(e for e in agent.log.events if isinstance(e, LogTailRecovered))
+        recovered = next(e for e in session.log.events if isinstance(e, LogTailRecovered))
         print(f"Archived {recovered.discarded_bytes} incomplete bytes: {recovered.archive}")
-        await agent.run("Run the same tool in a fresh task.")
-        result = next(e.result for e in reversed(agent.log.events) if isinstance(e, ToolReturned))
+        await session.run("Run the same tool in a fresh task.")
+        result = next(e.result for e in reversed(session.log.events) if isinstance(e, ToolReturned))
         assert not result.is_error and asked == []
         print("Persisted ALWAYS grant reused; no new approval question.")
-        grant = agent.log.approvals.grant_for("work", scope="demo-work")
-        await agent.revoke_approval(grant.request_id)
-        assert not agent.log.approvals.grants
+        grant = session.log.approvals.grant_for("work", scope="demo-work")
+        await session.revoke_approval(grant.request_id)
+        assert not session.log.approvals.grants
         print("Grant revoked through another log event.")
 
 
@@ -95,7 +97,7 @@ def main():
         subprocess.run(
             [sys.executable, "-m", "examples.17_resume_crash", "--worker", directory],
             check=True,
-            timeout=15,
+            timeout=30,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         asyncio.run(resume(Path(directory)))

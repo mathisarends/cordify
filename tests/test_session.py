@@ -3,8 +3,9 @@ import json
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ModelRequest, ToolCall, ToolDefinition, ToolResult
+from harnessed import ToolCall, ToolResult
 from harnessed.core.messages import Assistant, User
+from harnessed.core.model import ModelRequest, ToolDefinition
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,

@@ -2,7 +2,8 @@
 
 import asyncio
 
-from harnessed import Agent, ContextBudgetExceeded
+from harnessed import Agent
+from harnessed.core.budget import ContextBudgetExceeded
 from harnessed.core.session.events import CompactionApplied
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import AgentLoop, Compaction, at_ratio, every_turns

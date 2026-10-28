@@ -3,9 +3,9 @@
 import asyncio
 
 from examples.features.workspace import FailureNudge, workspace_tools
-from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, ModelChunk, ToolCall
+from harnessed import Agent, ApprovalAnswer, ToolCall
 from harnessed.core.session.events import ModelRequested, ToolProgress, ToolReturned
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
@@ -25,7 +25,7 @@ async def main():
             "The file is missing. I will check the path first.",
         ]
     )
-    harness = Application(
+    agent = Agent(
         model=model,
         plugins=[
             Approvals(trust="all"),
@@ -36,8 +36,8 @@ async def main():
             approval_gate(risky={"count_lines"}),
         ],
     )
-    async with harness.session("bundles") as agent:
-        async for event in agent.stream("Count the lines in the example file."):
+    async with agent.session("bundles") as session:
+        async for event in session.stream("Count the lines in the example file."):
             match event:
                 case ToolProgress(text=text):
                     print(f"Progress: {text}")

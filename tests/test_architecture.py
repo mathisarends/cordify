@@ -11,13 +11,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "harnessed"
 LAYERS = {"kernel": 0, "core": 1, "plugins": 2, "models": 2, "integrations": 2}
-# Transitional packages are removed as their features move to the target structure.
-LEGACY_LAYERS = {"seams": 1}
 
 
 def test_imports_follow_layer_direction_and_public_boundaries():
     violations = []
-    ranks = LAYERS | LEGACY_LAYERS
+    ranks = LAYERS
     for layer, rank in ranks.items():
         for path in (PACKAGE / layer).rglob("*.py"):
             parts = path.relative_to(ROOT).with_suffix("").parts
@@ -38,8 +36,6 @@ def test_imports_follow_layer_direction_and_public_boundaries():
                 for module in modules:
                     if not module or not module.startswith("harnessed"):
                         continue
-                    if layer == "seams" and path.name == "__init__.py":
-                        continue  # Transitional facade re-exports relocated feature contracts.
                     if layer == "plugins" and module.startswith("harnessed.kernel."):
                         violations.append(
                             f"{path.relative_to(ROOT)}:{node.lineno}: use harnessed.kernel facade"
@@ -108,13 +104,19 @@ def test_validation_is_explicit_and_otel_is_not_added():
                 assert not (node.module or "").startswith("opentelemetry")
 
 
-@pytest.mark.parametrize(
-    "module", ["harnessed", "harnessed.core", "harnessed.plugins", "harnessed.seams"]
-)
+@pytest.mark.parametrize("module", ["harnessed", "harnessed.plugins", "harnessed.models"])
 def test_public_exports_resolve_to_their_canonical_classes_and_functions(module):
     facade = importlib.import_module(module)
     for name, (canonical, attribute) in facade._EXPORTS.items():
         assert getattr(facade, name) is getattr(importlib.import_module(canonical), attribute)
+    assert facade.__all__ == sorted(set(facade.__all__))
+
+
+def test_application_facade_stays_small_and_has_no_transitional_names():
+    import harnessed
+
+    assert len(harnessed.__all__) <= 30
+    assert not {"Harness", "LLM", "Bundle", "FS", "Shell", "SystemPrompt"} & set(harnessed.__all__)
 
 
 def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
@@ -127,6 +129,9 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
     }
     assert not (PACKAGE / "std").exists()
     assert not (PACKAGE / "adapters").exists()
+    assert not (PACKAGE / "seams").exists()
+    for name in ("_context", "agents", "observe"):
+        assert not (PACKAGE / "plugins" / name).exists()
 
 
 async def test_typed_keys_have_identity_and_work_with_temporal_needs():

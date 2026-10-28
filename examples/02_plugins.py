@@ -2,8 +2,9 @@
 
 import asyncio
 
-from harnessed import Agent, ModelChunk, Plugin, ToolCall, tool
-from harnessed.models import Model
+from harnessed import Agent, Plugin, ToolCall
+from harnessed.core.tools.decorator import tool
+from harnessed.models import Model, ModelChunk
 from harnessed.plugins import Instructions, Service
 from harnessed.testing import ScriptedModel
 

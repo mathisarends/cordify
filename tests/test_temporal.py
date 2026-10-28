@@ -3,19 +3,12 @@ from dataclasses import dataclass
 
 import pytest
 
-from harnessed import (
-    Bundle,
-    Context,
-    Emit,
-    Inject,
-    MissingService,
-    Plugin,
-    SystemPrompt,
-    ToolCall,
-    ToolRegistry,
-    plugin,
-    tool,
-)
+from harnessed import Context, Inject, Plugin, ToolCall, plugin
+from harnessed.core.plugin import Bundle
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.registry import ToolRegistry
+from harnessed.kernel import Emit, MissingService
 from harnessed.plugins import AgentLoop
 
 

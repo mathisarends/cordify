@@ -1,7 +1,9 @@
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Bundle, ModelChunk, ProcResult, Rules, ToolCall, ToolResult, when
+from harnessed import ToolCall, ToolResult
+from harnessed.core.model import ModelChunk
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ContextValueChanged,
@@ -12,6 +14,8 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, JsonlSessions
+from harnessed.plugins.rules import Rules, when
+from harnessed.plugins.shell import ProcResult
 from harnessed.testing import ScriptedModel
 
 
@@ -216,7 +220,8 @@ def test_invalid_rule_options(kwargs):
 
 
 async def test_canonical_match_metadata_survives_output_limits_and_context_resets(tmp_path):
-    from harnessed import Agent, Plugin, tool
+    from harnessed import Agent, Plugin
+    from harnessed.core.tools.decorator import tool
     from harnessed.plugins import JsonlSessions, ToolOutputLimit
     from harnessed.testing import ScriptedModel
 

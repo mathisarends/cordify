@@ -2,9 +2,10 @@
 
 import asyncio
 
-from harnessed import Agent, Inject, Observation, Plugin, Session, hook, tool
+from harnessed import Agent, Inject, Observation, Plugin, Session, hook
 from harnessed.core.hooks import PreStep
 from harnessed.core.session.events import CompactionApplied, SpillCreated
+from harnessed.core.tools.decorator import tool
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Compaction, LatestObservationOnly, Spill, at_ratio
 from harnessed.testing import ScriptedModel, call

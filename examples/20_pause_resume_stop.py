@@ -3,7 +3,8 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
+from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason
+from harnessed.core.tools.decorator import tool
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
 

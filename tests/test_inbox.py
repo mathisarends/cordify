@@ -4,9 +4,11 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Inbox, ModelChunk, system, user
+from harnessed.core.messages import system, user
+from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import InboxAdded, InboxRemoved, UserMessage
+from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import JsonlPersistence

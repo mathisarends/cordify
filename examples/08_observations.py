@@ -4,20 +4,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from harnessed import Agent as Application
-from harnessed import (
-    Bundle,
-    Context,
-    Inject,
-    ModelChunk,
-    Observation,
-    Plugin,
-    PreStep,
-    ToolCall,
-    hook,
-    plugin,
-)
-from harnessed import Session as Agent
+from harnessed import Agent, Context, Inject, Observation, Plugin, Session, ToolCall, hook, plugin
+from harnessed.core.plugin import Bundle
+from harnessed.hooks import PreStep
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
@@ -63,9 +53,9 @@ async def browser_backend(ctx: Context):
 
 class BrowserObserver(Plugin):
     @hook(PreStep)
-    async def observe(self, event, next_, browser: Inject[Browser], agent: Inject[Agent]):
+    async def observe(self, event, next_, browser: Inject[Browser], session: Inject[Session]):
         state = await browser.snapshot()
-        agent.observe(
+        session.observe(
             Observation(
                 source="browser",
                 full=state.render(),
@@ -97,12 +87,12 @@ async def main():
     model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("click", {"ref": "settings"}))], "Settings opened."]
     )
-    harness = Application(
+    agent = Agent(
         model=model,
         plugins=[Approvals(trust="all"), browser_backend(), BrowserObserver(), browser_tools],
     )
-    async with harness.session("browser") as agent:
-        print((await agent.run("Open Settings.")).text)
+    async with agent.session("browser") as session:
+        print((await session.run("Open Settings.")).text)
         for index, request in enumerate(model.requests, 1):
             print(f"\nRequest {index}:")
             for message in request.messages:

@@ -6,9 +6,10 @@ from typing import ClassVar
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ModelChunk, ToolCall, ToolResult
+from harnessed import ToolCall, ToolResult
 from harnessed.core.hooks import PrepareRequest
 from harnessed.core.messages import System, User
+from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (

@@ -10,7 +10,10 @@ from pathlib import Path
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, Bundle, ModelChunk, ToolCall, user
+from harnessed import ApprovalAnswer, ToolCall
+from harnessed.core.messages import user
+from harnessed.core.model import ModelChunk
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,
@@ -34,7 +37,10 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from harnessed import Bundle, ApprovalAnswer, ModelChunk, ToolCall, system
+from harnessed.core.plugin import Bundle
+from harnessed import ApprovalAnswer, ToolCall
+from harnessed.core.model import ModelChunk
+from harnessed.core.messages import system
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.testing import ScriptedModel
 root, phase = (Path(sys.argv[1]), sys.argv[2])

@@ -5,18 +5,12 @@ import pytest
 from pydantic import PydanticSchemaGenerationError
 
 from harnessed import Agent as Application
-from harnessed import (
-    Context,
-    Emit,
-    Plugin,
-    SystemPrompt,
-    ToolCall,
-    ToolRegistry,
-    hook,
-    plugin,
-    tool,
-)
+from harnessed import Context, Plugin, ToolCall, hook, plugin
 from harnessed import Session as Agent
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.registry import ToolRegistry
+from harnessed.kernel import Emit
 from harnessed.plugins import AgentLoop, Approvals
 from harnessed.testing import ScriptedModel
 

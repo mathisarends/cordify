@@ -3,8 +3,9 @@ from itertools import permutations
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Context, Emit, Plugin, Waterfall, hook
+from harnessed import Context, Plugin, hook
 from harnessed.core.plugin import Bundle
+from harnessed.kernel import Emit, Waterfall
 from harnessed.kernel import PluginBase as KernelPlugin
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.plugins import Approvals

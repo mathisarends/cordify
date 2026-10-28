@@ -3,7 +3,10 @@
 import asyncio
 from dataclasses import dataclass
 
-from harnessed import Context, Emit, SystemPrompt, ToolCall, ToolRegistry, plugin
+from harnessed import Context, ToolCall, plugin
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.tools.registry import ToolRegistry
+from harnessed.kernel import Emit
 from harnessed.plugins import AgentLoop
 
 

@@ -11,7 +11,7 @@ requires its provider extra and credentials.
 | DeepSeek integration | `uv run python -m examples.04_deepseek` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/04_deepseek.py) |
 | Function plugin ownership | `uv run python -m examples.06_explicit_registration` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/06_explicit_registration.py) |
 | Combined context policies | `uv run python -m examples.10_context_strategies` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/10_context_strategies.py) |
-| Structural Model | `uv run python -m examples.13_llm_adapters` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/13_llm_adapters.py) |
+| Structural Model | `uv run python -m examples.13_models` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/13_models.py) |
 | Compaction policies | `uv run python -m examples.16_compaction_policies` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/16_compaction_policies.py) |
 | Pause/resume/stop/abort | `uv run python -m examples.20_pause_resume_stop` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/20_pause_resume_stop.py) |
 | Session-owned spill | `uv run python -m examples.24_session_spill` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/24_session_spill.py) |

@@ -4,27 +4,22 @@ from typing import Protocol
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ModelChunk, ToolCall, plugin
+from harnessed import ToolCall, plugin
+from harnessed.core.approvals import Approver
 from harnessed.core.compaction import Summarizer
 from harnessed.core.hooks import ToolPolicy
-from harnessed.core.messages import PolicyDecision
-from harnessed.core.model import Model
+from harnessed.core.messages import ApprovalAnswer, PolicyDecision
+from harnessed.core.model import Model, ModelChunk
 from harnessed.core.runtime.agent_loop import AgentFactory
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.store import SessionPersistence
+from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Context
 from harnessed.plugins import Approvals
-from harnessed.plugins.filesystem import fs_tools
-from harnessed.plugins.shell import shell_tools
-from harnessed.seams import (
-    FS,
-    ApprovalAnswer,
-    Approver,
-    ProcResult,
-    Shell,
-    SpillStore,
-    TokenCounter,
-)
+from harnessed.plugins.filesystem import FS, fs_tools
+from harnessed.plugins.shell import ProcResult, shell_tools
+from harnessed.plugins.shell import ShellBackend as Shell
+from harnessed.plugins.spill import SpillStore
 from harnessed.testing import ScriptedModel
 
 

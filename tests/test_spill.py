@@ -5,11 +5,13 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from harnessed import Agent, Plugin, ToolOutputLimit, tool
+from harnessed import Agent, Plugin
 from harnessed.core.messages import ImagePart, TextPart, ToolResult
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import SpillCreated, SpillExpired
 from harnessed.core.session.files import SessionFiles
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolError
 from harnessed.plugins import JsonlSessions, Rules, Spill, when
 from harnessed.plugins.spill import SpillStore

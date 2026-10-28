@@ -4,8 +4,10 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Bundle, ModelChunk, ModelRequest, ToolCall, derive_turns
+from harnessed import ToolCall
 from harnessed.core.hooks import PreStep, StepDecision
+from harnessed.core.model import ModelChunk, ModelRequest
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ModelRequested,
@@ -18,6 +20,7 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.turns import derive_turns
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
 

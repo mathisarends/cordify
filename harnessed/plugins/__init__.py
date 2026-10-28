@@ -1,3 +1,5 @@
+"""Optional features and configurable default plugins."""
+
 from typing import TYPE_CHECKING
 
 from harnessed._exports import exported
@@ -17,60 +19,59 @@ if TYPE_CHECKING:
     from harnessed.plugins.compaction import at_ratio as at_ratio
     from harnessed.plugins.compaction import every_turns as every_turns
     from harnessed.plugins.filesystem import Filesystem as Filesystem
-    from harnessed.plugins.observations import (
-        LatestObservationOnly as LatestObservationOnly,
-    )
+    from harnessed.plugins.observations import LatestObservationOnly as LatestObservationOnly
     from harnessed.plugins.rules import Rules as Rules
     from harnessed.plugins.rules import when as when
     from harnessed.plugins.sessions import JsonlSessions as JsonlSessions
     from harnessed.plugins.shell import Shell as Shell
     from harnessed.plugins.spill import Spill as Spill
     from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
+
 _EXPORTS = {
+    "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
+    "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
+    "Approvals": ("harnessed.core.approvals", "Approvals"),
     "Compaction": ("harnessed.plugins.compaction", "Compaction"),
     "ContextState": ("harnessed.core.compaction", "ContextState"),
+    "ContextValue": ("harnessed.core.prompt.context", "ContextValue"),
+    "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
+    "Instructions": ("harnessed.core.prompt.instructions", "Instructions"),
+    "JsonlSessions": ("harnessed.plugins.sessions", "JsonlSessions"),
+    "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
+    "MemorySessions": ("harnessed.core.session.store", "MemorySessions"),
+    "NoopTracer": ("harnessed.core.tracing", "NoopTracer"),
+    "Rules": ("harnessed.plugins.rules", "Rules"),
+    "Service": ("harnessed.core.plugin", "Service"),
+    "Shell": ("harnessed.plugins.shell", "Shell"),
+    "Spill": ("harnessed.plugins.spill", "Spill"),
+    "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
+    "ToolOutputLimit": ("harnessed.core.tools.output_limit", "ToolOutputLimit"),
     "at_ratio": ("harnessed.plugins.compaction", "at_ratio"),
     "every_turns": ("harnessed.plugins.compaction", "every_turns"),
-    "Spill": ("harnessed.plugins.spill", "Spill"),
-    "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
-    "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
-    "MemorySessions": ("harnessed.core.session.store", "MemorySessions"),
-    "ToolOutputLimit": ("harnessed.core.tools.output_limit", "ToolOutputLimit"),
-    "Instructions": ("harnessed.core.prompt.instructions", "Instructions"),
-    "NoopTracer": ("harnessed.core.tracing", "NoopTracer"),
-    "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
-    "Shell": ("harnessed.plugins.shell", "Shell"),
-    "Service": ("harnessed.core.plugin", "Service"),
-    "ContextValue": ("harnessed.core.prompt.context", "ContextValue"),
-    "JsonlSessions": ("harnessed.plugins.sessions", "JsonlSessions"),
-    "Approvals": ("harnessed.core.approvals", "Approvals"),
-    "Rules": ("harnessed.plugins.rules", "Rules"),
     "when": ("harnessed.plugins.rules", "when"),
-    "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
-    "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
 }
 __all__ = [
+    "AgentLoop",
+    "ApprovalAnswer",
+    "Approvals",
     "Compaction",
     "ContextState",
+    "ContextValue",
+    "Filesystem",
+    "Instructions",
+    "JsonlSessions",
+    "LatestObservationOnly",
+    "MemorySessions",
+    "NoopTracer",
+    "Rules",
+    "Service",
+    "Shell",
+    "Spill",
+    "SpillLargeResults",
+    "ToolOutputLimit",
     "at_ratio",
     "every_turns",
-    "Spill",
-    "ApprovalAnswer",
-    "AgentLoop",
-    "MemorySessions",
-    "ToolOutputLimit",
-    "Instructions",
-    "NoopTracer",
-    "Filesystem",
-    "Shell",
-    "Service",
-    "ContextValue",
-    "JsonlSessions",
-    "Approvals",
-    "Rules",
     "when",
-    "LatestObservationOnly",
-    "SpillLargeResults",
 ]
 
 

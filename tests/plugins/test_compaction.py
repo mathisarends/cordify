@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 
-from harnessed import Agent, Plugin, SessionClosed, SessionStatus, hook, tool
+from harnessed import Agent, Plugin, SessionClosed, SessionStatus, hook
 from harnessed.core.compaction import ContextState
 from harnessed.core.errors import ConfigError, ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest
@@ -12,6 +12,7 @@ from harnessed.core.model import ModelChunk, ModelInfo
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import CompactionApplied, ModelRequested, StepEnd
 from harnessed.core.session.session import SessionLog
+from harnessed.core.tools.decorator import tool
 from harnessed.plugins import AgentLoop, Compaction, JsonlSessions, at_ratio, every_turns
 from harnessed.testing import CallbackModel, ScriptedModel
 

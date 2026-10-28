@@ -11,8 +11,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 ### P0-7 — Finish the public facade and remove duplicate paths
 
 - Finish converting optional built-ins to CapWords classes using public APIs.
-- Reduce root exports, sort/check __all__, and remove duplicate class names,
-  AgentHandle and compatibility aliases once consumers migrate.
 
 ## P1 — Runtime design and ergonomics
 
@@ -35,8 +33,9 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P2-7 — Complete structure-target.md
 
-- Collocate each feature's contract, implementation and plugin. Remove seams/,
-  adapters/, _context/, observe/, agents/ and transition re-exports.
+- Remove the remaining feature-specific transition helpers after their consumers
+  migrate. Contracts, optional features and default runtime policies now have
+  canonical owning modules; the transition packages have been removed.
 - Finish splitting the runtime and mirror the new package structure in tests.
 - Enforce the target layer, feature-independence and SDK/YAML isolation rules.
 

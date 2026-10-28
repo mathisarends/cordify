@@ -5,10 +5,11 @@ from dataclasses import replace
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ContextBudgetExceeded, ModelChunk, ToolCall, user
-from harnessed.core.budget import ContextBudget
+from harnessed import ToolCall
+from harnessed.core.budget import ContextBudget, ContextBudgetExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
-from harnessed.core.messages import Assistant, System
+from harnessed.core.messages import Assistant, System, user
+from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle, Service
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (

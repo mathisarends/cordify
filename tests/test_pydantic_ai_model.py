@@ -10,7 +10,7 @@ pytest.importorskip("pydantic_ai")
 from pydantic_ai import messages as native
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 
-from harnessed import Agent, Plugin, tool
+from harnessed import Agent, Plugin
 from harnessed.core.errors import (
     AuthError,
     ConfigError,
@@ -22,6 +22,7 @@ from harnessed.core.messages import ImagePart, TextPart
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.tools.decorator import tool
 from harnessed.models import PydanticAIModel
 
 

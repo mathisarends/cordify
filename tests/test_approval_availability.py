@@ -3,18 +3,13 @@ import asyncio
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import (
-    AgentOptions,
-    ApprovalAnswer,
-    ApprovalRequest,
-    ApprovalUnavailable,
-    Approver,
-    Bundle,
-    ModelChunk,
-    ToolCall,
-)
-from harnessed.core.hooks import ToolPolicy
+from harnessed import ApprovalAnswer, ToolCall
+from harnessed.core.approvals import ApprovalUnavailable, Approver
+from harnessed.core.hooks import ApprovalRequest, ToolPolicy
 from harnessed.core.messages import PolicyDecision
+from harnessed.core.model import ModelChunk
+from harnessed.core.plugin import Bundle
+from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ApprovalResolved, ToolExecutionStarted, ToolReturned
 from harnessed.core.session.session import SessionLog as Session

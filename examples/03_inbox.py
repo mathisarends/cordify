@@ -2,8 +2,8 @@
 
 import asyncio
 
-from harnessed import Agent as Application
-from harnessed import ModelChunk
+from harnessed import Agent
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel
 
@@ -24,24 +24,24 @@ class PausingModel(CallbackModel):
 
 async def main():
     model = PausingModel()
-    harness = Application(model=model, plugins=[Approvals(trust="all")])
-    async with harness.session("inbox") as agent:
-        await agent.inject("Silent context: This project uses Python 3.12+.")
-        print(f"After inject: {agent.status}, {len(model.requests)} requests")
-        await agent.followup("Analyze the project.")
+    agent = Agent(model=model, plugins=[Approvals(trust="all")])
+    async with agent.session("inbox") as session:
+        await session.inject("Silent context: This project uses Python 3.12+.")
+        print(f"After inject: {session.status}, {len(model.requests)} requests")
+        await session.followup("Analyze the project.")
         await model.started.wait()
-        await agent.steer("Focus on the tests.")
-        await agent.inject("Additional context: Unit tests already exist.")
-        await agent.followup("Write a summary afterward.")
+        await session.steer("Focus on the tests.")
+        await session.inject("Additional context: Unit tests already exist.")
+        await session.followup("Write a summary afterward.")
         model.proceed.set()
-        await agent.when_idle()
+        await session.when_idle()
         for index, request in enumerate(model.requests, 1):
             print(f"\nRequest {index}:")
             for message in request.messages:
                 if message.role == "user":
                     print(f"  {message.content}")
-        turns = agent.log.turns
-        print(f"\n{len(turns)} turns, {len(model.requests)} steps, status: {agent.status}")
+        turns = session.log.turns
+        print(f"\n{len(turns)} turns, {len(model.requests)} steps, status: {session.status}")
         for number, turn in enumerate(turns, 1):
             print(f"Turn {number}: {len(turn.steps)} steps, reason: {turn.reason}")
             for step in turn.steps:

@@ -7,7 +7,8 @@ from uuid import UUID
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
-from harnessed import Context, Inject, ToolCall, ToolRegistry
+from harnessed import Context, Inject, ToolCall
+from harnessed.core.tools.registry import ToolRegistry
 
 
 class Priority(StrEnum):

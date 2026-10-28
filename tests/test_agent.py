@@ -3,25 +3,11 @@ import asyncio
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import (
-    ApprovalAnswer,
-    ExecuteTool,
-    Inject,
-    ModelChunk,
-    Plugin,
-    ReviewToolResult,
-    ToolCall,
-    ToolContext,
-    ToolPolicy,
-    ToolRegistry,
-    hook,
-    plugin,
-    tool,
-)
+from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, ToolContext, hook, plugin
 from harnessed import Session as Agent
-from harnessed.core.hooks import PreStep, StepDecision
+from harnessed.core.hooks import ExecuteTool, PreStep, ReviewToolResult, StepDecision, ToolPolicy
 from harnessed.core.messages import PolicyDecision
-from harnessed.core.model import ModelInfo
+from harnessed.core.model import ModelChunk, ModelInfo
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -32,6 +18,8 @@ from harnessed.core.session.events import (
     TurnStart,
 )
 from harnessed.core.stream import TextDelta
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop, Approvals
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.testing import CallbackModel, ScriptedModel

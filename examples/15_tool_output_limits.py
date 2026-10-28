@@ -4,20 +4,14 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import (
-    FS,
-    Bundle,
-    ExecuteTool,
-    Inject,
-    ModelChunk,
-    ToolCall,
-    ToolOutputLimit,
-    ToolResult,
-)
-from harnessed import Agent as Application
+from harnessed import Agent, Inject, ToolCall, ToolResult
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import ToolReturned
+from harnessed.core.tools.output_limit import ToolOutputLimit
+from harnessed.hooks import ExecuteTool
+from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
-from harnessed.plugins.filesystem import fs_local, fs_tools
+from harnessed.plugins.filesystem import FS, fs_local, fs_tools
 from harnessed.testing import ScriptedModel
 
 budget = ToolOutputLimit(max_chars=1024)
@@ -60,7 +54,7 @@ async def main():
                 "Read bounded outputs and continued with explicit character ranges.",
             ]
         )
-        harness = Application(
+        agent = Agent(
             model=model,
             plugins=[
                 Approvals(trust="all"),
@@ -71,8 +65,8 @@ async def main():
                 early_limit,
             ],
         )
-        async with harness.session("output-limit") as agent:
-            result = await agent.run("Inspect the large log and read it in small ranges.")
+        async with agent.session("output-limit") as session:
+            result = await session.run("Inspect the large log and read it in small ranges.")
             for event in result.events:
                 if not isinstance(event, ToolReturned):
                     continue

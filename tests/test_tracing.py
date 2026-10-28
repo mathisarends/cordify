@@ -4,8 +4,9 @@ from contextlib import contextmanager
 
 import pytest
 
-from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, tool
+from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall
 from harnessed.core.model import ModelChunk
+from harnessed.core.tools.decorator import tool
 from harnessed.core.tracing import Tracer
 from harnessed.plugins import Approvals, Compaction, every_turns
 from harnessed.testing import ScriptedModel

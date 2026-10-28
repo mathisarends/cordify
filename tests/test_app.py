@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from harnessed import Agent, ApprovalAnswer, Plugin, PluginConflict, Section, ToolCall, tool
+from harnessed import Agent, ApprovalAnswer, Plugin, PluginConflict, Section, ToolCall
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.events import (
@@ -13,6 +13,7 @@ from harnessed.core.session.events import (
     TurnStart,
 )
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.tools.decorator import tool
 from harnessed.models import Model
 from harnessed.plugins import Approvals, ContextValue, Instructions, Service
 from harnessed.testing import ScriptedModel

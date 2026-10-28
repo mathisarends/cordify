@@ -3,10 +3,12 @@ import threading
 
 import pytest
 
-from harnessed import FS, Bundle, Inject, ModelChunk, PolicyDecision, ToolCall, ToolContext, plugin
 from harnessed import Agent as Application
+from harnessed import Inject, ToolCall, ToolContext, plugin
 from harnessed.core.hooks import ReviewToolResult
-from harnessed.core.messages import Assistant
+from harnessed.core.messages import Assistant, PolicyDecision
+from harnessed.core.model import ModelChunk
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -21,7 +23,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop, Approvals
-from harnessed.plugins.filesystem import LocalFS, fs_tools
+from harnessed.plugins.filesystem import FS, LocalFS, fs_tools
 from harnessed.testing import ScriptedModel
 
 

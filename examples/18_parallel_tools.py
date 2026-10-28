@@ -5,10 +5,12 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import FS, Bundle, Inject, ModelChunk, Section, ToolCall
-from harnessed import Agent as Application
+from harnessed import Agent, Inject, Section, ToolCall
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import ToolReturned
+from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals, Filesystem, Instructions
+from harnessed.plugins.filesystem import FS
 from harnessed.testing import ScriptedModel
 
 
@@ -30,10 +32,10 @@ async def independent_calls():
 
     calls = [ToolCall("lookup", {"index": index}) for index in range(3)]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Lookups finished."])
-    async with Application(
+    async with Agent(
         model=model, plugins=[AgentLoop(max_parallel_tools=3), Approvals(trust="all"), tools]
-    ).session("lookups") as agent:
-        result = await agent.run("Look up records 0, 1 and 2.")
+    ).session("lookups") as session:
+        result = await session.run("Look up records 0, 1 and 2.")
         returned = [event for event in result.events if isinstance(event, ToolReturned)]
         print("Actual completion order:", completion_order)
         print("Results in the log:", [event.result.content for event in returned])
@@ -65,7 +67,7 @@ async def writes_with_resource_keys(root: Path):
         ToolCall("save_document", {"path": "./a.txt", "text": "second version"}),
     ]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Documents saved."])
-    async with Application(
+    async with Agent(
         model=model,
         plugins=[
             Approvals(trust="all"),
@@ -73,12 +75,12 @@ async def writes_with_resource_keys(root: Path):
             Instructions([Section.from_file(Path(root) / "AGENTS.md", missing_ok=True)]),
             tools,
         ],
-    ).session("documents") as agent:
-        result = await agent.run("Save both documents and then update a.txt.")
+    ).session("documents") as session:
+        result = await session.run("Save both documents and then update a.txt.")
         returned = [event for event in result.events if isinstance(event, ToolReturned)]
         assert all(not event.result.is_error for event in returned)
         assert writes.index("first version") < writes.index("second version")
-        assert await agent.ctx[FS].read(Path("a.txt")) == "second version"
+        assert await session.ctx[FS].read(Path("a.txt")) == "second version"
         print("Same-file writes kept their order; a.txt contains the second version.")
         print("b.txt may run concurrently. Built-in write_file remains a full barrier.")
 
