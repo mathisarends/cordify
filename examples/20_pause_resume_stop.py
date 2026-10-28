@@ -3,7 +3,7 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, SessionStatus, StopReason, tool
+from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
 
@@ -79,7 +79,10 @@ async def reopen_a_paused_session(directory: str):
         work.release.set()
         await pausing
         turn_id = session.turns[-1].id
-    await running  # Closing ends this live handle; the durable pause remains.
+    try:
+        await running
+    except SessionClosed:
+        print("Live handle closed; the saved turn remains paused.")
 
     fresh = Agent(model=ScriptedModel(["Continued from stored results."]), plugins=plugins)
     async with fresh.session("saved") as session:

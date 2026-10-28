@@ -85,7 +85,9 @@ step. A tool or driver hook cannot await its own completion. Depend on the narro
 `SessionControl` service when a plugin needs to expose controls to an external UI.
 
 Closing a paused handle preserves its durable pause. Reopening it requires
-`resume()` and does not repeat committed tools. A crash during an active run
+`resume()` and does not repeat committed tools. Outstanding `run`/`stream` waiters
+on the closed handle raise `SessionClosed`; their durable turn or queued input is
+retained. A crash during an active run
 repairs unfinished activity as aborted and leaves the reopened session idle.
 After closing, operations raise `SessionClosed`; the final status is `CLOSED`.
 See [the runnable control example](https://github.com/mathisarends/cordify/blob/main/examples/20_pause_resume_stop.py).

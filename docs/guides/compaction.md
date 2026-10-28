@@ -44,6 +44,14 @@ is not due. If retained content still exceeds the budget, the request fails befo
 calling the provider. A summary that does not reduce the estimated request size
 is discarded; automatic attempts back off for two more closed turns.
 
+If the provider raises `ContextLengthExceeded` before a visible partial response,
+an installed policy can force one smaller projection and retry in a new step.
+The failed step ends with `context_limit`; the next request has its own step and
+never re-executes completed tools. This retry is limited to one per turn and uses
+the normal step budget. A partial reply, exhausted step budget, absent policy or
+history that cannot be reduced propagates the error. The retry marker survives
+pause and restart.
+
 ## Choose a summarizer
 
 Omitting `summarizer` uses the session's current `Model`. A model string, native

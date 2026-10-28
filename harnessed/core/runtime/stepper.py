@@ -6,12 +6,15 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from harnessed.core.budget import ContextBudget
+from harnessed.core.compaction import CompactionPolicy
+from harnessed.core.errors import ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
 from harnessed.core.messages import User
 from harnessed.core.model import ModelRequest
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.executor import run_tools
 from harnessed.core.session.events import (
+    AssistantMessage,
     ContextMessage,
     InboxRemoved,
     ModelRequested,
@@ -97,7 +100,25 @@ async def run_step(self: Agent, turn: str, step: int, settings, preparing: Conte
             counter=self.ctx[TokenCounter],
         )
     await self.log.append(ModelRequested(request))
-    response = await self._respond(request)
+    try:
+        response = await self._respond(request)
+    except ContextLengthExceeded:
+        current = self.log.open_turn
+        assert current is not None
+        if (
+            CompactionPolicy not in self.ctx
+            or step >= self.options.max_steps
+            or any(item.reason == "context_limit" for item in current.steps)
+            or any(isinstance(event, AssistantMessage) for event in current.steps[-1].events)
+        ):
+            raise
+        applied, _ = await self._compaction.compact(request)
+        if applied is None:
+            raise
+        # A retry is a new model step. Completed tools and visible partial replies
+        # are never replayed by retrying an in-progress step.
+        await self.log.append(StepEnd(turn, step, "context_limit"))
+        return True
     await run_tools(self, response.tool_calls)
     await self.log.append(StepEnd(turn, step))
     return True

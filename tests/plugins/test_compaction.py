@@ -3,16 +3,16 @@ from dataclasses import replace
 
 import pytest
 
-from harnessed import Agent, Plugin, SessionStatus, hook
+from harnessed import Agent, Plugin, SessionClosed, SessionStatus, hook, tool
 from harnessed.core.compaction import ContextState
-from harnessed.core.errors import ConfigError
+from harnessed.core.errors import ConfigError, ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest
-from harnessed.core.messages import System
+from harnessed.core.messages import System, ToolCall
 from harnessed.core.model import ModelChunk, ModelInfo
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import CompactionApplied
+from harnessed.core.session.events import CompactionApplied, ModelRequested, StepEnd
 from harnessed.core.session.session import SessionLog
-from harnessed.plugins import AgentLoop, Compaction, at_ratio, every_turns
+from harnessed.plugins import AgentLoop, Compaction, JsonlSessions, at_ratio, every_turns
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
@@ -230,3 +230,133 @@ def test_trigger_state_includes_reserved_output_and_new_turn_count():
     state = ContextState(600, 200, 1000, 5)
     assert state.ratio == 0.8 and at_ratio(0.8)(state) and every_turns(5)(state)
     assert not at_ratio(0.9)(state) and not every_turns(6)(state)
+
+
+async def test_provider_context_error_compacts_once_then_retries_as_a_new_step():
+    effects = []
+    model = None
+
+    class Work(Plugin):
+        @tool(readonly=True)
+        async def work(self) -> str:
+            effects.append("work")
+            return "ready"
+
+    async def chunks(request):
+        assert model is not None
+        number = len(model.requests)
+        if number == 2:
+            raise ContextLengthExceeded("Provider window was exceeded")
+        if number == 3:
+            yield ModelChunk(tool_call=ToolCall("work"))
+        else:
+            yield ModelChunk(text=f"answer {number}")
+
+    model = CallbackModel(chunks)
+    brief = Brief()
+    async with Agent(
+        model=model,
+        plugins=[Work(), Compaction(trigger=lambda state: False, summarizer=brief, keep_turns=0)],
+    ).session() as session:
+        await session.run("x" * 4000)
+        result = await session.run("current")
+        assert result.text == "answer 4" and effects == ["work"]
+        assert len(brief.sources) == 1 and len(result.tool_calls) == 1
+        assert [step.reason for step in session.turns[-1].steps] == [
+            "context_limit",
+            "completed",
+            "completed",
+        ]
+        assert all(
+            sum(isinstance(event, ModelRequested) for event in step.events) == 1
+            for step in session.turns[-1].steps
+        )
+        assert not any(message.text == "x" * 4000 for message in model.requests[2].messages)
+        restored = [decode_event(encode_event(event)) for event in session.events]
+        assert SessionLog("replay", seed=restored).turns == session.turns
+
+
+@pytest.mark.parametrize("case", ["no-policy", "no-history", "partial", "step-limit", "repeated"])
+async def test_context_retry_is_bounded_and_requires_a_safe_smaller_request(case):
+    model = None
+
+    async def chunks(request):
+        assert model is not None
+        if len(model.requests) == 1 and case != "no-history":
+            yield ModelChunk(text="first")
+            return
+        if case == "partial":
+            yield ModelChunk(text="visible prefix")
+        raise ContextLengthExceeded("Still too large")
+
+    model = CallbackModel(chunks)
+    brief = Brief()
+    plugins = (
+        []
+        if case == "no-policy"
+        else [Compaction(trigger=lambda state: False, summarizer=brief, keep_turns=0)]
+    )
+    if case == "step-limit":
+        plugins.append(AgentLoop(max_steps=1))
+    async with Agent(model=model, plugins=plugins).session() as session:
+        if case != "no-history":
+            await session.run("x" * 4000)
+        with pytest.raises(ContextLengthExceeded, match="Still too large"):
+            await session.run("current")
+        assert session.turns[-1].reason == "aborted"
+        assert len(brief.sources) == (1 if case == "repeated" else 0)
+        assert len(model.requests) == (
+            1 if case == "no-history" else 3 if case == "repeated" else 2
+        )
+
+
+async def test_paused_context_retry_survives_restart_without_reusing_its_retry(tmp_path):
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class Blocked:
+        async def summarize(self, messages, *, max_tokens):
+            started.set()
+            await release.wait()
+            return "short summary"
+
+    model = None
+
+    async def chunks(request):
+        assert model is not None
+        if len(model.requests) == 1:
+            yield ModelChunk(text="first")
+        else:
+            raise ContextLengthExceeded("Too large")
+
+    model = CallbackModel(chunks)
+
+    def app(backend, summarizer):
+        return Agent(
+            model=backend,
+            plugins=[
+                JsonlSessions(tmp_path),
+                Compaction(trigger=lambda state: False, summarizer=summarizer, keep_turns=0),
+            ],
+        )
+
+    async with app(model, Blocked()).session("retry") as session:
+        await session.run("x" * 4000)
+        running = asyncio.create_task(session.run("current"))
+        await asyncio.wait_for(started.wait(), 3)
+        pausing = asyncio.create_task(session.pause())
+        while session.log.control.state != "pausing":
+            await session.control._changed.wait()
+        release.set()
+        await asyncio.wait_for(pausing, 3)
+        assert session.status is SessionStatus.PAUSED
+        assert session.last(StepEnd).reason == "context_limit"
+    with pytest.raises(SessionClosed):
+        await asyncio.wait_for(running, 3)
+    recovered = ScriptedModel(["continued"])
+    async with app(recovered, Brief()).session("retry") as session:
+        assert session.status is SessionStatus.PAUSED
+        await session.resume()
+        await asyncio.wait_for(session.wait_until_idle(), 3)
+        assert session.messages[-1].text == "continued"
+        assert [step.reason for step in session.turns[-1].steps] == ["context_limit", "completed"]
+        assert len(recovered.requests) == 1

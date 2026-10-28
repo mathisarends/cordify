@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 type InboxMode = Literal["followup", "steer", "inject"]
 type InboxTarget = Literal["next-turn", "next-step"]
 type ControlState = Literal["active", "pausing", "paused", "stopping", "aborting", "stopped"]
-type StepOutcome = Literal["completed", "interrupted", "aborted"]
+type StepOutcome = Literal["completed", "interrupted", "aborted", "context_limit"]
 type TurnOutcome = Literal[
     "completed", "interrupted", "stopped", "max_steps", "rejected", "aborted", "discarded"
 ]
@@ -483,7 +483,7 @@ class StepEnd(SessionEvent):
     reason: StepOutcome = "completed"
 
     def __post_init__(self):
-        if self.reason not in ("completed", "interrupted", "aborted"):
+        if self.reason not in get_args(StepOutcome.__value__):
             raise ValueError("Unknown step outcome")
 
 

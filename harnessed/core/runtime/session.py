@@ -9,6 +9,7 @@ from uuid import uuid4
 from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
 from harnessed.core.attachments import Attachment
 from harnessed.core.compaction import CompactionManager
+from harnessed.core.errors import SessionClosed
 from harnessed.core.hooks import (
     ApprovalRequest,
     SessionAppended,
@@ -419,6 +420,11 @@ class Session:
                 if event is None:
                     if self.control.error is not None:
                         raise self.control.error
+                    if self.control.closing or self.status is SessionStatus.CLOSED:
+                        raise SessionClosed(
+                            "This handle closed before the turn finished; "
+                            "reopen the session to continue"
+                        )
                     if any(item.id == input_id for item in self.inbox.pending):
                         self._wake()
                         continue
@@ -519,6 +525,8 @@ class Session:
         return True
 
     async def _continue_turn(self, step) -> bool:
+        if step.reason == "context_limit":
+            return True
         response = next(
             (event for event in reversed(step.events) if isinstance(event, AssistantMessage)),
             None,

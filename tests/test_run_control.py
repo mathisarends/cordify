@@ -269,7 +269,8 @@ async def test_paused_session_reopens_at_the_next_step_without_repeating_tools(t
         await wait(pause)
         prefix, turn_id = session.events, session.turns[-1].id
         assert not running.done() and session.turns[-1].steps[-1].closed
-    await wait(running)
+    with pytest.raises(SessionClosed, match="reopen the session"):
+        await wait(running)
     model = ScriptedModel(["continued"])
     async with agent(model).session("saved") as session:
         assert session.status is SessionStatus.PAUSED and session.events == prefix
@@ -280,6 +281,24 @@ async def test_paused_session_reopens_at_the_next_step_without_repeating_tools(t
         assert executed == [True] and any(
             m.text == "stored result" for m in model.requests[0].messages
         )
+
+
+async def test_closing_a_paused_handle_finishes_queued_waiters_without_discarding_input():
+    app = Agent(model=ScriptedModel(["continued"]))
+    async with app.session("waiting") as session:
+        await session.pause()
+        running = asyncio.create_task(session.run("queued"))
+        async with asyncio.timeout(3):
+            while not session.inbox.pending:
+                await session.control._changed.wait()
+        item = session.inbox.pending[0]
+    with pytest.raises(SessionClosed, match="reopen the session"):
+        await wait(running)
+    async with app.session("waiting") as session:
+        assert session.inbox.pending == (item,) and not session.turns
+        await session.resume()
+        await wait(session.wait_until_idle())
+        assert session.messages[-1].text == "continued"
 
 
 @pytest.mark.parametrize("state", ["active", "pausing", "stopping", "aborting"])
