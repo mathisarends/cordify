@@ -175,7 +175,7 @@ async def test_class_and_bundle_explicit_needs_remove_tools_and_prompt_sections(
         async def setup(self, ctx, prompt: Inject[SystemPrompt]):
             self.name = ctx[Backend].name
             self.calls = 0
-            prompt.section("feature", self.name)
+            prompt.fixed(self.name)
 
         @tool
         async def read(self) -> str:

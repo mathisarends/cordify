@@ -23,7 +23,7 @@ class PageChanged(Emit):
 async def browser_tools(ctx: Context):
     browser = ctx[Browser]
     print(f"Setup with {browser.name}")
-    ctx[SystemPrompt].section("browser", f"Current browser: {browser.name}")
+    ctx[SystemPrompt].fixed(f"Current browser: {browser.name}")
     ctx.on(PageChanged, lambda event: print(f"Listener with {browser.name}"))
     ctx.effect(lambda: print(f"Custom effect cleaned for {browser.name}"))
 

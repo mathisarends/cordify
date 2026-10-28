@@ -13,7 +13,6 @@ from harnessed import (
     Observation,
     Plugin,
     PreStep,
-    SystemPrompt,
     ToolCall,
     hook,
     system,
@@ -21,6 +20,7 @@ from harnessed import (
 )
 from harnessed import Session as Agent
 from harnessed.core.messages import User
+from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
 from harnessed.core.session.session import SessionLog as Session
@@ -82,7 +82,7 @@ async def test_system_injection_survives_prompt_updates_and_typed_user_steering(
             ("system", "External change"),
             ("user", "Check auth"),
         ]
-        agent.ctx[SystemPrompt].section("new", "Updated base prompt")
+        await agent.context.set("project", "Updated project facts")
         await agent.run("another turn")
         assert any(
             m.role == "system" and m.text == "External change" for m in model.requests[-1].messages
@@ -114,8 +114,10 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
     instructions.write_text("first rules", encoding="utf-8")
 
     class Project(Plugin):
-        async def setup(self, prompt: Inject[SystemPrompt], fs: Inject[FS]):
-            prompt.section("project", lambda: fs.read(Path("AGENTS.md")), stable=False)
+        @hook(PreStep)
+        async def refresh(self, event, next_, context: Inject[DynamicContext], fs: Inject[FS]):
+            await context.set("project", await fs.read(Path("AGENTS.md")))
+            return await next_()
 
     model = ScriptedModel(["one", "two"])
     async with Harness([agent_loop(), llm(model), fs_local(tmp_path), Project()]).session(
@@ -124,8 +126,8 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
         await agent.run("one")
         instructions.write_text("second rules", encoding="utf-8")
         await agent.run("two")
-        assert model.requests[0].messages[0].text == "first rules"
-        assert model.requests[1].messages[0].text == "second rules"
+        assert any("first rules" in message.text for message in model.requests[0].messages)
+        assert any("second rules" in message.text for message in model.requests[1].messages)
 
 
 async def test_observations_use_full_current_state_and_summaries_in_later_steps_and_replay():

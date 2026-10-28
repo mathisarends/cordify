@@ -39,10 +39,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Verify missing-extra errors, owned/borrowed client lifetimes, stream abort,
   failure mapping and Python 3.12–3.14 against the completed migration.
 
-### P1-11 — Finish Option C across the default application
-
-- Remove legacy persona/agents_md and order/stable prompt APIs from defaults.
-
 ## P2 — Structure, typing, docs and testing
 
 ### P2-7 — Complete structure-target.md

@@ -4,11 +4,20 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from harnessed import Context, Harness, ModelChunk, SystemPrompt, ToolCall, ToolRegistry, plugin
+from harnessed import (
+    Agent,
+    ApprovalAnswer,
+    Context,
+    Inject,
+    ModelChunk,
+    Plugin,
+    ToolCall,
+    plugin,
+    tool,
+)
 from harnessed.core.hooks import ExecuteTool, SessionAppended
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.services import llm
+from harnessed.core.session.events import TurnEnd
+from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
 
@@ -36,18 +45,19 @@ class NotesConfig:
     instruction: str = "Use save_note to save notes."
 
 
-@plugin(needs=[Notes, ToolRegistry, SystemPrompt])
-async def notes_tools(ctx: Context, config: NotesConfig):
-    notes = ctx[Notes]
-    ctx[SystemPrompt].section("notes", config.instruction, order=20)
+class NotesTools(Plugin):
+    needs = (Notes,)
 
-    @ctx[ToolRegistry].tool
-    async def save_note(text: str) -> str:
+    def __init__(self, config: NotesConfig):
+        super().__init__(guidance=config.instruction)
+
+    @tool
+    async def save_note(self, text: str, notes: Inject[Notes]) -> str:
         """Save a note."""
         return await notes.save(text)
 
-    yield
-    print("Notes plugin stopped; tools and prompt sections are removed automatically.")
+    async def teardown(self):
+        print("Notes plugin stopped; owned tools are removed automatically.")
 
 
 @plugin()
@@ -61,29 +71,26 @@ async def trace(ctx: Context):
 
     @ctx.on(SessionAppended)
     def record(event):
-        if event.event.type == "turn/end":
+        if isinstance(event.event, TurnEnd):
             print(f"{event.log.id}: turn ended at event {event.seq}")
 
     yield
 
 
 async def main():
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(
-                ScriptedModel(
-                    [
-                        [ModelChunk(tool_call=ToolCall("save_note", {"text": "Try Harnessed"}))],
-                        "The note has been saved.",
-                    ]
-                )
-            ),
-            notes_tools(NotesConfig()),  # Dependencies are resolved before setup.
+    harness = Agent(
+        model=ScriptedModel(
+            [
+                [ModelChunk(tool_call=ToolCall("save_note", {"text": "Try Harnessed"}))],
+                "The note has been saved.",
+            ]
+        ),
+        plugins=[
+            NotesTools(NotesConfig()),
             notes_backend(),
             trace(),
-            approval_gate(risky={"save_note"}, ask=lambda call: True),
-        ]
+            Approvals(approver=lambda request: ApprovalAnswer.ALLOW),
+        ],
     )
 
     async with harness.session("notes") as agent:

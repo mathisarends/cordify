@@ -55,7 +55,7 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
                 ctx.provide(str, "override"),
                 ctx.add_listener(Ping, lambda event: seen.append("override")),
                 ctx[ToolRegistry].register(override, name="read", override=True),
-                ctx[SystemPrompt].section("persona", "override", override=True),
+                ctx[SystemPrompt].fixed("override"),
             ]
         )
         yield
@@ -65,7 +65,7 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
         ctx.provide(str, "base")
         ctx.add_listener(Ping, lambda event: seen.append("base"))
         ctx[ToolRegistry].register(base, name="read")
-        ctx[SystemPrompt].section("persona", "base")
+        ctx[SystemPrompt].fixed("base")
         handle = await ctx.plugin(feature())
         assert ctx[str] == "override"
         assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "override"
@@ -98,7 +98,7 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
         async def override() -> str:
             return "override"
 
-        ctx[SystemPrompt].section("persona", "override", override=True)
+        ctx[SystemPrompt].fixed("override")
         ctx.on(Ping, lambda event: seen.append("override"))
         starting.set()
         await ready.wait()
@@ -109,7 +109,7 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
     async with Context() as ctx:
         await ctx.install([tools(), system_prompt()])
         ctx[ToolRegistry].register(base, name="read")
-        ctx[SystemPrompt].section("persona", "base")
+        ctx[SystemPrompt].fixed("base")
         mounting = asyncio.create_task(ctx.plugin(feature()))
         try:
             await starting.wait()
@@ -158,7 +158,7 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
         async def setup(self, ctx):
             self.backend = ctx[Bridge].name
             self.calls = 0
-            ctx[SystemPrompt].section("backend", self.backend)
+            ctx[SystemPrompt].fixed(self.backend)
             ctx.provide(Ready, Ready())
 
         @tool
@@ -209,7 +209,7 @@ async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_ba
         needs = (ToolRegistry, SystemPrompt)
 
         async def setup(self, ctx):
-            ctx[SystemPrompt].section("temporary", "must disappear")
+            ctx[SystemPrompt].fixed("must disappear")
             ctx.provide(Ready, Ready())
 
         @hook(Ping)
@@ -244,7 +244,7 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
     async def feature(ctx):
         name = ctx[Backend].name
         ctx.provide(Ready, Ready())
-        ctx[SystemPrompt].section("feature", name)
+        ctx[SystemPrompt].fixed(name)
         ctx.on(Ping, lambda event: seen.append(name))
 
         @ctx[ToolRegistry].tool

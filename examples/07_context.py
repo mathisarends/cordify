@@ -7,27 +7,23 @@ from tempfile import TemporaryDirectory
 from typing import Protocol
 
 from harnessed import (
-    FS,
+    Agent,
     Bundle,
     Context,
     File,
-    Harness,
     Image,
     Inject,
     ModelChunk,
     Plugin,
     PreStep,
-    SystemPrompt,
+    Section,
+    Session,
     ToolCall,
     hook,
     plugin,
-    system,
 )
-from harnessed import Session as Agent
 from harnessed.core.session.events import ContextMessage
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.filesystem import fs_local
-from harnessed.plugins.services import llm
+from harnessed.plugins import ContextValue
 from harnessed.testing import ScriptedModel
 
 
@@ -46,38 +42,20 @@ async def memory_backend(ctx: Context):
     yield
 
 
-class Persona(Plugin):
-    def __init__(self, text: str):
-        self.text = text
-
-    async def setup(self, prompt: Inject[SystemPrompt]):
-        prompt.section("persona", self.text, order=0)
-
-
-class ProjectInstructions(Plugin):
-    async def setup(self, prompt: Inject[SystemPrompt], fs: Inject[FS]):
-        prompt.section(
-            "agents_md",
-            lambda: fs.read(Path("AGENTS.md")),
-            order=50,
-            stable=False,
-        )
-
-
 class RelevantMemories(Plugin):
     @hook(PreStep)
-    async def recall(self, event, next_, memory: Inject[Memory], agent: Inject[Agent]):
+    async def recall(self, event, next_, memory: Inject[Memory], agent: Inject[Session]):
         if event.is_turn_start:
             hits = await memory.search(event.latest_user_text, k=3)
             if hits:
-                await agent.inject(system("Relevant memories:\n" + "\n".join(hits)))
+                await agent.context.set("memories", "\n".join(hits))
         return await next_()
 
 
 memory_tools = Bundle("memory")
 
 
-@memory_tools.tool
+@memory_tools.tool(readonly=True)
 async def recall(query: str, memory: Inject[Memory]) -> list[str]:
     """Search long-term memory for relevant project information."""
     return await memory.search(query, k=5)
@@ -100,17 +78,15 @@ async def main():
                 "A new task starts without the previous ticket context.",
             ]
         )
-        harness = Harness(
-            [
-                agent_loop(),
-                llm(model),
-                fs_local(root),
-                Persona("You are a code reviewer."),
-                ProjectInstructions(),
+        harness = Agent(
+            model=model,
+            instructions=["You are a code reviewer.", Section.from_file(root / "AGENTS.md")],
+            plugins=[
+                ContextValue("ci", "Authentication tests are available."),
                 memory_backend(),
                 RelevantMemories(),
                 memory_tools,
-            ]
+            ],
         )
         async with harness.session("review") as agent:
             result = await agent.run(
@@ -121,7 +97,8 @@ async def main():
             print(result.text)
             for message in model.requests[0].messages:
                 print(f"{message.role}: {message.text[:160]}")
-            print("Image part:", type(model.requests[0].messages[2].content[-1]).__name__)
+            attached = next(m for m in model.requests[0].messages if "File: PR.diff" in m.text)
+            print("Image part:", type(attached.content[-1]).__name__)
 
             await agent.run("Now discuss a different task.")
             print(

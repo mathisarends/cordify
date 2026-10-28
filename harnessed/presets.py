@@ -6,6 +6,8 @@ from harnessed.core.approvals import validate_approval_timeout
 from harnessed.core.model import Model
 from harnessed.core.plugin import Bundle
 from harnessed.core.prompt.context import DynamicContext
+from harnessed.core.prompt.instructions import Instructions
+from harnessed.core.prompt.values import Section
 from harnessed.core.runtime.agent_loop import AgentFactory
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.runtime.session import Session as Agent
@@ -13,7 +15,6 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionPersistence
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.kernel import Context, PluginLike, plugin
-from harnessed.plugins._context.instructions import agents_md
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local, fs_tools
 from harnessed.plugins.observe.tokens import token_counter
@@ -167,7 +168,11 @@ def coding(
 ) -> Harness:
 
     workspace = Path(root).resolve()
-    capabilities = [fs_local(workspace), fs_tools(), agents_md(workspace / "AGENTS.md")]
+    capabilities = [
+        fs_local(workspace),
+        fs_tools(),
+        Instructions([Section.from_file(workspace / "AGENTS.md", missing_ok=True)]),
+    ]
     if shell:
         capabilities.extend([shell_local(), shell_tools(workspace)])
     return minimal(

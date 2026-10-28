@@ -1,79 +1,49 @@
-import asyncio
+"""Reversible prompt snapshots; application guidance is covered in test_app.py."""
 
-from harnessed import Context, Inject, SystemPrompt, ToolCall, ToolRegistry, plugin
-from harnessed.plugins.services import system_prompt, tools
+import pytest
+
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.kernel import Context, plugin
 
 
-async def test_plugin_unload_restores_shadowed_tools_and_prompt_sections():
-    @plugin
-    async def base(ctx, registry: Inject[ToolRegistry], prompt: Inject[SystemPrompt]):
-        prompt.section("persona", "base", order=10)
+async def test_owned_snapshot_restores_the_previous_prompt_on_disposal():
+    async with Context() as ctx:
+        prompt = SystemPrompt(ctx)
+        prompt.fixed("base")
+        owner = ctx.extend()
+        remove = prompt.fixed("override", owner=owner)
+        assert await prompt.render() == "override"
+        await remove()
+        await remove()
+        assert await prompt.render() == "base"
+        prompt.fixed("temporary", owner=owner)
+        await owner.aclose()
+        assert await prompt.render() == "base"
 
-        @registry.tool
-        async def greet() -> str:
-            return "base"
 
+async def test_equal_snapshot_values_still_have_independent_disposers():
+    async with Context() as ctx:
+        prompt = SystemPrompt(ctx)
+        first = prompt.fixed("same")
+        prompt.fixed("middle")
+        last = prompt.fixed("same")
+        await first()
+        assert await prompt.render() == "same"
+        await last()
+        assert await prompt.render() == "middle"
+
+
+async def test_failed_plugin_setup_rolls_back_its_prompt_snapshot():
+    @plugin(needs=[SystemPrompt])
+    async def broken(ctx):
+        ctx[SystemPrompt].fixed("must disappear")
+        raise ValueError("setup failed")
         yield
 
-    @plugin
-    async def override(ctx, registry: Inject[ToolRegistry], prompt: Inject[SystemPrompt]):
-        prompt.section("persona", "override", order=10, override=True)
-        prompt.section("project", "rules", order=20)
-
-        @registry.tool(override=True)
-        async def greet() -> str:
-            return "override"
-
-        yield
-
-    async with Context() as ctx:
-        await ctx.install([tools(), system_prompt(), base()])
-        handle = await ctx.plugin(override())
-        assert await ctx[SystemPrompt].render() == "override\n\nrules"
-        assert (await ctx[ToolRegistry].execute(ToolCall("greet"))).content == "override"
-        await handle.aclose()
-        assert await ctx[SystemPrompt].render() == "base"
-        assert (await ctx[ToolRegistry].execute(ToolCall("greet"))).content == "base"
-
-
-async def test_prompt_providers_are_re_evaluated_in_order():
     async with Context() as ctx:
         prompt = SystemPrompt(ctx)
-        current = "one"
-        prompt.section("project", lambda: current, order=50, stable=False)
-        prompt.section("persona", "first", order=0)
-        assert await prompt.render() == "first\n\none"
-        current = "two"
-        assert await prompt.render() == "first\n\ntwo"
-
-
-async def test_stable_sections_are_cached_and_sort_before_dynamic_sections():
-    async with Context() as ctx:
-        prompt = SystemPrompt(ctx)
-        current = "one"
-        prompt.section("dynamic", lambda: current, order=-100, stable=False)
-        prompt.section("stable", lambda: current, order=100)
-        assert await prompt.render() == "one\n\none"
-        current = "two"
-        assert await prompt.render() == "one\n\ntwo"
-
-
-async def test_section_disposed_while_rendering_does_not_append_stale_content():
-    started, release = asyncio.Event(), asyncio.Event()
-
-    async with Context() as ctx:
-        prompt = SystemPrompt(ctx)
-
-        async def content():
-            started.set()
-            await release.wait()
-            return "removed"
-
-        remove = prompt.section("temporary", content)
-        rendering = asyncio.create_task(prompt.render())
-        try:
-            await started.wait()
-            await remove()
-        finally:
-            release.set()
-        assert await rendering == ""
+        ctx.provide(SystemPrompt, prompt)
+        prompt.fixed("base")
+        with pytest.raises(ValueError, match="setup failed"):
+            await ctx.plugin(broken())
+        assert await prompt.render() == "base"
