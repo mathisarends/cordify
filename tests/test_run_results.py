@@ -1,9 +1,10 @@
 import asyncio
 
+from harnessed import Agent as Application
 from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.events import InboxAdded, TurnEnd
 from harnessed.core.stream import TextDelta
-from harnessed.presets import minimal
+from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel
 
 
@@ -25,7 +26,9 @@ class TwoTurns(CallbackModel):
 
 async def test_concurrent_runs_return_their_own_text_usage_and_turn_without_waiting_for_idle():
     model = TwoTurns()
-    async with minimal(model).session("concurrent") as session:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+        "concurrent"
+    ) as session:
         queued = asyncio.Event()
 
         @session.on(InboxAdded)
@@ -37,7 +40,6 @@ async def test_concurrent_runs_return_their_own_text_usage_and_turn_without_wait
         await model.started[0].wait()
         second = asyncio.create_task(session.run("second"))
         try:
-            # Let followup append before completing the first turn.
             await queued.wait()
             model.release[0].set()
             await model.started[1].wait()
@@ -56,7 +58,9 @@ async def test_concurrent_runs_return_their_own_text_usage_and_turn_without_wait
 
 async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
     model = TwoTurns()
-    async with minimal(model).session("stream-turn") as session:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+        "stream-turn"
+    ) as session:
 
         async def collect():
             return [event async for event in session.stream("first")]

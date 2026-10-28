@@ -5,7 +5,6 @@ from harnessed import (
     FS,
     Bundle,
     File,
-    Harness,
     Image,
     ImagePart,
     Inject,
@@ -18,15 +17,15 @@ from harnessed import (
     system,
     user,
 )
+from harnessed import Agent as Application
 from harnessed import Session as Agent
 from harnessed.core.messages import User
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins import Approvals
 from harnessed.plugins.filesystem import fs_local
-from harnessed.plugins.services import llm
 from harnessed.testing import ScriptedModel
 
 
@@ -38,7 +37,9 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
         return "done"
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("step"))], "first", "second"])
-    async with Harness([agent_loop(), llm(model), tools]).session("context") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all"), tools]).session(
+        "context"
+    ) as agent:
         await agent.run("review", context={"ticket": "Fix login", "details": {"issue": 42}})
         for request in model.requests[:2]:
             assert "Task context [ticket]:\nFix login" in [m.text for m in request.messages]
@@ -56,7 +57,9 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
     image = tmp_path / "screenshot.png"
     image.write_bytes(b"image-test-bytes")
     model = ScriptedModel(["reviewed"])
-    async with Harness([agent_loop(), llm(model)]).session("attachments") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+        "attachments"
+    ) as agent:
         await agent.run("Review", attachments=[File(diff), Image(image)])
         request = model.requests[0]
         message = request.messages[0]
@@ -74,7 +77,7 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
 
 async def test_system_injection_survives_prompt_updates_and_typed_user_steering():
     model = ScriptedModel(["first", "second"])
-    async with Harness([agent_loop(), llm(model)]).session("typed") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session("typed") as agent:
         await agent.inject(system("External change"))
         await agent.steer(user("Check auth"))
         await agent.when_idle()
@@ -101,7 +104,9 @@ async def test_push_context_from_pre_step_is_in_the_current_request():
             return await next_()
 
     model = ScriptedModel(["done"])
-    async with Harness([agent_loop(), llm(model), Recall()]).session("push") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all"), Recall()]).session(
+        "push"
+    ) as agent:
         await agent.run("my task")
         assert seen == [(True, "my task")]
         assert len(model.requests) == 1
@@ -120,9 +125,9 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
             return await next_()
 
     model = ScriptedModel(["one", "two"])
-    async with Harness([agent_loop(), llm(model), fs_local(tmp_path), Project()]).session(
-        "project"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), fs_local(tmp_path), Project()]
+    ).session("project") as agent:
         await agent.run("one")
         instructions.write_text("second rules", encoding="utf-8")
         await agent.run("two")
@@ -146,9 +151,9 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
         return f"Clicked {ref}"
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("click", {"ref": "button-1"}))], "done"])
-    async with Harness([agent_loop(), llm(model), tools, BrowserObserver()]).session(
-        "browser"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), tools, BrowserObserver()]
+    ).session("browser") as agent:
         await agent.run("Open settings")
         assert model.requests[0].messages[-1].text == "FULL before refs"
         texts = [m.text for m in model.requests[1].messages]

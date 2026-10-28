@@ -5,9 +5,10 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import FS, Bundle, Inject, ModelChunk, ToolCall
+from harnessed import FS, Bundle, Inject, ModelChunk, Section, ToolCall
+from harnessed import Agent as Application
 from harnessed.core.session.events import ToolReturned
-from harnessed.presets import coding, minimal
+from harnessed.plugins import AgentLoop, Approvals, Filesystem, Instructions
 from harnessed.testing import ScriptedModel
 
 
@@ -20,16 +21,18 @@ async def independent_calls():
     @tools.tool(parallel=True)
     async def lookup(index: int) -> str:
         """Look up one record from an independent source."""
-        await together.wait()  # All three calls must be running concurrently.
+        await together.wait()
         if index < 2:
-            await finished[index + 1].wait()  # Simulate responses arriving 2, 1, 0.
+            await finished[index + 1].wait()
         completion_order.append(index)
         finished[index].set()
         return f"record {index}"
 
     calls = [ToolCall("lookup", {"index": index}) for index in range(3)]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Lookups finished."])
-    async with minimal(model, plugins=[tools], max_parallel_tools=3).session("lookups") as agent:
+    async with Application(
+        model=model, plugins=[AgentLoop(max_parallel_tools=3), Approvals(trust="all"), tools]
+    ).session("lookups") as agent:
         result = await agent.run("Look up records 0, 1 and 2.")
         returned = [event for event in result.events if isinstance(event, ToolReturned)]
         print("Actual completion order:", completion_order)
@@ -46,7 +49,6 @@ async def writes_with_resource_keys(root: Path):
     writes = []
 
     def resources(call: ToolCall) -> tuple[str, ...]:
-        # Resolve aliases and Windows case before choosing the exclusive resource.
         path = (root / call.arguments["path"]).resolve()
         return (f"file:{os.path.normcase(str(path))}",)
 
@@ -63,7 +65,15 @@ async def writes_with_resource_keys(root: Path):
         ToolCall("save_document", {"path": "./a.txt", "text": "second version"}),
     ]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Documents saved."])
-    async with coding(model, root=root, plugins=[tools]).session("documents") as agent:
+    async with Application(
+        model=model,
+        plugins=[
+            Approvals(trust="all"),
+            Filesystem(root),
+            Instructions([Section.from_file(Path(root) / "AGENTS.md", missing_ok=True)]),
+            tools,
+        ],
+    ).session("documents") as agent:
         result = await agent.run("Save both documents and then update a.txt.")
         returned = [event for event in result.events if isinstance(event, ToolReturned)]
         assert all(not event.result.is_error for event in returned)

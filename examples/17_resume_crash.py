@@ -7,11 +7,11 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Bundle, ModelChunk, ToolCall, system
 from harnessed.core.session.events import LogTailRecovered, ToolReturned
+from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.sessions import session_jsonl
-from harnessed.presets import minimal
 from harnessed.testing import ScriptedModel
 
 tools = Bundle("work")
@@ -23,12 +23,13 @@ async def work() -> str:
 
 
 def compose(root: Path, model, answer):
-    return minimal(
-        model,
+    return Application(
+        model=model,
         plugins=[
+            Approvals(trust="all"),
             tools,
             approval_gate(risky={"work"}, ask=answer, scope="demo-work"),
-            session_jsonl(root, fsync=True, recover_tail=True),
+            JsonlSessions(root, recover_tail=True, durability="fsync"),
         ],
     )
 
@@ -41,6 +42,7 @@ def torn_append(root: Path):
 
 
 async def crash_worker(root: Path):
+
     def answer(call):
         print("First process: granting ALWAYS for work.", flush=True)
         return ApprovalAnswer.ALWAYS
@@ -50,7 +52,6 @@ async def crash_worker(root: Path):
         await agent.run("First task.")
         await agent.inject(system("External state changed before the crash."))
         await agent.followup("Queued task from the first process.")
-        # Simulate termination midway through the next JSONL append.
         torn_append(root)
         print("First process: exiting without Context or writer teardown.", flush=True)
         os._exit(0)

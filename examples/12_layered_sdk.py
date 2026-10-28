@@ -2,9 +2,10 @@
 
 import asyncio
 
+from harnessed import Agent as Application
 from harnessed.kernel import Context, Key, plugin
+from harnessed.plugins import Approvals
 from harnessed.plugins.rules import Rules, when
-from harnessed.presets import minimal
 from harnessed.testing import ScriptedModel
 
 backend = Key[str]("backend")
@@ -26,10 +27,12 @@ async def main():
         await remove()
         await ctx.settle()
         print("After service removal:", handle.status)
-
-    harness = minimal(
-        ScriptedModel(["The layered SDK is ready."]),
-        plugins=[Rules([when(tool="read_file", result_tokens_over=1000).note("Read a range.")])],
+    harness = Application(
+        model=ScriptedModel(["The layered SDK is ready."]),
+        plugins=[
+            Approvals(trust="all"),
+            Rules([when(tool="read_file", result_tokens_over=1000).note("Read a range.")]),
+        ],
     )
     async with harness.session("layered") as agent:
         print((await agent.run("Hello")).text)

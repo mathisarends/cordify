@@ -4,10 +4,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
+from harnessed import Agent as Application
 from harnessed import (
     Bundle,
     Context,
-    Harness,
     Inject,
     ModelChunk,
     Observation,
@@ -18,8 +18,7 @@ from harnessed import (
     plugin,
 )
 from harnessed import Session as Agent
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.services import llm
+from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
 
@@ -35,7 +34,9 @@ class PageState:
 class Browser(Protocol):
     @property
     def current_url(self) -> str: ...
+
     async def snapshot(self) -> PageState: ...
+
     async def click(self, ref: str) -> None: ...
 
 
@@ -94,19 +95,11 @@ async def snapshot(browser: Inject[Browser]) -> str:
 
 async def main():
     model = ScriptedModel(
-        [
-            [ModelChunk(tool_call=ToolCall("click", {"ref": "settings"}))],
-            "Settings opened.",
-        ]
+        [[ModelChunk(tool_call=ToolCall("click", {"ref": "settings"}))], "Settings opened."]
     )
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
-            browser_backend(),
-            BrowserObserver(),
-            browser_tools,
-        ]
+    harness = Application(
+        model=model,
+        plugins=[Approvals(trust="all"), browser_backend(), BrowserObserver(), browser_tools],
     )
     async with harness.session("browser") as agent:
         print((await agent.run("Open Settings.")).text)

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import pytest
 from pydantic import PydanticSchemaGenerationError
 
+from harnessed import Agent as Application
 from harnessed import (
     Context,
     Emit,
@@ -16,8 +17,7 @@ from harnessed import (
     tool,
 )
 from harnessed import Session as Agent
-from harnessed.plugins.services import system_prompt, tools
-from harnessed.presets import minimal
+from harnessed.plugins import AgentLoop, Approvals
 from harnessed.testing import ScriptedModel
 
 
@@ -40,13 +40,14 @@ class Ping(Emit):
 
 
 async def test_direct_registration_disposers_are_idempotent_and_restore_overrides():
-    disposers, seen = [], []
+    disposers, seen = ([], [])
 
     async def base() -> str:
         return "base"
 
     @plugin(needs=[ToolRegistry, SystemPrompt])
     async def feature(ctx):
+
         async def override() -> str:
             return "override"
 
@@ -61,7 +62,7 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
         yield
 
     async with Context() as ctx:
-        await ctx.install([tools(), system_prompt()])
+        await ctx.install([AgentLoop()])
         ctx.provide(str, "base")
         ctx.add_listener(Ping, lambda event: seen.append("base"))
         ctx[ToolRegistry].register(base, name="read")
@@ -85,8 +86,8 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
 
 
 async def test_registrations_are_hidden_during_setup_and_before_async_teardown_finishes():
-    starting, ready = asyncio.Event(), asyncio.Event()
-    stopping, release = asyncio.Event(), asyncio.Event()
+    starting, ready = (asyncio.Event(), asyncio.Event())
+    stopping, release = (asyncio.Event(), asyncio.Event())
     seen = []
 
     async def base() -> str:
@@ -94,6 +95,7 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
 
     @plugin(needs=[ToolRegistry, SystemPrompt])
     async def feature(ctx):
+
         @ctx[ToolRegistry].tool(name="read", override=True)
         async def override() -> str:
             return "override"
@@ -107,7 +109,7 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
         await release.wait()
 
     async with Context() as ctx:
-        await ctx.install([tools(), system_prompt()])
+        await ctx.install([AgentLoop()])
         ctx[ToolRegistry].register(base, name="read")
         ctx[SystemPrompt].fixed("base")
         mounting = asyncio.create_task(ctx.plugin(feature()))
@@ -137,7 +139,7 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
 
 
 async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
-    lifecycle, seen = [], []
+    lifecycle, seen = ([], [])
 
     @plugin
     async def provider(ctx, name):
@@ -175,9 +177,7 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
             lifecycle.append(("feature", self.backend))
 
     async with Context() as ctx:
-        _, _, bridge_handle, feature = await ctx.install(
-            [tools(), system_prompt(), bridge(), Feature()]
-        )
+        _, bridge_handle, feature = await ctx.install([AgentLoop(), bridge(), Feature()])
         for name in ("one", "two", "three"):
             source = await ctx.plugin(provider(name))
             await ctx.settle()
@@ -228,7 +228,7 @@ async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_ba
             cleaned.append("closed")
 
     async with Context() as ctx:
-        await ctx.install([tools(), system_prompt()])
+        await ctx.install([AgentLoop()])
         with pytest.raises(PydanticSchemaGenerationError, match="Ready"):
             await ctx.plugin(Broken())
         assert cleaned == ["closed"]
@@ -256,7 +256,7 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
             raise ValueError("teardown failed")
 
     async with Context() as ctx:
-        await ctx.install([tools(), system_prompt()])
+        await ctx.install([AgentLoop()])
         remove = ctx.provide(Backend, Backend("broken"))
         handle = await ctx.plugin(feature())
         await remove()
@@ -292,7 +292,9 @@ async def test_agent_registration_facade_uses_the_active_plugin_owner():
 
         yield
 
-    async with minimal(ScriptedModel([])).session("plugin-effects") as agent:
+    async with Application(model=ScriptedModel([]), plugins=[Approvals(trust="all")]).session(
+        "plugin-effects"
+    ) as agent:
         handle = await agent.ctx.plugin(feature())
         assert [definition.name for definition in agent.ctx[ToolRegistry].definitions] == ["read"]
         await agent.ctx.dispatch(Ping())

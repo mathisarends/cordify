@@ -3,18 +3,19 @@
 import asyncio
 from time import perf_counter
 
+from harnessed import Agent as Application
 from harnessed import (
     ApprovalAnswer,
     ApprovalRequest,
     ApprovalUnavailable,
-    Bundle,
     ModelChunk,
     ToolCall,
     ToolPolicy,
 )
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import ToolReturned
+from harnessed.plugins import AgentLoop, Approvals
 from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.presets import headless, minimal
 from harnessed.testing import ScriptedModel
 
 
@@ -26,9 +27,9 @@ async def without_ui():
         raise AssertionError("Publishing requires approval")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Approval unavailable."])
-    async with headless(model, plugins=[tools, approval_gate(risky={"publish"})]).session(
-        "no-ui"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), tools, approval_gate(risky={"publish"})]
+    ).session("no-ui") as agent:
         result = await agent.run("Publish the artifact.")
         returned = next(event for event in result.events if isinstance(event, ToolReturned))
         assert returned.result.status == "unavailable"
@@ -37,6 +38,7 @@ async def without_ui():
 
 
 async def listener_and_priorities():
+    extensions = Bundle("configured")
     tools = Bundle("approved-tools")
     order = []
 
@@ -60,14 +62,21 @@ async def listener_and_priorities():
         return await next_()
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Published."])
-    # Register timing first; the explicit priority still places approval outside it.
-    harness = minimal(model, plugins=[tools, approval_gate(risky={"publish"}, priority=-100)])
+    harness = Application(
+        model=model,
+        plugins=[
+            Approvals(trust="all"),
+            tools,
+            approval_gate(risky={"publish"}, priority=-100),
+            extensions,
+        ],
+    )
 
-    @harness.on(ApprovalRequest)
+    @extensions.on(ApprovalRequest)
     async def answer(event):
         order.append("approval")
         start = perf_counter()
-        await asyncio.sleep(0.025)  # Stand-in for an asynchronous UI or SDK response.
+        await asyncio.sleep(0.025)
         print(f"Approval response time: {(perf_counter() - start) * 1000:.1f} ms")
         return ApprovalAnswer.ALLOW
 
@@ -79,7 +88,10 @@ async def listener_and_priorities():
 
 async def response_timeout():
     stopped = asyncio.Event()
-    async with minimal(ScriptedModel([]), approval_timeout=0.02).session("timeout") as agent:
+    async with Application(
+        model=ScriptedModel([]),
+        plugins=[AgentLoop(approval_timeout=0.02), Approvals(trust="all", timeout=0.02)],
+    ).session("timeout") as agent:
 
         @agent.on(ApprovalRequest)
         async def disconnected(event):
@@ -92,7 +104,7 @@ async def response_timeout():
             await agent.request_approval(ToolCall("publish"), "Publish the artifact?")
         except ApprovalUnavailable as error:
             print(f"SDK: {error}")
-        assert stopped.is_set() and not agent.log.approvals.pending
+        assert stopped.is_set() and (not agent.log.approvals.pending)
         assert agent.log.approvals.records[-1].resolution.status == "unavailable"
 
 

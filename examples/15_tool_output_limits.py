@@ -14,9 +14,10 @@ from harnessed import (
     ToolOutputLimit,
     ToolResult,
 )
+from harnessed import Agent as Application
 from harnessed.core.session.events import ToolReturned
+from harnessed.plugins import Approvals
 from harnessed.plugins.filesystem import fs_local, fs_tools
-from harnessed.presets import minimal
 from harnessed.testing import ScriptedModel
 
 budget = ToolOutputLimit(max_chars=1024)
@@ -32,7 +33,6 @@ async def cat_log(fs: Inject[FS]) -> ToolResult:
 
 @early_limit.on(ExecuteTool)
 async def truncate(event, next_):
-    # Optional early truncation; the Agent also enforces its final budget after ReviewToolResult.
     return budget.apply(await next_())
 
 
@@ -60,10 +60,16 @@ async def main():
                 "Read bounded outputs and continued with explicit character ranges.",
             ]
         )
-        harness = minimal(
-            model,
-            plugins=[fs_local(directory), fs_tools(), tools, early_limit],
-            tool_output_limit=budget,
+        harness = Application(
+            model=model,
+            plugins=[
+                Approvals(trust="all"),
+                budget,
+                fs_local(directory),
+                fs_tools(),
+                tools,
+                early_limit,
+            ],
         )
         async with harness.session("output-limit") as agent:
             result = await agent.run("Inspect the large log and read it in small ranges.")

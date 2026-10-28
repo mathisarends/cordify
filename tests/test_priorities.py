@@ -2,10 +2,12 @@ from itertools import permutations
 
 import pytest
 
-from harnessed import Bundle, Context, Emit, Plugin, Waterfall, hook
+from harnessed import Agent as Application
+from harnessed import Context, Emit, Plugin, Waterfall, hook
+from harnessed.core.plugin import Bundle
 from harnessed.kernel import PluginBase as KernelPlugin
 from harnessed.kernel.declarations import Bundle as KernelBundle
-from harnessed.presets import minimal
+from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
 
@@ -24,6 +26,7 @@ async def test_waterfall_priority_defines_nesting_independently_of_registration_
     seen = []
 
     def listener(priority):
+
         async def around(event, next_):
             seen.append((priority, "before"))
             result = await next_()
@@ -83,6 +86,7 @@ async def test_priority_survives_plugin_unload_and_reactivation():
 
 
 async def test_priority_flows_through_all_sdk_declaration_and_imperative_hook_apis():
+    extensions = Bundle("configured")
     seen = []
 
     class KernelFeature(KernelPlugin):
@@ -99,9 +103,12 @@ async def test_priority_flows_through_all_sdk_declaration_and_imperative_hook_ap
     bundle.on(Ping, lambda ev: seen.append("bundle-decorator"), priority=-40)
     bundle.add_hook(Ping, lambda ev: seen.append("bundle-imperative"), priority=-30)
     explicit = Plugin(hooks=[(Ping, lambda ev: seen.append("tuple"), -20)])
-    harness = minimal(ScriptedModel([]), plugins=[KernelFeature(), Feature(), bundle, explicit])
-    harness.on(Ping, lambda ev: seen.append("harness-decorator"), priority=-10)
-    harness.add_hook(Ping, lambda ev: seen.append("harness-imperative"), priority=10)
+    harness = Application(
+        model=ScriptedModel([]),
+        plugins=[Approvals(trust="all"), KernelFeature(), Feature(), bundle, explicit, extensions],
+    )
+    extensions.on(Ping, lambda ev: seen.append("harness-decorator"), priority=-10)
+    extensions.add_hook(Ping, lambda ev: seen.append("harness-imperative"), priority=10)
     async with harness.session("priorities") as agent:
         agent.on(Ping, lambda ev: seen.append("agent-decorator"), priority=20)
         dispose = agent.add_hook(Ping, lambda ev: seen.append("agent-imperative"), priority=30)

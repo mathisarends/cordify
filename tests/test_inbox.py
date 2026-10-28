@@ -3,12 +3,13 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from harnessed import Agent as Application
 from harnessed import Inbox, ModelChunk, system, user
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import InboxAdded, InboxRemoved, UserMessage
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
-from harnessed.presets import minimal
+from harnessed.plugins import Approvals, JsonlSessions
+from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
@@ -51,7 +52,7 @@ def test_inbox_plans_one_followup_per_turn_and_preserves_pending_input_order():
     claimed = Inbox((quiet, first, correction, second, UserMessage(first.message)))
     assert claimed.next_turn == (second,)
     canceled = Inbox((quiet, first, InboxRemoved(first.message.id, "canceled")))
-    assert canceled.pending == (quiet,) and not canceled.has_wakeup
+    assert canceled.pending == (quiet,) and (not canceled.has_wakeup)
     assert not canceled.has_step_wakeup
     with pytest.raises(FrozenInstanceError):
         inbox.pending = ()
@@ -80,7 +81,9 @@ class PausingModel(CallbackModel):
 @pytest.mark.parametrize("mode", ["inject", "steer"])
 async def test_steering_requests_another_step_while_injection_waits_for_one(mode):
     model = PausingModel()
-    async with minimal(model).session("routing") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+        "routing"
+    ) as agent:
         await agent.followup("task")
         await model.started.wait()
         first_snapshot = model.requests[0]
@@ -93,7 +96,7 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
         assert not any(m.text in ("external context", "focus") for m in first_snapshot.messages)
         if mode == "inject":
             assert len(model.requests) == 1 and len(agent.inbox.pending) == 1
-            assert agent.status == "idle" and not agent.log.inbox.has_wakeup
+            assert agent.status == "idle" and (not agent.log.inbox.has_wakeup)
             await agent.run("next task")
             assert [len(turn.steps) for turn in agent.log.turns] == [1, 1]
             assert any(m.text == "external context" for m in model.requests[-1].messages)
@@ -106,14 +109,14 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
 
 async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent():
     model = ScriptedModel(["awake"])
-    async with minimal(model).session("quiet") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session("quiet") as agent:
         await agent.inject(system("door opened"))
         snapshot = agent.inbox.pending
         await agent.when_idle()
-        assert agent.status == "idle" and model.requests == [] and agent.log.turns == ()
+        assert agent.status == "idle" and model.requests == [] and (agent.log.turns == ())
         await agent.steer("check the door")
         await agent.when_idle()
-        assert snapshot and not agent.inbox.pending
+        assert snapshot and (not agent.inbox.pending)
         assert [m.text for m in model.requests[0].messages] == ["door opened", "check the door"]
         assert [len(turn.steps) for turn in agent.log.turns] == [1]
 
@@ -127,12 +130,14 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
     await session.append(event)
     await persistence.aclose()
     model = ScriptedModel(["processed"])
-    async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("pending") as agent:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)]
+    ).session("pending") as agent:
         await agent.when_idle()
         if mode == "inject":
             assert model.requests == [] and agent.log.inbox.pending == (event,)
             await agent.run("wake up")
-        assert len(model.requests) == 1 and not agent.inbox.pending
+        assert len(model.requests) == 1 and (not agent.inbox.pending)
         assert any(message.id == event.message.id for message in model.requests[0].messages)
 
 

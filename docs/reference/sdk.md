@@ -43,6 +43,12 @@ examples live in the topic guides. Optional features are imported from
 Await methods that perform durable writes. Closed handles raise SessionClosed.
 See [session boundaries and restart behavior](../guides/sessions.md).
 
+Configure loop options on `AgentLoop(...)` in `plugins=`: step/output budgets,
+parallel tool limits, timeouts and context-window overrides belong to the agent
+configuration. `session(id)` opens that configured runtime; it has no per-session
+loop overrides. `ToolOutputLimit(...)` and `Approvals(...)` replace their default
+policy slots explicitly.
+
 ## RunResult and values
 
 A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,

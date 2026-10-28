@@ -2,9 +2,9 @@
 
 import asyncio
 
-from harnessed import Harness, ModelChunk
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.services import llm
+from harnessed import Agent as Application
+from harnessed import ModelChunk
+from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel
 
 
@@ -24,24 +24,17 @@ class PausingModel(CallbackModel):
 
 async def main():
     model = PausingModel()
-    harness = Harness([agent_loop(), llm(model)])
-
+    harness = Application(model=model, plugins=[Approvals(trust="all")])
     async with harness.session("inbox") as agent:
         await agent.inject("Silent context: This project uses Python 3.12+.")
         print(f"After inject: {agent.status}, {len(model.requests)} requests")
-
         await agent.followup("Analyze the project.")
         await model.started.wait()
-
-        # The current model call keeps its snapshot. These land in its next step.
         await agent.steer("Focus on the tests.")
         await agent.inject("Additional context: Unit tests already exist.")
-
-        # This gets a separate turn after the current one finishes.
         await agent.followup("Write a summary afterward.")
         model.proceed.set()
         await agent.when_idle()
-
         for index, request in enumerate(model.requests, 1):
             print(f"\nRequest {index}:")
             for message in request.messages:

@@ -92,7 +92,6 @@ if TYPE_CHECKING:
     from harnessed.plugins.spill import LocalSpillStore as LocalSpillStore
     from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
     from harnessed.plugins.spill import SpillStore as SpillStore
-    from harnessed.presets import Harness as Harness
 _EXPORTS = {
     "SessionStatus": ("harnessed.core.runtime.control", "SessionStatus"),
     "SessionClosed": ("harnessed.core.errors", "SessionClosed"),
@@ -140,7 +139,6 @@ _EXPORTS = {
     "ReviewToolResult": ("harnessed.core.hooks", "ReviewToolResult"),
     "ToolPolicy": ("harnessed.core.hooks", "ToolPolicy"),
     "ToolContext": ("harnessed.core.tools.context", "ToolContext"),
-    "Harness": ("harnessed.presets", "Harness"),
     "Approver": ("harnessed.core.approvals", "Approver"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
@@ -224,7 +222,6 @@ __all__ = [
     "ReviewToolResult",
     "ToolPolicy",
     "ToolContext",
-    "Harness",
     "Approver",
     "ApprovalAnswer",
     "PolicyDecision",

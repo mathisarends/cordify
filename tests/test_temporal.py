@@ -16,7 +16,7 @@ from harnessed import (
     plugin,
     tool,
 )
-from harnessed.plugins.services import system_prompt, tools
+from harnessed.plugins import AgentLoop
 
 
 @dataclass
@@ -187,7 +187,7 @@ async def test_class_and_bundle_explicit_needs_remove_tools_and_prompt_sections(
     bundle.on(Ping, lambda event: events.append("ping"))
 
     async with Context() as ctx:
-        await ctx.install([tools(), system_prompt(), FeaturePlugin(), bundle])
+        await ctx.install([AgentLoop(), FeaturePlugin(), bundle])
         remove = ctx.provide(Backend, Backend("first"))
         await ctx.settle()
         assert await ctx[SystemPrompt].render() == "first"

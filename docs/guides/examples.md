@@ -17,7 +17,6 @@ requires its provider extra and credentials.
 | Session-owned spill | `uv run python -m examples.24_session_spill` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/24_session_spill.py) |
 | Validated forms | `uv run python -m examples.21_validated_forms` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/21_validated_forms.py) |
 
-These examples use the application API and public plugin declarations. Remaining
-older scripts are migrating from the original Harness composition API; the repository's
-[open review](https://github.com/mathisarends/cordify/blob/main/review.md) tracks that
-work. Start with the listed examples when building a new application.
+Application examples compose `Agent` with explicit plugins. Kernel examples use a
+standalone `Context` to show service lifetimes and temporal composition. Start with
+the listed examples when building a new application.

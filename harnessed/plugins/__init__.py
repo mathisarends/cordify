@@ -13,8 +13,6 @@ if TYPE_CHECKING:
     from harnessed.core.session.store import MemorySessions as MemorySessions
     from harnessed.core.tools.output_limit import ToolOutputLimit as ToolOutputLimit
     from harnessed.core.tracing import NoopTracer as NoopTracer
-    from harnessed.plugins._context.prompt import instructions as instructions
-    from harnessed.plugins.agents.loop import agent_loop as agent_loop
     from harnessed.plugins.compaction import Compaction as Compaction
     from harnessed.plugins.compaction import at_ratio as at_ratio
     from harnessed.plugins.compaction import every_turns as every_turns
@@ -24,9 +22,7 @@ if TYPE_CHECKING:
     )
     from harnessed.plugins.rules import Rules as Rules
     from harnessed.plugins.rules import when as when
-    from harnessed.plugins.services import llm as llm
     from harnessed.plugins.sessions import JsonlSessions as JsonlSessions
-    from harnessed.plugins.sessions import session_jsonl as jsonl_sessions
     from harnessed.plugins.shell import Shell as Shell
     from harnessed.plugins.spill import Spill as Spill
     from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
@@ -45,12 +41,8 @@ _EXPORTS = {
     "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
     "Shell": ("harnessed.plugins.shell", "Shell"),
     "Service": ("harnessed.core.plugin", "Service"),
-    "jsonl_sessions": ("harnessed.plugins.sessions", "session_jsonl"),
-    "agent_loop": ("harnessed.plugins.agents.loop", "agent_loop"),
-    "llm": ("harnessed.plugins.services", "llm"),
     "ContextValue": ("harnessed.core.prompt.context", "ContextValue"),
     "JsonlSessions": ("harnessed.plugins.sessions", "JsonlSessions"),
-    "instructions": ("harnessed.plugins._context.prompt", "instructions"),
     "Approvals": ("harnessed.core.approvals", "Approvals"),
     "Rules": ("harnessed.plugins.rules", "Rules"),
     "when": ("harnessed.plugins.rules", "when"),
@@ -72,12 +64,8 @@ __all__ = [
     "Filesystem",
     "Shell",
     "Service",
-    "jsonl_sessions",
-    "agent_loop",
-    "llm",
     "ContextValue",
     "JsonlSessions",
-    "instructions",
     "Approvals",
     "Rules",
     "when",

@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from harnessed import Harness, ModelRequest, ToolCall, ToolDefinition, ToolResult
+from harnessed import Agent as Application
+from harnessed import ModelRequest, ToolCall, ToolDefinition, ToolResult
 from harnessed.core.messages import Assistant, User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -18,15 +19,14 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.session import derive_messages
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.services import llm
-from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
+from harnessed.plugins import Approvals, JsonlSessions
+from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
 
 
 async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
     model = ScriptedModel(["first reply", "second reply"])
-    harness = Harness([agent_loop(), llm(model), session_jsonl(tmp_path)])
+    harness = Application(model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)])
     async with harness.session("resume") as agent:
         await agent.run("first")
         prefix = agent.log.events
@@ -44,7 +44,7 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
 
 
 async def test_jsonl_excludes_other_writers_and_releases_lock(tmp_path):
-    first, second = JsonlPersistence(tmp_path), JsonlPersistence(tmp_path)
+    first, second = (JsonlPersistence(tmp_path), JsonlPersistence(tmp_path))
     try:
         await first.load("shared")
         with pytest.raises(RuntimeError, match="already has a writer"):
@@ -106,7 +106,10 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     ):
         await session.append(event)
     await persistence.aclose()
-    harness = Harness([agent_loop(), llm(ScriptedModel(["recovered"])), session_jsonl(tmp_path)])
+    harness = Application(
+        model=ScriptedModel(["recovered"]),
+        plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)],
+    )
     async with harness.session("interrupted") as agent:
         assert isinstance(agent.log.last(TurnEnd), TurnEnd)
         assert agent.log.last(TurnEnd).reason == "aborted"
@@ -122,7 +125,7 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
     await session.append(InboxAdded(User("queued"), "next-turn", True, "followup"))
     await persistence.aclose()
     model = ScriptedModel(["processed"])
-    harness = Harness([agent_loop(), llm(model), session_jsonl(tmp_path)])
+    harness = Application(model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)])
     async with harness.session("pending") as agent:
         await agent.when_idle()
         assert model.requests[0].messages[0].content == "queued"
@@ -137,7 +140,7 @@ async def test_user_message_atomically_claims_its_inbox_identity():
     assert not session.inbox.pending
     assert session.messages == (message,)
     replay = Session("replayed", seed=session.events)
-    assert replay.messages == (message,) and not replay.inbox.pending
+    assert replay.messages == (message,) and (not replay.inbox.pending)
 
 
 async def test_fork_copies_closed_prefix_and_is_independent():

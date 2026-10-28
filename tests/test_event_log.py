@@ -1,12 +1,15 @@
 import json
+from contextlib import asynccontextmanager
 from dataclasses import FrozenInstanceError, dataclass, is_dataclass, replace
 from typing import ClassVar
 
 import pytest
 
-from harnessed import Bundle, ModelChunk, ToolCall, ToolResult
+from harnessed import Agent as Application
+from harnessed import ModelChunk, ToolCall, ToolResult
 from harnessed.core.hooks import PrepareRequest
 from harnessed.core.messages import System, User
+from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
@@ -20,11 +23,12 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.files import MemoryFiles
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.session import derive_messages, derive_requests
+from harnessed.core.session.store import SessionStore
 from harnessed.core.stream import TextDelta
-from harnessed.plugins.sessions import session_jsonl
-from harnessed.presets import minimal
+from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.testing import ScriptedModel
 
 
@@ -38,7 +42,7 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
     model = ScriptedModel(
         [[ModelChunk(reasoning="think"), ModelChunk(text="hello "), ModelChunk(text="world")]]
     )
-    harness = minimal(model, plugins=[session_jsonl(tmp_path)])
+    harness = Application(model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)])
     observed = []
     async with harness.session("durable-chunks") as agent:
 
@@ -78,7 +82,9 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
             [ModelChunk(reasoning="done"), ModelChunk(text="3")],
         ]
     )
-    async with minimal(model, plugins=[features]).session("prefixes") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all"), features]).session(
+        "prefixes"
+    ) as agent:
         await agent.run("Add", context={"ticket": "one"})
         log = agent.log.events
         restored = roundtrip(log)
@@ -95,11 +101,12 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
 
 
 async def test_exact_requests_include_request_hook_changes_without_rerunning_the_hook():
+    extensions = Bundle("configured")
     model = ScriptedModel(["done"])
-    harness = minimal(model)
+    harness = Application(model=model, plugins=[Approvals(trust="all"), extensions])
     invocations = []
 
-    @harness.on(PrepareRequest)
+    @extensions.on(PrepareRequest)
     async def configure(event, next_):
         invocations.append(True)
         request = await next_()
@@ -133,10 +140,12 @@ async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_m
     partial = session.messages[-1]
     await persistence.aclose()
     model = ScriptedModel([])
-    async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("crashed") as resumed:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), JsonlSessions(tmp_path)]
+    ).session("crashed") as resumed:
         assert resumed.log.events[: len(prefix)] == prefix
         final = next(e for e in resumed.log.events if isinstance(e, AssistantMessage))
-        assert final.interrupted and final.message == partial and final.message.id == "reply"
+        assert final.interrupted and final.message == partial and (final.message.id == "reply")
         assert [m.text for m in resumed.log.messages] == ["hello", "partial"]
         assert isinstance(resumed.log.events[-1], TurnEnd)
         repaired = resumed.log.events
@@ -162,6 +171,7 @@ async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
 
 
 async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_visible():
+
     class FailingPersistence:
         async def load(self, session_id):
             return ()
@@ -173,15 +183,31 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
             if isinstance(event, AssistantMessage):
                 raise OSError("storage unavailable")
 
-    from harnessed import SessionPersistence, plugin
+    from harnessed import plugin
 
-    @plugin
+    @plugin(slot="sessions")
     async def persistence(ctx):
-        ctx.provide(SessionPersistence, FailingPersistence())
+        class Store:
+            @asynccontextmanager
+            async def open(self, session_id):
+                yield FailingPersistence()
+
+            def files(self, session_id):
+                return MemoryFiles()
+
+            async def list(self):
+                return ()
+
+            async def delete(self, session_id):
+                pass
+
+        ctx.provide(SessionStore, Store())
         yield
 
     model = ScriptedModel(["not committed"])
-    async with minimal(model, plugins=[persistence()]).session("failed-write") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all"), persistence()]).session(
+        "failed-write"
+    ) as agent:
         live = []
         with pytest.raises(OSError, match="storage unavailable"):
             async for event in agent.stream("hello"):
@@ -197,14 +223,7 @@ class UnknownEvent(SessionEvent):
     type: ClassVar[str] = "unknown/event"
 
 
-@pytest.mark.parametrize(
-    "event",
-    [
-        SessionEvent(),
-        UnknownEvent(),
-        SystemMessage(["mutable"]),
-    ],
-)
+@pytest.mark.parametrize("event", [SessionEvent(), UnknownEvent(), SystemMessage(["mutable"])])
 async def test_memory_logs_seeds_and_codecs_reject_unregistered_or_mutable_events(event):
     session = Session("immutable")
     with pytest.raises(TypeError):

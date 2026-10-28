@@ -3,6 +3,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from harnessed import Agent as Application
 from harnessed import Bundle, ModelChunk, ModelRequest, ToolCall, derive_turns
 from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.session.codec import decode_event, encode_event
@@ -17,12 +18,12 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.presets import minimal
+from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
 async def test_turns_group_model_requests_and_tools_while_followups_wait_for_their_turn():
-    started, release = asyncio.Event(), asyncio.Event()
+    started, release = (asyncio.Event(), asyncio.Event())
     features = Bundle("blocking-tool")
 
     @features.tool
@@ -34,11 +35,13 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
     model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("wait"))], "corrected answer", "followup answer"]
     )
-    async with minimal(model, plugins=[features]).session("turns") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all"), features]).session(
+        "turns"
+    ) as agent:
         await agent.followup("first task")
         await started.wait()
         live = agent.log.turns[-1]
-        assert not live.closed and not live.steps[-1].closed
+        assert not live.closed and (not live.steps[-1].closed)
         assert live.steps[-1].request is model.requests[0]
         await agent.steer("focus here")
         await agent.inject("extra context")
@@ -70,7 +73,9 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
 
 async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
     model = ScriptedModel([])
-    async with minimal(model).session("rejected") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session(
+        "rejected"
+    ) as agent:
 
         @agent.on(PreStep)
         async def reject(event, next_):
@@ -79,7 +84,7 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
         await agent.followup("task")
         await agent.when_idle()
         turn = agent.log.turns[-1]
-        assert turn.closed and turn.reason == "rejected" and turn.steps == ()
+        assert turn.closed and turn.reason == "rejected" and (turn.steps == ())
         assert model.requests == [] and len(agent.log.inbox.next_turn) == 1
 
 
@@ -95,7 +100,9 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
             await asyncio.Event().wait()
             yield ModelChunk(text="never")
 
-    async with minimal(WaitingModel()).session("canceled-turn") as agent:
+    async with Application(model=WaitingModel(), plugins=[Approvals(trust="all")]).session(
+        "canceled-turn"
+    ) as agent:
         await agent.followup("task")
         await started.wait()
         await agent.cancel()

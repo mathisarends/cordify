@@ -3,7 +3,8 @@ from typing import Protocol
 
 import pytest
 
-from harnessed import Harness, ModelChunk, ToolCall, plugin
+from harnessed import Agent as Application
+from harnessed import ModelChunk, ToolCall, plugin
 from harnessed.core.compaction import Summarizer
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
@@ -12,9 +13,8 @@ from harnessed.core.runtime.agent_loop import AgentFactory
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.store import SessionPersistence
 from harnessed.kernel import Context
-from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins import Approvals
 from harnessed.plugins.filesystem import fs_tools
-from harnessed.plugins.services import llm
 from harnessed.plugins.shell import shell_tools
 from harnessed.seams import (
     FS,
@@ -87,14 +87,14 @@ async def test_foreign_fs_and_model_work_through_di_without_framework_inheritanc
 
     assert ForeignFiles.__bases__ == (object,)
     assert ForeignModel.__bases__ == (object,)
-    async with Harness([agent_loop(), llm(model), foreign_files(), fs_tools()]).session(
-        "foreign"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), foreign_files(), fs_tools()]
+    ).session("foreign") as agent:
         result = await agent.run("Write and read the note.")
         assert result.text == "done"
         assert files.files == {"note.txt": "hello"}
         results = [event.result for event in result.events if isinstance(event, ToolReturned)]
-        assert results[-1].content == "hello" and not results[-1].is_error
+        assert results[-1].content == "hello" and (not results[-1].is_error)
         definition = next(tool for tool in model.requests[0].tools if tool.name == "read_file")
         assert set(definition.parameters["properties"]) == {"path", "limit", "offset"}
 
@@ -133,6 +133,7 @@ async def test_foreign_shell_and_approver_are_accepted_structurally(tmp_path):
 
     @plugin(needs=[Approver])
     async def policy(ctx: Context):
+
         @ctx.on(ToolPolicy)
         async def ask(event, next_):
             return PolicyDecision.ASK
@@ -141,14 +142,9 @@ async def test_foreign_shell_and_approver_are_accepted_structurally(tmp_path):
 
     assert ForeignShell.__bases__ == (object,)
     assert ForeignApprover.__bases__ == (object,)
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
-            foreign_services(),
-            shell_tools(tmp_path),
-            policy(),
-        ]
+    harness = Application(
+        model=model,
+        plugins=[Approvals(trust="all"), foreign_services(), shell_tools(tmp_path), policy()],
     )
     async with harness.session("foreign-shell") as agent:
         result = await agent.run("Run the tests.")

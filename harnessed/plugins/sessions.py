@@ -23,7 +23,7 @@ from harnessed.core.session.files import (
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionPersistence, SessionStore, validate_session_id
-from harnessed.kernel import Context, plugin, run_sync
+from harnessed.kernel import Context, run_sync
 
 if os.name == "nt":
     import msvcrt
@@ -425,20 +425,3 @@ class DirectoryFiles:
                 metadata = path.stat()
                 result.append(StoredFile(key, metadata.st_size, metadata.st_mtime_ns))
         return tuple(sorted(result, key=lambda item: item.key))
-
-
-@plugin()
-async def session_jsonl(
-    ctx: Context,
-    root: str | Path = ".sessions",
-    *,
-    fsync: bool = False,
-    recover_tail: bool = False,
-    durability: Literal["buffered", "flush", "fsync"] = "flush",
-):
-    persistence = JsonlPersistence(
-        root, fsync=fsync, recover_tail=recover_tail, durability=durability
-    )
-    ctx.effect(persistence.aclose)
-    ctx.provide(SessionPersistence, persistence)
-    yield

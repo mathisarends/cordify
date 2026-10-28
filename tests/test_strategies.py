@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from harnessed import Agent as Application
 from harnessed import (
     Bundle,
-    Harness,
     Inject,
     LatestObservationOnly,
     LocalSpillStore,
@@ -36,10 +36,7 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins import Compaction, at_ratio
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.services import llm
-from harnessed.plugins.sessions import session_jsonl
+from harnessed.plugins import AgentLoop, Approvals, Compaction, JsonlSessions, at_ratio, every_turns
 from harnessed.plugins.spill import spill_store
 from harnessed.testing import ExtractiveSummarizer, ScriptedModel
 
@@ -54,14 +51,14 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     store = LocalSpillStore(tmp_path)
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
+    harness = Application(
+        model=model,
+        plugins=[
+            Approvals(trust="all"),
             tools,
             spill_store(store),
             SpillLargeResults(100, preview_tokens=8),
-        ]
+        ],
     )
     async with harness.session("spill") as agent:
         await agent.run("go")
@@ -128,8 +125,8 @@ async def test_read_spill_tool_returns_bounded_ranges_without_respilling(tmp_pat
     model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("read_spill", {"path": ref.path, "limit": 40}))], "done"]
     )
-    async with Harness(
-        [agent_loop(), llm(model), spill_store(store), SpillLargeResults(1)]
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), spill_store(store), SpillLargeResults(1)]
     ).session("read-spill") as agent:
         await agent.run("read")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
@@ -145,10 +142,11 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
         return "ok"
 
     model = ScriptedModel(["initial reply", [ModelChunk(tool_call=ToolCall("work"))], "done"])
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
+    harness = Application(
+        model=model,
+        plugins=[
+            AgentLoop(context_window=400),
+            Approvals(trust="all"),
             tools,
             Compaction(
                 trigger=at_ratio(0.5),
@@ -156,9 +154,8 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
                 keep_turns=0,
                 summary_tokens=24,
             ),
-            session_jsonl(tmp_path),
+            JsonlSessions(tmp_path),
         ],
-        context_window=400,
     )
     async with harness.session("compact") as agent:
         await agent.run("old context " + "x" * 1200)
@@ -217,13 +214,13 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
             await asyncio.Event().wait()
 
     model = ScriptedModel(["first reply"])
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
+    harness = Application(
+        model=model,
+        plugins=[
+            AgentLoop(context_window=500),
+            Approvals(trust="all"),
             Compaction(trigger=at_ratio(0.5), summarizer=BlockingCompactor(), keep_turns=0),
         ],
-        context_window=100,
     )
     async with harness.session("cancel-compact") as agent:
         await agent.run("x" * 1000)
@@ -241,13 +238,13 @@ async def test_compactor_error_is_reported_and_history_is_intact():
             raise ValueError("summary failed")
 
     model = ScriptedModel(["reply"])
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
+    harness = Application(
+        model=model,
+        plugins=[
+            AgentLoop(context_window=500),
+            Approvals(trust="all"),
             Compaction(trigger=at_ratio(0.5), summarizer=Broken(), keep_turns=0),
         ],
-        context_window=100,
     )
     async with harness.session("failed-summary") as agent:
         await agent.run("x" * 1000)
@@ -259,18 +256,18 @@ async def test_compactor_error_is_reported_and_history_is_intact():
 
 async def test_keep_turns_retains_recent_work_and_later_compaction_merges_old_summary():
     model = ScriptedModel(["reply"] * 4)
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
+    harness = Application(
+        model=model,
+        plugins=[
+            AgentLoop(context_window=600),
+            Approvals(trust="all"),
             Compaction(
-                trigger=at_ratio(0.5),
+                trigger=every_turns(1),
                 summarizer=ExtractiveSummarizer(),
                 keep_turns=1,
                 summary_tokens=16,
             ),
         ],
-        context_window=300,
     )
     async with harness.session("keep") as agent:
         await agent.run("FIRST " + "x" * 800)
@@ -291,15 +288,15 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
             return "z" * 2000
 
     model = ScriptedModel(["reply", "reply"])
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
+    harness = Application(
+        model=model,
+        plugins=[
+            AgentLoop(context_window=100),
+            Approvals(trust="all"),
             Compaction(
                 trigger=at_ratio(0.5), summarizer=Verbose(), keep_turns=0, summary_tokens=2000
             ),
         ],
-        context_window=100,
     )
     async with harness.session("no-growth") as agent:
         await agent.run("original" * 30)
@@ -328,8 +325,9 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
             return await next_()
 
     model = ScriptedModel(["one", "two", "three"])
-    async with Harness(
-        [agent_loop(), llm(model), Observer(), LatestObservationOnly(max_summaries=1)]
+    async with Application(
+        model=model,
+        plugins=[Approvals(trust="all"), Observer(), LatestObservationOnly(max_summaries=1)],
     ).session("observations") as agent:
         for text in ("one", "two", "three"):
             await agent.run(text)
@@ -344,7 +342,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
 async def test_cache_usage_is_preserved_as_provider_reported_usage():
     usage = ModelUsage(100, 10, 80, 20)
     model = ScriptedModel([[ModelChunk(text="one", usage=usage)]])
-    async with Harness([agent_loop(), llm(model)]).session("cache") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session("cache") as agent:
         await agent.run("one")
         event = agent.log.last(ModelUsageRecorded)
         assert event.usage.cache_hit_rate == 0.8

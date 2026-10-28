@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from harnessed import Agent as Application
 from harnessed import (
     Bundle,
     ModelChunk,
@@ -19,11 +20,10 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolError
+from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.filesystem import fs_local, fs_tools
-from harnessed.plugins.sessions import session_jsonl
 from harnessed.plugins.shell import shell_local, shell_tools
 from harnessed.plugins.spill import LocalSpillStore, spill_store
-from harnessed.presets import minimal
 from harnessed.testing import ScriptedModel
 
 
@@ -59,12 +59,12 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         return ToolResult(source, "error", exit_code=3)
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("cat"))], "done"])
-    async with minimal(model, plugins=[features, session_jsonl(tmp_path)]).session(
-        "bounded"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), features, JsonlSessions(tmp_path)]
+    ).session("bounded") as agent:
         await agent.run("inspect")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
-        assert len(result.content) == 32_000
+        assert len(result.content) == 32000
         assert result.content.startswith("HEAD") and result.content.endswith("TAIL ERROR")
         assert model.requests[1].messages[-1].text == result.content
         assert result.truncation.original_chars == len(source)
@@ -72,14 +72,13 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         assert Session("replay", seed=restored).messages == agent.log.messages
         replayed = next(e.result for e in restored if isinstance(e, ToolReturned))
         assert replayed == result and replayed.exit_code == 3
-    # Completion journal, ordered result and model request retain only bounded copies.
     assert (tmp_path / "bounded.jsonl").stat().st_size < 4 * ToolOutputLimit().max_chars
 
 
 @pytest.mark.parametrize("stage", ["execution", "review", "error"])
 async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
     features = Bundle("enrichment")
-    text = "ä😀" * 100_000
+    text = "ä😀" * 100000
 
     @features.tool
     async def large() -> str:
@@ -93,9 +92,9 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
         return result.with_note(text) if stage == "review" else result
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
-    async with minimal(model, plugins=[features], tool_output_limit=ToolOutputLimit(512)).session(
-        "enriched"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), ToolOutputLimit(512), features]
+    ).session("enriched") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) <= 512 and result.truncation is not None
@@ -106,16 +105,18 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
         assert model.requests[-1].messages[-1].text == result.content
 
 
-async def test_session_can_override_the_harness_output_budget():
+async def test_output_budget_is_configured_with_the_plugin_slot():
     features = Bundle("budget")
 
     @features.tool
     async def large() -> str:
-        return "x" * 10_000
+        return "x" * 10000
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
-    harness = minimal(model, plugins=[features], tool_output_limit=ToolOutputLimit(4096))
-    async with harness.session("small-budget", tool_output_limit=ToolOutputLimit(512)) as agent:
+    harness = Application(
+        model=model, plugins=[Approvals(trust="all"), ToolOutputLimit(512), features]
+    )
+    async with harness.session("small-budget") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) == 512
@@ -123,7 +124,7 @@ async def test_session_can_override_the_harness_output_budget():
 
 async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_path):
     features = Bundle("spill")
-    original = "full output\n" * 200_000
+    original = "full output\n" * 200000
 
     @features.tool
     async def large() -> str:
@@ -131,10 +132,15 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
 
     store = LocalSpillStore(tmp_path)
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
-    async with minimal(
-        model,
-        plugins=[features, spill_store(store), SpillLargeResults(max_tokens=100)],
-        tool_output_limit=ToolOutputLimit(4096),
+    async with Application(
+        model=model,
+        plugins=[
+            Approvals(trust="all"),
+            ToolOutputLimit(4096),
+            features,
+            spill_store(store),
+            SpillLargeResults(max_tokens=100),
+        ],
     ).session("spill-budget") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
@@ -148,9 +154,9 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
 async def test_read_file_supports_bounded_unicode_character_ranges_and_continuation(tmp_path):
     original = "ä😀abc" * 3000
     (tmp_path / "large.txt").write_text(original, encoding="utf-8")
-    async with minimal(ScriptedModel([]), plugins=[fs_local(tmp_path), fs_tools()]).session(
-        "ranges"
-    ) as agent:
+    async with Application(
+        model=ScriptedModel([]), plugins=[Approvals(trust="all"), fs_local(tmp_path), fs_tools()]
+    ).session("ranges") as agent:
         registry = agent.ctx[ToolRegistry]
         result = await registry.execute(ToolCall("read_file", {"path": "large.txt"}))
         assert result.content.startswith(original[:8000])
@@ -163,7 +169,7 @@ async def test_read_file_supports_bounded_unicode_character_ranges_and_continuat
             ToolCall("read_file", {"path": "large.txt", "offset": len(original) - 5, "limit": 5})
         )
         assert tail.content == original[-5:]
-        for arguments in ({"offset": -1}, {"limit": 0}, {"limit": 16_001}):
+        for arguments in ({"offset": -1}, {"limit": 0}, {"limit": 16001}):
             invalid = await registry.execute(
                 ToolCall("read_file", {"path": "large.txt", **arguments})
             )
@@ -191,14 +197,18 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
             "done",
         ]
     )
-    async with minimal(
-        model,
-        plugins=[shell_local(), shell_tools(tmp_path)],
-        tool_output_limit=ToolOutputLimit(1024),
+    async with Application(
+        model=model,
+        plugins=[
+            Approvals(trust="all"),
+            ToolOutputLimit(1024),
+            shell_local(),
+            shell_tools(tmp_path),
+        ],
     ).session("shell-budget") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) == 1024 and "TAIL_ERROR" in result.content
         assert result.status == "error" and result.exit_code == 3
-        assert 500_000 < result.truncation.original_chars < 1_048_576
+        assert 500000 < result.truncation.original_chars < 1048576
         assert "stdout truncated" in result.content

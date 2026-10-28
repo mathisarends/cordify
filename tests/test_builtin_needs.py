@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from harnessed import FS, Context, Shell, ToolCall, ToolRegistry, plugin
+from harnessed.plugins import AgentLoop
 from harnessed.plugins.filesystem import fs_tools
-from harnessed.plugins.services import tools
 from harnessed.plugins.shell import ProcResult, shell_tools
 
 
@@ -58,7 +58,7 @@ async def test_builtin_features_declare_lifetime_needs_and_wait_for_the_backend(
         yield
 
     async with Context() as ctx:
-        await ctx.plugin(tools())
+        await ctx.plugin(AgentLoop())
         registry = ctx[ToolRegistry]
         handle = await ctx.plugin(spec)
         assert handle.status == "waiting" and registry.definitions == ()

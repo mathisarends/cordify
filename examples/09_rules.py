@@ -2,9 +2,9 @@
 
 import asyncio
 
+from harnessed import Agent as Application
 from harnessed import (
     Bundle,
-    Harness,
     Inject,
     ModelChunk,
     Plugin,
@@ -18,8 +18,7 @@ from harnessed import (
 )
 from harnessed import Session as Agent
 from harnessed.core.session.events import InboxAdded, ToolReturned
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.services import llm
+from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
 
@@ -74,7 +73,7 @@ async def demo(name, policy):
             "I will summarize the attempts before editing again.",
         ]
     )
-    harness = Harness([agent_loop(), llm(model), commands, policy])
+    harness = Application(model=model, plugins=[Approvals(trust="all"), commands, policy])
     print(f"\n{name}")
     async with harness.session(name) as agent:
         async for event in agent.stream("Run the tests and investigate failures."):
@@ -99,7 +98,7 @@ async def main():
                 when(tool="run_command", exit_code=lambda code: code != 0, repeated=5).steer(
                     "Stop editing. Summarize what you tried."
                 ),
-                when(tool="read_file", result_tokens_over=20_000).note(
+                when(tool="read_file", result_tokens_over=20000).note(
                     "File is large. Use a line range next time."
                 ),
             ],

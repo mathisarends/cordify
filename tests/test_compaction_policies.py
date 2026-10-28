@@ -4,11 +4,12 @@ from dataclasses import replace
 
 import pytest
 
-from harnessed import Bundle, ContextBudgetExceeded, ModelChunk, ToolCall, user
+from harnessed import Agent as Application
+from harnessed import ContextBudgetExceeded, ModelChunk, ToolCall, user
 from harnessed.core.budget import ContextBudget
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
 from harnessed.core.messages import Assistant, System
-from harnessed.core.plugin import Service
+from harnessed.core.plugin import Bundle, Service
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -19,8 +20,7 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins import Compaction, at_ratio, every_turns
-from harnessed.presets import minimal
+from harnessed.plugins import AgentLoop, Approvals, Compaction, at_ratio, every_turns
 from harnessed.testing import ExtractiveSummarizer, ScriptedModel
 
 
@@ -44,9 +44,10 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
         [[ModelChunk(tool_call=ToolCall("work"))], "FIRST ANSWER", "second", "third", "current"]
     )
     summaries = RecordingCompactor()
-    async with minimal(
-        model,
+    async with Application(
+        model=model,
         plugins=[
+            Approvals(trust="all"),
             tools,
             Compaction(
                 trigger=every_turns(1),
@@ -85,12 +86,13 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
 async def test_periodic_compaction_counts_new_closed_turns_since_last_event():
     summaries = RecordingCompactor()
     model = ScriptedModel(["answer"] * 6)
-    async with minimal(
-        model,
+    async with Application(
+        model=model,
         plugins=[
+            Approvals(trust="all"),
             Compaction(
                 trigger=every_turns(2), summarizer=summaries, keep_turns=1, summary_tokens=32
-            )
+            ),
         ],
     ).session("periodic") as agent:
         counts = []
@@ -105,7 +107,7 @@ async def test_periodic_compaction_counts_new_closed_turns_since_last_event():
 async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input():
     summaries = RecordingCompactor()
     model = ScriptedModel(["answer"] * 4)
-    async with minimal(model, plugins=[]).session("pin") as agent:
+    async with Application(model=model, plugins=[Approvals(trust="all")]).session("pin") as agent:
         await agent.run("PINNED " + "a" * 400)
         pinned = agent.log.turns[0]
         await agent.run("OLD " + "b" * 800)
@@ -127,23 +129,26 @@ async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input(
 
 
 async def test_compaction_preserves_request_hook_context_and_combines_triggers_once_per_step():
+    extensions = Bundle("configured")
     summaries = RecordingCompactor()
     model = ScriptedModel(["answer", "answer"])
-    ratio, periodic = at_ratio(0.1), every_turns(1)
-    harness = minimal(
-        model,
+    ratio, periodic = (at_ratio(0.1), every_turns(1))
+    harness = Application(
+        model=model,
         plugins=[
+            AgentLoop(context_window=2000),
+            Approvals(trust="all"),
             Compaction(
                 trigger=lambda state: ratio(state) or periodic(state),
                 summarizer=summaries,
                 keep_turns=0,
                 summary_tokens=32,
             ),
+            extensions,
         ],
-        context_window=2000,
     )
 
-    @harness.on(PrepareRequest)
+    @extensions.on(PrepareRequest)
     async def request_context(event, next_):
         request = await next_()
         return replace(request, messages=(*request.messages, System("HOOK CONTEXT")))
@@ -166,9 +171,12 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
             return "saved summary"
 
     model = ScriptedModel(["answer", "answer"])
-    async with minimal(
-        model,
-        plugins=[Compaction(trigger=every_turns(1), summarizer=BlockingCompactor(), keep_turns=0)],
+    async with Application(
+        model=model,
+        plugins=[
+            Approvals(trust="all"),
+            Compaction(trigger=every_turns(1), summarizer=BlockingCompactor(), keep_turns=0),
+        ],
     ).session("concurrent") as agent:
         await agent.run("x" * 2000)
         await agent.followup("current")
@@ -205,12 +213,18 @@ async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
 
 
 async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
+    extensions = Bundle("configured")
     model = ScriptedModel([])
-    harness = minimal(
-        model, plugins=[Service(ContextBudget, ContextBudget(limit=100, reserve_tokens=20))]
+    harness = Application(
+        model=model,
+        plugins=[
+            Approvals(trust="all"),
+            Service(ContextBudget, ContextBudget(limit=100, reserve_tokens=20)),
+            extensions,
+        ],
     )
 
-    @harness.on(ConfigureRequest)
+    @extensions.on(ConfigureRequest)
     async def inflate(event, next_):
         request = await next_()
         return replace(request, messages=(*request.messages, System("x" * 1000)))
@@ -226,9 +240,10 @@ async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
 async def test_threshold_uses_guard_limit_and_reserved_output_budget():
     summaries = RecordingCompactor()
     model = ScriptedModel(["answer", "answer"])
-    async with minimal(
-        model,
+    async with Application(
+        model=model,
         plugins=[
+            Approvals(trust="all"),
             Compaction(
                 trigger=at_ratio(0.8), summarizer=summaries, keep_turns=0, summary_tokens=32
             ),
@@ -249,9 +264,10 @@ async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_b
     example.__doc__ = "x" * 1000
     tools.add_tool(example)
     model = ScriptedModel([])
-    async with minimal(
-        model,
+    async with Application(
+        model=model,
         plugins=[
+            Approvals(trust="all"),
             tools,
             Compaction(trigger=every_turns(1), summarizer=ExtractiveSummarizer(), keep_turns=0),
             Service(ContextBudget, ContextBudget(limit=100)),
@@ -266,15 +282,16 @@ async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_b
 
 async def test_unknown_turn_pins_are_reported_before_the_provider_call():
     model = ScriptedModel([])
-    async with minimal(
-        model,
+    async with Application(
+        model=model,
         plugins=[
+            Approvals(trust="all"),
             Compaction(
                 trigger=every_turns(1),
                 summarizer=ExtractiveSummarizer(),
                 preserve_turns=["unknown"],
                 keep_turns=6,
-            )
+            ),
         ],
     ).session("unknown-pin") as agent:
         with pytest.raises(ValueError, match="existing turns"):
@@ -284,17 +301,21 @@ async def test_unknown_turn_pins_are_reported_before_the_provider_call():
 
 async def test_budget_reserve_uses_maximum_and_keeps_the_stricter_window_limit():
     model = ScriptedModel(["ok"])
-    harness = minimal(
-        model,
-        plugins=[Service(ContextBudget, ContextBudget(limit=100, reserve_tokens=20))],
-        context_window=200,
-    )
-    async with harness.session("fits", max_tokens=80) as agent:
-        await agent.run("hello")
-    async with harness.session("too-large", max_tokens=120) as agent:
-        with pytest.raises(ContextBudgetExceeded) as error:
-            await agent.run("hello")
-        assert error.value.reserve_tokens == 120 and error.value.limit == 100
+    for max_tokens in (80, 120):
+        app = Application(
+            model=model,
+            plugins=[
+                AgentLoop(context_window=200, max_tokens=max_tokens),
+                Service(ContextBudget, ContextBudget(limit=100, reserve_tokens=20)),
+            ],
+        )
+        async with app.session() as session:
+            if max_tokens == 80:
+                await session.run("hello")
+            else:
+                with pytest.raises(ContextBudgetExceeded) as error:
+                    await session.run("hello")
+                assert error.value.reserve_tokens == 120 and error.value.limit == 100
     assert len(model.requests) == 1
 
 

@@ -124,7 +124,6 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
         "agent.py",
         "hooks.py",
         "events.py",
-        "presets.py",
     }
     assert not (PACKAGE / "std").exists()
     assert not (PACKAGE / "adapters").exists()

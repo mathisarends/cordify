@@ -10,8 +10,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P0-7 — Finish the public facade and remove duplicate paths
 
-- Remove presets.py, Harness and the old presets after their remaining
-  consumers migrate. The application facade is now independent of Harness.
 - Finish converting optional built-ins to CapWords classes using public APIs.
 - Reduce root exports, sort/check __all__, and remove duplicate class names,
   AgentHandle and compatibility aliases once consumers migrate.
@@ -25,12 +23,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   final-answer tool fallback and a bounded validation retry.
 - Add the stable typed StreamEvent union and terminal TurnFinished result;
   expose raw durable/transient subscriptions separately.
-
-### P1-6 — Loop configuration and composition
-
-- Remove the legacy services.py and preset setup after migrating their remaining
-  consumers. AgentLoop now provides its registry/prompt/runtime services, and the
-  application path no longer installs implicit compaction or spill stores.
 
 ### P1-10 — Finish the PydanticAI migration
 

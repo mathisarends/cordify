@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Bundle, ModelChunk, ToolCall, user
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -19,72 +20,71 @@ from harnessed.core.session.events import (
     ToolReturned,
 )
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
-from harnessed.presets import minimal
+from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = r"""
+from harnessed import Agent as Application
+from harnessed.plugins import Approvals
+from harnessed.plugins import JsonlSessions
 import asyncio
 import os
 import sys
 from pathlib import Path
 from harnessed import Bundle, ApprovalAnswer, ModelChunk, ToolCall, system
 from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.sessions import session_jsonl
-from harnessed.presets import minimal
 from harnessed.testing import ScriptedModel
-
-root, phase = Path(sys.argv[1]), sys.argv[2]
+root, phase = (Path(sys.argv[1]), sys.argv[2])
 started = asyncio.Event()
-tools = Bundle("work")
+tools = Bundle('work')
 
 def effect():
-    with (root / "effects.txt").open("a", encoding="utf-8") as stream:
-        stream.write("work\n")
+    with (root / 'effects.txt').open('a', encoding='utf-8') as stream:
+        stream.write('work\n')
         stream.flush()
         os.fsync(stream.fileno())
-    return len((root / "effects.txt").read_text().splitlines())
+    return len((root / 'effects.txt').read_text().splitlines())
 
 @tools.tool
 async def work() -> str:
     count = await asyncio.to_thread(effect)
-    if phase == "tool" and count == 2:
+    if phase == 'tool' and count == 2:
         started.set()
         await asyncio.Event().wait()
-    return "done"
+    return 'done'
 
 async def answer(call):
-    if phase == "approval":
+    if phase == 'approval':
         started.set()
         await asyncio.Event().wait()
     return ApprovalAnswer.ALWAYS
 
 async def main():
     model = ScriptedModel([
-        [ModelChunk(tool_call=ToolCall("work"))], "first done",
-        [ModelChunk(tool_call=ToolCall("work"))],
+        [ModelChunk(tool_call=ToolCall('work'))], 'first done',
+        [ModelChunk(tool_call=ToolCall('work'))],
     ])
-    harness = minimal(model, plugins=[
-        tools, approval_gate(risky={"work"}, ask=answer),
-        session_jsonl(root, fsync=True),
+    harness = Application(model=model, plugins=[
+        Approvals(trust='all'), tools, approval_gate(risky={'work'}, ask=answer),
+        JsonlSessions(root, durability='fsync'),
     ])
-    async with harness.session("crash") as agent:
-        if phase == "tool":
-            await agent.run("first task")
-            await agent.followup("inflight task")
+    async with harness.session('crash') as agent:
+        if phase == 'tool':
+            await agent.run('first task')
+            await agent.followup('inflight task')
             await started.wait()
-        elif phase == "approval":
-            await agent.followup("awaiting approval")
+        elif phase == 'approval':
+            await agent.followup('awaiting approval')
             await started.wait()
-        await agent.inject(system("door opened"))
-        if phase != "idle":
-            await agent.steer("inspect interrupted work")
-            await agent.followup("queued followup")
-        await asyncio.to_thread((root / "ready").write_text, "ready")
+        await agent.inject(system('door opened'))
+        if phase != 'idle':
+            await agent.steer('inspect interrupted work')
+            await agent.followup('queued followup')
+        await asyncio.to_thread((root / 'ready').write_text, 'ready')
         await asyncio.Event().wait()
-
 asyncio.run(main())
 """
 
@@ -116,7 +116,6 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
         if process.poll() is None:
             process.kill()
             process.communicate(timeout=10)
-
     path = tmp_path / "crash.jsonl"
     prefix = path.read_bytes()
     original = tuple(decode_event(json.loads(line)) for line in prefix.splitlines())
@@ -140,12 +139,13 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
         model = ScriptedModel(
             ["recovered queued input", [ModelChunk(tool_call=ToolCall("work"))], "done"]
         )
-        harness = minimal(
-            model,
+        harness = Application(
+            model=model,
             plugins=[
+                Approvals(trust="all"),
                 tools,
                 approval_gate(risky={"work"}, ask=answer),
-                session_jsonl(tmp_path, fsync=True),
+                JsonlSessions(tmp_path, durability="fsync"),
             ],
         )
         async with harness.session("crash") as agent:
@@ -167,7 +167,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
                 assert model.requests == [] and len(agent.inbox.pending) == 1
                 await agent.run("wake up")
             else:
-                assert len(model.requests) == 1 and not agent.inbox.pending
+                assert len(model.requests) == 1 and (not agent.inbox.pending)
                 assert any(m.text == "queued followup" for m in model.requests[0].messages)
                 assert any(m.text == "inspect interrupted work" for m in model.requests[0].messages)
             assert any(m.text == "door opened" for m in model.requests[0].messages)
@@ -307,10 +307,14 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     }
     tail = json.dumps(answer).encode()
     await asyncio.to_thread(path.write_bytes, prefix + tail)
-    async with minimal(
-        ScriptedModel([]), plugins=[session_jsonl(tmp_path, fsync=True, recover_tail=True)]
+    async with Application(
+        model=ScriptedModel([]),
+        plugins=[
+            Approvals(trust="all"),
+            JsonlSessions(tmp_path, recover_tail=True, durability="fsync"),
+        ],
     ).session("answer") as agent:
-        assert not agent.log.approvals.pending and not agent.log.approvals.grants
+        assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
         assert agent.log.approvals.records[0].resolution.status == "interrupted"
         recovery = next(e for e in agent.log.events if isinstance(e, LogTailRecovered))
         assert await asyncio.to_thread(Path(recovery.archive).read_bytes) == tail

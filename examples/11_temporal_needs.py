@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from harnessed import Context, Emit, SystemPrompt, ToolCall, ToolRegistry, plugin
-from harnessed.plugins.services import system_prompt, tools
+from harnessed.plugins import AgentLoop
 
 
 @dataclass
@@ -38,7 +38,7 @@ async def browser_tools(ctx: Context):
 
 async def main():
     async with Context() as ctx:
-        await ctx.install([tools(), system_prompt()])
+        await ctx.install([AgentLoop()])
         feature = await ctx.plugin(browser_tools())
         print("Before browser:", feature.status)
 
