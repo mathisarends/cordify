@@ -196,7 +196,13 @@ class MessageProjection:
         elif isinstance(event, ToolReturned):
             self._put(
                 seq,
-                ToolReply(event.result.content, tool_call_id=event.call_id, id=event.call_id),
+                ToolReply(
+                    event.result.content,
+                    tool_call_id=event.call_id,
+                    id=event.call_id,
+                    status=event.result.status,
+                    exit_code=event.result.exit_code,
+                ),
             )
         elif isinstance(event, ContextValueChanged):
             content = (

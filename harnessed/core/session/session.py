@@ -156,7 +156,16 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                         ),
                     )
             case ToolReturned(call_id=call_id, result=result):
-                add(seq, ToolReply(result.content, tool_call_id=call_id, id=call_id))
+                add(
+                    seq,
+                    ToolReply(
+                        result.content,
+                        tool_call_id=call_id,
+                        id=call_id,
+                        status=result.status,
+                        exit_code=result.exit_code,
+                    ),
+                )
             case CompactionApplied(through=through, summary=summary, preserve_turns=preserved):
                 entries = [
                     (offset, message)

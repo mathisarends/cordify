@@ -183,6 +183,9 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
                             calls.get(message.tool_call_id or "", "unknown_tool"),
                             _content(message.content),
                             message.tool_call_id or "",
+                            outcome="denied"
+                            if message.status == "denied"
+                            else ("failed" if message.is_error else "success"),
                         )
                     ]
                 )

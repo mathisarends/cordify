@@ -457,3 +457,40 @@ async def test_multimodal_tool_returns_are_native_parts_with_preserved_image_det
     assert returned.content[0] == "page"
     assert isinstance(returned.content[1], native.ImageUrl)
     assert returned.content[1].vendor_metadata == {"detail": "high"}
+
+
+@pytest.mark.parametrize(
+    "status, exit_code, outcome",
+    [
+        ("ok", 0, "success"),
+        ("error", None, "failed"),
+        ("ok", 3, "failed"),
+        ("denied", None, "denied"),
+        ("unavailable", None, "failed"),
+    ],
+)
+async def test_tool_status_is_not_lost_in_native_model_history(status, exit_code, outcome):
+    received = []
+
+    def respond(messages, info):
+        received.extend(messages)
+        return native.ModelResponse([native.TextPart("done")])
+
+    model = PydanticAIModel(FunctionModel(respond))
+    await model.request(
+        ModelRequest(
+            "fixture",
+            (
+                Assistant(tool_calls=(ToolCall("work", id="call"),)),
+                ToolReply("result", tool_call_id="call", status=status, exit_code=exit_code),
+            ),
+        )
+    )
+    returned = next(
+        part
+        for message in received
+        if isinstance(message, native.ModelRequest)
+        for part in message.parts
+        if isinstance(part, native.ToolReturnPart)
+    )
+    assert returned.outcome == outcome

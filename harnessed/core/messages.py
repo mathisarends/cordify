@@ -86,10 +86,13 @@ class OutputTruncation:
             raise ValueError("Invalid tool output truncation sizes")
 
 
+type ToolStatus = Literal["ok", "error", "denied", "unavailable"]
+
+
 @dataclass(frozen=True)
 class ToolResult:
     content: str | tuple[ContentPart, ...]
-    status: Literal["ok", "error", "denied", "unavailable"] = "ok"
+    status: ToolStatus = "ok"
     exit_code: int | None = None
     spill: SpillRef | None = None
     truncation: OutputTruncation | None = None
@@ -272,6 +275,8 @@ class ToolReply(_PlainMessage):
     __hash__ = None
     content: str | tuple[ContentPart, ...] = ""
     tool_call_id: str = field(kw_only=True)
+    status: ToolStatus = field(default="ok", kw_only=True)
+    exit_code: int | None = field(default=None, kw_only=True)
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
     role: Literal["tool"] = field(default="tool", kw_only=True)
 
@@ -279,6 +284,10 @@ class ToolReply(_PlainMessage):
         if self.role != "tool" or not isinstance(self.tool_call_id, str) or not self.tool_call_id:
             raise ValueError("Tool replies require the tool role and a non-empty call ID")
         object.__setattr__(self, "content", _content(self.content))
+
+    @property
+    def is_error(self) -> bool:
+        return self.status != "ok" or self.exit_code not in (None, 0)
 
 
 type Message = Annotated[System | User | Assistant | ToolReply, Field(discriminator="role")]

@@ -35,3 +35,8 @@ opaque frozen `provider_state`. Legacy logs migrate to the new role shapes when
 read. Unsigned synthetic or interrupted reasoning remains available for audit
 and is omitted from native provider history; complete signed responses replay
 through their original provider state.
+
+ToolReply retains the original status and exit code alongside its content. Native
+provider history therefore distinguishes failed or denied tools from successful
+results instead of relying on error words in the text. Unknown tool availability
+is a failure; policy/user denial remains a denial.

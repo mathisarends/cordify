@@ -43,6 +43,7 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
         assert [p for p in tool_result.content if isinstance(p, ImagePart)] == [IMAGE]
         history = next(m for m in model.requests[1].messages if m.role == "tool")
         assert history.content == tool_result.content
+        assert history.status == tool_result.status and history.exit_code == 0
         records = json.loads(json.dumps([encode_event(e) for e in session.events]))
         replay = SessionLog("replay", seed=[decode_event(e) for e in records])
         assert replay.messages == session.messages
