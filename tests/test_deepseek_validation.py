@@ -4,9 +4,9 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from cordify import ImagePart, Message, ModelRequest, RetryPolicy, TextPart, ToolCall
-from cordify.adapters.deepseek import DeepSeekLLM
-from cordify.adapters.deepseek_models import (
+from harnessed import ImagePart, Message, ModelRequest, RetryPolicy, TextPart, ToolCall
+from harnessed.adapters.deepseek import DeepSeekLLM
+from harnessed.adapters.deepseek_models import (
     ChatCompletionChunk,
     ChatCompletionRequest,
     DeepSeekConfig,

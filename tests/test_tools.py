@@ -3,8 +3,8 @@ from typing import Annotated, Protocol
 
 import pytest
 
-from cordify import Bundle, Context, Inject, ToolCall, ToolRegistry, tool
-from cordify.kernel.di import InjectMarker
+from harnessed import Bundle, Context, Inject, ToolCall, ToolRegistry, tool
+from harnessed.kernel.di import InjectMarker
 
 
 class Backend(Protocol):

@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from cordify import (
+from harnessed import (
     FS,
     Bundle,
     ExecuteTool,
@@ -14,10 +14,10 @@ from cordify import (
     ToolOutputLimit,
     ToolResult,
 )
-from cordify.core.events import ToolReturned
-from cordify.plugins.tools.fs import fs_local, fs_tools
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import ToolReturned
+from harnessed.plugins.tools.fs import fs_local, fs_tools
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 budget = ToolOutputLimit(max_chars=1024)
 tools = Bundle("large-results")

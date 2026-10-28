@@ -2,10 +2,10 @@
 
 import asyncio
 
-from cordify.adapters.replay import ScriptedLLM
-from cordify.kernel import Context, Key, plugin
-from cordify.plugins.permissions.rules import Rules, when
-from cordify.presets import minimal
+from harnessed.adapters.replay import ScriptedLLM
+from harnessed.kernel import Context, Key, plugin
+from harnessed.plugins.permissions.rules import Rules, when
+from harnessed.presets import minimal
 
 backend = Key[str]("backend")
 

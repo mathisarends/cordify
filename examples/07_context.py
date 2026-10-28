@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol
 
-from cordify import (
+from harnessed import (
     FS,
     Agent,
     Bundle,
@@ -24,11 +24,11 @@ from cordify import (
     plugin,
     system,
 )
-from cordify.core.events import ContextMessage
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.services import llm
-from cordify.plugins.tools.fs import fs_local
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import ContextMessage
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.services import llm
+from harnessed.plugins.tools.fs import fs_local
+from harnessed.testing import ScriptedLLM
 
 
 class Memory(Protocol):
@@ -84,7 +84,7 @@ async def recall(query: str, memory: Inject[Memory]) -> list[str]:
 
 
 async def main():
-    with TemporaryDirectory(prefix="cordify-context-") as directory:
+    with TemporaryDirectory(prefix="harnessed-context-") as directory:
         root = Path(directory)
         (root / "AGENTS.md").write_text("Keep changes focused.", encoding="utf-8")
         (root / "PR.diff").write_text("+ def test_login(): ...", encoding="utf-8")

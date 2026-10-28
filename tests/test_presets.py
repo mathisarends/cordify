@@ -1,7 +1,7 @@
 import pytest
 
-from cordify.presets import coding, headless, minimal
-from cordify.testing import ScriptedLLM
+from harnessed.presets import coding, headless, minimal
+from harnessed.testing import ScriptedLLM
 
 
 @pytest.mark.parametrize("factory", [minimal, headless])

@@ -3,7 +3,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from cordify import (
+from harnessed import (
     Agent,
     AgentControlChanged,
     ApprovalRequest,
@@ -18,8 +18,8 @@ from cordify import (
     ToolCallContext,
     system,
 )
-from cordify.adapters.persistence import JsonlPersistence
-from cordify.core.events import (
+from harnessed.adapters.persistence import JsonlPersistence
+from harnessed.core.events import (
     AssistantChunk,
     AssistantMessage,
     InboxAdded,
@@ -32,11 +32,11 @@ from cordify.core.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.core.session import decode_event, encode_event
-from cordify.plugins.permissions.approval import approval_gate
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import decode_event, encode_event
+from harnessed.plugins.permissions.approval import approval_gate
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 @pytest.mark.parametrize("phase", ["model", "tools"])

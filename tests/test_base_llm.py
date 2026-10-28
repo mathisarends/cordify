@@ -3,9 +3,9 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from cordify import ModelChunk, ModelRequest, ModelUsage, RetryPolicy, ToolCall
-from cordify.adapters.base import LLM
-from cordify.adapters.replay import ScriptedLLM
+from harnessed import ModelChunk, ModelRequest, ModelUsage, RetryPolicy, ToolCall
+from harnessed.adapters.base import LLM
+from harnessed.adapters.replay import ScriptedLLM
 
 REQUEST = ModelRequest("test", ())
 
@@ -43,7 +43,7 @@ async def test_retry_backoff_is_capped_and_attempts_close_before_waiting(monkeyp
         assert adapter.closed == list(range(1, len(delays) + 2))
         delays.append(delay)
 
-    monkeypatch.setattr("cordify.adapters.base.asyncio.sleep", sleep)
+    monkeypatch.setattr("harnessed.adapters.base.asyncio.sleep", sleep)
     assert [chunk.text async for chunk in adapter.stream(REQUEST)] == ["ok"]
     assert delays == [0.5, 0.75, 0.75]
     assert adapter.attempts == 4 and adapter.closed == [1, 2, 3, 4]
@@ -128,7 +128,7 @@ async def test_cancellation_during_backoff_does_not_start_another_attempt(monkey
     async def consume():
         return [chunk async for chunk in adapter.stream(REQUEST)]
 
-    monkeypatch.setattr("cordify.adapters.base.asyncio.sleep", sleep)
+    monkeypatch.setattr("harnessed.adapters.base.asyncio.sleep", sleep)
     task = asyncio.create_task(consume())
     await waiting.wait()
     task.cancel()

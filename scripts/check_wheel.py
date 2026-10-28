@@ -10,18 +10,23 @@ ROOT = Path(__file__).resolve().parents[1]
 SMOKE = """
 import asyncio
 import sys
+from importlib.metadata import distribution
 from pathlib import Path
 
-from cordify.kernel import Context, Key
+from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from cordify import ModelRequest, RunControl, user
-from cordify.adapters.deepseek import DeepSeekLLM
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
-import cordify
+from harnessed import ModelRequest, RunControl, user
+from harnessed.adapters.deepseek import DeepSeekLLM
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
+import harnessed
 
-package = Path(cordify.__file__).resolve()
+package = Path(harnessed.__file__).resolve()
 assert package.is_relative_to(Path(sys.prefix).resolve()), package
+installed = distribution('harnessed')
+assert installed.metadata['Name'] == 'harnessed'
+assert (installed.read_text('top_level.txt') or '').split() == ['harnessed']
+assert installed.locate_file('harnessed/__init__.py').resolve() == package
 assert (package.parent / 'py.typed').is_file()
 assert DeepSeekLLM()._payload(ModelRequest('test', (user('hello'),)))['stream'] is True
 
@@ -37,7 +42,7 @@ async def main():
         assert agent.status == 'stopped'
 
 asyncio.run(main())
-print('Installed wheel, public API, type marker, provider validation, and run control verified.')
+print('Installed harnessed wheel, metadata, public API, and SDK smoke checks verified.')
 """
 
 
@@ -46,7 +51,7 @@ def main() -> None:
     wheels = tuple((ROOT / "dist").glob("*.whl"))
     if len(wheels) != 1:
         raise SystemExit("Build exactly one wheel with `uv build --no-sources` first.")
-    with TemporaryDirectory(prefix="cordify-wheel-") as directory:
+    with TemporaryDirectory(prefix="harnessed-wheel-") as directory:
         temporary = Path(directory)
         environment = temporary / "venv"
         requirements = temporary / "requirements.txt"

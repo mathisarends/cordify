@@ -2,7 +2,7 @@
 
 import asyncio
 
-from cordify import (
+from harnessed import (
     Agent,
     Bundle,
     Harness,
@@ -18,10 +18,10 @@ from cordify import (
     user,
     when,
 )
-from cordify.core.events import InboxAdded, ToolReturned
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import InboxAdded, ToolReturned
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 def is_pytest(call: ToolCall) -> bool:

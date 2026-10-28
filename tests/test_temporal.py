@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from cordify import (
+from harnessed import (
     Bundle,
     Context,
     Emit,
@@ -16,7 +16,7 @@ from cordify import (
     plugin,
     tool,
 )
-from cordify.plugins.services import system_prompt, tools
+from harnessed.plugins.services import system_prompt, tools
 
 
 @dataclass

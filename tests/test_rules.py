@@ -1,6 +1,6 @@
 import pytest
 
-from cordify import (
+from harnessed import (
     Bundle,
     Harness,
     ModelChunk,
@@ -10,12 +10,12 @@ from cordify import (
     ToolResult,
     when,
 )
-from cordify.core.events import InboxAdded, RuleTriggered, ToolReturned
-from cordify.core.session import Session, decode_event, encode_event
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.persistence import session_jsonl
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import InboxAdded, RuleTriggered, ToolReturned
+from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 def scripted_commands(commands):

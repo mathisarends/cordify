@@ -2,12 +2,12 @@
 
 import asyncio
 
-from cordify import Context, Harness, ModelChunk, ToolCall, ToolRegistry, plugin
-from cordify.core.events import AssistantChunk, ToolCalled, ToolReturned
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.context.instructions import persona
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed import Context, Harness, ModelChunk, ToolCall, ToolRegistry, plugin
+from harnessed.core.events import AssistantChunk, ToolCalled, ToolReturned
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.context.instructions import persona
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 @plugin(needs=[ToolRegistry])

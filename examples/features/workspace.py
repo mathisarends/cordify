@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from cordify import FS, Agent, Bundle, Inject, Plugin, ReviewToolResult, ToolCallContext, hook
+from harnessed import FS, Agent, Bundle, Inject, Plugin, ReviewToolResult, ToolCallContext, hook
 
 workspace_tools = Bundle("workspace-tools")
 

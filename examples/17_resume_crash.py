@@ -7,12 +7,12 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from cordify import Bundle, Decision, ModelChunk, ToolCall, system
-from cordify.core.events import LogTailRecovered, ToolReturned
-from cordify.plugins.permissions.approval import approval_gate
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed import Bundle, Decision, ModelChunk, ToolCall, system
+from harnessed.core.events import LogTailRecovered, ToolReturned
+from harnessed.plugins.permissions.approval import approval_gate
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 tools = Bundle("work")
 

@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from cordify import (
+from harnessed import (
     Agent,
     Bundle,
     Context,
@@ -18,9 +18,9 @@ from cordify import (
     hook,
     plugin,
 )
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,7 @@
 import asyncio
 from time import perf_counter
 
-from cordify import (
+from harnessed import (
     ApprovalRequest,
     ApprovalUnavailable,
     Bundle,
@@ -12,10 +12,10 @@ from cordify import (
     ToolCall,
     ToolPolicy,
 )
-from cordify.core.events import ToolReturned
-from cordify.plugins.permissions.approval import approval_gate
-from cordify.presets import headless, minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import ToolReturned
+from harnessed.plugins.permissions.approval import approval_gate
+from harnessed.presets import headless, minimal
+from harnessed.testing import ScriptedLLM
 
 
 async def without_ui():

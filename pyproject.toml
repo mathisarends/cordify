@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cordify"
+name = "harnessed"
 version = "0.1.0"
 description = "A native Python, everything-is-a-plugin agent harness inspired by Cordis and DeepSeek Harness."
 readme = "README.md"
@@ -30,10 +30,10 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cordify*"]
+include = ["harnessed*"]
 
 [tool.setuptools.package-data]
-cordify = ["py.typed"]
+harnessed = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -59,4 +59,4 @@ python-version = "3.12"
 python-platform = "all"
 
 [tool.ty.src]
-include = ["cordify", "examples", "scripts"]
+include = ["harnessed", "examples", "scripts"]

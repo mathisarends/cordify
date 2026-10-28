@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from cordify import (
+from harnessed import (
     Bundle,
     ContextBudgetExceeded,
     ContextBudgetGuard,
@@ -17,7 +17,7 @@ from cordify import (
     ToolCall,
     user,
 )
-from cordify.core.events import (
+from harnessed.core.events import (
     AssistantMessage,
     CompactionApplied,
     ConfigureRequest,
@@ -27,10 +27,10 @@ from cordify.core.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.core.session import decode_event, encode_event
-from cordify.plugins.context.providers import compactor
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import decode_event, encode_event
+from harnessed.plugins.context.providers import compactor
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 class RecordingCompactor:

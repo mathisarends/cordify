@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from cordify import Bail, Context, ContextClosed, Emit, Inject, Parallel, Waterfall, plugin
+from harnessed import Bail, Context, ContextClosed, Emit, Inject, Parallel, Waterfall, plugin
 
 
 class Service:

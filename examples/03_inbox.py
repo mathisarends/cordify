@@ -2,9 +2,9 @@
 
 import asyncio
 
-from cordify import Harness, ModelChunk
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.services import llm
+from harnessed import Harness, ModelChunk
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.services import llm
 
 
 class PausingLLM:

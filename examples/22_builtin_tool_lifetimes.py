@@ -3,12 +3,12 @@
 import asyncio
 from pathlib import Path
 
-from cordify import Context, ModelChunk, Shell, ToolCall, ToolRegistry, plugin
-from cordify.core.events import ToolReturned
-from cordify.plugins.tools.shell import shell_tools
-from cordify.presets import minimal
-from cordify.seams.shell import ProcResult
-from cordify.testing import ScriptedLLM
+from harnessed import Context, ModelChunk, Shell, ToolCall, ToolRegistry, plugin
+from harnessed.core.events import ToolReturned
+from harnessed.plugins.tools.shell import shell_tools
+from harnessed.presets import minimal
+from harnessed.seams.shell import ProcResult
+from harnessed.testing import ScriptedLLM
 
 
 class DemoShell:

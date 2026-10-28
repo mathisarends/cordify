@@ -1,4 +1,4 @@
-from cordify.adapters.sse import iter_sse_data
+from harnessed.adapters.sse import iter_sse_data
 
 
 async def lines(*items):

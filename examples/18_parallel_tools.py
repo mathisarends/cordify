@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from cordify import FS, Bundle, Inject, ModelChunk, ToolCall
-from cordify.core.events import ToolReturned
-from cordify.presets import coding, minimal
-from cordify.testing import ScriptedLLM
+from harnessed import FS, Bundle, Inject, ModelChunk, ToolCall
+from harnessed.core.events import ToolReturned
+from harnessed.presets import coding, minimal
+from harnessed.testing import ScriptedLLM
 
 
 async def independent_calls():
@@ -75,7 +75,7 @@ async def writes_with_resource_keys(root: Path):
 
 async def main():
     await independent_calls()
-    with TemporaryDirectory(prefix="cordify-parallel-") as directory:
+    with TemporaryDirectory(prefix="harnessed-parallel-") as directory:
         root = await asyncio.to_thread(Path(directory).resolve)
         await writes_with_resource_keys(root)
 

@@ -4,8 +4,8 @@ from typing import ClassVar
 
 import pytest
 
-from cordify import Bundle, Message, ModelChunk, Session, ToolCall, ToolResult
-from cordify.core.events import (
+from harnessed import Bundle, Message, ModelChunk, Session, ToolCall, ToolResult
+from harnessed.core.events import (
     SESSION_EVENT_TYPES,
     AssistantChunk,
     AssistantMessage,
@@ -19,10 +19,10 @@ from cordify.core.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.core.session import decode_event, derive_messages, derive_requests, encode_event
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import decode_event, derive_messages, derive_requests, encode_event
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 def roundtrip(events):
@@ -112,7 +112,7 @@ async def test_exact_requests_include_request_hook_changes_without_rerunning_the
 async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_model_calls(
     tmp_path,
 ):
-    from cordify.adapters.persistence import JsonlPersistence
+    from harnessed.adapters.persistence import JsonlPersistence
 
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("crashed")
@@ -166,7 +166,7 @@ async def test_unpersisted_chunks_are_neither_published_nor_committed_in_a_final
             if isinstance(event, AssistantChunk):
                 raise OSError("storage unavailable")
 
-    from cordify import SessionPersistence, plugin
+    from harnessed import SessionPersistence, plugin
 
     @plugin
     async def persistence(ctx):

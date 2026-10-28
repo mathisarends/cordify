@@ -6,12 +6,12 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from cordify import Bundle, Inject, ModelChunk, ModelRequest, ToolCall, ToolCallContext, user
-from cordify.adapters.deepseek import DeepSeekLLM
-from cordify.adapters.deepseek_models import ChatCompletionChunk, ChatCompletionRequest
-from cordify.core.events import ToolReturned
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed import Bundle, Inject, ModelChunk, ModelRequest, ToolCall, ToolCallContext, user
+from harnessed.adapters.deepseek import DeepSeekLLM
+from harnessed.adapters.deepseek_models import ChatCompletionChunk, ChatCompletionRequest
+from harnessed.core.events import ToolReturned
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 class Priority(StrEnum):

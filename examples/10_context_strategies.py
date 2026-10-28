@@ -3,7 +3,7 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from cordify import (
+from harnessed import (
     Agent,
     Bundle,
     CacheBreakpoints,
@@ -21,11 +21,11 @@ from cordify import (
     ToolCall,
     hook,
 )
-from cordify.core.events import CacheMetrics, CompactionApplied, SpillCreated
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.context.providers import spill_store
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import CacheMetrics, CompactionApplied, SpillCreated
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.context.providers import spill_store
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 class WorkspaceState(Plugin):
@@ -55,7 +55,7 @@ async def read_file(path: str) -> str:
 
 
 async def main():
-    with TemporaryDirectory(prefix="cordify-spills-") as directory:
+    with TemporaryDirectory(prefix="harnessed-spills-") as directory:
         model = ScriptedLLM(
             [
                 [ModelChunk(text="Initial context accepted.", usage=ModelUsage(500, 10, 300, 200))],

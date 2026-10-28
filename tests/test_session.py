@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from cordify import Harness, Message, ModelRequest, Session, ToolCall, ToolDefinition, ToolResult
-from cordify.adapters.persistence import JsonlPersistence
-from cordify.core.events import (
+from harnessed import Harness, Message, ModelRequest, Session, ToolCall, ToolDefinition, ToolResult
+from harnessed.adapters.persistence import JsonlPersistence
+from harnessed.core.events import (
     AssistantMessage,
     InboxAdded,
     ModelRequested,
@@ -15,11 +15,11 @@ from cordify.core.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.core.session import decode_event, derive_messages, encode_event
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.persistence import session_jsonl
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import decode_event, derive_messages, encode_event
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):

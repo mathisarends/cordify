@@ -3,16 +3,16 @@ from typing import Protocol
 
 import pytest
 
-from cordify import Harness, ModelChunk, ToolCall, plugin
-from cordify.core.events import ToolPolicy, ToolReturned
-from cordify.core.loop import AgentFactory
-from cordify.core.session import SessionPersistence
-from cordify.kernel import Context
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.services import llm
-from cordify.plugins.tools.fs import fs_tools
-from cordify.plugins.tools.shell import shell_tools
-from cordify.seams import (
+from harnessed import Harness, ModelChunk, ToolCall, plugin
+from harnessed.core.events import ToolPolicy, ToolReturned
+from harnessed.core.loop import AgentFactory
+from harnessed.core.session import SessionPersistence
+from harnessed.kernel import Context
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.services import llm
+from harnessed.plugins.tools.fs import fs_tools
+from harnessed.plugins.tools.shell import shell_tools
+from harnessed.seams import (
     FS,
     LLM,
     Approver,

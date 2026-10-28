@@ -2,14 +2,14 @@
 
 import asyncio
 
-from cordify import Decision, Harness, ModelChunk, ToolCall
-from cordify.core.events import ModelRequested, ToolProgress, ToolReturned
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.permissions.approval import approval_gate, callback_approver
-from cordify.plugins.services import llm
-from cordify.plugins.tools.fs import fs_local
-from cordify.testing import ScriptedLLM
 from examples.features.workspace import FailureNudge, workspace_tools
+from harnessed import Decision, Harness, ModelChunk, ToolCall
+from harnessed.core.events import ModelRequested, ToolProgress, ToolReturned
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.permissions.approval import approval_gate, callback_approver
+from harnessed.plugins.services import llm
+from harnessed.plugins.tools.fs import fs_local
+from harnessed.testing import ScriptedLLM
 
 
 async def main():

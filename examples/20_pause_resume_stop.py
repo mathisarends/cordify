@@ -3,11 +3,11 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from cordify import Agent, Bundle, Inject, ModelChunk, ToolCall
-from cordify.core.events import ReviewToolResult
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed import Agent, Bundle, Inject, ModelChunk, ToolCall
+from harnessed.core.events import ReviewToolResult
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 async def pause_a_tool_batch():
@@ -132,7 +132,7 @@ async def reopen_a_paused_session(directory: str):
 async def main():
     await pause_a_tool_batch()
     await stop_current_work()
-    with TemporaryDirectory(prefix="cordify-control-") as directory:
+    with TemporaryDirectory(prefix="harnessed-control-") as directory:
         await reopen_a_paused_session(directory)
 
 

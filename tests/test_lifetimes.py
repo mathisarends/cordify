@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import pytest
 from pydantic import PydanticSchemaGenerationError
 
-from cordify import (
+from harnessed import (
     Agent,
     Context,
     Emit,
@@ -16,9 +16,9 @@ from cordify import (
     plugin,
     tool,
 )
-from cordify.plugins.services import system_prompt, tools
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.plugins.services import system_prompt, tools
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 @dataclass

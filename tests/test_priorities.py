@@ -2,11 +2,11 @@ from itertools import permutations
 
 import pytest
 
-from cordify import Bundle, Context, Emit, Plugin, Waterfall, hook
-from cordify.kernel.declarations import Bundle as KernelBundle
-from cordify.kernel.declarations import Plugin as KernelPlugin
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed import Bundle, Context, Emit, Plugin, Waterfall, hook
+from harnessed.kernel.declarations import Bundle as KernelBundle
+from harnessed.kernel.declarations import Plugin as KernelPlugin
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 class Trace(Waterfall[str]):

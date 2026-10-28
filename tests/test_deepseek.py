@@ -3,8 +3,8 @@ import json
 import httpx
 import pytest
 
-from cordify import Message, ModelRequest, RetryPolicy, ToolCall, ToolDefinition
-from cordify.adapters.deepseek import DeepSeekLLM
+from harnessed import Message, ModelRequest, RetryPolicy, ToolCall, ToolDefinition
+from harnessed.adapters.deepseek import DeepSeekLLM
 
 
 def sse(*deltas, done=True):
@@ -322,7 +322,7 @@ async def test_missing_optional_dependency_keeps_installation_hint(monkeypatch):
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", without_httpx)
-    with pytest.raises(ImportError, match=r"cordify\[deepseek\]"):
+    with pytest.raises(ImportError, match=r"harnessed\[deepseek\]"):
         _ = [
             chunk
             async for chunk in DeepSeekLLM(api_key="test").stream(

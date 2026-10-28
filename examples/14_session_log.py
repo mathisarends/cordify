@@ -3,11 +3,19 @@
 import asyncio
 import json
 
-from cordify import Bundle, Message, ModelChunk, Session, ToolCall, derive_messages, derive_requests
-from cordify.core.events import AssistantChunk, UserMessage
-from cordify.core.session import decode_event, encode_event
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed import (
+    Bundle,
+    Message,
+    ModelChunk,
+    Session,
+    ToolCall,
+    derive_messages,
+    derive_requests,
+)
+from harnessed.core.events import AssistantChunk, UserMessage
+from harnessed.core.session import decode_event, encode_event
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 math = Bundle("math")
 

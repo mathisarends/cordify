@@ -4,12 +4,12 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from cordify import Context, Harness, ModelChunk, SystemPrompt, ToolCall, ToolRegistry, plugin
-from cordify.core.events import ExecuteTool, SessionAppended
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.permissions.approval import approval_gate
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed import Context, Harness, ModelChunk, SystemPrompt, ToolCall, ToolRegistry, plugin
+from harnessed.core.events import ExecuteTool, SessionAppended
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.permissions.approval import approval_gate
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 class Notes(Protocol):
@@ -74,7 +74,7 @@ async def main():
             llm(
                 ScriptedLLM(
                     [
-                        [ModelChunk(tool_call=ToolCall("save_note", {"text": "Try Cordify"}))],
+                        [ModelChunk(tool_call=ToolCall("save_note", {"text": "Try Harnessed"}))],
                         "The note has been saved.",
                     ]
                 )

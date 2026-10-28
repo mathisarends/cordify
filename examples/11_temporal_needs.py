@@ -3,8 +3,8 @@
 import asyncio
 from dataclasses import dataclass
 
-from cordify import Context, Emit, SystemPrompt, ToolCall, ToolRegistry, plugin
-from cordify.plugins.services import system_prompt, tools
+from harnessed import Context, Emit, SystemPrompt, ToolCall, ToolRegistry, plugin
+from harnessed.plugins.services import system_prompt, tools
 
 
 @dataclass

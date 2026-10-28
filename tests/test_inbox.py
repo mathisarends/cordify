@@ -3,13 +3,13 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from cordify import Inbox, ModelChunk, Session, system, user
-from cordify.adapters.persistence import JsonlPersistence
-from cordify.core.events import InboxAdded, InboxRemoved, UserMessage
-from cordify.core.session import decode_event, encode_event
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed import Inbox, ModelChunk, Session, system, user
+from harnessed.adapters.persistence import JsonlPersistence
+from harnessed.core.events import InboxAdded, InboxRemoved, UserMessage
+from harnessed.core.session import decode_event, encode_event
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 @pytest.mark.parametrize(

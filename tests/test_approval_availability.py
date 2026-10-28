@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from cordify import (
+from harnessed import (
     AgentOptions,
     ApprovalRequest,
     ApprovalUnavailable,
@@ -13,12 +13,12 @@ from cordify import (
     Session,
     ToolCall,
 )
-from cordify.core.events import ApprovalResolved, ToolExecutionStarted, ToolPolicy, ToolReturned
-from cordify.core.session import decode_event, encode_event
-from cordify.plugins.permissions.approval import approval_gate, callback_approver
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import headless, minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import ApprovalResolved, ToolExecutionStarted, ToolPolicy, ToolReturned
+from harnessed.core.session import decode_event, encode_event
+from harnessed.plugins.permissions.approval import approval_gate, callback_approver
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import headless, minimal
+from harnessed.testing import ScriptedLLM
 
 
 @pytest.mark.parametrize("preset", [minimal, headless])

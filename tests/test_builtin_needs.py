@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from cordify import FS, Context, Shell, ToolCall, ToolRegistry, plugin
-from cordify.plugins.services import tools
-from cordify.plugins.tools.fs import fs_tools
-from cordify.plugins.tools.shell import shell_tools
-from cordify.seams.shell import ProcResult
+from harnessed import FS, Context, Shell, ToolCall, ToolRegistry, plugin
+from harnessed.plugins.services import tools
+from harnessed.plugins.tools.fs import fs_tools
+from harnessed.plugins.tools.shell import shell_tools
+from harnessed.seams.shell import ProcResult
 
 
 class MemoryFS:

@@ -9,20 +9,20 @@ from pathlib import Path
 
 import pytest
 
-from cordify import Bundle, Decision, ModelChunk, Session, ToolCall, user
-from cordify.adapters.persistence import JsonlPersistence
-from cordify.core.events import (
+from harnessed import Bundle, Decision, ModelChunk, Session, ToolCall, user
+from harnessed.adapters.persistence import JsonlPersistence
+from harnessed.core.events import (
     ApprovalRequested,
     ApprovalResolved,
     InboxAdded,
     LogTailRecovered,
     ToolReturned,
 )
-from cordify.core.session import decode_event, encode_event
-from cordify.plugins.permissions.approval import approval_gate
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import decode_event, encode_event
+from harnessed.plugins.permissions.approval import approval_gate
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = r"""
@@ -30,11 +30,11 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from cordify import Bundle, Decision, ModelChunk, ToolCall, system
-from cordify.plugins.permissions.approval import approval_gate
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed import Bundle, Decision, ModelChunk, ToolCall, system
+from harnessed.plugins.permissions.approval import approval_gate
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 root, phase = Path(sys.argv[1]), sys.argv[2]
 started = asyncio.Event()
@@ -319,7 +319,7 @@ async def test_failed_tail_archive_does_not_discard_any_bytes(tmp_path, monkeypa
     def fail(source, target):
         raise PermissionError("archive unavailable")
 
-    monkeypatch.setattr("cordify.adapters.persistence.os.replace", fail)
+    monkeypatch.setattr("harnessed.adapters.persistence.os.replace", fail)
     with pytest.raises(PermissionError, match="archive unavailable"):
         await persistence.load("archive-failure")
     assert await asyncio.to_thread(path.read_bytes) == tail

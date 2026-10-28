@@ -3,11 +3,11 @@
 import asyncio
 from collections.abc import AsyncIterator
 
-from cordify.adapters.base import LLM, RetryPolicy
-from cordify.adapters.replay import ScriptedLLM
-from cordify.presets import minimal
-from cordify.seams import ModelChunk, ModelRequest
-from cordify.seams.llm import LLM as LLMProtocol
+from harnessed.adapters.base import LLM, RetryPolicy
+from harnessed.adapters.replay import ScriptedLLM
+from harnessed.presets import minimal
+from harnessed.seams import ModelChunk, ModelRequest
+from harnessed.seams.llm import LLM as LLMProtocol
 
 
 class DemoLLM(LLM):

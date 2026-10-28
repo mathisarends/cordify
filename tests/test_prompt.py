@@ -1,7 +1,7 @@
 import asyncio
 
-from cordify import Context, Inject, SystemPrompt, ToolCall, ToolRegistry, plugin
-from cordify.plugins.services import system_prompt, tools
+from harnessed import Context, Inject, SystemPrompt, ToolCall, ToolRegistry, plugin
+from harnessed.plugins.services import system_prompt, tools
 
 
 async def test_plugin_unload_restores_shadowed_tools_and_prompt_sections():

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from cordify import (
+from harnessed import (
     Agent,
     Bundle,
     CacheBreakpoints,
@@ -26,7 +26,7 @@ from cordify import (
     ToolResult,
     hook,
 )
-from cordify.core.events import (
+from harnessed.core.events import (
     CacheMetrics,
     CompactionApplied,
     ModelUsageRecorded,
@@ -38,12 +38,12 @@ from cordify.core.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.core.session import Session, decode_event, encode_event
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.context.providers import compactor, spill_store
-from cordify.plugins.persistence import session_jsonl
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.context.providers import compactor, spill_store
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 async def test_large_results_spill_to_persistent_file_and_keep_structured_metadata(tmp_path):
@@ -106,7 +106,7 @@ async def test_spill_reuses_verified_concurrent_winner_on_windows_replace_race(
         destination.write_bytes(source.read_bytes())
         raise PermissionError("target opened by concurrent writer")
 
-    monkeypatch.setattr("cordify.adapters.spill.os.replace", racing_replace)
+    monkeypatch.setattr("harnessed.adapters.spill.os.replace", racing_replace)
     ref = await LocalSpillStore(tmp_path).put("concurrent content")
     assert await LocalSpillStore(tmp_path).read(ref.path) == "concurrent content"
     assert not list(tmp_path.glob("*.tmp"))
@@ -116,7 +116,7 @@ async def test_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatc
     def denied(source, destination):
         raise PermissionError("write denied")
 
-    monkeypatch.setattr("cordify.adapters.spill.os.replace", denied)
+    monkeypatch.setattr("harnessed.adapters.spill.os.replace", denied)
     with pytest.raises(PermissionError, match="write denied"):
         await LocalSpillStore(tmp_path).put("content")
     assert not list(tmp_path.glob("*.tmp"))

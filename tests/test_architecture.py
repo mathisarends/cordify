@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE = ROOT / "cordify"
+PACKAGE = ROOT / "harnessed"
 LAYERS = {"kernel": 0, "seams": 1, "core": 2, "plugins": 3, "adapters": 3}
 
 
@@ -33,11 +33,11 @@ def test_imports_follow_layer_direction_and_public_boundaries():
                 elif isinstance(node, ast.Import):
                     modules = [alias.name for alias in node.names]
                 for module in modules:
-                    if not module or not module.startswith("cordify"):
+                    if not module or not module.startswith("harnessed"):
                         continue
-                    if layer == "plugins" and module.startswith("cordify.kernel."):
+                    if layer == "plugins" and module.startswith("harnessed.kernel."):
                         violations.append(
-                            f"{path.relative_to(ROOT)}:{node.lineno}: use cordify.kernel facade"
+                            f"{path.relative_to(ROOT)}:{node.lineno}: use harnessed.kernel facade"
                         )
                     target = module.split(".")[1:2]
                     if target == ["_exports"]:
@@ -56,9 +56,9 @@ def test_imports_follow_layer_direction_and_public_boundaries():
 def test_kernel_import_is_independent_of_agents_adapters_and_third_party_packages():
     code = """
 import sys
-from cordify.kernel import Context, Plugin, Bundle, Event, Key, plugin
+from harnessed.kernel import Context, Plugin, Bundle, Event, Key, plugin
 for layer in ('core', 'seams', 'plugins', 'adapters', 'presets'):
-    assert not any(name == 'cordify.' + layer or name.startswith('cordify.' + layer + '.')
+    assert not any(name == 'harnessed.' + layer or name.startswith('harnessed.' + layer + '.')
                    for name in sys.modules), (layer, sorted(sys.modules))
 assert 'httpx' not in sys.modules
 assert 'pydantic' not in sys.modules
@@ -83,7 +83,9 @@ def test_validation_is_explicit_and_otel_is_not_added():
                 assert not (node.module or "").startswith("opentelemetry")
 
 
-@pytest.mark.parametrize("module", ["cordify", "cordify.core", "cordify.plugins", "cordify.seams"])
+@pytest.mark.parametrize(
+    "module", ["harnessed", "harnessed.core", "harnessed.plugins", "harnessed.seams"]
+)
 def test_public_exports_resolve_to_their_canonical_classes_and_functions(module):
     facade = importlib.import_module(module)
     for name, (canonical, attribute) in facade._EXPORTS.items():
@@ -101,7 +103,7 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
 
 
 async def test_typed_keys_have_identity_and_work_with_temporal_needs():
-    from cordify.kernel import Context, Key, plugin
+    from harnessed.kernel import Context, Key, plugin
 
     first, second = Key[str]("backend"), Key[str]("backend")
     seen = []
@@ -124,7 +126,7 @@ async def test_typed_keys_have_identity_and_work_with_temporal_needs():
 
 
 async def test_kernel_registration_recipes_extend_lifetimes_without_agent_imports():
-    from cordify.kernel import Context, Plugin
+    from harnessed.kernel import Context, Plugin
 
     class Sink:
         def __init__(self):
@@ -139,7 +141,7 @@ async def test_kernel_registration_recipes_extend_lifetimes_without_agent_import
             ctx.effect(lambda: callbacks.remove(callback))
 
     def callback(fn):
-        fn._cordify_registrations = (CallbackRegistration(),)
+        fn._harnessed_registrations = (CallbackRegistration(),)
         return fn
 
     class Feature(Plugin):

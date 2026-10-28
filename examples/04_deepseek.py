@@ -4,13 +4,13 @@ import asyncio
 import os
 from pathlib import Path
 
-from cordify import Harness
-from cordify.adapters.deepseek import deepseek
-from cordify.core.events import AssistantChunk, ToolCalled
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.context.instructions import agents_md, persona
-from cordify.plugins.persistence import session_jsonl
-from cordify.plugins.tools.fs import fs_local, fs_tools
+from harnessed import Harness
+from harnessed.adapters.deepseek import deepseek
+from harnessed.core.events import AssistantChunk, ToolCalled
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.context.instructions import agents_md, persona
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.tools.fs import fs_local, fs_tools
 
 
 async def main():

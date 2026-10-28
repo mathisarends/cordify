@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from cordify import (
+from harnessed import (
     FS,
     Bundle,
     Decision,
@@ -15,8 +15,8 @@ from cordify import (
     ToolCallContext,
     plugin,
 )
-from cordify.adapters.fs import LocalFS
-from cordify.core.events import (
+from harnessed.adapters.fs import LocalFS
+from harnessed.core.events import (
     AssistantMessage,
     ReviewToolResult,
     StepStart,
@@ -27,11 +27,11 @@ from cordify.core.events import (
     ToolReturned,
     TurnStart,
 )
-from cordify.core.session import decode_event, encode_event
-from cordify.core.tools import ToolRegistry
-from cordify.plugins.tools.fs import fs_tools
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import decode_event, encode_event
+from harnessed.core.tools import ToolRegistry
+from harnessed.plugins.tools.fs import fs_tools
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_model_order():
@@ -226,7 +226,7 @@ async def test_global_parallel_limit_bounds_execution_and_can_force_serial_mode(
 
 
 async def test_tool_errors_and_denials_do_not_cancel_independent_calls():
-    from cordify.core.events import ToolPolicy
+    from harnessed.core.events import ToolPolicy
 
     tools = Bundle("errors")
     executed, reviewed = [], []
@@ -282,14 +282,14 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
         assert [event.call_id for event in results] == [call.id for call in calls]
         assert all(event.result.is_error for event in results)
         assert not any(
-            task.get_name().startswith("cordify:tool:")
+            task.get_name().startswith("harnessed:tool:")
             for task in asyncio.all_tasks()
             if not task.done()
         )
 
 
 async def test_resume_uses_durable_completions_without_reexecuting_tools():
-    from cordify import ToolResult
+    from harnessed import ToolResult
 
     calls = (ToolCall("first", id="first"), ToolCall("second", id="second"))
     session = Session("interrupted")
@@ -366,7 +366,7 @@ async def test_invalid_resource_resolver_is_a_bounded_tool_error():
 
 
 async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadata():
-    from cordify.core.events import ToolPolicy
+    from harnessed.core.events import ToolPolicy
 
     tools = Bundle("replacement")
     executed = []

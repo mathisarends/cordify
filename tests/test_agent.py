@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from cordify import (
+from harnessed import (
     Agent,
     Bundle,
     Decision,
@@ -20,7 +20,7 @@ from cordify import (
     plugin,
     tool,
 )
-from cordify.core.events import (
+from harnessed.core.events import (
     AssistantChunk,
     AssistantMessage,
     ModelRequested,
@@ -31,10 +31,10 @@ from cordify.core.events import (
     TurnEnd,
     TurnStart,
 )
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.permissions.approval import approval_gate, callback_approver
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.permissions.approval import approval_gate, callback_approver
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 
 async def test_streaming_tool_loop_and_exact_recorded_requests():

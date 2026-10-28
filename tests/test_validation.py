@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
-from cordify import Context, Inject, ToolCall, ToolRegistry
+from harnessed import Context, Inject, ToolCall, ToolRegistry
 
 
 class Priority(StrEnum):

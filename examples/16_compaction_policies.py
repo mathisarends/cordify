@@ -3,7 +3,7 @@
 import asyncio
 from typing import TypedDict
 
-from cordify import (
+from harnessed import (
     ContextBudgetExceeded,
     ContextBudgetGuard,
     PeriodicCompaction,
@@ -12,9 +12,9 @@ from cordify import (
     SystemPrompt,
     ThresholdCompaction,
 )
-from cordify.core.events import CompactionApplied
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.events import CompactionApplied
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 class Retention(TypedDict):

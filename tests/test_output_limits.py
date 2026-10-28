@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cordify import (
+from harnessed import (
     Bundle,
     ModelChunk,
     ReviewToolResult,
@@ -15,15 +15,15 @@ from cordify import (
     ToolRegistry,
     ToolResult,
 )
-from cordify.adapters.spill import LocalSpillStore
-from cordify.core.events import ToolReturned
-from cordify.core.session import Session, decode_event, encode_event
-from cordify.plugins.context.providers import spill_store
-from cordify.plugins.persistence import session_jsonl
-from cordify.plugins.tools.fs import fs_local, fs_tools
-from cordify.plugins.tools.shell import shell_local, shell_tools
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.adapters.spill import LocalSpillStore
+from harnessed.core.events import ToolReturned
+from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.plugins.context.providers import spill_store
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.plugins.tools.fs import fs_local, fs_tools
+from harnessed.plugins.tools.shell import shell_local, shell_tools
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 def test_output_limit_includes_notice_keeps_head_and_tail_and_is_idempotent():

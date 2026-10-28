@@ -3,8 +3,8 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from cordify import Bundle, ModelChunk, ModelRequest, Session, ToolCall, derive_turns
-from cordify.core.events import (
+from harnessed import Bundle, ModelChunk, ModelRequest, Session, ToolCall, derive_turns
+from harnessed.core.events import (
     ModelRequested,
     PreStep,
     StepDecision,
@@ -16,9 +16,9 @@ from cordify.core.events import (
     TurnStart,
     UserMessage,
 )
-from cordify.core.session import decode_event, encode_event
-from cordify.presets import minimal
-from cordify.testing import ScriptedLLM
+from harnessed.core.session import decode_event, encode_event
+from harnessed.presets import minimal
+from harnessed.testing import ScriptedLLM
 
 
 async def test_turns_group_model_requests_and_tools_while_followups_wait_for_their_turn():
