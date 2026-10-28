@@ -9,7 +9,7 @@ from harnessed.core.approvals import Approvals
 from harnessed.core.errors import ConfigError, PluginConflict
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
-from harnessed.core.outputs import OutputTypes
+from harnessed.core.outputs import OutputContract, OutputTypes
 from harnessed.core.plugin import PluginContext, Service
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.instructions import Instructions
@@ -99,7 +99,10 @@ class Agent:
 
     @asynccontextmanager
     async def session(
-        self, session_id: str | SessionLog | None = None, *, restore_outputs: Iterable[type] = ()
+        self,
+        session_id: str | SessionLog | None = None,
+        *,
+        restore_outputs: Iterable[type[Any] | OutputContract[Any]] = (),
     ):
         """Open or resume a conversation; omit its ID to create a new one."""
         async with PluginContext() as ctx:
@@ -164,7 +167,7 @@ class Agent:
 
     @overload
     async def run[T](
-        self, prompt: str, *, output: type[T], **options: Unpack[RunOptions]
+        self, prompt: str, *, output: type[T] | OutputContract[T], **options: Unpack[RunOptions]
     ) -> RunResult[T]: ...
 
     @overload
@@ -173,7 +176,11 @@ class Agent:
     ) -> RunResult[None]: ...
 
     async def run(
-        self, prompt: str, *, output: type[Any] | None = None, **options: Unpack[RunOptions]
+        self,
+        prompt: str,
+        *,
+        output: type[Any] | OutputContract[Any] | None = None,
+        **options: Unpack[RunOptions],
     ) -> RunResult[Any]:
         """Run one task in a new session."""
         async with self.session() as session:

@@ -9,7 +9,7 @@ from harnessed.core.errors import ConfigError, OutputUnavailable, OutputValidati
 from harnessed.core.hooks import SessionAppended, ToolPolicy
 from harnessed.core.messages import Assistant, PolicyDecision
 from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, OutputMode
-from harnessed.core.outputs import OutputTypes
+from harnessed.core.outputs import OutputContract, OutputTypes
 from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -124,7 +124,8 @@ async def test_live_results_do_not_execute_non_idempotent_validators_twice():
     assert proof.data["value"] == 1
 
 
-async def test_queued_output_types_are_restored_explicitly_after_reopening_the_application():
+@pytest.mark.parametrize("output", [Triage, OutputContract("triage.v1", Triage)])
+async def test_queued_output_types_are_restored_explicitly_after_reopening_the_application(output):
     store = MemorySessions()
     async with Agent(model=ScriptedModel([]), plugins=[store]).session("queued") as session:
         await session.pause()
@@ -132,7 +133,7 @@ async def test_queued_output_types_are_restored_explicitly_after_reopening_the_a
         session.on(
             SessionAppended, lambda ev: enqueued.set() if isinstance(ev.event, InboxAdded) else None
         )
-        pending = asyncio.create_task(session.run("Triage", output=Triage))
+        pending = asyncio.create_task(session.run("Triage", output=output))
         await asyncio.wait_for(enqueued.wait(), 3)
         await session.aclose()
         with pytest.raises(SessionClosed):
@@ -141,7 +142,7 @@ async def test_queued_output_types_are_restored_explicitly_after_reopening_the_a
     with pytest.raises(ConfigError, match="restore_outputs"):
         async with app.session("queued"):
             pass
-    async with app.session("queued", restore_outputs=[Triage]) as restored:
+    async with app.session("queued", restore_outputs=[output]) as restored:
         await restored.resume()
         await restored.wait_until_idle()
         assert restored.last(OutputValidated).data["owner"] == "restored"
@@ -185,3 +186,38 @@ async def test_concurrent_turns_keep_their_output_contracts_separate():
         )
         assert first.output.owner == "first" and second.output.owner == "second"
         assert first.turn_id != second.turn_id
+
+
+def test_equal_json_schemas_do_not_substitute_python_validators():
+    class Original(BaseModel):
+        model_config = {"title": "Answer"}
+        value: int
+
+    class Different(BaseModel):
+        model_config = {"title": "Answer"}
+        value: int
+
+        @field_validator("value")
+        @classmethod
+        def increment(cls, value):
+            return value + 1
+
+    original = OutputTypes().register(Original).definition
+    restored = OutputTypes()
+    other = restored.register(Different).definition
+    assert original.json_schema == other.json_schema
+    with pytest.raises(ConfigError, match="restore_outputs"):
+        restored.resolve(original)
+    restored.register(OutputContract("answer.v1", Original))
+    with pytest.raises(ConfigError, match="different Python validators"):
+        restored.register(OutputContract("answer.v1", Different))
+
+
+def test_generic_output_contracts_have_distinct_stable_identities():
+    outputs = OutputTypes()
+    strings = outputs.register(list[str]).definition
+    numbers = outputs.register(list[int]).definition
+    assert strings.id != numbers.id
+    reopened = OutputTypes()
+    reopened.register(list[str])
+    assert reopened.resolve(strings).definition == strings

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from harnessed.core.messages import ToolCall as ToolCall
     from harnessed.core.messages import ToolResult as ToolResult
     from harnessed.core.model import StopReason as StopReason
+    from harnessed.core.outputs import OutputContract as OutputContract
     from harnessed.core.plugin import Plugin as Plugin
     from harnessed.core.plugin import PluginConfig as PluginConfig
     from harnessed.core.plugin import PluginContext as Context
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from harnessed.kernel import plugin as plugin
 
 _EXPORTS = {
+    "OutputContract": ("harnessed.core.outputs", "OutputContract"),
     "Agent": ("harnessed.agent", "Agent"),
     "ApprovalRequest": ("harnessed.core.session.events", "ApprovalRequested"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
@@ -78,6 +80,7 @@ __all__ = [
     "Image",
     "Inject",
     "Observation",
+    "OutputContract",
     "Plugin",
     "PluginConfig",
     "PluginConflict",

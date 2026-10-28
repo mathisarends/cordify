@@ -19,7 +19,7 @@ from harnessed.core.messages import (
     ToolCall,
 )
 from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema
-from harnessed.core.outputs import OutputTypes, OutputValues
+from harnessed.core.outputs import OutputContract, OutputTypes, OutputValues
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
@@ -362,7 +362,11 @@ class Session:
 
     @overload
     async def run[T](
-        self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
+        self,
+        content: str | Message,
+        *,
+        output: type[T] | OutputContract[T],
+        **options: Unpack[RunOptions],
     ) -> RunResult[T]: ...
 
     @overload
@@ -377,7 +381,7 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
-        output: type[Any] | None = None,
+        output: type[Any] | OutputContract[Any] | None = None,
     ) -> RunResult[Any]:
         handle = await self.submit(
             content, attachments=attachments, context=context, settings=settings, output=output
@@ -386,7 +390,11 @@ class Session:
 
     @overload
     async def submit[T](
-        self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
+        self,
+        content: str | Message,
+        *,
+        output: type[T] | OutputContract[T],
+        **options: Unpack[RunOptions],
     ) -> RunHandle[T]: ...
 
     @overload
@@ -401,7 +409,7 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
-        output: type[Any] | None = None,
+        output: type[Any] | OutputContract[Any] | None = None,
     ) -> RunHandle[Any]:
         """Durably enqueue a turn and return its session-owned completion handle."""
         self.control.check_open()
@@ -439,7 +447,11 @@ class Session:
 
     @overload
     def stream[T](
-        self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
+        self,
+        content: str | Message,
+        *,
+        output: type[T] | OutputContract[T],
+        **options: Unpack[RunOptions],
     ) -> AsyncGenerator[EventStream[T], None]: ...
 
     @overload
@@ -454,7 +466,7 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
-        output: type[Any] | None = None,
+        output: type[Any] | OutputContract[Any] | None = None,
     ) -> AsyncGenerator[EventStream[Any], None]:
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
