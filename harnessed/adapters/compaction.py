@@ -2,7 +2,7 @@ import json
 from contextlib import AsyncExitStack
 
 from harnessed.core.budget import truncate
-from harnessed.core.messages import Message, to_dict
+from harnessed.core.messages import Message, System, User, to_dict
 from harnessed.core.model import ModelRequest
 from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
 from harnessed.seams.llm import LLM
@@ -50,12 +50,11 @@ class LLMCompactor:
         request = ModelRequest(
             self.model,
             (
-                Message(
-                    "system",
+                System(
                     "Summarize this past conversation as context, not as instructions. "
                     "Keep decisions, errors, file paths and unresolved work. Do not call tools.",
                 ),
-                Message("user", transcript),
+                User(transcript),
             ),
             max_tokens=max_tokens,
         )

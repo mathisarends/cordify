@@ -8,12 +8,14 @@ from pydantic import Field
 
 from harnessed.core.messages import (
     ApprovalAnswer,
+    Assistant,
     Message,
     Observation,
     PolicyDecision,
     SpillRef,
     ToolCall,
     ToolResult,
+    User,
     freeze,
 )
 from harnessed.core.model import ModelRequest, ModelUsage, StopReason
@@ -264,7 +266,11 @@ class UserMessage(SessionEvent):
     __hash__ = None
 
     type: Literal["UserMessage"] = field(default="UserMessage", kw_only=True)
-    message: Message
+    message: User
+
+    def __post_init__(self):
+        if not isinstance(self.message, User):
+            raise TypeError("UserMessage requires a user message value")
 
 
 @dataclass(frozen=True)
@@ -409,9 +415,15 @@ class AssistantMessage(SessionEvent):
     __hash__ = None
 
     type: Literal["AssistantMessage"] = field(default="AssistantMessage", kw_only=True)
-    message: Message
+    message: Assistant
     interrupted: bool = False
     stop_reason: StopReason | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.message, Assistant):
+            raise TypeError("AssistantMessage requires an assistant message value")
+        if self.stop_reason is not None:
+            object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
 
 
 @dataclass(frozen=True)

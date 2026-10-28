@@ -3,7 +3,8 @@
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
-from .messages import Message
+from harnessed.core.messages import Assistant
+
 from .model import ModelChunk, ModelInfo, ModelRequest, ModelResponse, ModelUsage, StopReason
 
 
@@ -53,7 +54,7 @@ class _Stream:
                 reason = chunk.stop_reason
             yield chunk
         self._response = ModelResponse(
-            Message("assistant", "".join(text), tuple(calls), reasoning_content="".join(reasoning)),
+            Assistant("".join(text), tuple(calls), reasoning="".join(reasoning)),
             usage,
             reason or (StopReason.TOOL_CALLS if calls else StopReason.END),
         )

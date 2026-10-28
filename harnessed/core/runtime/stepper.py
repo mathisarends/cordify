@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from harnessed.core.budget import ContextBudget
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
+from harnessed.core.messages import User
 from harnessed.core.model import ModelRequest
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.executor import run_tools
@@ -67,7 +68,7 @@ async def run_step(self: Agent, turn: str, step: int, settings, preparing: Conte
             if item.message.id == message.id:
                 for contribution in item.context:
                     await self.log.append(ContextMessage(contribution, "turn", turn))
-        event = UserMessage(message) if message.role == "user" else ContextMessage(message)
+        event = UserMessage(message) if isinstance(message, User) else ContextMessage(message)
         await self.log.append(event)
     observations = tuple(self._observations.values())
     self._observations.clear()

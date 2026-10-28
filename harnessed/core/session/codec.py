@@ -7,6 +7,7 @@ from pydantic import ConfigDict, TypeAdapter
 
 from harnessed.core.messages import (
     freeze,
+    migrate_message,
     to_dict,
 )
 from harnessed.core.model import usage_from_dict
@@ -49,7 +50,7 @@ def _validate_event(event: SessionEvent) -> None:
     immutable(event)
 
 
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 _LEGACY_TYPES = {
     "agent/control": "AgentControlChanged",
     "approvals/requested": "ApprovalRequested",
@@ -113,7 +114,7 @@ def decode_event(record: dict) -> SessionEvent:
     if not isinstance(record, dict) or set(record) - {"version", "seq", "type", "data"}:
         raise ValueError("Invalid session record envelope")
     version = record.get("version", 1)
-    if type(version) is not int or version not in (1, CURRENT_VERSION):
+    if type(version) is not int or version not in (1, 2, CURRENT_VERSION):
         raise ValueError("Unsupported session record version")
     if "seq" in record and (type(record["seq"]) is not int or record["seq"] < 0):
         raise ValueError("Session sequence must be a non-negative integer")
@@ -131,6 +132,21 @@ def decode_event(record: dict) -> SessionEvent:
     body = dict(body)
     if "type" in body and body["type"] != tag:
         raise ValueError("Session envelope and payload type tags disagree")
+    if version < 3:
+        if tag in (
+            "InboxAdded",
+            "UserMessage",
+            "ContextMessage",
+            "AssistantMessage",
+        ) and isinstance(body.get("message"), dict):
+            body["message"] = migrate_message(body["message"])
+        if tag == "InboxAdded":
+            body["context"] = [migrate_message(message) for message in body.get("context", ())]
+        if tag == "ModelRequested" and isinstance(body.get("request"), dict):
+            body["request"] = dict(body["request"])
+            body["request"]["messages"] = [
+                migrate_message(message) for message in body["request"].get("messages", ())
+            ]
     if version == 1 and tag in ("ModelUsageRecorded", "CacheMetrics") and "usage" in body:
         body["usage"] = to_dict(usage_from_dict(body["usage"]))
     elif version == 1 and tag == "ModelRequested" and isinstance(body.get("request"), dict):

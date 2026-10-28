@@ -6,8 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
+
+from pydantic import Field
 
 
 def freeze(value: Any) -> Any:
@@ -149,25 +151,19 @@ class ImagePart:
 type ContentPart = TextPart | ImagePart
 
 
-@dataclass(frozen=True)
-class Message:
-    __hash__ = None
-    role: Literal["system", "user", "assistant", "tool"]
-    content: str | tuple[ContentPart, ...] = ""
-    tool_calls: tuple[ToolCall, ...] = ()
-    tool_call_id: str | None = None
-    reasoning_content: str = ""
-    id: str = field(default_factory=lambda: uuid4().hex)
-    provider_state: Mapping[str, Any] = field(default_factory=dict)
+def _content(value: str | tuple[ContentPart, ...]) -> str | tuple[ContentPart, ...]:
+    if isinstance(value, str):
+        return value
+    parts = tuple(value)
+    if any(not isinstance(part, TextPart | ImagePart) for part in parts):
+        raise TypeError("Message content must be a string or text/image parts")
+    return parts
 
-    def __post_init__(self):
-        object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
-        object.__setattr__(self, "provider_state", freeze(self.provider_state))
-        if not isinstance(self.content, str):
-            parts = tuple(self.content)
-            if any(not isinstance(part, TextPart | ImagePart) for part in parts):
-                raise TypeError("Message content must be a string or text/image parts")
-            object.__setattr__(self, "content", parts)
+
+class _MessageText:
+    @property
+    def content(self) -> str | tuple[ContentPart, ...]:
+        raise NotImplementedError
 
     @property
     def text(self) -> str:
@@ -176,12 +172,93 @@ class Message:
         return "\n".join(part.text for part in self.content if isinstance(part, TextPart))
 
 
-def user(text: str) -> Message:
-    return Message("user", text)
+class _PlainMessage(_MessageText):
+    @property
+    def tool_calls(self) -> tuple[ToolCall, ...]:
+        return ()
+
+    @property
+    def reasoning(self) -> str:
+        return ""
+
+    @property
+    def provider_state(self) -> Mapping[str, Any]:
+        return MappingProxyType({})
 
 
-def system(text: str) -> Message:
-    return Message("system", text)
+class _NoCallID:
+    @property
+    def tool_call_id(self) -> None:
+        return None
+
+
+@dataclass(frozen=True)
+class System(_PlainMessage, _NoCallID):
+    __hash__ = None
+    content: str = ""
+    id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
+    role: Literal["system"] = field(default="system", kw_only=True)
+
+    def __post_init__(self):
+        if self.role != "system" or not isinstance(self.content, str):
+            raise ValueError("System messages require the system role and text content")
+
+
+@dataclass(frozen=True)
+class User(_PlainMessage, _NoCallID):
+    __hash__ = None
+    content: str | tuple[ContentPart, ...] = ""
+    id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
+    role: Literal["user"] = field(default="user", kw_only=True)
+
+    def __post_init__(self):
+        if self.role != "user":
+            raise ValueError("User messages require the user role")
+        object.__setattr__(self, "content", _content(self.content))
+
+
+@dataclass(frozen=True)
+class Assistant(_MessageText, _NoCallID):
+    __hash__ = None
+    content: str = ""
+    tool_calls: tuple[ToolCall, ...] = ()
+    reasoning: str = ""
+    id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
+    provider_state: Mapping[str, Any] = field(default_factory=dict, kw_only=True)
+    role: Literal["assistant"] = field(default="assistant", kw_only=True)
+
+    def __post_init__(self):
+        if self.role != "assistant" or not isinstance(self.content, str):
+            raise ValueError("Assistant messages require the assistant role and text content")
+        if not isinstance(self.reasoning, str):
+            raise TypeError("Assistant reasoning must be text")
+        object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
+        object.__setattr__(self, "provider_state", freeze(self.provider_state))
+
+
+@dataclass(frozen=True)
+class ToolReply(_PlainMessage):
+    __hash__ = None
+    content: str | tuple[ContentPart, ...] = ""
+    tool_call_id: str = field(kw_only=True)
+    id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
+    role: Literal["tool"] = field(default="tool", kw_only=True)
+
+    def __post_init__(self):
+        if self.role != "tool" or not isinstance(self.tool_call_id, str) or not self.tool_call_id:
+            raise ValueError("Tool replies require the tool role and a non-empty call ID")
+        object.__setattr__(self, "content", _content(self.content))
+
+
+type Message = Annotated[System | User | Assistant | ToolReply, Field(discriminator="role")]
+
+
+def user(text: str) -> User:
+    return User(text)
+
+
+def system(text: str) -> System:
+    return System(text)
 
 
 @dataclass(frozen=True)
@@ -195,17 +272,38 @@ class Observation:
             raise ValueError("Observations require a source")
 
 
+def migrate_message(data: dict) -> dict:
+    """Reject invalid role/field combinations while reading the original message shape."""
+    payload = dict(data)
+    role = payload.get("role")
+    if "reasoning_content" in payload:
+        if "reasoning" in payload:
+            raise ValueError("Duplicate reasoning fields")
+        payload["reasoning"] = payload.pop("reasoning_content")
+    for name, default in (
+        ("tool_calls", ()),
+        ("reasoning", ""),
+        ("provider_state", {}),
+        ("tool_call_id", None),
+    ):
+        relevant = role == "assistant" if name != "tool_call_id" else role == "tool"
+        if not relevant and name in payload:
+            value = payload.pop(name)
+            if value != default and not (name == "tool_calls" and value == []):
+                raise ValueError(f"{role} messages cannot contain {name}")
+    return payload
+
+
 def message_from_dict(data: dict) -> Message:
-    content = data["content"]
+    payload = migrate_message(data)
+    content = payload.get("content", "")
     if not isinstance(content, str):
         kinds = {"text": TextPart, "image_url": ImagePart}
-        content = tuple(kinds[part["type"]](**part) for part in content)
-    payload: dict[str, Any] = {
-        **data,
-        "content": content,
-        "tool_calls": tuple(ToolCall(**c) for c in data["tool_calls"]),
-    }
-    return Message(**payload)
+        payload["content"] = tuple(kinds[part["type"]](**part) for part in content)
+    if "tool_calls" in payload:
+        payload["tool_calls"] = tuple(ToolCall(**call) for call in payload["tool_calls"])
+    kinds = {"system": System, "user": User, "assistant": Assistant, "tool": ToolReply}
+    return kinds[payload["role"]](**payload)
 
 
 def tool_result_from_dict(data: dict) -> ToolResult:

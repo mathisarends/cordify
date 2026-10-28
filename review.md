@@ -12,8 +12,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
   all stream-only LLM compatibility paths.
-- Rename the remaining message reasoning field and type stop reasons throughout;
-  verify accept/continue/fail max-token behavior through the public result API.
+- Verify accept/continue/fail max-token behavior through the public result API.
 - Support multimodal tool results and model history, including the output-limit,
   spill and token-counting paths. Preserve native provider response state.
 - Finish moving the remaining feature contracts to their consumers; FS is now
@@ -71,11 +70,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Finish runtime/tool/kernel dependency cleanup, then enforce PLC0415. Delayed
   optional SDK imports in models/pydantic_ai.py need an explicit exception.
-
-### P2-5 — Typed message roles
-
-- Replace freely combinable role/field values with the approved tagged message
-  union, preserving migration/replay and multimodal/provider metadata.
 
 ### P2-6 — Testing package
 

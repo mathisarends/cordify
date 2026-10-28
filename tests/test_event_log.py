@@ -4,8 +4,9 @@ from typing import ClassVar
 
 import pytest
 
-from harnessed import Bundle, Message, ModelChunk, ToolCall, ToolResult
+from harnessed import Bundle, ModelChunk, ToolCall, ToolResult
 from harnessed.core.hooks import PrepareRequest
+from harnessed.core.messages import System, User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
@@ -57,7 +58,7 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
         assert chunks == tuple(event for event in live if isinstance(event, TextDelta))
         final = next(event for event in log if isinstance(event, AssistantMessage))
         assert {chunk.message_id for chunk in chunks} == {final.message.id}
-        assert final.message.text == "hello world" and final.message.reasoning_content == "think"
+        assert final.message.text == "hello world" and final.message.reasoning == "think"
         assert [m.text for m in agent.log.messages] == ["hello", "hello world"]
         replay = Session("replayed", seed=roundtrip(log))
         assert replay.messages == agent.log.messages
@@ -103,7 +104,7 @@ async def test_exact_requests_include_request_hook_changes_without_rerunning_the
     async def configure(event, next_):
         invocations.append(True)
         request = await next_()
-        return replace(request, messages=(*request.messages, Message("system", "request context")))
+        return replace(request, messages=(*request.messages, System("request context")))
 
     async with harness.session("request-snapshot") as agent:
         await agent.run("hello")
@@ -124,7 +125,7 @@ async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_m
     for event in (
         TurnStart("turn"),
         StepStart("turn", 1),
-        UserMessage(Message("user", "hello")),
+        UserMessage(User("hello")),
         AssistantChunk(reasoning="thinking", message_id="reply"),
         AssistantChunk(text="partial", message_id="reply"),
     ):
@@ -156,7 +157,7 @@ async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     assert derive_messages(completed) == partial
     parent = Session("parent", seed=completed)
     child = parent.fork("child")
-    await child.append(UserMessage(Message("user", "another branch")))
+    await child.append(UserMessage(User("another branch")))
     assert parent.events == completed and parent.messages == partial
     assert len(child.messages) == 2 and child.events[: len(completed)] == parent.events
 

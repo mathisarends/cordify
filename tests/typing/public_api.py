@@ -5,6 +5,8 @@ from typing import assert_type
 
 from harnessed import Context as PluginContext
 from harnessed import ToolContext
+from harnessed.core.messages import Assistant, ToolReply, User
+from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session as Agent
 from harnessed.core.tools.decorator import tool
@@ -43,3 +45,10 @@ async def tool_scope(ctx: PluginContext) -> None:
 
     assert_type(await echo("value", call=ToolContext.__new__(ToolContext)), str)
     assert_type(ctx.extend(), PluginContext)
+
+
+def invalid_message_shapes() -> None:
+    User("hello", tool_calls=())  # ty: ignore[unknown-argument]
+    Assistant("answer", tool_call_id="wrong role")  # ty: ignore[unknown-argument]
+    ToolReply("missing call ID")  # ty: ignore[missing-argument]
+    ModelResponse(User("wrong model response role"))  # ty: ignore[invalid-argument-type]

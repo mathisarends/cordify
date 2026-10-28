@@ -9,7 +9,6 @@ from harnessed import (
     Image,
     ImagePart,
     Inject,
-    Message,
     ModelChunk,
     Observation,
     Plugin,
@@ -21,6 +20,7 @@ from harnessed import (
     user,
 )
 from harnessed import Session as Agent
+from harnessed.core.messages import User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
 from harnessed.core.session.session import SessionLog as Session
@@ -163,5 +163,5 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
 async def test_remote_images_are_references_without_download():
     parts = await Image("https://example.com/screenshot.png", detail="low").parts()
     assert parts == (ImagePart("https://example.com/screenshot.png", "low"),)
-    message = Message("user", list(parts))
+    message = User(list(parts))
     assert isinstance(message.content, tuple)

@@ -61,3 +61,6 @@ python-platform = "all"
 
 [tool.ty.src]
 include = ["harnessed", "examples", "scripts", "tests/typing"]
+
+[tool.ty.rules]
+unused-ignore-comment = "error"

@@ -35,7 +35,7 @@ class ApproximateTokenCounter:
     def count_messages(self, messages: Iterable[Message]) -> int:
         total = 0
         for message in messages:
-            total += 4 + self.count_text(message.text) + self.count_text(message.reasoning_content)
+            total += 4 + self.count_text(message.text) + self.count_text(message.reasoning)
             total += self.count_text(json.dumps(to_dict(message.tool_calls)))
             if not isinstance(message.content, str):
                 total += sum(1024 for part in message.content if isinstance(part, ImagePart))

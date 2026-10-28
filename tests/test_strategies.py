@@ -11,7 +11,6 @@ from harnessed import (
     LatestObservationOnly,
     LLMCompactor,
     LocalSpillStore,
-    Message,
     ModelChunk,
     ModelUsage,
     Observation,
@@ -24,6 +23,7 @@ from harnessed import (
     hook,
 )
 from harnessed import Session as Agent
+from harnessed.core.messages import Assistant, User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionApplied,
@@ -182,7 +182,7 @@ async def test_compaction_preserves_base_prompt_recent_turns_and_replaces_previo
     await session.append(SystemMessage("permanent rules"))
     for name in ("one", "two"):
         await session.append(TurnStart(name))
-        await session.append(UserMessage(Message("user", name)))
+        await session.append(UserMessage(User(name)))
         await session.append(TurnEnd(name))
     await session.append(CompactionApplied(4, "first summary"))
     assert [m.text for m in session.messages] == [
@@ -290,7 +290,7 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
 
 
 async def test_empty_or_non_advancing_compaction_is_rejected_on_replay():
-    seed = (TurnStart("t"), UserMessage(Message("user", "one")), TurnEnd("t"))
+    seed = (TurnStart("t"), UserMessage(User("one")), TurnEnd("t"))
     with pytest.raises(ValueError, match="non-empty"):
         Session("invalid", seed=(*seed, CompactionApplied(3, "")))
     with pytest.raises(ValueError, match="existing event prefix"):
@@ -335,9 +335,7 @@ async def test_cache_usage_is_preserved_as_provider_reported_usage():
 async def test_llm_compactor_uses_explicit_model_without_tools_and_closes_stream():
     llm = ScriptedLLM(["summary"])
     assert (
-        await LLMCompactor(llm, model="summary-model").summarize(
-            (Message("user", "history"),), max_tokens=32
-        )
+        await LLMCompactor(llm, model="summary-model").summarize((User("history"),), max_tokens=32)
         == "summary"
     )
     assert llm.requests[0].model == "summary-model"
@@ -346,9 +344,7 @@ async def test_llm_compactor_uses_explicit_model_without_tools_and_closes_stream
 
 async def test_llm_compactor_keeps_tool_names_and_arguments_in_summary_input():
     llm = ScriptedLLM(["summary"])
-    messages = (
-        Message("assistant", tool_calls=(ToolCall("bash", {"command": "pytest tests/auth"}),)),
-    )
+    messages = (Assistant(tool_calls=(ToolCall("bash", {"command": "pytest tests/auth"}),)),)
     await LLMCompactor(llm, model="summary").summarize(messages, max_tokens=32)
     transcript = llm.requests[0].messages[-1].text
     assert "bash" in transcript and "pytest tests/auth" in transcript

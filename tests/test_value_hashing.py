@@ -4,7 +4,7 @@ from collections.abc import Hashable
 
 import pytest
 
-from harnessed.core.messages import Message, ToolCall
+from harnessed.core.messages import Assistant, ToolCall, User
 from harnessed.core.model import ModelInfo, ModelRequest, ModelResponse, ModelUsage, ToolDefinition
 from harnessed.core.session.events import ModelRequested, TurnStart
 
@@ -13,10 +13,10 @@ from harnessed.core.session.events import ModelRequested, TurnStart
     "value",
     [
         ToolCall("read", {"path": "file"}),
-        Message("user", "hello"),
+        User("hello"),
         ToolDefinition("read", "Read", {"type": "object"}),
         ModelRequest("test", ()),
-        ModelResponse(Message("assistant", "done")),
+        ModelResponse(Assistant("done")),
         TurnStart("one"),
         ModelRequested(ModelRequest("test", ())),
     ],

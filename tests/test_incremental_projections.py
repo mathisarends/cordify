@@ -4,7 +4,7 @@ import pytest
 
 from harnessed.core.approvals import ApprovalState
 from harnessed.core.compaction import plan_compaction
-from harnessed.core.messages import ApprovalAnswer, Message, Observation, ToolCall
+from harnessed.core.messages import ApprovalAnswer, Assistant, Observation, ToolCall, User
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
@@ -53,7 +53,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         snapshots.append((session.events, session.inbox, session.approvals, session.turns))
 
     for turn in range(5):
-        message = Message("user", f"Task {turn}", id=f"input-{turn}")
+        message = User(f"Task {turn}", id=f"input-{turn}")
         await append(InboxAdded.create(message, "followup"))
         await append(TurnStart(str(turn), message.id))
         await append(UserMessage(message))
@@ -68,7 +68,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
             assert session.latest_approval(call.id).decision == answer
             if answer is ApprovalAnswer.ALWAYS and rng.choice([True, False]):
                 await append(ApprovalRevoked(request.request_id))
-            await append(AssistantMessage(Message("assistant", "reply")))
+            await append(AssistantMessage(Assistant("reply")))
             await append(StepEnd(str(turn), step))
         await append(TurnEnd(str(turn)))
         await append(AgentControlChanged(rng.choice(["active", "paused", "stopped"])))
@@ -91,7 +91,7 @@ async def test_last_and_since_indexes_match_the_log_suffix():
     session = Session("indexes")
     assert session.last(TurnStart) is None and session.since(TurnStart) == ()
     start = TurnStart("turn")
-    message = UserMessage(Message("user", "hello"))
+    message = UserMessage(User("hello"))
     await session.append(start)
     before = session.events
     await session.append(message)
@@ -133,7 +133,7 @@ async def test_incremental_observations_legacy_chunks_and_compaction_match_every
             message_id = f"{turn}:{step}"
             await append(AssistantChunk("hello ", message_id=message_id))
             await append(AssistantChunk("world", message_id=message_id))
-            await append(AssistantMessage(Message("assistant", "hello world", id=message_id)))
+            await append(AssistantMessage(Assistant("hello world", id=message_id)))
             await append(StepEnd(str(turn), step))
         await append(TurnEnd(str(turn)))
         boundaries.append(len(session))
@@ -149,7 +149,7 @@ async def test_incremental_observations_legacy_chunks_and_compaction_match_every
 
 
 async def test_completed_legacy_stream_does_not_enable_a_permanent_history_fold():
-    message = Message("assistant", "legacy", id="old")
+    message = Assistant("legacy", id="old")
     session = Session(
         "legacy",
         seed=[

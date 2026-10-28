@@ -15,6 +15,7 @@ from harnessed.core.hooks import (
 )
 from harnessed.core.messages import (
     ApprovalAnswer,
+    Assistant,
     Message,
     Observation,
     ToolCall,
@@ -499,21 +500,20 @@ class Session:
         continuation = await self.ctx.dispatch(TurnStopping(self))
         return bool(continuation or self.log.has_step_wakeup)
 
-    async def _respond(self, request: ModelRequest) -> Message:
+    async def _respond(self, request: ModelRequest) -> Assistant:
         with span(self.ctx, "model", session_id=self.id, model=request.model):
             return await self._stream_response(request)
 
-    async def _stream_response(self, request: ModelRequest) -> Message:
+    async def _stream_response(self, request: ModelRequest) -> Assistant:
         message_id, calls = uuid4().hex, []
         text, reasoning = [], []
         last_usage = None
 
         def message():
-            return Message(
-                "assistant",
+            return Assistant(
                 "".join(text),
                 tuple(calls),
-                reasoning_content="".join(reasoning),
+                reasoning="".join(reasoning),
                 id=message_id,
             )
 

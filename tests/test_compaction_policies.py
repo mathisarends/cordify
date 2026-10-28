@@ -8,7 +8,6 @@ from harnessed import (
     Bundle,
     ContextBudgetExceeded,
     ContextBudgetGuard,
-    Message,
     ModelChunk,
     PeriodicCompaction,
     SlidingWindowCompaction,
@@ -17,6 +16,7 @@ from harnessed import (
     user,
 )
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
+from harnessed.core.messages import Assistant, System
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -138,7 +138,7 @@ async def test_compaction_preserves_request_hook_context_and_combines_triggers_o
     @harness.on(PrepareRequest)
     async def request_context(event, next_):
         request = await next_()
-        return replace(request, messages=(*request.messages, Message("system", "HOOK CONTEXT")))
+        return replace(request, messages=(*request.messages, System("HOOK CONTEXT")))
 
     async with harness.session("composed") as agent:
         await agent.run("x" * 2000)
@@ -181,7 +181,7 @@ async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
     for turn in ("first", "second"):
         await session.append(TurnStart(turn))
         await session.append(UserMessage(user(turn)))
-        await session.append(AssistantMessage(Message("assistant", f"answer {turn}")))
+        await session.append(AssistantMessage(Assistant(f"answer {turn}")))
         await session.append(TurnEnd(turn))
     await session.append(CompactionApplied(5, "first summary"))
     assert not any(m.text == "first" for m in session.messages)
@@ -203,7 +203,7 @@ async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
     @harness.on(ConfigureRequest)
     async def inflate(event, next_):
         request = await next_()
-        return replace(request, messages=(*request.messages, Message("system", "x" * 1000)))
+        return replace(request, messages=(*request.messages, System("x" * 1000)))
 
     async with harness.session("guard") as agent:
         with pytest.raises(ContextBudgetExceeded) as error:

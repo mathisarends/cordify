@@ -7,9 +7,13 @@ from xml.sax.saxutils import escape, quoteattr
 from harnessed.core.approvals import Approval, ApprovalState, approval_transition
 from harnessed.core.hooks import SessionAppended
 from harnessed.core.messages import (
+    Assistant,
     Message,
+    System,
     ToolCall,
+    ToolReply,
     ToolResult,
+    User,
 )
 from harnessed.core.model import ModelRequest, ModelUsage, sum_usage
 from harnessed.core.session.codec import _validate_event
@@ -52,7 +56,7 @@ def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
     return tuple(event.request for event in events if isinstance(event, ModelRequested))
 
 
-def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Message]:
+def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Assistant]:
     streams: dict[str, tuple[int, list[str], list[str]]] = {}
     completed = set()
     for seq, event in enumerate(events):
@@ -63,9 +67,7 @@ def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Mes
         elif isinstance(event, AssistantMessage):
             completed.add(event.message.id)
     return {
-        seq: Message(
-            "assistant", "".join(text), reasoning_content="".join(reasoning), id=message_id
-        )
+        seq: Assistant("".join(text), reasoning="".join(reasoning), id=message_id)
         for message_id, (seq, text, reasoning) in streams.items()
         if message_id not in completed
     }
@@ -123,7 +125,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
             case SystemMessage(content=content):
                 entries = [(offset, m) for offset, m in entries if m.id != "system"]
                 if content:
-                    entries.insert(0, (seq, Message("system", content, id="system")))
+                    entries.insert(0, (seq, System(content, id="system")))
             case UserMessage(message=message) | AssistantMessage(message=message):
                 add(seq, message)
             case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
@@ -135,7 +137,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     if value is None
                     else f"<context name={quoteattr(name)}>{escape(value)}</context>"
                 )
-                message = Message("user", content, id=f"context:{event.id}")
+                message = User(content, id=f"context:{event.id}")
                 add(seq, message)
                 if value is None:
                     current_context.pop(name, None)
@@ -148,14 +150,13 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                 if content and (active_step == (turn_id, step) or seq in visible_observations):
                     add(
                         seq,
-                        Message(
-                            "user",
+                        User(
                             content,
                             id=f"observation:{turn_id}:{step}:{observation.source}",
                         ),
                     )
             case ToolReturned(call_id=call_id, result=result):
-                add(seq, Message("tool", result.content, tool_call_id=call_id, id=call_id))
+                add(seq, ToolReply(result.content, tool_call_id=call_id, id=call_id))
             case CompactionApplied(through=through, summary=summary, preserve_turns=preserved):
                 entries = [
                     (offset, message)
@@ -193,8 +194,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     position,
                     (
                         seq,
-                        Message(
-                            "system",
+                        System(
                             f"Conversation summary:\n{summary}",
                             id=f"compaction:{event.id or seq}",
                         ),

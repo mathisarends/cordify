@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
-from .messages import Message, ToolCall, freeze, message_from_dict
+from .messages import Assistant, Message, ToolCall, freeze, message_from_dict
 
 
 class StopReason(StrEnum):
@@ -149,11 +149,13 @@ class ModelInfo:
 @dataclass(frozen=True, slots=True)
 class ModelResponse:
     __hash__ = None
-    message: Message
+    message: Assistant
     usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
     stop_reason: StopReason = StopReason.END
 
     def __post_init__(self):
+        if not isinstance(self.message, Assistant):
+            raise TypeError("A model response must contain an assistant message")
         object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
 
 

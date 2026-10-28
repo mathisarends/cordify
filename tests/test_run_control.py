@@ -7,7 +7,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent, Inject, Plugin, SessionClosed, SessionStatus, StopReason, tool
-from harnessed.core.messages import ApprovalAnswer, Message, ToolCall
+from harnessed.core.messages import ApprovalAnswer, ToolCall, User
 from harnessed.core.model import ModelChunk, ModelRequest
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.session.codec import decode_event, encode_event
@@ -288,8 +288,8 @@ async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_tu
     for event in (
         TurnStart("turn"),
         StepStart("turn", 1),
-        UserMessage(Message("user", "task")),
-        ModelRequested(ModelRequest("model", (Message("user", "task"),))),
+        UserMessage(User("task")),
+        ModelRequested(ModelRequest("model", (User("task"),))),
         AgentControlChanged(state),
         AssistantChunk("visible", message_id="message"),
     ):

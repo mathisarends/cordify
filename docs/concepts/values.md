@@ -17,7 +17,21 @@ serialize the intended JSON payload with a defined canonical encoding and hash
 those bytes.
 
 The persistence codec has a separate versioned boundary. New records use version
-2 and class-derived tags, such as `TurnStart` and `ToolReturned`. Version-one tags
-and usage fields are migrated while reading. Unknown fields, invalid discriminators,
+3 and class-derived tags, such as `TurnStart` and `ToolReturned`. Version-one tags, usage fields and version-one/two message shapes are migrated while reading. Unknown fields, invalid discriminators,
 non-finite numbers and malformed nested values are rejected. Neither replay nor
 migration modifies the original append-only log.
+
+## Message roles
+
+`Message` is a tagged union of frozen `System`, `User`, `Assistant` and `ToolReply`
+values in `harnessed.core.messages`. Constructors only accept fields belonging to
+that role: tool calls, reasoning and native provider state belong to Assistant;
+a ToolReply requires a call ID. User messages and tool replies can contain text
+and image parts. `user(...)` and `system(...)` are convenience constructors.
+
+The Core field is `reasoning`. Provider-specific fields, including DeepSeek's
+`reasoning_content` and Anthropic signatures, stay inside the optional adapter's
+opaque frozen `provider_state`. Legacy logs migrate to the new role shapes when
+read. Unsigned synthetic or interrupted reasoning remains available for audit
+and is omitted from native provider history; complete signed responses replay
+through their original provider state.

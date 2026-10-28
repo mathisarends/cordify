@@ -5,7 +5,7 @@ from collections import deque
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 
-from harnessed.core.messages import Message, ToolCall
+from harnessed.core.messages import Assistant, ToolCall
 from harnessed.core.model import (
     ModelChunk,
     ModelInfo,
@@ -55,7 +55,7 @@ class _Stream:
         if isinstance(chunks, ModelResponse):
             message = chunks.message
             chunks = (
-                ModelChunk(text=message.text, reasoning=message.reasoning_content),
+                ModelChunk(text=message.text, reasoning=message.reasoning),
                 *(ModelChunk(tool_call=call) for call in message.tool_calls),
                 ModelChunk(usage=chunks.usage, stop_reason=chunks.stop_reason),
             )
@@ -76,11 +76,10 @@ class _Stream:
             chunk = next(self._chunks)
         except StopIteration:
             self._response = self._provided or ModelResponse(
-                Message(
-                    "assistant",
+                Assistant(
                     "".join(self._text),
                     tuple(self._calls),
-                    reasoning_content="".join(self._reasoning),
+                    reasoning="".join(self._reasoning),
                 ),
                 self._usage,
                 self._stop_reason or (StopReason.TOOL_CALLS if self._calls else StopReason.END),
@@ -108,14 +107,12 @@ class _Stream:
 
 def reply(text: str, *, reasoning: str = "", usage: ModelUsage | None = None) -> ModelResponse:
     """Script a completed assistant response."""
-    return ModelResponse(
-        Message("assistant", text, reasoning_content=reasoning), usage or ModelUsage(0)
-    )
+    return ModelResponse(Assistant(text, reasoning=reasoning), usage or ModelUsage(0))
 
 
 def call(name: str, /, **arguments) -> ModelResponse:
     """Script one model tool call; keyword arguments are its model-supplied form."""
     return ModelResponse(
-        Message("assistant", tool_calls=(ToolCall(name, arguments),)),
+        Assistant(tool_calls=(ToolCall(name, arguments),)),
         stop_reason=StopReason.TOOL_CALLS,
     )

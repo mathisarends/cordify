@@ -3,7 +3,7 @@
 from collections.abc import Callable, Iterable
 from xml.sax.saxutils import escape, quoteattr
 
-from harnessed.core.messages import Message
+from harnessed.core.messages import Assistant, Message, System, ToolReply, User
 from harnessed.core.session.events import (
     AssistantChunk,
     AssistantMessage,
@@ -141,8 +141,7 @@ class MessageProjection:
             if content and self._eligible(seq) and (selected is None or seq in selected):
                 self._put(
                     seq,
-                    Message(
-                        "user",
+                    User(
                         content,
                         id=f"observation:{event.turn_id}:{event.step}:{source}",
                     ),
@@ -187,7 +186,7 @@ class MessageProjection:
         elif isinstance(event, SystemMessage):
             self._entries = {key: msg for key, msg in self._entries.items() if msg.id != "system"}
             if event.content:
-                self._entries = {seq: Message("system", event.content, id="system")} | self._entries
+                self._entries = {seq: System(event.content, id="system")} | self._entries
         elif isinstance(event, UserMessage | AssistantMessage):
             if isinstance(event, AssistantMessage):
                 partial = self._chunks.pop(event.message.id, None)
@@ -197,7 +196,7 @@ class MessageProjection:
         elif isinstance(event, ToolReturned):
             self._put(
                 seq,
-                Message("tool", event.result.content, tool_call_id=event.call_id, id=event.call_id),
+                ToolReply(event.result.content, tool_call_id=event.call_id, id=event.call_id),
             )
         elif isinstance(event, ContextValueChanged):
             content = (
@@ -205,7 +204,7 @@ class MessageProjection:
                 if event.value is None
                 else f"<context name={quoteattr(event.name)}>{escape(event.value)}</context>"
             )
-            self._put(seq, Message("user", content, id=f"context:{event.id}"))
+            self._put(seq, User(content, id=f"context:{event.id}"))
         elif isinstance(event, ContextMessage):
             if event.lifetime == "session" or event.turn_id == self._turn:
                 self._put(seq, event.message)
@@ -237,10 +236,9 @@ class MessageProjection:
             if self._eligible(seq):
                 self._put(
                     seq,
-                    Message(
-                        "assistant",
+                    Assistant(
                         "".join(text),
-                        reasoning_content="".join(reasoning),
+                        reasoning="".join(reasoning),
                         id=message_id,
                     ),
                 )

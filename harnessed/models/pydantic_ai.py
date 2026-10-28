@@ -16,7 +16,7 @@ from harnessed.core.errors import (
     ProviderUnavailable,
     RateLimited,
 )
-from harnessed.core.messages import Message, TextPart, ToolCall, to_dict
+from harnessed.core.messages import Assistant, TextPart, ToolCall, to_dict
 from harnessed.core.model import (
     ModelChunk,
     ModelInfo,
@@ -164,8 +164,8 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
                 history.append(restored)
                 continue
             parts: list[native.ModelResponsePart] = []
-            if message.reasoning_content:
-                parts.append(native.ThinkingPart(message.reasoning_content))
+            # Only native state carries the provider's reasoning signatures. Neutral
+            # partial/synthetic reasoning remains in the audit log, never replayed unsigned.
             if message.text:
                 parts.append(native.TextPart(message.text))
             parts.extend(
@@ -229,11 +229,10 @@ def _response(response: NativeResponse) -> ModelResponse:
         else:
             raise ProviderError(f"Unsupported response part: {type(part).__name__}")
     raw = native.ModelMessagesTypeAdapter.dump_python([response], mode="json")[0]
-    message = Message(
-        "assistant",
+    message = Assistant(
         "".join(text),
         tuple(calls),
-        reasoning_content="".join(thinking),
+        reasoning="".join(thinking),
         provider_state=raw,
     )
     usage = response.usage

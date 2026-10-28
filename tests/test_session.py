@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from harnessed import Harness, Message, ModelRequest, ToolCall, ToolDefinition, ToolResult
+from harnessed import Harness, ModelRequest, ToolCall, ToolDefinition, ToolResult
+from harnessed.core.messages import Assistant, User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -39,7 +40,7 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
         ]
     records = [json.loads(line) for line in (tmp_path / "resume.jsonl").read_text().splitlines()]
     assert [record["seq"] for record in records] == list(range(len(records)))
-    assert all(record["version"] == 2 for record in records)
+    assert all(record["version"] == 3 for record in records)
 
 
 async def test_jsonl_excludes_other_writers_and_releases_lock(tmp_path):
@@ -100,7 +101,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     for event in (
         TurnStart("turn-1"),
         StepStart("turn-1", 1),
-        AssistantMessage(Message("assistant", tool_calls=(call,))),
+        AssistantMessage(Assistant(tool_calls=(call,))),
         ToolCalled(call),
     ):
         await session.append(event)
@@ -118,7 +119,7 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
     session = Session("pending", persistence=persistence)
-    await session.append(InboxAdded(Message("user", "queued"), "next-turn", True, "followup"))
+    await session.append(InboxAdded(User("queued"), "next-turn", True, "followup"))
     await persistence.aclose()
     model = ScriptedLLM(["processed"])
     harness = Harness([agent_loop(), llm(model), session_jsonl(tmp_path)])
@@ -130,7 +131,7 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
 
 async def test_user_message_atomically_claims_its_inbox_identity():
     session = Session("atomic-input")
-    message = Message("user", "input")
+    message = User("input")
     await session.append(InboxAdded(message, "next-turn", True, "followup"))
     await session.append(UserMessage(message))
     assert not session.inbox.pending
@@ -142,12 +143,12 @@ async def test_user_message_atomically_claims_its_inbox_identity():
 async def test_fork_copies_closed_prefix_and_is_independent():
     session = Session("parent")
     await session.append(TurnStart("first"))
-    await session.append(UserMessage(Message("user", "one")))
+    await session.append(UserMessage(User("one")))
     with pytest.raises(ValueError, match="closed turn"):
         session.fork("invalid")
     await session.append(TurnEnd("first"))
     child = session.fork("child")
-    await child.append(UserMessage(Message("user", "two")))
+    await child.append(UserMessage(User("two")))
     assert [m.content for m in child.messages] == ["one", "two"]
     assert [m.content for m in session.messages] == ["one"]
     assert session.fork("empty", at=0).events == ()
@@ -158,11 +159,11 @@ async def test_fork_copies_closed_prefix_and_is_independent():
 def test_event_json_roundtrip_includes_requests_and_frozen_tool_data():
     call = ToolCall("nested", {"items": [{"a": 1}]}, id="call")
     events = (
-        AssistantMessage(Message("assistant", tool_calls=(call,))),
+        AssistantMessage(Assistant(tool_calls=(call,))),
         ModelRequested(
             ModelRequest(
                 "test",
-                (Message("user", "hello"),),
+                (User("hello"),),
                 (ToolDefinition("nested", "description", {"type": "object", "properties": {}}),),
             )
         ),

@@ -7,7 +7,6 @@ from harnessed import (
     FS,
     Bundle,
     Inject,
-    Message,
     ModelChunk,
     PolicyDecision,
     ToolCall,
@@ -15,6 +14,7 @@ from harnessed import (
     plugin,
 )
 from harnessed.core.hooks import ReviewToolResult
+from harnessed.core.messages import Assistant
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -293,7 +293,7 @@ async def test_resume_uses_durable_completions_without_reexecuting_tools():
     for event in (
         TurnStart("turn"),
         StepStart("turn", 1),
-        AssistantMessage(Message("assistant", tool_calls=calls)),
+        AssistantMessage(Assistant(tool_calls=calls)),
         ToolExecutionStarted("first"),
         ToolExecutionStarted("second"),
         ToolCompleted("second", ToolResult("second result")),

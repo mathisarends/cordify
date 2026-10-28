@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from harnessed import Agent
-from harnessed.core.messages import Message
+from harnessed.core.messages import Assistant
 from harnessed.models import Model, ModelChunk, ModelInfo, ModelRequest, ModelResponse
 
 
@@ -24,7 +24,7 @@ class EchoStream:
     def response(self) -> ModelResponse:
         if not self.finished:
             raise RuntimeError("Finish the stream first")
-        return ModelResponse(Message("assistant", self.text))
+        return ModelResponse(Assistant(self.text))
 
 
 class EchoModel:
@@ -33,7 +33,7 @@ class EchoModel:
     info = ModelInfo("local-echo", context_window=4096)
 
     async def request(self, request: ModelRequest) -> ModelResponse:
-        return ModelResponse(Message("assistant", f"Echo: {request.messages[-1].text}"))
+        return ModelResponse(Assistant(f"Echo: {request.messages[-1].text}"))
 
     @asynccontextmanager
     async def stream(self, request: ModelRequest):

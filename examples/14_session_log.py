@@ -3,7 +3,8 @@
 import asyncio
 import json
 
-from harnessed import Bundle, Message, ModelChunk, ToolCall, derive_messages, derive_requests
+from harnessed import Bundle, ModelChunk, ToolCall, derive_messages, derive_requests
+from harnessed.core.messages import User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import AssistantMessage, UserMessage
 from harnessed.core.session.session import SessionLog as Session
@@ -50,7 +51,7 @@ async def main():
 
     # A fork shares an immutable prefix and owns its subsequent appends.
     fork = replay.fork("alternative")
-    await fork.append(UserMessage(Message("user", "Explain the result.")))
+    await fork.append(UserMessage(User("Explain the result.")))
     assert replay.events == restored
     print("Parent / fork message count:", len(replay.messages), len(fork.messages))
 

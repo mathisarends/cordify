@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+from harnessed.core.messages import Assistant, User
+
 pytest.importorskip("pydantic_ai")
 
 from pydantic_ai import messages as native
@@ -16,7 +18,7 @@ from harnessed.core.errors import (
     ProviderUnavailable,
     RateLimited,
 )
-from harnessed.core.messages import ImagePart, Message, TextPart
+from harnessed.core.messages import ImagePart, TextPart
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog as Session
@@ -67,7 +69,7 @@ async def test_non_streaming_request_and_settings_are_delegated_to_pydantic_ai()
 
     model = PydanticAIModel(FunctionModel(respond), settings={"temperature": 0.5})
     response = await model.request(
-        ModelRequest("fixture", (Message("user", "hi"),), settings={"temperature": 0})
+        ModelRequest("fixture", (User("hi"),), settings={"temperature": 0})
     )
     assert response.message.text == "answer" and seen == [{"temperature": 0}]
 
@@ -116,7 +118,7 @@ async def test_native_authentication_errors_map_to_host_error_types():
 
     model = PydanticAIModel(FunctionModel(denied))
     with pytest.raises(AuthError):
-        await model.request(ModelRequest("fixture", (Message("user", "hi"),)))
+        await model.request(ModelRequest("fixture", (User("hi"),)))
 
 
 @pytest.mark.parametrize(
@@ -137,9 +139,7 @@ async def test_native_http_failures_map_without_a_second_retry_layer(status, exp
         raise exceptions.ModelHTTPError(status, "fixture", body={"error": "unavailable"})
 
     with pytest.raises(expected) as error:
-        await PydanticAIModel(FunctionModel(failed)).request(
-            ModelRequest("fixture", (Message("user", "hi"),))
-        )
+        await PydanticAIModel(FunctionModel(failed)).request(ModelRequest("fixture", (User("hi"),)))
     assert error.value.status_code == status and len(calls) == 1
 
 
@@ -152,7 +152,7 @@ async def test_user_images_are_translated_without_flattening_the_prompt():
 
     request = ModelRequest(
         "fixture",
-        (Message("user", (TextPart("Look"), ImagePart("https://example.test/image.png"))),),
+        (User((TextPart("Look"), ImagePart("https://example.test/image.png"))),),
     )
     await PydanticAIModel(FunctionModel(respond)).request(request)
     prompt = received[-1].parts[0].content
@@ -213,7 +213,7 @@ async def test_aborting_a_native_stream_closes_its_generator():
     model = PydanticAIModel(FunctionModel(stream_function=chunks))
 
     async def consume():
-        async with model.stream(ModelRequest("fixture", (Message("user", "hi"),))) as stream:
+        async with model.stream(ModelRequest("fixture", (User("hi"),))) as stream:
             async for _ in stream:
                 pass
 
@@ -403,3 +403,24 @@ async def test_native_anthropic_provider_preserves_signed_thinking_across_tool_r
     assert thinking["thinking"] == "plan" and thinking["signature"] == "opaque-signature"
     assert requests[0]["system"][-1]["cache_control"]["type"] == "ephemeral"
     assert requests[0]["tools"][-1]["cache_control"]["type"] == "ephemeral"
+
+
+async def test_unsigned_partial_reasoning_is_not_sent_back_to_a_native_provider():
+    received = []
+
+    def respond(messages, info):
+        received.extend(messages)
+        return native.ModelResponse([native.TextPart("continued")])
+
+    model = PydanticAIModel(FunctionModel(respond))
+    partial = Assistant("visible partial", reasoning="interrupted unsigned thought")
+    response = await model.request(ModelRequest("fixture", (partial, User("continue"))))
+    assert response.message.text == "continued" and partial.reasoning
+    parts = [
+        part
+        for message in received
+        if isinstance(message, native.ModelResponse)
+        for part in message.parts
+    ]
+    assert not any(isinstance(part, native.ThinkingPart) for part in parts)
+    assert any(isinstance(part, native.TextPart) and part.content == partial.text for part in parts)
