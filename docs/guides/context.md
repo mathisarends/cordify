@@ -69,3 +69,6 @@ knowledge on every step.
 | Current browser or workspace state | Observation |
 | Large optional knowledge | A retrieval tool |
 | Advice about one tool result | result.with_note(...) |
+
+For long conversations, [compaction](compaction.md) keeps selected turns verbatim
+and summarizes older history through an append-only log event.

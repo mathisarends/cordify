@@ -33,6 +33,7 @@ examples live in the topic guides. Optional features are imported from
 | abort(keep_inbox=False) | Cancel now, drain cleanup, repair and end its turn |
 | wait_until_idle() | Wait for idle and an empty inbox |
 | use(plugin) | Mount a reversible runtime capability |
+| compact() | Summarize completed history while idle or paused; return its record or None |
 | fork(id, at=None, inherit_approvals=False) | Create a closed-prefix branch for Agent.session |
 | subscribe(transient=False) | Independent raw log subscription |
 | events / messages / turns / usage / last(Event) | Durable values and projected snapshots |

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
 from harnessed.core.attachments import Attachment
+from harnessed.core.compaction import CompactionManager
 from harnessed.core.hooks import (
     ApprovalRequest,
     SessionAppended,
@@ -35,6 +36,7 @@ from harnessed.core.session.events import (
     ApprovalResolved,
     ApprovalRevoked,
     AssistantMessage,
+    CompactionApplied,
     InboxAdded,
     InboxMode,
     InboxRemoved,
@@ -66,6 +68,7 @@ class Session:
         self.ctx, self.log, self.options = ctx, session, options
         self.id = session.id
         self.context = DynamicContext(session)
+        self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
         self._runtime_guidance = {}
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
         self.inbox = SessionInbox(session, self.control)
@@ -357,6 +360,18 @@ class Session:
     async def wait_until_idle(self) -> None:
         """Wait for the session to become idle with an empty inbox."""
         await self.control.wait_until_idle()
+
+    async def compact(self) -> CompactionApplied | None:
+        """Summarize completed history while idle or paused; return its log record."""
+        async with self.control.maintenance():
+            request = ModelRequest(
+                self.options.model,
+                self.log.messages,
+                self.ctx[ToolRegistry].visible_definitions(self.ctx),
+                self.options.max_tokens,
+            )
+            applied, _ = await self._compaction.compact(request)
+            return applied
 
     async def when_idle(self) -> None:
         """Legacy wait for the current runner; use wait_until_idle()."""

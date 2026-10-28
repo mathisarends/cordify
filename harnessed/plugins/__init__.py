@@ -4,6 +4,7 @@ from harnessed._exports import exported
 
 if TYPE_CHECKING:
     from harnessed.core.approvals import Approvals as Approvals
+    from harnessed.core.compaction import ContextState as ContextState
     from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
     from harnessed.core.plugin import Service as Service
     from harnessed.core.prompt.context import ContextValue as ContextValue
@@ -20,6 +21,9 @@ if TYPE_CHECKING:
     from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
     from harnessed.plugins._context.prompt import instructions as instructions
     from harnessed.plugins.agents.loop import agent_loop as agent_loop
+    from harnessed.plugins.compaction import Compaction as Compaction
+    from harnessed.plugins.compaction import at_ratio as at_ratio
+    from harnessed.plugins.compaction import every_turns as every_turns
     from harnessed.plugins.filesystem import Filesystem as Filesystem
     from harnessed.plugins.observations import (
         LatestObservationOnly as LatestObservationOnly,
@@ -33,6 +37,10 @@ if TYPE_CHECKING:
     from harnessed.plugins.spill import Spill as Spill
     from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
 _EXPORTS = {
+    "Compaction": ("harnessed.plugins.compaction", "Compaction"),
+    "ContextState": ("harnessed.core.compaction", "ContextState"),
+    "at_ratio": ("harnessed.plugins.compaction", "at_ratio"),
+    "every_turns": ("harnessed.plugins.compaction", "every_turns"),
     "Spill": ("harnessed.plugins.spill", "Spill"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
@@ -60,6 +68,10 @@ _EXPORTS = {
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
 }
 __all__ = [
+    "Compaction",
+    "ContextState",
+    "at_ratio",
+    "every_turns",
     "Spill",
     "ApprovalAnswer",
     "AgentLoop",

@@ -22,6 +22,10 @@ imports across package boundaries. Ty checks production code, examples, scripts
 and positive/negative consumer contracts. Expected failures must remain real
 errors; unused ignore comments are errors too.
 
+Tests mirror the owning package where features have migrated. Pytest uses its
+importlib mode so modules such as `core/test_compaction.py` and
+`plugins/test_compaction.py` can share a basename without import collisions.
+
 ## CI coverage
 
 | Check | Coverage |

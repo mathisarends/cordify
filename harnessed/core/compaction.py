@@ -1,15 +1,30 @@
+import asyncio
+import inspect
 import json
-from collections.abc import Iterable
-from dataclasses import dataclass
-from typing import Protocol
+import logging
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
+from typing import Annotated, Protocol, runtime_checkable
+from uuid import uuid4
 
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+
+from harnessed.core.budget import ContextBudget, truncate
 from harnessed.core.messages import Message, System, User, to_dict
 from harnessed.core.model import Model, ModelRequest
 from harnessed.core.session.events import CompactionApplied, SessionEvent, TurnEnd, TurnStart
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.session import _derive_message_entries, derive_messages
+from harnessed.core.tokens import TokenCounter, count_request
+from harnessed.core.tracing import span
+from harnessed.kernel import Context
+
+log = logging.getLogger(__name__)
+_TRIGGER_RESULT = TypeAdapter(bool, config=ConfigDict(strict=True, hide_input_in_errors=True))
+_SUMMARY_RESULT = TypeAdapter(str, config=ConfigDict(strict=True, hide_input_in_errors=True))
 
 
+@runtime_checkable
 class Summarizer(Protocol):
     async def summarize(self, messages: tuple[Message, ...], *, max_tokens: int) -> str: ...
 
@@ -51,6 +66,133 @@ class ModelSummarizer:
         if not summary:
             raise ValueError("Summarizer returned an empty summary")
         return summary
+
+
+class CompactionSettings(BaseModel):
+    model_config = ConfigDict(
+        strict=True, extra="forbid", frozen=True, allow_inf_nan=False, hide_input_in_errors=True
+    )
+
+    keep_turns: Annotated[int, Field(ge=0)] = 2
+    keep_first_turns: Annotated[int, Field(ge=0)] = 0
+    preserve_turns: Annotated[
+        tuple[Annotated[str, Field(min_length=1)], ...], Field(strict=False)
+    ] = ()
+    summary_tokens: Annotated[int, Field(ge=1)] = 2048
+    focus: str = ""
+
+
+@dataclass(frozen=True)
+class ContextState:
+    input_tokens: int
+    reserve_tokens: int
+    context_window: int | None
+    turns_since_compaction: int
+
+    @property
+    def ratio(self) -> float | None:
+        if self.context_window is None:
+            return None
+        return (self.input_tokens + self.reserve_tokens) / self.context_window
+
+
+@dataclass(frozen=True)
+class CompactionPolicy:
+    settings: CompactionSettings
+    trigger: Callable[[ContextState], bool]
+    summarizer: Summarizer | None = None
+
+
+class CompactionManager:
+    """Serialize summaries and commit only smaller, replayable projections."""
+
+    def __init__(self, ctx: Context, session: Session, *, context_window: int | None):
+        self.ctx, self.log, self.context_window = ctx, session, context_window
+        self._lock = asyncio.Lock()
+        self._retry_after_turns = 0
+
+    async def state(self, request: ModelRequest) -> ContextState:
+        budget = self.ctx[ContextBudget] if ContextBudget in self.ctx else ContextBudget()
+        return ContextState(
+            await count_request(self.ctx[TokenCounter], request),
+            budget.output_reserve(request),
+            budget.window_limit(self.context_window),
+            self.log.uncompacted_turn_count,
+        )
+
+    async def prepare(self, request: ModelRequest) -> ModelRequest:
+        if CompactionPolicy not in self.ctx:
+            return request
+        state = await self.state(request)
+        policy = self.ctx[CompactionPolicy]
+        decision = policy.trigger(state)
+        if inspect.isawaitable(decision):
+            if inspect.iscoroutine(decision):
+                decision.close()
+            raise TypeError("Compaction triggers must return a synchronous boolean")
+        due = _TRIGGER_RESULT.validate_python(decision)
+        over_budget = state.ratio is not None and state.ratio > 1
+        if not due and not over_budget:
+            return request
+        _, compacted = await self.compact(request, force=over_budget)
+        return compacted
+
+    async def compact(
+        self, request: ModelRequest, *, force: bool = True
+    ) -> tuple[CompactionApplied | None, ModelRequest]:
+        async with self._lock:
+            policy = self.ctx[CompactionPolicy] if CompactionPolicy in self.ctx else None
+            settings = policy.settings if policy is not None else CompactionSettings()
+            if not force and self.log.closed_turn_count < self._retry_after_turns:
+                return None, request
+            plan = plan_compaction(
+                self.log,
+                keep_turns=settings.keep_turns,
+                keep_first_turns=settings.keep_first_turns,
+                preserve_turns=settings.preserve_turns,
+            )
+            if plan is None:
+                return None, request
+            counter = self.ctx[TokenCounter]
+            summarizer = policy.summarizer if policy is not None else None
+            if summarizer is None:
+                summarizer = ModelSummarizer(
+                    self.ctx[Model], model_name=request.model, focus=settings.focus
+                )
+            # The input request stays a snapshot even if new inbox/context records arrive.
+            events, previous = self.log.events, self.log.last(CompactionApplied)
+            with span(self.ctx, "compaction", session_id=self.log.id, through=plan.through):
+                summary = await summarizer.summarize(
+                    plan.messages, max_tokens=settings.summary_tokens
+                )
+            summary = _SUMMARY_RESULT.validate_python(summary)
+            summary = truncate(summary.strip(), settings.summary_tokens, counter)
+            if not summary.strip():
+                raise ValueError("Summarizer produced no content within the summary budget")
+            if self.log.last(CompactionApplied) is not previous:
+                return None, request
+            applied = CompactionApplied(
+                plan.through,
+                summary,
+                preserve_turns=plan.preserve_turns,
+                policy="Compaction" if policy is not None else "manual",
+                id=uuid4().hex,
+            )
+            compacted = replace(request, messages=compact_request(request, events, applied))
+            before = await count_request(counter, request)
+            after = await count_request(counter, compacted)
+            if after >= before:
+                self._retry_after_turns = self.log.closed_turn_count + 2
+                log.warning(
+                    "Compaction did not reduce context (%s -> %s tokens); "
+                    "retry after two more turns",
+                    before,
+                    after,
+                )
+                return None, request
+            applied = replace(applied, before_tokens=before, after_tokens=after)
+            await self.log.append(applied)
+            return applied, compacted
 
 
 @dataclass(frozen=True)

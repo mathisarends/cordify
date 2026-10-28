@@ -89,6 +89,7 @@ async def run_step(self: Agent, turn: str, step: int, settings, preparing: Conte
         ConfigureRequest(self, request),
         default=lambda request=request: request,
     )
+    request = await self._compaction.prepare(request)
     if ContextBudget in self.ctx:
         await self.ctx[ContextBudget].check(
             request,

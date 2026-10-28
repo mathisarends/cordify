@@ -56,6 +56,8 @@ class SessionControl:
         self.closing = False
         self._changed = asyncio.Event()
         self._request_lock = asyncio.Lock()
+        self._maintenance = asyncio.Lock()
+        self._maintenance_owner: asyncio.Task | None = None
         self._request_owner: asyncio.Task | None = None
         self.synchronize()
 
@@ -125,6 +127,7 @@ class SessionControl:
     async def pause(self) -> None:
         self._check_external()
         async with self._request():
+            self.check_open()
             if self.log.control.state in ("stopping", "aborting"):
                 return
             if not self.log.control.paused:
@@ -139,15 +142,34 @@ class SessionControl:
     async def resume(self) -> None:
         self.check_open()
         async with self._request():
+            self.check_open()
             if self.log.control.state in ("stopping", "aborting"):
                 return
             if self.log.control.state != "active":
                 await self.log.append(AgentControlChanged("active"))
         self.wake()
 
+    @asynccontextmanager
+    async def maintenance(self):
+        """Reserve an idle/paused boundary while permitting durable queued input."""
+        self._check_external()
+        task = asyncio.current_task()
+        if self._maintenance_owner is task:
+            raise RuntimeError("A maintenance hook cannot reserve its own boundary recursively")
+        async with self._request(), self._maintenance:
+            self.check_open()
+            if self.status not in (SessionStatus.IDLE, SessionStatus.PAUSED):
+                raise RuntimeError("Pause the session before changing a running turn's history")
+            self._maintenance_owner = task
+            try:
+                yield
+            finally:
+                self._maintenance_owner = None
+
     async def checkpoint(self) -> None:
         while True:
-            state = self.log.control.state
+            async with self._maintenance:
+                state = self.log.control.state
             if state == "active":
                 return
             if state == "pausing":
@@ -173,6 +195,8 @@ class SessionControl:
         if type(keep_inbox) is not bool:
             raise TypeError("keep_inbox must be a bool")
         async with self._request():
+            if not during_close:
+                self.check_open()
             task = self.task
             busy = task is not None and not task.done() and not self.finishing
             if not busy and self.log.open_turn is None and not self.log.inbox.pending:
@@ -228,7 +252,8 @@ class SessionControl:
         if self.status is SessionStatus.CLOSED:
             return
         self._check_external()
-        self.closing = True
+        async with self._request():
+            self.closing = True
         # A durable pause survives closing its live handle and reopening it later.
         if not self.log.control.paused:
             await self._terminate(immediate=True, keep_inbox=False, during_close=True)

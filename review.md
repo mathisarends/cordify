@@ -69,9 +69,9 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## Target features and policies
 
-- Unify compaction into Compaction(trigger, summarizer, focus, retention). Provide
-  at_ratio/every_turns triggers, model summarization, pre-request side-effect
-  boundaries and one reactive context-error retry.
+- Finish migrating legacy compaction policies to Compaction and add one reactive
+  context-error retry. The unified policy, at_ratio/every_turns, model summarization,
+  pre-request budget checks and boundary-safe manual session.compact() are implemented.
 - Add the approved Subagent child-session/log mechanism and inherited approvals.
 - Add Skill/Skills with lazy discovery/load/read, safe path handling and optional
   YAML as specified in api-target.md. MCP, OTel, UI, RAG and eval systems remain
