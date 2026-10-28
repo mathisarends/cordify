@@ -28,7 +28,7 @@ from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 WORKER = r"""
 from harnessed.core.approvals import ApprovalGate
 

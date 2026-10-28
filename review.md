@@ -8,14 +8,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## P2 — Structure, typing, docs and testing
 
-### P2-7 — Complete structure-target.md
-
-- Remove the remaining feature-specific transition helpers after their consumers
-  migrate. Contracts, optional features and default runtime policies now have
-  canonical owning modules; the transition packages have been removed.
-- Finish splitting the runtime and mirror the new package structure in tests.
-- Enforce the target layer, feature-independence and SDK/YAML isolation rules.
-
 ### P2-8 — English documentation and examples
 
 - Keep early examples focused on the application API and explicit plugin sugar;

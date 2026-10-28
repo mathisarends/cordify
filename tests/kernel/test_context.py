@@ -3,8 +3,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from harnessed import Context, Inject, plugin
-from harnessed.kernel import Bail, ContextClosed, Emit, Parallel, Waterfall
+from harnessed.kernel import Bail, Context, ContextClosed, Emit, Inject, Parallel, Waterfall, plugin
 
 
 class Service:

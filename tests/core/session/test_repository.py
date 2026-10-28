@@ -15,7 +15,7 @@ from harnessed.core.tools.decorator import tool
 from harnessed.plugins import JsonlSessions, Spill
 from harnessed.testing import ScriptedModel, call
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.parametrize("disk", [False, True])

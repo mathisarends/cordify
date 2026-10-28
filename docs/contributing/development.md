@@ -43,6 +43,13 @@ or live API calls. Optional integrations have isolated missing-extra tests.
 
 ## Maintain the docs
 
+The test tree mirrors the library: `tests/kernel/`, `tests/core/` (including
+runtime, prompt, session and tools), `tests/plugins/`, `tests/models/` and
+`tests/testing/`. Application composition, architecture and executable-example
+checks stay at the test root; consumer typing contracts live in `tests/typing/`.
+The architecture suite checks layer direction, feature independence (including
+package and relative imports), and the provider-SDK/YAML boundaries.
+
 The README contains the core SDK and links. Put explanations under `docs/guides/`,
 value/runtime contracts under `docs/concepts/`, API summaries under `docs/reference/`
 and contributor material here. Add a navigation entry in `mkdocs.yml` for each new

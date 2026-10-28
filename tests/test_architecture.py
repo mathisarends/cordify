@@ -62,7 +62,12 @@ def test_optional_integrations_and_features_are_isolated():
             if isinstance(node, ast.Import):
                 imported = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
-                imported = [node.module or ""] if node.level == 0 else []
+                package = ".".join(("harnessed", *path.relative_to(PACKAGE).parts[:-1]))
+                imported = [
+                    importlib.util.resolve_name("." * node.level + (node.module or ""), package)
+                    if node.level
+                    else node.module or ""
+                ]
             for module in imported:
                 if module == "harnessed.testing" or module.startswith("harnessed.testing."):
                     assert relative.startswith("testing/"), relative
@@ -70,8 +75,11 @@ def test_optional_integrations_and_features_are_isolated():
                     assert relative == "models/pydantic_ai.py", relative
                 if module == "yaml":
                     assert relative == "plugins/skills.py", relative
-                if relative.startswith("plugins/") and path.name != "__init__.py":
-                    assert not module.startswith("harnessed.plugins."), relative
+                if relative.startswith("plugins/") and relative != "plugins/__init__.py":
+                    assert module != "harnessed.plugins", relative
+                    if module.startswith("harnessed.plugins."):
+                        feature = relative.split("/")[1].split(".")[0]
+                        assert module.split(".")[2] == feature, relative
 
 
 def test_kernel_import_is_independent_of_agents_adapters_and_third_party_packages():
@@ -133,7 +141,7 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
     assert not (PACKAGE / "std").exists()
     assert not (PACKAGE / "adapters").exists()
     assert not (PACKAGE / "seams").exists()
-    for name in ("_context", "agents", "observe", "permissions"):
+    for name in ("_context", "agents", "observe", "permissions", "tools"):
         assert not (PACKAGE / "plugins" / name).exists()
 
 
