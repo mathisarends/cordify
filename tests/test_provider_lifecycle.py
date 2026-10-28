@@ -5,9 +5,9 @@ import pytest
 
 from harnessed.adapters.base import RetryPolicy
 from harnessed.adapters.deepseek import DeepSeekLLM
+from harnessed.core.errors import AuthError, ContextLengthExceeded, InvalidRequest, RateLimited
 from harnessed.core.messages import Message
 from harnessed.core.model import ModelRequest
-from harnessed.seams.errors import AuthError, ContextLengthExceeded, InvalidRequest, RateLimited
 
 REQUEST = ModelRequest("test", (Message("user", "hello"),))
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, Literal
+from collections.abc import AsyncIterator, Mapping
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from .messages import Message, ToolCall, freeze, message_from_dict
 
@@ -28,10 +29,12 @@ class ModelRequest:
     tools: tuple[ToolDefinition, ...] = ()
     max_tokens: int | None = None
     cache_breakpoints: tuple[int, ...] = ()
+    settings: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
+        object.__setattr__(self, "settings", freeze(self.settings))
         points = tuple(self.cache_breakpoints)
         if any(type(point) is not int or not 0 < point <= len(self.messages) for point in points):
             raise ValueError(
@@ -88,6 +91,36 @@ class ModelChunk:
     stop_reason: StopReason | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ModelInfo:
+    name: str
+    context_window: int | None = None
+    max_output: int | None = None
+    supports_images: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ModelResponse:
+    message: Message
+    usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
+    stop_reason: StopReason = "end"
+
+
+class ModelStream(Protocol):
+    def __aiter__(self) -> AsyncIterator[ModelChunk]: ...
+    async def __anext__(self) -> ModelChunk: ...
+    def response(self) -> ModelResponse: ...
+
+
+@runtime_checkable
+class Model(Protocol):
+    @property
+    def info(self) -> ModelInfo: ...
+
+    async def request(self, request: ModelRequest) -> ModelResponse: ...
+    def stream(self, request: ModelRequest) -> AbstractAsyncContextManager[ModelStream]: ...
+
+
 def request_from_dict(data: dict) -> ModelRequest:
     return ModelRequest(
         model=data["model"],
@@ -95,4 +128,5 @@ def request_from_dict(data: dict) -> ModelRequest:
         tools=tuple(ToolDefinition(**t) for t in data["tools"]),
         max_tokens=data["max_tokens"],
         cache_breakpoints=tuple(data.get("cache_breakpoints", ())),
+        settings=data.get("settings", {}),
     )

@@ -1,8 +1,17 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from uuid import uuid4
 
-from harnessed.core.messages import Decision, Message, Observation, SpillRef, ToolCall, ToolResult
+from harnessed.core.messages import (
+    Decision,
+    Message,
+    Observation,
+    SpillRef,
+    ToolCall,
+    ToolResult,
+    freeze,
+)
 from harnessed.core.model import ModelRequest, ModelUsage
 from harnessed.kernel.events import Bail, Emit, Waterfall
 
@@ -229,6 +238,7 @@ class InboxAdded(SessionEvent):
     wakeup: bool
     mode: InboxMode
     context: tuple[Message, ...] = ()
+    settings: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.mode not in _INBOX_ROUTES:
@@ -239,15 +249,21 @@ class InboxAdded(SessionEvent):
         if self.message.role not in allowed:
             raise ValueError(f"{self.mode} requires one of these roles: {allowed}")
         object.__setattr__(self, "context", tuple(self.context))
+        object.__setattr__(self, "settings", freeze(self.settings))
 
     @classmethod
     def create(
-        cls, message: Message, mode: InboxMode, *, context: tuple[Message, ...] = ()
+        cls,
+        message: Message,
+        mode: InboxMode,
+        *,
+        context: tuple[Message, ...] = (),
+        settings: Mapping[str, Any] | None = None,
     ) -> "InboxAdded":
         if mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {mode!r}")
         target, wakeup = _INBOX_ROUTES[mode]
-        return cls(message, target, wakeup, mode, context)
+        return cls(message, target, wakeup, mode, context, settings or {})
 
 
 @dataclass(frozen=True)
@@ -262,6 +278,10 @@ class TurnStart(SessionEvent):
     type: ClassVar[str] = "turn/start"
     turn_id: str
     input_id: str | None = None
+    settings: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "settings", freeze(self.settings))
 
 
 @dataclass(frozen=True)

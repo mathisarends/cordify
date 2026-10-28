@@ -7,9 +7,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import cast
 
-from harnessed.core.messages import ToolCall
-from harnessed.core.model import ModelChunk, ModelRequest, ModelUsage, StopReason
-from harnessed.seams.errors import (
+from harnessed.core.errors import (
     AuthError,
     ContextLengthExceeded,
     InvalidRequest,
@@ -17,6 +15,8 @@ from harnessed.seams.errors import (
     ProviderUnavailable,
     RateLimited,
 )
+from harnessed.core.messages import ToolCall
+from harnessed.core.model import ModelChunk, ModelRequest, ModelUsage, StopReason
 
 from .base import LLM, RetryPolicy
 from .deepseek_models import (

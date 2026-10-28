@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from harnessed._exports import exported
 
 if TYPE_CHECKING:
+    from harnessed.core.features import Service as Service
     from harnessed.plugins._context.compaction import ContextBudgetGuard as ContextBudgetGuard
     from harnessed.plugins._context.compaction import PeriodicCompaction as PeriodicCompaction
     from harnessed.plugins._context.compaction import (
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from harnessed.plugins.persistence import session_jsonl as jsonl_sessions
     from harnessed.plugins.services import llm as llm
 _EXPORTS = {
+    "Service": ("harnessed.core.features", "Service"),
     "jsonl_sessions": ("harnessed.plugins.persistence", "session_jsonl"),
     "agent_loop": ("harnessed.plugins.agents.loop", "agent_loop"),
     "llm": ("harnessed.plugins.services", "llm"),
@@ -40,6 +42,7 @@ _EXPORTS = {
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
 }
 __all__ = [
+    "Service",
     "jsonl_sessions",
     "agent_loop",
     "llm",

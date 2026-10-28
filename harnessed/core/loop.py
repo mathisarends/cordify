@@ -1,18 +1,16 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterable, Mapping
-from contextlib import AsyncExitStack
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from harnessed.core.messages import Decision, Message, Observation, ToolCall, ToolResult
-from harnessed.core.model import ModelRequest, ModelUsage
+from harnessed.core.model import Model, ModelRequest, ModelUsage
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 from harnessed.seams.approver import ApprovalUnavailable, Approver
-from harnessed.seams.llm import LLM
 from harnessed.seams.tokens import TokenCounter
 
 from .approvals import validate_approval_timeout
@@ -262,6 +260,7 @@ class Agent:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
+        settings: Mapping[str, Any] | None = None,
     ) -> str:
         if self._closing or self._canceling:
             raise RuntimeError("Agent is being cancelled or disposed")
@@ -270,7 +269,7 @@ class Agent:
         )
         if self._closing or self._canceling:
             raise RuntimeError("Agent is being cancelled or disposed")
-        item = InboxAdded.create(message, mode, context=contributions)
+        item = InboxAdded.create(message, mode, context=contributions, settings=settings)
         await self.session.append(item)
         if mode == "inject" and _preparing.get() is self:
             self._step_push.append(item)
@@ -286,12 +285,14 @@ class Agent:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
+        settings: Mapping[str, Any] | None = None,
     ) -> str:
         return await self._send(
             content,
             "followup",
             attachments=attachments,
             context=context,
+            settings=settings,
         )
 
     async def steer(self, content: str | Message) -> str:
@@ -441,11 +442,14 @@ class Agent:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
+        settings: Mapping[str, Any] | None = None,
     ) -> RunResult:
         events = tuple(
             [
                 event
-                async for event in self.stream(content, attachments=attachments, context=context)
+                async for event in self.stream(
+                    content, attachments=attachments, context=context, settings=settings
+                )
                 if isinstance(event, SessionEvent)
             ]
         )
@@ -491,11 +495,14 @@ class Agent:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
+        settings: Mapping[str, Any] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._subscribers.add(queue)
         try:
-            input_id = await self.followup(content, attachments=attachments, context=context)
+            input_id = await self.followup(
+                content, attachments=attachments, context=context, settings=settings
+            )
             turn_id = None
             while True:
                 event = await queue.get()
@@ -624,10 +631,13 @@ class Agent:
         previous = self._open_turn()
         turn = previous.id if previous is not None else uuid4().hex
         first_step = len(previous.steps) + 1 if previous is not None else 1
+        starter = previous.events[0] if previous is not None else None
+        settings = starter.settings if isinstance(starter, TurnStart) else {}
         if previous is None:
             candidates = self.inbox.next_turn or self.inbox.next_step
+            settings = candidates[0].settings if candidates else {}
             await self.session.append(
-                TurnStart(turn, candidates[0].message.id if candidates else None)
+                TurnStart(turn, candidates[0].message.id if candidates else None, settings)
             )
         elif previous.steps and not await self._continue_turn(previous.steps[-1]):
             await self.session.append(TurnEnd(turn))
@@ -682,6 +692,7 @@ class Agent:
                 self.session.messages,
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
                 self.options.max_tokens,
+                settings=settings,
             )
             request = await self.ctx.dispatch(
                 PrepareRequest(self, request),
@@ -840,7 +851,6 @@ class Agent:
     async def _respond(self, request: ModelRequest) -> Message:
         message_id, calls = uuid4().hex, []
         text, reasoning = [], []
-        stop_reason = None
 
         def message():
             return Message(
@@ -852,13 +862,8 @@ class Agent:
             )
 
         try:
-            async with AsyncExitStack() as stack:
-                stream = self.ctx[LLM].stream(request)
-                if close := getattr(stream, "aclose", None):
-                    stack.push_async_callback(close)
+            async with self.ctx[Model].stream(request) as stream:
                 async for chunk in stream:
-                    if chunk.stop_reason is not None:
-                        stop_reason = chunk.stop_reason
                     if chunk.usage is not None:
                         await self.session.append(ModelUsageRecorded(chunk.usage))
                     if chunk.text or chunk.reasoning:
@@ -869,14 +874,15 @@ class Agent:
                         )
                     if chunk.tool_call is not None:
                         calls.append(chunk.tool_call)
+                response = stream.response()
         except BaseException:
             if text or reasoning:
                 await self.session.append(AssistantMessage(message(), interrupted=True))
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
-        final = message()
-        await self.session.append(AssistantMessage(final, stop_reason=stop_reason))
+        final = replace(response.message, id=message_id)
+        await self.session.append(AssistantMessage(final, stop_reason=response.stop_reason))
         return final
 
 

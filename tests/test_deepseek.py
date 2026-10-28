@@ -5,7 +5,7 @@ import pytest
 
 from harnessed import Message, ModelRequest, RetryPolicy, ToolCall, ToolDefinition
 from harnessed.adapters.deepseek import DeepSeekLLM
-from harnessed.seams.errors import ProviderError
+from harnessed.core.errors import ProviderError
 
 
 def sse(*deltas, done=True):

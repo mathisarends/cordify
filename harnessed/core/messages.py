@@ -140,9 +140,11 @@ class Message:
     tool_call_id: str | None = None
     reasoning_content: str = ""
     id: str = field(default_factory=lambda: uuid4().hex)
+    provider_state: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
+        object.__setattr__(self, "provider_state", freeze(self.provider_state))
         if not isinstance(self.content, str):
             parts = tuple(self.content)
             if any(not isinstance(part, TextPart | ImagePart) for part in parts):

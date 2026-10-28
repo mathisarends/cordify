@@ -1,10 +1,11 @@
 from collections.abc import Callable, Iterable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, ClassVar, overload
 
 from pydantic import BaseModel, ConfigDict
 
-from harnessed.kernel import Context
+from harnessed.kernel import Context, Key
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.kernel.declarations import HookEntry, Registration
 from harnessed.kernel.declarations import Plugin as KernelPlugin
@@ -12,6 +13,7 @@ from harnessed.kernel.events import on as hook
 from harnessed.kernel.plugin import PluginLike
 
 from .instructions import Section
+from .model import Model
 from .scheduling import ResourceSpec, resource_spec
 from .tools import ToolRegistry
 
@@ -190,6 +192,22 @@ class Plugin(KernelPlugin):
                 for callback in getattr(self, "tools", ())
             ),
         )
+
+
+class Service[T](Plugin):
+    """Provide a typed instance as a normal, reversible plugin."""
+
+    def __init__(self, key: type[T] | Key[T], value: T):
+        super().__init__()
+        self.key, self.value = key, value
+        self.slot = "model" if key is Model else None
+
+    async def setup(self, ctx: Context):
+        value = self.value
+        if self.key is Model and isinstance(value, AbstractAsyncContextManager):
+            await value.__aenter__()
+            ctx.effect(lambda: value.__aexit__(None, None, None))
+        ctx.provide(self.key, self.value)
 
 
 __all__ = ["Bundle", "Plugin", "PluginLike", "hook", "tool"]

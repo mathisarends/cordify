@@ -3,6 +3,12 @@ from typing import TYPE_CHECKING
 from harnessed._exports import exported
 
 if TYPE_CHECKING:
+    from harnessed.core.errors import AuthError as AuthError
+    from harnessed.core.errors import ContextLengthExceeded as ContextLengthExceeded
+    from harnessed.core.errors import InvalidRequest as InvalidRequest
+    from harnessed.core.errors import ProviderError as ProviderError
+    from harnessed.core.errors import ProviderUnavailable as ProviderUnavailable
+    from harnessed.core.errors import RateLimited as RateLimited
     from harnessed.core.messages import ContentPart as ContentPart
     from harnessed.core.messages import Decision as Decision
     from harnessed.core.messages import ImagePart as ImagePart
@@ -28,12 +34,6 @@ if TYPE_CHECKING:
     from harnessed.seams.approver import ApprovalUnavailable as ApprovalUnavailable
     from harnessed.seams.approver import Approver as Approver
     from harnessed.seams.compaction import Compactor as Compactor
-    from harnessed.seams.errors import AuthError as AuthError
-    from harnessed.seams.errors import ContextLengthExceeded as ContextLengthExceeded
-    from harnessed.seams.errors import InvalidRequest as InvalidRequest
-    from harnessed.seams.errors import ProviderError as ProviderError
-    from harnessed.seams.errors import ProviderUnavailable as ProviderUnavailable
-    from harnessed.seams.errors import RateLimited as RateLimited
     from harnessed.seams.fs import FS as FS
     from harnessed.seams.llm import LLM as LLM
     from harnessed.seams.shell import ProcResult as ProcResult
@@ -41,12 +41,12 @@ if TYPE_CHECKING:
     from harnessed.seams.spill import SpillStore as SpillStore
     from harnessed.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
-    "ProviderUnavailable": ("harnessed.seams.errors", "ProviderUnavailable"),
-    "InvalidRequest": ("harnessed.seams.errors", "InvalidRequest"),
-    "ContextLengthExceeded": ("harnessed.seams.errors", "ContextLengthExceeded"),
-    "RateLimited": ("harnessed.seams.errors", "RateLimited"),
-    "AuthError": ("harnessed.seams.errors", "AuthError"),
-    "ProviderError": ("harnessed.seams.errors", "ProviderError"),
+    "ProviderUnavailable": ("harnessed.core.errors", "ProviderUnavailable"),
+    "InvalidRequest": ("harnessed.core.errors", "InvalidRequest"),
+    "ContextLengthExceeded": ("harnessed.core.errors", "ContextLengthExceeded"),
+    "RateLimited": ("harnessed.core.errors", "RateLimited"),
+    "AuthError": ("harnessed.core.errors", "AuthError"),
+    "ProviderError": ("harnessed.core.errors", "ProviderError"),
     "ApprovalUnavailable": ("harnessed.seams.approver", "ApprovalUnavailable"),
     "OutputTruncation": ("harnessed.core.messages", "OutputTruncation"),
     "freeze": ("harnessed.core.messages", "freeze"),

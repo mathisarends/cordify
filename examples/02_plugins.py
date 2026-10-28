@@ -3,8 +3,9 @@
 import asyncio
 
 from harnessed import Agent, ModelChunk, Plugin, ToolCall, tool
-from harnessed.plugins import instructions, llm
-from harnessed.testing import ScriptedLLM
+from harnessed.models import Model
+from harnessed.plugins import Service, instructions
+from harnessed.testing import ScriptedModel
 
 
 class Calculator(Plugin):
@@ -17,14 +18,16 @@ class Calculator(Plugin):
 
 
 async def main():
-    model = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))],
             "The result is 42.",
         ]
     )
-    # Exactly the same services and behavior as llm=... and instructions=... .
-    agent = Agent(plugins=[llm(model), instructions("Keep answers concise."), Calculator()])
+    # Exactly the same services and behavior as model=... and instructions=... .
+    agent = Agent(
+        plugins=[Service(Model, model), instructions("Keep answers concise."), Calculator()]
+    )
     print("Composition:", [spec.slot or spec.name for spec in agent.plugins])
     print(agent.prompt)
     async with agent.session("explicit-calculator") as session:

@@ -6,6 +6,7 @@ from .core.approvals import validate_approval_timeout
 from .core.context import DynamicContext
 from .core.features import Bundle
 from .core.loop import Agent, AgentFactory, AgentOptions
+from .core.model import Model
 from .core.outputs import ToolOutputLimit
 from .core.session import Session, SessionPersistence
 from .kernel.context import Context
@@ -96,9 +97,7 @@ class Harness:
                     settle=True,
                 )
                 selected_model = (
-                    model
-                    or self.model
-                    or (getattr(ctx[LLM], "model", "default") if LLM in ctx else "default")
+                    model or self.model or (ctx[Model].info.name if Model in ctx else "default")
                 )
                 options = AgentOptions(
                     selected_model,

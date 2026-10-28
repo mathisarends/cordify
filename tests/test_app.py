@@ -4,8 +4,9 @@ from harnessed import Agent, Plugin, PluginConflict, Section, ToolCall, tool
 from harnessed.core.events import CompactionApplied, ContextValueChanged, TurnEnd, TurnStart
 from harnessed.core.model import ModelChunk
 from harnessed.core.session import Session
-from harnessed.plugins import Approvals, context, instructions, llm
-from harnessed.testing import ScriptedLLM
+from harnessed.models import Model
+from harnessed.plugins import Approvals, Service, context, instructions
+from harnessed.testing import ScriptedModel
 
 
 class Calculator(Plugin):
@@ -20,9 +21,11 @@ class Calculator(Plugin):
 async def test_application_facade_composes_plugins_and_fixed_ordered_guidance(tmp_path):
     path = tmp_path / "AGENTS.md"
     path.write_text("Project rules.")
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))], "42", "done"])
+    model = ScriptedModel(
+        [[ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))], "42", "done"]
+    )
     app = Agent(
-        llm=model, instructions=["Be concise.", Section.from_file(path)], plugins=[Calculator()]
+        model=model, instructions=["Be concise.", Section.from_file(path)], plugins=[Calculator()]
     )
     assert "Calculator.guidance" in str(app.prompt)
     async with app.session() as session:
@@ -42,9 +45,9 @@ async def test_application_facade_composes_plugins_and_fixed_ordered_guidance(tm
 
 
 async def test_facade_parameters_are_equivalent_to_public_plugins():
-    one, two = ScriptedLLM(["done"]), ScriptedLLM(["done"])
-    await Agent(llm=one, instructions="Rules.", plugins=[Calculator()]).run("Go")
-    await Agent(plugins=[llm(two), instructions("Rules."), Calculator()]).run("Go")
+    one, two = ScriptedModel(["done"]), ScriptedModel(["done"])
+    await Agent(model=one, instructions="Rules.", plugins=[Calculator()]).run("Go")
+    await Agent(plugins=[Service(Model, two), instructions("Rules."), Calculator()]).run("Go")
     assert [message.text for message in one.requests[0].messages] == [
         message.text for message in two.requests[0].messages
     ]
@@ -53,20 +56,22 @@ async def test_facade_parameters_are_equivalent_to_public_plugins():
 
 async def test_guidance_can_be_placed_replaced_or_omitted():
     app = Agent(
-        llm=ScriptedLLM(["done"]),
+        model=ScriptedModel(["done"]),
         instructions=[Calculator.guidance],
         plugins=[Calculator(), Plugin(guidance="Other guidance.")],
     )
     async with app.session() as session:
         assert await session.prompt.render() == "Use add for arithmetic.\n\nOther guidance."
-    async with Agent(llm=ScriptedLLM([]), plugins=[Calculator(guidance=None)]).session() as session:
+    async with Agent(
+        model=ScriptedModel([]), plugins=[Calculator(guidance=None)]
+    ).session() as session:
         assert await session.prompt.render() == ""
 
 
 async def test_dynamic_context_is_durable_changes_only_and_does_not_change_system_prompt():
     current = ["one"]
     app = Agent(
-        llm=ScriptedLLM(["first", "second", "third"]),
+        model=ScriptedModel(["first", "second", "third"]),
         instructions="Fixed rules.",
         plugins=[context("user", lambda: current[0])],
     )
@@ -82,7 +87,7 @@ async def test_dynamic_context_is_durable_changes_only_and_does_not_change_syste
 
 
 async def test_runtime_guidance_is_context_and_disposes_with_its_plugin():
-    async with Agent(llm=ScriptedLLM([]), instructions="Fixed.").session() as session:
+    async with Agent(model=ScriptedModel([]), instructions="Fixed.").session() as session:
         handle = await session.use(Plugin(guidance="Runtime help."))
         assert list(session.context.values.values()) == ["Runtime help."]
         assert await session.prompt.render() == "Fixed."
@@ -96,8 +101,8 @@ async def test_default_approvals_allow_reads_and_reject_side_effects_without_a_r
         async def write(self) -> str:
             pytest.fail("Unapproved side effect ran")
 
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("write"))], "blocked"])
-    result = await Agent(llm=model, plugins=[Mutating()]).run("Write")
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("write"))], "blocked"])
+    result = await Agent(model=model, plugins=[Mutating()]).run("Write")
     assert result.tool_calls[0][1].status == "unavailable"
 
 
@@ -131,7 +136,7 @@ async def test_runtime_guidance_tracks_temporal_dependency_restarts():
         needs = (Backend,)
         guidance = "Use the active backend."
 
-    async with Agent(llm=ScriptedLLM([])).session() as session:
+    async with Agent(model=ScriptedModel([])).session() as session:
         handle = await session.use(Runtime())
         assert handle.status == "waiting" and session.context.values == {}
         remove = session.ctx.provide(Backend, Backend())

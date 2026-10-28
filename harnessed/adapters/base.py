@@ -6,8 +6,8 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
+from harnessed.core.errors import ProviderUnavailable, RateLimited
 from harnessed.core.model import ModelChunk, ModelRequest
-from harnessed.seams.errors import ProviderUnavailable, RateLimited
 
 log = logging.getLogger(__name__)
 

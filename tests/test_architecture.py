@@ -64,7 +64,7 @@ def test_optional_integrations_and_features_are_isolated():
             if isinstance(node, ast.Import):
                 imported = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
-                imported = [node.module or ""]
+                imported = [node.module or ""] if node.level == 0 else []
             for module in imported:
                 if module == "pydantic_ai" or module.startswith("pydantic_ai."):
                     assert relative == "models/pydantic_ai.py", relative
@@ -118,7 +118,6 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
         "__init__.py",
         "_exports.py",
         "presets.py",
-        "testing.py",
     }
     assert not (PACKAGE / "std").exists()
 

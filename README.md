@@ -1,5 +1,13 @@
 # Harnessed
 
+The application API is migrating to `Agent(model=..., instructions=..., plugins=...)`
+with the optional **PydanticAI Direct API** integration. Use `harnessed.models.PydanticAIModel`
+or a provider string such as `deepseek:deepseek-chat`; install the corresponding
+`openai`, `anthropic`, or `google` extra. The previous native provider/preset examples
+below are being replaced. The approved [API target](api-target.md),
+[structure target](structure-target.md) and [remaining review work](review.md)
+track this migration.
+
 A native Python SDK for an agent harness: Context, services, plugins, typed
 events, a session log, and a replaceable ReAct loop. Inspired by
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and

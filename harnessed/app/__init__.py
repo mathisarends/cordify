@@ -1,23 +1,27 @@
 """Application facade: a reusable Agent is a resolved list of public plugins."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from harnessed.core.errors import PluginConflict
+from harnessed.core.features import Service
 from harnessed.core.instructions import Instructions, PromptPlan
+from harnessed.core.model import Model
 from harnessed.kernel import PluginLike, PluginSpec
 from harnessed.kernel.plugin import as_plugin_spec
+from harnessed.models.pydantic_ai import PydanticAIModel
 from harnessed.plugins._context.prompt import instructions as instructions_plugin
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.permissions.defaults import Approvals
-from harnessed.plugins.services import llm as llm_plugin
 from harnessed.presets import Harness
-from harnessed.seams.llm import LLM
 
-
-class PluginConflict(ValueError):
-    """Two explicitly configured plugins occupy the same application slot."""
+if TYPE_CHECKING:
+    from harnessed.models.pydantic_ai import NativeModel
 
 
 class Agent:
@@ -30,13 +34,22 @@ class Agent:
     def __init__(
         self,
         *,
-        llm: LLM | None = None,
+        model: Model | str | NativeModel | None = None,
         instructions: Instructions | None = None,
         plugins: Iterable[PluginLike] = (),
     ):
-        supplied = [as_plugin_spec(value) for value in plugins]
-        if llm is not None:
-            supplied.insert(0, llm_plugin(llm))
+        configured = []
+        for value in plugins:
+            if isinstance(value, Service) and value.key is Model:
+                implementation = value.value
+                if not isinstance(implementation, Model):
+                    implementation = PydanticAIModel(implementation)
+                value = Service(Model, implementation)
+            configured.append(value)
+        supplied = [as_plugin_spec(value) for value in configured]
+        if model is not None:
+            implementation = model if isinstance(model, Model) else PydanticAIModel(model)
+            supplied.insert(0, as_plugin_spec(Service(Model, implementation)))
         template = instructions_plugin()
         declared = next((spec for spec in supplied if spec.slot == "instructions"), None)
         values = instructions or ()

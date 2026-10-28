@@ -3,7 +3,7 @@
 import asyncio
 
 from harnessed import Agent, ModelChunk, Plugin, ToolCall, tool
-from harnessed.testing import ScriptedLLM
+from harnessed.testing import ScriptedModel
 
 
 class Calculator(Plugin):
@@ -14,13 +14,13 @@ class Calculator(Plugin):
 
 
 async def main():
-    llm = ScriptedLLM(
+    model = ScriptedModel(
         [
             [ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))],
             "The result is 42.",
         ]
     )
-    agent = Agent(llm=llm, instructions="Keep answers concise.", plugins=[Calculator()])
+    agent = Agent(model=model, instructions="Keep answers concise.", plugins=[Calculator()])
     async with agent.session("calculator") as session:
         result = await session.run("What is 19 + 23?")
         print(result.text)
