@@ -60,12 +60,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## P2 — Structure, typing, docs and testing
 
-### P2-1 — Type hook signatures
-
-- Type emit, bail and waterfall callbacks so invalid event
-  or return types fail in ty. Type all examples and verify positive/negative
-  consumer cases. Existing tool/plugin/Inject/run contracts already run in CI.
-
 ### P2-2 — Remove local-import cycle workarounds
 
 - Finish runtime/tool/kernel dependency cleanup, then enforce PLC0415. Delayed

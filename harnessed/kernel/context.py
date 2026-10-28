@@ -3,10 +3,11 @@ from collections.abc import Callable, Iterable
 from contextlib import AsyncExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Self, cast
+from typing import Any, Self, cast, overload
 
 from .effects import Disposer, effect
 from .events import Event, EventBus
+from .hooks import HookFactory, ListenerFactory
 from .keys import Key as Key
 from .keys import MissingService, ServiceKey
 from .plugin import PluginHandle, PluginLike, _Runtime, as_plugin_spec
@@ -134,28 +135,56 @@ class Context:
         self.effect(child.aclose)
         return child
 
-    def on[E: Event[Any]](
-        self, event: type[E], fn=None, *, prepend: bool = False, priority: int = 0
-    ):
+    @overload
+    def on[H](
+        self, event: HookFactory[H], fn: None = None, *, prepend: bool = False, priority: int = 0
+    ) -> H: ...
+
+    @overload
+    def on[C](
+        self,
+        event: ListenerFactory[C],
+        fn: C,
+        *,
+        prepend: bool = False,
+        priority: int = 0,
+    ) -> Disposer: ...
+
+    def on(self, event, fn=None, *, prepend=False, priority=0):
         self._check_open()
-
-        def register(callback):
-            self.add_listener(event, callback, prepend=prepend, priority=priority)
-            return callback
-
+        if not isinstance(event, type) or not issubclass(event, Event):
+            raise TypeError("Listener keys must be Event classes")
         if fn is not None:
             return self.add_listener(event, fn, prepend=prepend, priority=priority)
-        return register
+        return event._hook(self, prepend=prepend, priority=priority)
 
-    def add_listener[E: Event[Any]](
-        self, event: type[E], callback: Callable, *, prepend: bool = False, priority: int = 0
+    def add_listener[C](
+        self,
+        event: ListenerFactory[C],
+        callback: C,
+        *,
+        prepend: bool = False,
+        priority: int = 0,
     ) -> Disposer:
         return self._scope.event_bus.on(self, event, callback, prepend=prepend, priority=priority)
 
-    def hook[E: Event[Any]](
-        self, event: type[E], fn=None, *, prepend: bool = False, priority: int = 0
-    ):
-        """Register an owned hook; direct calls return a disposer, decorators keep the function."""
+    @overload
+    def hook[H](
+        self, event: HookFactory[H], fn: None = None, *, prepend: bool = False, priority: int = 0
+    ) -> H: ...
+
+    @overload
+    def hook[C](
+        self,
+        event: ListenerFactory[C],
+        fn: C,
+        *,
+        prepend: bool = False,
+        priority: int = 0,
+    ) -> Disposer: ...
+
+    def hook(self, event, fn=None, *, prepend=False, priority=0):
+        """Register an owned hook; direct calls return a disposer."""
         return self.on(event, fn, prepend=prepend, priority=priority)
 
     def _listeners(self, event):

@@ -61,3 +61,24 @@ replace an existing live tool name. Removing that registration restores the
 previous owner.
 
 See [the runnable functional plugin example](../../examples/06_explicit_registration.py).
+
+## Hook signatures
+
+`@hook(Event)` and `@ctx.hook(Event)` derive the callback type from the event:
+
+| Event kind | Callback |
+| --- | --- |
+| Emit / log event | `(event: E) -> None` |
+| Bail | `(event: E) -> R | None` |
+| Waterfall | `(event: E, next_: Next[R]) -> R` |
+
+Async callbacks return those values after awaiting. Additional parameters use
+`Inject[T]`. Class-based plugin methods follow the same signatures after `self`.
+`Next[R]` is a zero-argument async continuation and may be called once.
+
+Ty checks wrong event types, wrong callback results and incompatible continuations
+for decorators and direct `ctx.on(Event, callback)` registrations. The CI consumer
+fixtures include expected failures and reject unused suppressions, so weakening
+a signature breaks those checks too. Equal priorities retain registration order;
+lower priorities run first. Use `Priority.GUARD` for approval/policy gates and
+`Priority.OBSERVE` for measurements around actual execution.

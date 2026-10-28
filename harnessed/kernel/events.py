@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from .di import BindingPlan, binding_plan
 from .effects import Disposer, resolve
+from .hooks import HookFactory, ObserverCallback, ObserverHook, WaterfallCallback, WaterfallHook
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +18,13 @@ if TYPE_CHECKING:
 
 
 class Event[R]:
-    pass
+    @classmethod
+    def _callback(cls, callback: Any) -> Any:
+        return callback
+
+    @classmethod
+    def _hook(cls, owner=None, *, prepend=False, priority=0) -> Any:
+        return ObserverHook(cls, owner, prepend, priority)
 
 
 class Priority(IntEnum):
@@ -28,6 +37,14 @@ class Priority(IntEnum):
 
 class Emit(Event[None]):
     """Await observers by ascending priority, then registration order."""
+
+    @classmethod
+    def _callback(cls, callback: ObserverCallback[Self, None]) -> ObserverCallback[Self, None]:
+        return callback
+
+    @classmethod
+    def _hook(cls, owner=None, *, prepend=False, priority=0) -> ObserverHook[Self, None]:
+        return ObserverHook(cls, owner, prepend, priority)
 
 
 @dataclass(frozen=True)
@@ -42,37 +59,63 @@ class PluginFailed(Emit):
 class PluginActivated(Emit):
     """A retained recipe became active, including after dependency replacement."""
 
-    handle: "PluginHandle"
+    handle: PluginHandle
 
 
 class Bail[R](Event[R | None]):
     """Return the first result which is not None, including False and zero."""
 
+    @classmethod
+    def _callback(
+        cls, callback: ObserverCallback[Self, R | None]
+    ) -> ObserverCallback[Self, R | None]:
+        return callback
+
+    @classmethod
+    def _hook(cls, owner=None, *, prepend=False, priority=0) -> ObserverHook[Self, R | None]:
+        return ObserverHook(cls, owner, prepend, priority)
+
 
 class Waterfall[R](Event[R]):
     """Middleware with a single-use continuation."""
 
+    @classmethod
+    def _callback(cls, callback: WaterfallCallback[Self, R]) -> WaterfallCallback[Self, R]:
+        return callback
+
+    @classmethod
+    def _hook(cls, owner=None, *, prepend=False, priority=0) -> WaterfallHook[Self, R]:
+        return WaterfallHook(cls, owner, prepend, priority)
+
 
 class Parallel(Event[None]):
     """TaskGroup observers; failure cancels siblings."""
+
+    @classmethod
+    def _callback(cls, callback: ObserverCallback[Self, None]) -> ObserverCallback[Self, None]:
+        return callback
+
+    @classmethod
+    def _hook(cls, owner=None, *, prepend=False, priority=0) -> ObserverHook[Self, None]:
+        return ObserverHook(cls, owner, prepend, priority)
 
 
 @dataclass(eq=False)
 class _Listener:
     event: type[Event[Any]]
     callback: Any
-    owner: "Context"
+    owner: Context
     plan: BindingPlan
     priority: int = 0
     active: bool = True
 
 
 class EventBus:
-    def __init__(self, parent: "EventBus | None" = None):
+    def __init__(self, parent: EventBus | None = None):
         self.parent = parent
         self.listeners: list[_Listener] = []
 
-    def on(self, owner: "Context", event, callback, *, prepend=False, priority=0) -> Disposer:
+    def on(self, owner: Context, event, callback, *, prepend=False, priority=0) -> Disposer:
         if not isinstance(event, type) or not issubclass(event, Event):
             raise TypeError("Listener keys must be Event classes")
         owner._check_open()
@@ -107,7 +150,7 @@ class EventBus:
             key=lambda listener: listener.priority,
         )
 
-    async def dispatch[R](self, ctx: "Context", event: Event[R], *, default=None) -> R:
+    async def dispatch[R](self, ctx: Context, event: Event[R], *, default=None) -> R:
         listeners = self.matching(event)
 
         async def invoke(listener, *args):
@@ -153,16 +196,11 @@ class EventBus:
         return cast(R, None)
 
 
-def on(event: type[Event], *, prepend: bool = False, priority: int = 0):
+def on[H](event: HookFactory[H], *, prepend: bool = False, priority: int = 0) -> H:
     """Declare a hook. Lower priorities run first; equal priorities retain order."""
     if not isinstance(priority, int) or isinstance(priority, bool):
         raise TypeError("Listener priority must be an integer")
 
-    def decorate(callback):
-        callback._harnessed_hooks = [
-            *getattr(callback, "_harnessed_hooks", ()),
-            (event, prepend, priority),
-        ]
-        return callback
-
-    return decorate
+    if not isinstance(event, type) or not issubclass(event, Event):
+        raise TypeError("Hook keys must be Event classes")
+    return event._hook(prepend=prepend, priority=priority)

@@ -14,9 +14,11 @@ from .events import (
     Waterfall,
     on,
 )
+from .hooks import Next
 from .plugin import PluginHandle, PluginLike, PluginSpec, hook, plugin
 
 __all__ = [
+    "Next",
     "Context",
     "ContextClosed",
     "Key",

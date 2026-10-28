@@ -3,7 +3,7 @@ import logging
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextvars import ContextVar
 from dataclasses import replace
-from typing import Any
+from typing import Any, overload
 from uuid import uuid4
 
 from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
@@ -50,6 +50,7 @@ from harnessed.core.tracing import span
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
+from harnessed.kernel.hooks import HookFactory, ListenerFactory
 
 type AgentEvent = SessionEvent | TransientEvent
 _preparing: ContextVar["Session | None"] = ContextVar("harnessed_preparing", default=None)
@@ -133,6 +134,28 @@ class Session:
         text = await guidance.render() if isinstance(guidance, Section) else guidance
         await self.context.set(name, text)
         handle.ctx.effect(lambda: self.context.remove(name))
+
+    @overload
+    def on[H](
+        self,
+        event: HookFactory[H],
+        fn: None = None,
+        *,
+        prepend: bool = False,
+        priority: int = 0,
+        owner: Context | None = None,
+    ) -> H: ...
+
+    @overload
+    def on[C](
+        self,
+        event: ListenerFactory[C],
+        fn: C,
+        *,
+        prepend: bool = False,
+        priority: int = 0,
+        owner: Context | None = None,
+    ) -> Disposer: ...
 
     def on(self, event, fn=None, *, prepend: bool = False, priority: int = 0, owner=None):
         owner = owner if owner is not None else Context.current() or self.ctx

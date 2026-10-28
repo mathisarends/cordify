@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -10,12 +9,11 @@ from harnessed.core.messages import ApprovalAnswer, Message, PolicyDecision, Too
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import ApprovalRequested, SessionEvent, UserMessage
 from harnessed.kernel.events import Bail, Emit, Waterfall
+from harnessed.kernel.hooks import Next as Next
 
 if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session as Agent
     from harnessed.core.session.session import SessionLog as Session
-
-type Next[R] = Callable[[], Awaitable[R]]
 
 
 @dataclass(frozen=True)
