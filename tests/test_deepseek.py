@@ -83,7 +83,7 @@ async def test_truncated_stream_raises_instead_of_silently_committing():
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         adapter = DeepSeekLLM(api_key="test", client=client)
         with pytest.raises(RuntimeError, match="before"):
-            async for _ in adapter.stream(ModelRequest("test", ())):
+            async for _ in adapter.stream(ModelRequest("test", (Message("user", "hello"),))):
                 pass
 
 
@@ -114,14 +114,14 @@ async def test_invalid_tool_call_frames_raise(payload):
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         adapter = DeepSeekLLM(api_key="test", client=client)
         with pytest.raises((ValueError, TypeError)):
-            async for _ in adapter.stream(ModelRequest("test", ())):
+            async for _ in adapter.stream(ModelRequest("test", (Message("user", "hello"),))):
                 pass
 
 
 async def test_missing_key_fails_before_network(monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     with pytest.raises(ValueError, match="DEEPSEEK_API_KEY"):
-        async for _ in DeepSeekLLM().stream(ModelRequest("test", ())):
+        async for _ in DeepSeekLLM().stream(ModelRequest("test", (Message("user", "hello"),))):
             pass
 
 
@@ -166,7 +166,7 @@ async def test_usage_only_final_chunk_is_accepted_and_missing_cache_fields_stay_
         chunks = [
             chunk
             async for chunk in DeepSeekLLM(api_key="test", client=client).stream(
-                ModelRequest("test", ())
+                ModelRequest("test", (Message("user", "hello"),))
             )
         ]
         assert chunks[-1].usage.prompt_tokens == 3
@@ -187,13 +187,19 @@ async def test_http_retries_close_failed_responses_and_leave_borrowed_clients_op
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         adapter = DeepSeekLLM(api_key="test", client=client, retry=RetryPolicy(initial_delay=0))
         if status in (408, 429, 503):
-            assert [chunk.text async for chunk in adapter.stream(ModelRequest("test", ()))] == [
-                "ok"
-            ]
+            assert [
+                chunk.text
+                async for chunk in adapter.stream(ModelRequest("test", (Message("user", "hello"),)))
+            ] == ["ok"]
             assert len(responses) == 2
         else:
             with pytest.raises(httpx.HTTPStatusError):
-                _ = [chunk async for chunk in adapter.stream(ModelRequest("test", ()))]
+                _ = [
+                    chunk
+                    async for chunk in adapter.stream(
+                        ModelRequest("test", (Message("user", "hello"),))
+                    )
+                ]
             assert len(responses) == 1
         assert all(response.is_closed for response in responses)
         assert not client.is_closed
@@ -211,7 +217,10 @@ async def test_connection_errors_are_retried_before_output():
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         adapter = DeepSeekLLM(api_key="test", client=client, retry=RetryPolicy(initial_delay=0))
-        assert [chunk.text async for chunk in adapter.stream(ModelRequest("test", ()))] == ["ok"]
+        assert [
+            chunk.text
+            async for chunk in adapter.stream(ModelRequest("test", (Message("user", "hello"),)))
+        ] == ["ok"]
         assert attempts == 2
 
 
@@ -267,11 +276,16 @@ async def test_stream_failures_retry_only_unexposed_fragments_and_reset_attempt_
         chunks = []
         if visible:
             with pytest.raises(httpx.ReadError):
-                async for chunk in adapter.stream(ModelRequest("test", ())):
+                async for chunk in adapter.stream(
+                    ModelRequest("test", (Message("user", "hello"),))
+                ):
                     chunks.append(chunk)
             assert [chunk.text for chunk in chunks] == ["partial"] and attempts == 1
         else:
-            chunks = [chunk async for chunk in adapter.stream(ModelRequest("test", ()))]
+            chunks = [
+                chunk
+                async for chunk in adapter.stream(ModelRequest("test", (Message("user", "hello"),)))
+            ]
             assert [chunk.tool_call for chunk in chunks] == [
                 ToolCall("read", {"path": "README.md"}, "complete")
             ]
@@ -291,7 +305,7 @@ async def test_deepseek_uses_shared_sse_framing_for_multiline_data():
         chunks = [
             chunk
             async for chunk in DeepSeekLLM(api_key="test", client=client).stream(
-                ModelRequest("test", ())
+                ModelRequest("test", (Message("user", "hello"),))
             )
         ]
         assert [chunk.text for chunk in chunks] == ["ok"]
@@ -309,4 +323,9 @@ async def test_missing_optional_dependency_keeps_installation_hint(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", without_httpx)
     with pytest.raises(ImportError, match=r"cordify\[deepseek\]"):
-        _ = [chunk async for chunk in DeepSeekLLM(api_key="test").stream(ModelRequest("test", ()))]
+        _ = [
+            chunk
+            async for chunk in DeepSeekLLM(api_key="test").stream(
+                ModelRequest("test", (Message("user", "hello"),))
+            )
+        ]

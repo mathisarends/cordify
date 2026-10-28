@@ -1,19 +1,49 @@
-import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
 
 from ..seams.models import (
-    ImagePart,
     ModelChunk,
     ModelRequest,
     ModelUsage,
-    TextPart,
     ToolCall,
-    to_dict,
 )
 from .base import LLM, RetryPolicy
+from .deepseek_models import (
+    TOOL_ARGUMENTS,
+    ChatCompletionChunk,
+    ChatCompletionRequest,
+    DeepSeekConfig,
+    FunctionCall,
+    FunctionToolCall,
+    ToolCallDelta,
+)
 from .sse import iter_sse_data
+
+
+@dataclass
+class _PendingToolCall:
+    id: str = ""
+    name: str = ""
+    arguments: list[str] = field(default_factory=list)
+
+    def add(self, fragment: ToolCallDelta) -> None:
+        if fragment.id:
+            if self.id and self.id != fragment.id:
+                raise ValueError("Streamed tool call changed its ID")
+            self.id = fragment.id
+        if fragment.function is not None:
+            self.name += fragment.function.name or ""
+            self.arguments.append(fragment.function.arguments or "")
+
+    def complete(self) -> ToolCall:
+        call = FunctionToolCall(
+            id=self.id,
+            function=FunctionCall(name=self.name, arguments="".join(self.arguments)),
+        )
+        arguments = TOOL_ARGUMENTS.validate_json(call.function.arguments or "{}", strict=True)
+        return ToolCall(call.function.name, arguments, call.id)
 
 
 class DeepSeekLLM(LLM):
@@ -28,58 +58,30 @@ class DeepSeekLLM(LLM):
         retry: RetryPolicy | None = None,
     ):
         super().__init__(retry=retry)
-        self.model = model or "deepseek-flash"
-        self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
+        self.config = DeepSeekConfig(
+            model="deepseek-flash" if model is None else model,
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout,
+        )
         self.client = client
 
+    @property
+    def model(self) -> str:
+        return self.config.model
+
+    @property
+    def base_url(self) -> str:
+        return str(self.config.base_url).rstrip("/")
+
+    @property
+    def timeout(self) -> float:
+        return self.config.timeout
+
     def _payload(self, request: ModelRequest) -> dict:
-        messages = []
-        for message in request.messages:
-            content = message.content
-            if not isinstance(content, str):
-                content = [
-                    {"type": "text", "text": part.text}
-                    if isinstance(part, TextPart)
-                    else {
-                        "type": "image_url",
-                        "image_url": {"url": part.url, "detail": part.detail},
-                    }
-                    for part in content
-                    if isinstance(part, TextPart | ImagePart)
-                ]
-            item = {"role": message.role, "content": content}
-            if message.tool_call_id is not None:
-                item["tool_call_id"] = message.tool_call_id
-            if message.reasoning_content:
-                item["reasoning_content"] = message.reasoning_content
-            if message.tool_calls:
-                item["tool_calls"] = [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(to_dict(call.arguments)),
-                        },
-                    }
-                    for call in message.tool_calls
-                ]
-            messages.append(item)
-        payload = {
-            "model": request.model,
-            "messages": messages,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-        if request.tools:
-            payload["tools"] = [
-                {"type": "function", "function": to_dict(tool)} for tool in request.tools
-            ]
-        if request.max_tokens is not None:
-            payload["max_tokens"] = request.max_tokens
-        return payload
+        return ChatCompletionRequest.from_request(request).model_dump(
+            mode="json", exclude_none=True
+        )
 
     def is_retryable(self, error: Exception) -> bool:
         try:
@@ -101,10 +103,15 @@ class DeepSeekLLM(LLM):
             raise ImportError(
                 "Install the provider extra: pip install 'cordify[deepseek]'"
             ) from exc
-        api_key = self.api_key or os.environ.get("DEEPSEEK_API_KEY")
-        if not api_key:
+        api_key = (
+            self.config.api_key.get_secret_value()
+            if self.config.api_key is not None
+            else os.environ.get("DEEPSEEK_API_KEY")
+        )
+        if not api_key or not api_key.strip():
             raise ValueError("Set DEEPSEEK_API_KEY or pass api_key to deepseek()")
-        calls: dict[int, dict] = {}
+        payload = self._payload(request)
+        calls: dict[int, _PendingToolCall] = {}
         done = False
         async with AsyncExitStack() as stack:
             client = self.client
@@ -114,7 +121,7 @@ class DeepSeekLLM(LLM):
                 client.stream(
                     "POST",
                     f"{self.base_url}/chat/completions",
-                    json=self._payload(request),
+                    json=payload,
                     headers={"Authorization": f"Bearer {api_key}"},
                 )
             )
@@ -123,47 +130,32 @@ class DeepSeekLLM(LLM):
                 if content == "[DONE]":
                     done = True
                     break
-                data = json.loads(content)
-                if "error" in data:
-                    raise RuntimeError(f"DeepSeek stream error: {data['error']}")
-                for choice in data.get("choices", []):
-                    delta = choice.get("delta", {})
-                    if delta.get("content") or delta.get("reasoning_content"):
+                data = ChatCompletionChunk.model_validate_json(content)
+                if data.error is not None:
+                    raise RuntimeError(f"DeepSeek stream error: {data.error.message}")
+                for choice in data.choices:
+                    delta = choice.delta
+                    if delta.content or delta.reasoning_content:
                         yield ModelChunk(
-                            text=delta.get("content") or "",
-                            reasoning=delta.get("reasoning_content") or "",
+                            text=delta.content or "",
+                            reasoning=delta.reasoning_content or "",
                         )
-                    for fragment in delta.get("tool_calls", []):
-                        index = fragment["index"]
-                        call = calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
-                        if fragment.get("id"):
-                            call["id"] = fragment["id"]
-                        function = fragment.get("function", {})
-                        call["name"] += function.get("name") or ""
-                        call["arguments"] += function.get("arguments") or ""
-                if data.get("usage") is not None:
-                    usage = data["usage"]
+                    for fragment in delta.tool_calls or ():
+                        calls.setdefault(fragment.index, _PendingToolCall()).add(fragment)
+                if data.usage is not None:
+                    usage = data.usage
                     yield ModelChunk(
                         usage=ModelUsage(
-                            prompt_tokens=usage["prompt_tokens"],
-                            completion_tokens=usage.get("completion_tokens", 0),
-                            prompt_cache_hit_tokens=usage.get("prompt_cache_hit_tokens"),
-                            prompt_cache_miss_tokens=usage.get("prompt_cache_miss_tokens"),
+                            prompt_tokens=usage.prompt_tokens,
+                            completion_tokens=usage.completion_tokens,
+                            prompt_cache_hit_tokens=usage.prompt_cache_hit_tokens,
+                            prompt_cache_miss_tokens=usage.prompt_cache_miss_tokens,
                         )
                     )
         if not done:
             raise RuntimeError("DeepSeek stream ended before [DONE]")
         for index in sorted(calls):
-            call = calls[index]
-            if not call["id"] or not call["name"]:
-                raise ValueError("Incomplete streamed tool call")
-            yield ModelChunk(
-                tool_call=ToolCall(
-                    call["name"],
-                    json.loads(call["arguments"] or "{}"),
-                    call["id"],
-                )
-            )
+            yield ModelChunk(tool_call=calls[index].complete())
 
 
 def deepseek(*, model: str | None = None, api_key: str | None = None, **kwargs):

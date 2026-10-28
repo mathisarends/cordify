@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 
 import pytest
+from pydantic import PydanticSchemaGenerationError
 
 from cordify import (
     Agent,
@@ -220,7 +221,7 @@ async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_ba
             return "must disappear"
 
         @tool
-        async def invalid(self, value: object) -> str:
+        async def invalid(self, value: Ready) -> str:
             return str(value)
 
         async def teardown(self, ctx):
@@ -228,7 +229,7 @@ async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_ba
 
     async with Context() as ctx:
         await ctx.install([tools(), system_prompt()])
-        with pytest.raises(TypeError, match="Unsupported tool annotation"):
+        with pytest.raises(PydanticSchemaGenerationError, match="Ready"):
             await ctx.plugin(Broken())
         assert cleaned == ["closed"]
         assert ctx[ToolRegistry].definitions == () and Ready not in ctx
