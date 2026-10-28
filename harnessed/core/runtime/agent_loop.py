@@ -35,20 +35,23 @@ class ReactLoopFactory:
         return Agent(ctx, session, options)
 
 
+class AgentLoopConfig(PluginConfig):
+    max_steps: Annotated[int, Field(ge=1)] = 32
+    tool_timeout: Annotated[float, Field(gt=0)] = 30.0
+    max_parallel_tools: Annotated[int, Field(ge=1)] = 4
+    approval_timeout: Annotated[float, Field(gt=0)] = 300.0
+    max_tokens: Annotated[int, Field(ge=1)] | None = None
+    context_window: Annotated[int, Field(ge=1)] | None = None
+    on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
+    output_retries: Annotated[int, Field(ge=0)] = 2
+
+
 class AgentLoop(Plugin, slot="loop"):
     """Configure one ReAct loop and provide its prompt, tools and token counter."""
 
-    class Config(PluginConfig):
-        max_steps: Annotated[int, Field(ge=1)] = 32
-        tool_timeout: Annotated[float, Field(gt=0)] = 30.0
-        max_parallel_tools: Annotated[int, Field(ge=1)] = 4
-        approval_timeout: Annotated[float, Field(gt=0)] = 300.0
-        max_tokens: Annotated[int, Field(ge=1)] | None = None
-        context_window: Annotated[int, Field(ge=1)] | None = None
-        on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
-        output_retries: Annotated[int, Field(ge=0)] = 2
+    Config = AgentLoopConfig
 
-    config: Config
+    config: AgentLoopConfig
 
     def __init__(self, *, error_formatter: ErrorFormatter | None = None, **options):
         super().__init__(**options)

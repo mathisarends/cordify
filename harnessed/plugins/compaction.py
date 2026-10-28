@@ -66,13 +66,16 @@ type _Trigger = Annotated[Callable[[ContextState], bool], AfterValidator(_sync_t
 _DEFAULT_TRIGGER = _AtRatio(0.8)
 
 
+class CompactionConfig(CompactionSettings):
+    trigger: _Trigger = _DEFAULT_TRIGGER
+
+
 class Compaction(Plugin, slot="compaction"):
     """Choose when to summarize, what to retain and which model to use."""
 
-    class Config(CompactionSettings):
-        trigger: _Trigger = _DEFAULT_TRIGGER
+    Config = CompactionConfig
 
-    config: Config
+    config: CompactionConfig
 
     def __init__(
         self,

@@ -21,12 +21,15 @@ class WorkspaceTools(Plugin):
 workspace_tools = WorkspaceTools()
 
 
-class FailureNudge(Plugin):
-    class Config(BaseModel):
-        model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-        threshold: int = Field(default=2, ge=1)
+class FailureNudgeConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    threshold: int = Field(default=2, ge=1)
 
-    config: Config
+
+class FailureNudge(Plugin):
+    Config = FailureNudgeConfig
+
+    config: FailureNudgeConfig
 
     def __init__(self, threshold: int = 2):
         super().__init__(threshold=threshold)

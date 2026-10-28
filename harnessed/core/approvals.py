@@ -46,16 +46,19 @@ class CallbackApprover:
         raise TypeError("Approvers must return ApprovalAnswer or bool")
 
 
+class ApprovalGateConfig(PluginConfig):
+    risky: Annotated[frozenset[Annotated[str, Field(min_length=1)]], Field(strict=False)]
+    ask: ApprovalCallback | None = None
+    scope: Annotated[str, Field(min_length=1)] = "approval-gate"
+    priority: int = Priority.GUARD
+
+
 class ApprovalGate(Plugin):
     """Keep a scoped guard active even when its optional approver is unavailable."""
 
-    class Config(PluginConfig):
-        risky: Annotated[frozenset[Annotated[str, Field(min_length=1)]], Field(strict=False)]
-        ask: ApprovalCallback | None = None
-        scope: Annotated[str, Field(min_length=1)] = "approval-gate"
-        priority: int = Priority.GUARD
+    Config = ApprovalGateConfig
 
-    config: Config
+    config: ApprovalGateConfig
 
     def __init__(
         self,
@@ -204,13 +207,16 @@ class _Callback:
         return await value if inspect.isawaitable(value) else value
 
 
+class ApprovalsConfig(PluginConfig):
+    timeout: Annotated[float, Field(gt=0)] = 300.0
+
+
 class Approvals(Plugin, slot="approvals"):
     """Opt out explicitly with trust='all'; missing responders fail as unavailable."""
 
-    class Config(PluginConfig):
-        timeout: Annotated[float, Field(gt=0)] = 300.0
+    Config = ApprovalsConfig
 
-    config: Config
+    config: ApprovalsConfig
 
     def __init__(
         self,

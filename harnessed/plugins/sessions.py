@@ -293,15 +293,18 @@ class JsonlPersistence:
             self._files.clear()
 
 
+class JsonlSessionsConfig(PluginConfig):
+    root: Path
+    durability: Literal["buffered", "flush", "fsync"] = "flush"
+    recover_tail: bool = False
+
+
 class JsonlSessions(Plugin, slot="sessions"):
     """Resume append-only conversations with an exclusive OS writer lock."""
 
-    class Config(PluginConfig):
-        root: Path
-        durability: Literal["buffered", "flush", "fsync"] = "flush"
-        recover_tail: bool = False
+    Config = JsonlSessionsConfig
 
-    config: Config
+    config: JsonlSessionsConfig
 
     def __init__(self, root: str | Path = ".harnessed/sessions", **options):
         super().__init__(root=Path(root), **options)

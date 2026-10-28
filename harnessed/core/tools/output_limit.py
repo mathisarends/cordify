@@ -8,13 +8,16 @@ from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.kernel import Context
 
 
+class ToolOutputLimitConfig(PluginConfig):
+    max_chars: Annotated[int, Field(ge=256)] = 32_000
+
+
 class ToolOutputLimit(Plugin, slot="output_limit"):
     """Bound final tool results before they enter the durable log and model history."""
 
-    class Config(PluginConfig):
-        max_chars: Annotated[int, Field(ge=256)] = 32_000
+    Config = ToolOutputLimitConfig
 
-    config: Config
+    config: ToolOutputLimitConfig
 
     def __init__(self, max_chars: int = 32_000):
         super().__init__(max_chars=max_chars)

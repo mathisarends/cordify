@@ -138,6 +138,13 @@ class _SessionSpills:
             ) from None
 
 
+class SpillConfig(PluginConfig):
+    threshold_tokens: Annotated[int, Field(ge=1)] = 8000
+    preview_tokens: Annotated[int, Field(ge=0)] = 256
+    max_files: Annotated[int, Field(ge=1)] = 128
+    max_bytes: Annotated[int, Field(ge=1)] = 32 * 1024 * 1024
+
+
 class Spill(Plugin, slot="spill"):
     """Spill large text, preserve images, and expire oldest files within a hard quota."""
 
@@ -145,13 +152,9 @@ class Spill(Plugin, slot="spill"):
         "Large tool outputs may be stored by name. Use read_spill with offset and limit for ranges."
     )
 
-    class Config(PluginConfig):
-        threshold_tokens: Annotated[int, Field(ge=1)] = 8000
-        preview_tokens: Annotated[int, Field(ge=0)] = 256
-        max_files: Annotated[int, Field(ge=1)] = 128
-        max_bytes: Annotated[int, Field(ge=1)] = 32 * 1024 * 1024
+    Config = SpillConfig
 
-    config: Config
+    config: SpillConfig
 
     async def setup(self, ctx: Context, session: Inject[SessionLog], files: Inject[SessionFiles]):
         self.store = _SessionSpills(files, session, self.config)

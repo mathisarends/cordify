@@ -10,8 +10,10 @@ Validate external values (user configuration, files, network payloads, and model
 arguments) with Pydantic. Use frozen dataclasses for internal events and values.
 Do not add repeated validation/reflection to token or tool dispatch paths.
 
-Class plugins may define a nested Pydantic `Config`; the constructor validates
-its keyword configuration. Allocate mutable per-mount state in `setup()`, not
+Class plugins may define a module-level Pydantic configuration model and assign
+it with `Config = MyPluginConfig`; the constructor validates its keyword
+configuration. Annotate `config: MyPluginConfig` for static checking. Allocate
+mutable per-mount state in `setup()`, not
 in the recipe constructor. Register resource cleanup with `ctx.effect()` as
 soon as allocation succeeds; these effects also run when setup fails. The
 recipe's shared clients and locks are not deep-copied. Applications retain

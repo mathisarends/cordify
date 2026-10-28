@@ -8,13 +8,16 @@ from harnessed.core.session.session import SessionLog
 from harnessed.kernel import Inject
 
 
+class LatestObservationOnlyConfig(PluginConfig):
+    max_summaries: Annotated[int, Field(ge=0)] = 8
+
+
 class LatestObservationOnly(Plugin):
     """Keep full state in the active step, with bounded summaries per source."""
 
-    class Config(PluginConfig):
-        max_summaries: Annotated[int, Field(ge=0)] = 8
+    Config = LatestObservationOnlyConfig
 
-    config: Config
+    config: LatestObservationOnlyConfig
 
     def __init__(self, *, max_summaries: int = 8):
         super().__init__(max_summaries=max_summaries)

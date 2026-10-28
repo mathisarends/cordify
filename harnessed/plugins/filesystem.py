@@ -181,15 +181,18 @@ class FilesystemTools(Plugin):
         return f"Wrote {path}"
 
 
+class FilesystemConfig(PluginConfig):
+    root: Path = Path(".")
+
+
 class Filesystem(FilesystemTools, slot="filesystem"):
     """Expose bounded reads, discovery and explicit writes within one workspace."""
 
     needs = (ToolRegistry,)
 
-    class Config(PluginConfig):
-        root: Path = Path(".")
+    Config = FilesystemConfig
 
-    config: Config
+    config: FilesystemConfig
 
     guidance = (
         "File paths are relative to the workspace. Read a range before editing. "

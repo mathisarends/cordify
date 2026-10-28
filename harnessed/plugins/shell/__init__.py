@@ -182,22 +182,25 @@ def proc_result(value: ProcResult) -> ToolResult:
     )
 
 
+class ShellToolsConfig(_Options):
+    cwd: Path = Path(".")
+    timeout: Annotated[float, Field(gt=0, le=600)] = 30.0
+
+    @model_validator(mode="after")
+    def validate_timeout(self) -> Self:
+        if self.timeout > self.max_timeout:
+            raise ValueError("timeout must not exceed max_timeout")
+        return self
+
+
 class ShellTools(Plugin):
     """Expose commands through a separately owned, replaceable ShellBackend."""
 
     needs = (ShellBackend, ToolRegistry)
 
-    class Config(_Options):
-        cwd: Path = Path(".")
-        timeout: Annotated[float, Field(gt=0, le=600)] = 30.0
+    Config = ShellToolsConfig
 
-        @model_validator(mode="after")
-        def validate_timeout(self) -> Self:
-            if self.timeout > self.max_timeout:
-                raise ValueError("timeout must not exceed max_timeout")
-            return self
-
-    config: Config
+    config: ShellToolsConfig
 
     def __init__(self, cwd: str | Path = ".", **options):
         super().__init__(cwd=Path(cwd), **options)
