@@ -89,3 +89,22 @@ Closing a paused handle preserves its durable pause. Reopening it requires
 repairs unfinished activity as aborted and leaves the reopened session idle.
 After closing, operations raise `SessionClosed`; the final status is `CLOSED`.
 See [the runnable control example](../../examples/20_pause_resume_stop.py).
+
+## Inspect or remove queued input
+
+```python
+await session.pause()
+queued = asyncio.create_task(session.run("Review after the current task."))
+# Once the task has submitted its input:
+# item = session.inbox.pending[0]
+# await session.inbox.remove(item.id)
+# assert (await queued).stop_reason is StopReason.DISCARDED
+await session.resume()
+```
+
+`pending` returns a frozen snapshot of `InboxItem` values. Each has an `id`,
+`InboxKind.RUN` or `STEER`, a frozen `content` message and `created_at` in Unix
+seconds. Removing an already claimed or unknown ID raises `KeyError`. Removal
+is durable and only discards that queued turn. `steer()` returns its `InboxItem`;
+it adds a message to the running turn's next step, or wakes a new turn when idle.
+Plugins can inject `SessionInbox` to steer or inspect inputs without the driver.

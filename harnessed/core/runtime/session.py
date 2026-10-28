@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
-from harnessed.core.attachments import Attachment, prepare_input
+from harnessed.core.attachments import Attachment
 from harnessed.core.hooks import (
     ApprovalRequest,
     SessionAppended,
@@ -23,6 +23,7 @@ from harnessed.core.model import Model, ModelRequest, ModelUsage
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
+from harnessed.core.runtime.inbox import InboxItem, SessionInbox
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.runtime.result import RunResult, result_from_events
 from harnessed.core.runtime.stepper import run_step
@@ -42,7 +43,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.stream import SessionPublished, TextDelta, TransientEvent
-from harnessed.core.tools.context import BoundToolContexts, InboxSender, ToolContexts
+from harnessed.core.tools.context import BoundToolContexts, ToolContexts
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.core.tracing import span
 from harnessed.kernel.context import Context
@@ -62,23 +63,18 @@ class Session:
         self.ctx, self.log, self.options = ctx, session, options
         self.id = session.id
         self.context = DynamicContext(session)
-        ctx.provide(
-            ToolContexts,
-            BoundToolContexts(session, InboxSender(self.followup, self.steer, self.inject)),
-        )
         self._runtime_guidance = {}
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
+        self.inbox = SessionInbox(session, self.control)
         ctx.provide(SessionControl, self.control)
+        ctx.provide(SessionInbox, self.inbox)
+        ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox))
         self._subscribers: set[asyncio.Queue] = set()
         self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
         ctx.on(SessionAppended, self._session_event)
         ctx.on(SessionPublished, self._stream_event)
         ctx.on(PluginActivated, self._plugin_activated)
-
-    @property
-    def inbox(self):
-        return self.log.inbox
 
     @property
     def prompt(self) -> SystemPrompt:
@@ -196,18 +192,19 @@ class Session:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
     ) -> str:
-        self.control.check_open()
-        message, contributions = await prepare_input(
-            content, attachments=attachments, context=context
+        def prepared(item: InboxAdded):
+            if mode == "inject" and _preparing.get() is self:
+                self._step_push.append(item)
+
+        item = await self.inbox._send(
+            content,
+            mode,
+            attachments=attachments,
+            context=context,
+            settings=settings,
+            prepared=prepared,
         )
-        self.control.check_open()
-        item = InboxAdded.create(message, mode, context=contributions, settings=settings)
-        await self.log.append(item)
-        if mode == "inject" and _preparing.get() is self:
-            self._step_push.append(item)
-        if item.wakeup:
-            self._wake()
-        return message.id
+        return item.id
 
     async def followup(
         self,
@@ -225,8 +222,8 @@ class Session:
             settings=settings,
         )
 
-    async def steer(self, content: str | Message) -> str:
-        return await self._send(content, "steer")
+    async def steer(self, content: str | Message) -> InboxItem:
+        return await self.inbox.steer(content)
 
     async def inject(self, content: str | Message) -> str:
         return await self._send(content, "inject")
@@ -383,7 +380,7 @@ class Session:
                 if event is None:
                     if self.control.error is not None:
                         raise self.control.error
-                    if any(item.message.id == input_id for item in self.inbox.pending):
+                    if any(item.id == input_id for item in self.inbox.pending):
                         self._wake()
                         continue
                     return
@@ -460,7 +457,7 @@ class Session:
         starter = previous.events[0] if previous is not None else None
         settings = starter.settings if isinstance(starter, TurnStart) else {}
         if previous is None:
-            candidates = self.inbox.next_turn or self.inbox.next_step
+            candidates = self.log.inbox.next_turn or self.log.inbox.next_step
             settings = candidates[0].settings if candidates else {}
             await self.log.append(
                 TurnStart(turn, candidates[0].message.id if candidates else None, settings)

@@ -94,7 +94,7 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
         assert not any(m.text in ("external context", "focus") for m in first_snapshot.messages)
         if mode == "inject":
             assert len(model.requests) == 1 and len(agent.inbox.pending) == 1
-            assert agent.status == "idle" and not agent.inbox.has_wakeup
+            assert agent.status == "idle" and not agent.log.inbox.has_wakeup
             await agent.run("next task")
             assert [len(turn.steps) for turn in agent.log.turns] == [1, 1]
             assert any(m.text == "external context" for m in model.requests[-1].messages)
@@ -109,12 +109,12 @@ async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent(
     model = ScriptedLLM(["awake"])
     async with minimal(model).session("quiet") as agent:
         await agent.inject(system("door opened"))
-        snapshot = agent.inbox
+        snapshot = agent.inbox.pending
         await agent.when_idle()
         assert agent.status == "idle" and model.requests == [] and agent.log.turns == ()
         await agent.steer("check the door")
         await agent.when_idle()
-        assert snapshot.pending and not agent.inbox.pending
+        assert snapshot and not agent.inbox.pending
         assert [m.text for m in model.requests[0].messages] == ["door opened", "check the door"]
         assert [len(turn.steps) for turn in agent.log.turns] == [1]
 
@@ -131,7 +131,63 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
     async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("pending") as agent:
         await agent.when_idle()
         if mode == "inject":
-            assert model.requests == [] and agent.inbox.pending == (event,)
+            assert model.requests == [] and agent.log.inbox.pending == (event,)
             await agent.run("wake up")
         assert len(model.requests) == 1 and not agent.inbox.pending
         assert any(message.id == event.message.id for message in model.requests[0].messages)
+
+
+async def test_public_inbox_removal_discards_only_the_selected_queued_run():
+    from harnessed import Agent, SessionStatus, StopReason
+    from harnessed.core.runtime.inbox import InboxKind
+    from harnessed.testing import ScriptedModel
+
+    async with Agent(model=ScriptedModel(["kept"])).session() as session:
+        await session.pause()
+        first = asyncio.create_task(session.run("discard this"))
+        second = asyncio.create_task(session.run("keep this"))
+        async with asyncio.timeout(3):
+            while len(session.inbox.pending) < 2:
+                await session.control._changed.wait()
+        snapshot = session.inbox.pending
+        assert [item.content.text for item in snapshot] == ["discard this", "keep this"]
+        assert all(item.kind is InboxKind.RUN and item.created_at > 0 for item in snapshot)
+        await session.inbox.remove(snapshot[0].id)
+        discarded = await first
+        assert discarded.stop_reason is StopReason.DISCARDED and discarded.turn_id is None
+        assert session.status is SessionStatus.PAUSED and len(session.inbox.pending) == 1
+        assert len(snapshot) == 2
+        with pytest.raises(KeyError):
+            await session.inbox.remove(snapshot[0].id)
+        await session.resume()
+        assert (await second).text == "kept"
+
+
+async def test_public_steer_returns_the_same_frozen_item_across_restart(tmp_path):
+    from harnessed import Agent
+    from harnessed.core.runtime.inbox import InboxKind, SessionInbox
+    from harnessed.plugins import JsonlSessions
+    from harnessed.testing import ScriptedModel
+
+    def agent(model):
+        return Agent(model=model, plugins=[JsonlSessions(tmp_path)])
+
+    async with agent(ScriptedModel([])).session("pending") as session:
+        await session.pause()
+        service = session.ctx[SessionInbox]
+        item = await service.steer("focus here")
+        assert item.kind is InboxKind.STEER and item.id == item.content.id
+        assert service.pending == (item,)
+        with pytest.raises(FrozenInstanceError):
+            item.kind = InboxKind.RUN
+    async with agent(ScriptedModel(["focused"])).session("pending") as session:
+        assert session.inbox.pending == (item,)
+        await session.resume()
+        await session.wait_until_idle()
+        assert len(session.turns) == 1 and session.messages[0].text == "focus here"
+
+
+def test_old_inbox_records_have_a_deterministic_creation_time():
+    record = encode_event(InboxAdded.create(user("old"), "followup"))
+    record["data"].pop("created_at")
+    assert decode_event(record).created_at == 0.0

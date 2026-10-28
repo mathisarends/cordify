@@ -29,11 +29,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## P1 — Runtime design and ergonomics
 
-### P1-1 — Split the driver and make state explicit
-
-- Finish separating inbox/control from the live Session and provide dedicated
-  services instead of making every plugin depend on the driver.
-
 ### P1-2 — Structured results and a small UI stream
 
 - Keep turn-scoped run/stream completion, usage, stop reason, IDs and tool pairs.

@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from time import time
 from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args
 from uuid import uuid4
 
@@ -191,6 +192,7 @@ class InboxAdded(SessionEvent):
     mode: InboxMode
     context: tuple[Message, ...] = ()
     settings: Mapping[str, Any] = field(default_factory=dict)
+    created_at: Annotated[float, Field(ge=0)] = field(default=0.0, kw_only=True)
 
     def __post_init__(self):
         if self.mode not in _INBOX_ROUTES:
@@ -215,7 +217,7 @@ class InboxAdded(SessionEvent):
         if mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {mode!r}")
         target, wakeup = _INBOX_ROUTES[mode]
-        return cls(message, target, wakeup, mode, context, settings or {})
+        return cls(message, target, wakeup, mode, context, settings or {}, created_at=time())
 
 
 @dataclass(frozen=True)

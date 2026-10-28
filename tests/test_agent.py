@@ -272,7 +272,7 @@ async def test_pre_step_rejection_keeps_input_until_another_wake():
 
         await agent.followup("first")
         await agent.when_idle()
-        assert not model.requests and len(agent.inbox.next_turn) == 1
+        assert not model.requests and len(agent.log.inbox.next_turn) == 1
         reject = False
         await agent.followup("second")
         await agent.when_idle()

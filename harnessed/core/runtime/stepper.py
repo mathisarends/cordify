@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 async def run_step(self: Agent, turn: str, step: int, settings, preparing: ContextVar) -> bool:
     await self._checkpoint()
     await self.ctx.settle()
-    inbox = self.inbox
+    inbox = self.log.inbox
     pending = inbox.for_step(step)
     incoming = tuple(item.message for item in pending)
     self._step_push = []

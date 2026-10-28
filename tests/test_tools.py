@@ -6,6 +6,7 @@ import pytest
 from harnessed import Agent, Bundle, Context, Inject, Plugin, ToolCall, ToolRegistry, tool
 from harnessed.core.messages import ToolResult
 from harnessed.core.model import ModelChunk
+from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.tools.context import ToolContext
 from harnessed.kernel.di import InjectMarker
 from harnessed.testing import ScriptedModel
@@ -167,14 +168,15 @@ async def test_result_converters_follow_their_owner_lifetime():
 async def test_tool_context_exposes_log_inbox_and_progress_without_the_driver():
     class Inspect(Plugin):
         @tool(readonly=True)
-        async def inspect(self, call: Inject[ToolContext]) -> str:
+        async def inspect(self, call: Inject[ToolContext], context: Inject[DynamicContext]) -> str:
             assert not hasattr(call, "agent")
             assert call.session.id == "tool-context"
             await call.progress("working")
-            await call.inbox.inject("The workspace changed.")
+            assert not call.cancelled
+            await context.set("workspace", "The workspace changed.")
             return "ready"
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("inspect"))], "done"])
     async with Agent(model=model, plugins=[Inspect()]).session("tool-context") as session:
         await session.run("Inspect")
-        assert "The workspace changed." in [message.text for message in model.requests[-1].messages]
+        assert any("The workspace changed." in m.text for m in model.requests[-1].messages)
