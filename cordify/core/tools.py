@@ -1,10 +1,9 @@
 import asyncio
 import inspect
-import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints, overload
+from typing import Any, get_type_hints, overload
 
 from ..kernel.context import Context
 from ..kernel.di import bind_injected, injections
@@ -13,67 +12,9 @@ from ..seams.models import ToolCall, ToolDefinition, ToolResult, result_content,
 from ..seams.shell import ProcResult
 from .execution import ToolCallContext
 from .scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
+from .validation import ToolArguments, tool_result_content
 
 _UNSPECIFIED = object()
-
-
-def _schema(annotation: Any) -> dict:
-    origin, args = get_origin(annotation), get_args(annotation)
-    if origin is Annotated:
-        schema = _schema(args[0])
-        descriptions = [item for item in args[1:] if isinstance(item, str)]
-        return {**schema, **({"description": descriptions[0]} if descriptions else {})}
-    if origin in (Union, types.UnionType):
-        return {"anyOf": [_schema(arg) for arg in args]}
-    if origin is Literal:
-        return {"enum": list(args)}
-    if origin is list:
-        return {"type": "array", "items": _schema(args[0])}
-    if origin is dict and args[0] is str:
-        return {"type": "object", "additionalProperties": _schema(args[1])}
-    primitives = {
-        str: "string",
-        int: "integer",
-        float: "number",
-        bool: "boolean",
-        type(None): "null",
-    }
-    if annotation in primitives:
-        return {"type": primitives[annotation]}
-    raise TypeError(f"Unsupported tool annotation {annotation!r}; use JSON types or Annotated")
-
-
-def _validate(value: Any, schema: Mapping, path: str):
-    if "anyOf" in schema:
-        for choice in schema["anyOf"]:
-            try:
-                _validate(value, choice, path)
-                return
-            except ValueError:
-                pass
-        raise ValueError(f"{path}: value does not match any allowed type")
-    if "enum" in schema:
-        if not any(type(value) is type(item) and value == item for item in schema["enum"]):
-            raise ValueError(f"{path}: expected one of {schema['enum']}")
-        return
-    kind = schema["type"]
-    valid = {
-        "string": isinstance(value, str),
-        "integer": type(value) is int,
-        "number": type(value) in (int, float),
-        "boolean": type(value) is bool,
-        "null": value is None,
-        "array": isinstance(value, list | tuple),
-        "object": isinstance(value, Mapping),
-    }[kind]
-    if not valid:
-        raise ValueError(f"{path}: expected {kind}")
-    if kind == "array":
-        for index, item in enumerate(value):
-            _validate(item, schema["items"], f"{path}[{index}]")
-    elif kind == "object":
-        for key, item in value.items():
-            _validate(item, schema["additionalProperties"], f"{path}.{key}")
 
 
 @dataclass(eq=False)
@@ -86,6 +27,7 @@ class _Tool:
     timeout: float | None
     parallel: bool
     resources: ResourceSpec
+    arguments: ToolArguments
 
 
 class ToolRegistry:
@@ -142,35 +84,24 @@ class ToolRegistry:
         signature = inspect.signature(callback)
         hints = get_type_hints(callback, include_extras=True)
         injected = injections(callback)
-        properties, required = {}, []
-        for parameter in signature.parameters.values():
-            if parameter.kind not in (
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                inspect.Parameter.KEYWORD_ONLY,
-            ):
-                raise TypeError(
-                    "Tools must have named parameters (no *args, **kwargs or positional-only)"
-                )
-            if parameter.name in injected:
-                continue
-            schema = _schema(hints.get(parameter.name, parameter.annotation))
-            if parameter.default is inspect.Parameter.empty:
-                required.append(parameter.name)
-            else:
-                schema["default"] = parameter.default
-            properties[parameter.name] = schema
+        arguments = ToolArguments.from_signature(
+            name or callback.__name__, signature, hints, injected
+        )
         definition = ToolDefinition(
             name or callback.__name__,
             inspect.getdoc(callback) or "",
-            {
-                "type": "object",
-                "properties": properties,
-                "required": required,
-                "additionalProperties": False,
-            },
+            arguments.schema,
         )
         entry = _Tool(
-            definition, callback, owner, signature, injected, timeout, parallel, resources
+            definition,
+            callback,
+            owner,
+            signature,
+            injected,
+            timeout,
+            parallel,
+            resources,
+            arguments,
         )
         entries = self._tools.setdefault(definition.name, [])
         entries.append(entry)
@@ -236,11 +167,7 @@ class ToolRegistry:
         if not self._available(tool, ctx):
             return ToolResult.error(f"Tool {call.name} is unavailable: missing injected service")
         try:
-            arguments = to_dict(call.arguments)
-            for name, value in arguments.items():
-                if name not in tool.definition.parameters["properties"]:
-                    raise ValueError(f"Unknown model argument: {name}")
-                _validate(value, tool.definition.parameters["properties"][name], name)
+            arguments = tool.arguments.parse(call.arguments)
             if call_context is None and ToolCallContext in tool.injected.values():
                 from .loop import Agent
 
@@ -265,7 +192,9 @@ class ToolRegistry:
                     "ok" if value.returncode == 0 else "error",
                     exit_code=value.returncode,
                 )
-            return value if isinstance(value, ToolResult) else ToolResult(result_content(value))
+            return (
+                value if isinstance(value, ToolResult) else ToolResult(tool_result_content(value))
+            )
         except asyncio.CancelledError:
             if call_context is not None:
                 call_context.signal.set()

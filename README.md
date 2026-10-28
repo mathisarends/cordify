@@ -7,7 +7,8 @@ events, a session log, and a replaceable ReAct loop. Inspired by
 Python APIs. Cordify does not provide API or file format compatibility with
 the TypeScript projects.
 
-Python **3.12–3.14**, PEP 695 generics, and no runtime dependencies in the core.
+Python **3.12–3.14**, PEP 695 generics, and Pydantic v2 for boundary validation.
+The agent-independent kernel uses only the standard library.
 The package lives directly in `cordify/`.
 
 ## Package structure

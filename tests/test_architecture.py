@@ -57,6 +57,7 @@ for layer in ('core', 'seams', 'plugins', 'adapters', 'presets'):
     assert not any(name == 'cordify.' + layer or name.startswith('cordify.' + layer + '.')
                    for name in sys.modules), (layer, sorted(sys.modules))
 assert 'httpx' not in sys.modules
+assert 'pydantic' not in sys.modules
 assert not any(name.startswith('opentelemetry') for name in sys.modules)
 print('standalone kernel')
 """
@@ -66,9 +67,9 @@ print('standalone kernel')
     assert result.returncode == 0, result.stderr
 
 
-def test_runtime_dependencies_remain_empty_and_otel_is_not_added():
+def test_validation_is_explicit_and_otel_is_not_added():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-    assert project["dependencies"] == []
+    assert project["dependencies"] == ["pydantic>=2.12,<3"]
     assert "otel" not in project["optional-dependencies"]
     for path in PACKAGE.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
