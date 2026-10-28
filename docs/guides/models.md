@@ -46,15 +46,15 @@ a cache miss. Missing optional counters remain unknown when usages are combined.
 
 ## Content and errors
 
-The bridge supports text, thinking, function calls and user image URLs/data URLs.
+The bridge supports text, thinking, function calls, and user/tool-result image URLs or data URLs.
 Native assistant response state is preserved in the log, including reasoning
 signatures needed on later tool rounds and replay.
 
 Provider-specific built-in tools, audio/video output, native file handles and
 resumable hosted operations are not currently exposed by the Harnessed request
 contract. Unknown response parts fail explicitly rather than being silently
-removed. Tool-result images and structured final output are tracked in the open
-review work.
+removed. Structured final output is tracked in the open review work.
+See [multimodal tool results](tools.md#multimodal-results) for text/image policies.
 
 Authentication, rate limiting, context overflow, invalid requests and provider
 unavailability map to provider-independent errors in `harnessed.core.errors`.

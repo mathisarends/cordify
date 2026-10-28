@@ -76,7 +76,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P2-8 — English documentation and examples
 
-- Add guides/concepts/reference docs, example snippets and a strict docs CI build.
 - Keep early examples focused on the application API and explicit plugin sugar;
   migrate all later examples off removed APIs, with real control/context examples.
 

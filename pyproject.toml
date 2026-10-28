@@ -22,6 +22,7 @@ google = ["pydantic-ai-slim[google]>=2.63,<3"]
 
 [dependency-groups]
 dev = [
+    "mkdocs>=1.6,<2",
     "pre-commit>=4,<5",
     "pytest>=8,<10",
     "pytest-asyncio>=1,<2",

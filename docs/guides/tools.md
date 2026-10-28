@@ -60,7 +60,7 @@ when execution finishes out of order. An explicit `override=True` is required to
 replace an existing live tool name. Removing that registration restores the
 previous owner.
 
-See [the runnable functional plugin example](../../examples/06_explicit_registration.py).
+See [the runnable functional plugin example](https://github.com/mathisarends/cordify/blob/main/examples/06_explicit_registration.py).
 
 ## Hook signatures
 

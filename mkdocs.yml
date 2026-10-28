@@ -1,0 +1,46 @@
+site_name: Harnessed
+site_description: A composable Python agent SDK with reversible plugins and a durable session log.
+repo_url: https://github.com/mathisarends/cordify
+edit_uri: blob/main/docs/
+docs_dir: docs
+site_dir: build/docs
+strict: true
+
+theme:
+  name: mkdocs
+
+plugins:
+  - search
+
+markdown_extensions:
+  - fenced_code
+  - tables
+  - toc:
+      permalink: true
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    unrecognized_links: warn
+    anchors: warn
+
+nav:
+  - Overview: index.md
+  - Guides:
+      - Models: guides/models.md
+      - Tools and hooks: guides/tools.md
+      - Plugins: guides/plugins.md
+      - Context: guides/context.md
+      - Sessions and controls: guides/sessions.md
+      - Approvals: guides/approvals.md
+      - Testing: guides/testing.md
+      - Examples: guides/examples.md
+  - Concepts:
+      - Immutable values and the codec: concepts/values.md
+  - Reference:
+      - Core SDK: reference/sdk.md
+  - Contributing:
+      - Development and CI: contributing/development.md

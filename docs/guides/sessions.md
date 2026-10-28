@@ -88,7 +88,7 @@ Closing a paused handle preserves its durable pause. Reopening it requires
 `resume()` and does not repeat committed tools. A crash during an active run
 repairs unfinished activity as aborted and leaves the reopened session idle.
 After closing, operations raise `SessionClosed`; the final status is `CLOSED`.
-See [the runnable control example](../../examples/20_pause_resume_stop.py).
+See [the runnable control example](https://github.com/mathisarends/cordify/blob/main/examples/20_pause_resume_stop.py).
 
 ## Inspect or remove queued input
 
