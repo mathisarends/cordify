@@ -47,3 +47,7 @@ page. Keep all public documentation and examples in English.
 Preview with `uv run mkdocs serve`. The [MkDocs CLI](https://www.mkdocs.org/user-guide/cli/)
 describes strict builds; the project also elevates local link and anchor validation
 to warnings so CI catches broken references. Building does not publish the site.
+
+MkDocs belongs to the development dependency group. The installed package does not
+depend on it or import it. The wheel smoke check verifies that documentation files
+and development tools stay outside the distribution and its runtime dependencies.
