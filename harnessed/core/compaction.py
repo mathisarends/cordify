@@ -5,7 +5,7 @@ from harnessed.core.messages import Message
 from harnessed.core.model import ModelRequest
 
 from .events import CompactionApplied, SessionEvent, TurnEnd, TurnStart
-from .session import _derive_message_entries, derive_messages
+from .session import Session, _derive_message_entries, derive_messages
 
 
 @dataclass(frozen=True)
@@ -17,31 +17,55 @@ class CompactionPlan:
 
 
 def plan_compaction(
-    events: Iterable[SessionEvent],
+    events: Session | Iterable[SessionEvent],
     *,
     keep_turns: int,
     keep_first_turns: int,
     preserve_turns: tuple[str, ...],
 ) -> CompactionPlan | None:
-    events = tuple(events)
-    known_turns = {event.turn_id for event in events if isinstance(event, TurnStart)}
+    session = None
+    fold_events = ()
+    if isinstance(events, Session):
+        session = events
+        known_turns = session._known_turns
+        closed = session._turn_boundaries
+        previous = session.last(CompactionApplied)
+        new_turns = session.uncompacted_turn_count
+        origin = session._history.origin
+    else:
+        events = tuple(events)
+        fold_events = events
+        known_turns = {event.turn_id for event in events if isinstance(event, TurnStart)}
+        closed = [
+            (seq + 1, event.turn_id)
+            for seq, event in enumerate(events)
+            if isinstance(event, TurnEnd)
+        ]
+        previous_seq, previous = next(
+            (
+                (seq, event)
+                for seq, event in reversed(tuple(enumerate(events)))
+                if isinstance(event, CompactionApplied)
+            ),
+            (-1, None),
+        )
+        new_turns = sum(boundary > previous_seq + 1 for boundary, _ in closed)
+        offsets, current = {}, None
+        for seq, event in enumerate(events):
+            if isinstance(event, TurnStart):
+                current = event.turn_id
+            offsets[seq] = current
+            if isinstance(event, TurnEnd):
+                current = None
+        origin = offsets.get
     if not set(preserve_turns) <= known_turns:
         raise ValueError("preserve_turns must refer to existing turns in the session log")
-    closed = [
-        (seq + 1, event.turn_id) for seq, event in enumerate(events) if isinstance(event, TurnEnd)
-    ]
-    eligible = closed[:-keep_turns] if keep_turns else closed
-    previous_seq, previous = next(
-        (
-            (seq, event)
-            for seq, event in reversed(tuple(enumerate(events)))
-            if isinstance(event, CompactionApplied)
-        ),
-        (-1, None),
-    )
-    if not eligible or eligible[-1][0] <= (previous.through if previous is not None else 0):
+    eligible_count = len(closed) - keep_turns
+    if eligible_count <= 0:
         return None
-    through = eligible[-1][0]
+    through = closed[eligible_count - 1][0]
+    if through <= (previous.through if previous is not None else 0):
+        return None
     closed_ids = {turn for boundary, turn in closed if boundary <= through}
     preserved = tuple(
         dict.fromkeys(
@@ -53,25 +77,21 @@ def plan_compaction(
         )
     )
     preserved = tuple(turn for turn in preserved if turn in closed_ids)
-    offsets, current = {}, None
-    for seq, event in enumerate(events):
-        if isinstance(event, TurnStart):
-            current = event.turn_id
-        offsets[seq] = current
-        if isinstance(event, TurnEnd):
-            current = None
+    entries = (
+        session._history.entries(session._events)
+        if session is not None
+        else _derive_message_entries(fold_events)
+    )
     messages = tuple(
         message
-        for seq, message in _derive_message_entries(events)
+        for seq, message in entries
         if message.id != "system"
         and (
-            message.id.startswith("compaction:")
-            or (seq < through and offsets[seq] not in preserved)
+            message.id.startswith("compaction:") or (seq < through and origin(seq) not in preserved)
         )
     )
     if not messages:
         return None
-    new_turns = sum(boundary > previous_seq + 1 for boundary, _ in closed)
     return CompactionPlan(through, preserved, messages, new_turns)
 
 

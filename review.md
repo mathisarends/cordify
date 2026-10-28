@@ -8,17 +8,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## P0 — Runtime and public contracts
 
-### P0-1 — Finish incremental history and policy indexing
-
-- Ordinary messages, inbox, approvals, control, requests and turns already advance
-  on append. Keep the full folds as replay/load oracles and generated-log checks.
-- Replace the remaining cached full fold for observation retention and legacy
-  chunk history; normalize completed legacy streams once rather than forever
-  retaining that slow path.
-- Stop compaction/rule policies from repeatedly scanning the entire session.
-  Use indexed boundaries/current state and retain immutable snapshot semantics.
-- Verify long-session behavior and invalid-transition/write-failure atomicity.
-
 ### P0-6 — Complete neutral model/message contracts
 
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove

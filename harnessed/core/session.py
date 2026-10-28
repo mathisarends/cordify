@@ -1,5 +1,6 @@
 import asyncio
 import math
+from bisect import bisect_right
 from collections.abc import Iterable
 from dataclasses import fields, is_dataclass
 from types import MappingProxyType
@@ -344,6 +345,14 @@ class Session:
         self._requests = list(derive_requests(self._events))
         self._request_snapshot: tuple[ModelRequest, ...] | None = None
         self._turns = TurnProjection(self._events)
+        self._turn_boundaries = [
+            (seq + 1, event.turn_id)
+            for seq, event in enumerate(self._events)
+            if isinstance(event, TurnEnd)
+        ]
+        self._known_turns = {
+            event.turn_id for event in self._events if isinstance(event, TurnStart)
+        }
         self._history = MessageProjection(self._events, _derive_message_entries)
         for seq, event in enumerate(self._events):
             if isinstance(event, CompactionApplied):
@@ -362,6 +371,15 @@ class Session:
     def last_offset(self, kind: type[SessionEvent]) -> int | None:
         record = self._last.get(kind)
         return record[0] if record is not None else None
+
+    @property
+    def uncompacted_turn_count(self) -> int:
+        previous = self.last_offset(CompactionApplied)
+        if previous is None:
+            return len(self._turn_boundaries)
+        return len(self._turn_boundaries) - bisect_right(
+            self._turn_boundaries, previous + 1, key=lambda item: item[0]
+        )
 
     def __len__(self) -> int:
         return len(self._events)
@@ -468,6 +486,10 @@ class Session:
             self._last[type(event)] = (seq, event)
             self._snapshot = None
             self._turns.apply(event)
+            if isinstance(event, TurnStart):
+                self._known_turns.add(event.turn_id)
+            elif isinstance(event, TurnEnd):
+                self._turn_boundaries.append((seq + 1, event.turn_id))
             self._history.apply(event, seq, self._events)
             if isinstance(event, InboxAdded):
                 self._pending[event.message.id] = event

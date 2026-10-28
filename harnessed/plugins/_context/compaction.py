@@ -57,19 +57,20 @@ class _Compaction(Plugin):
         request = await next_()
         if agent.session.closed_turn_count < self._retry_after_turns:
             return request
-        events = agent.session.events
         step_offset = agent.session.last_offset(StepStart)
         start = step_offset if step_offset is not None else -1
         last_compaction = agent.session.last_offset(CompactionApplied)
         if last_compaction is not None and last_compaction > start:
             return request
+        if not await self._due(request, agent, counter, agent.session.uncompacted_turn_count):
+            return request
         plan = plan_compaction(
-            events,
+            agent.session,
             keep_turns=self.keep_turns,
             keep_first_turns=self.keep_first_turns,
             preserve_turns=self.preserve_turns,
         )
-        if plan is None or not await self._due(request, agent, counter, plan.new_turns):
+        if plan is None:
             return request
         with span(agent.ctx, "compaction", session_id=agent.id, through=plan.through):
             summary = await compactor.summarize(plan.messages, max_tokens=self.summary_tokens)
@@ -79,7 +80,8 @@ class _Compaction(Plugin):
         if not summary.strip():
             raise ValueError("Compactor produced no content within the summary budget")
         events = agent.session.events
-        if any(isinstance(item, CompactionApplied) for item in events[start + 1 :]):
+        last_compaction = agent.session.last_offset(CompactionApplied)
+        if last_compaction is not None and last_compaction > start:
             return request
         applied = CompactionApplied(
             plan.through,

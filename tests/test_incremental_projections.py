@@ -3,16 +3,21 @@ import random
 import pytest
 
 from harnessed.core.approvals import ApprovalState
+from harnessed.core.compaction import plan_compaction
 from harnessed.core.control import RunControl
 from harnessed.core.events import (
     AgentControlChanged,
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
+    AssistantChunk,
     AssistantMessage,
+    CompactionApplied,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
+    ObservationPolicyApplied,
+    ObservationRecorded,
     StepEnd,
     StepStart,
     TurnEnd,
@@ -20,7 +25,7 @@ from harnessed.core.events import (
     UserMessage,
 )
 from harnessed.core.inbox import Inbox
-from harnessed.core.messages import ApprovalAnswer, Message, ToolCall
+from harnessed.core.messages import ApprovalAnswer, Message, Observation, ToolCall
 from harnessed.core.model import ModelRequest
 from harnessed.core.session import Session, derive_messages, derive_requests
 from harnessed.core.turns import derive_turns
@@ -91,3 +96,84 @@ async def test_last_and_since_indexes_match_the_log_suffix():
     await session.append(message)
     assert session.last(TurnStart) is start and session.since(TurnStart) == (message,)
     assert before == (start,)
+
+
+@pytest.mark.parametrize("seed", range(5))
+async def test_incremental_observations_legacy_chunks_and_compaction_match_every_prefix(seed):
+    rng = random.Random(seed)
+    session = Session("observations")
+    boundaries = []
+
+    async def append(event):
+        snapshot = session.messages
+        await session.append(event)
+        assert session.messages == derive_messages(session.events)
+        assert Session("reloaded", seed=session.events).messages == session.messages
+        assert isinstance(snapshot, tuple)
+        for keep in (0, 1, 2):
+            options = dict(keep_turns=keep, keep_first_turns=1, preserve_turns=())
+            assert plan_compaction(session, **options) == plan_compaction(session.events, **options)
+
+    for turn in range(6):
+        await append(TurnStart(str(turn)))
+        await append(ObservationPolicyApplied(rng.choice([None, 0, 1, 3])))
+        for step in range(1, 3):
+            await append(StepStart(str(turn), step))
+            for source in ("browser", "screen"):
+                if rng.choice([True, False]):
+                    await append(
+                        ObservationRecorded(
+                            Observation(source, f"{turn}:{step}:full", f"{turn}:{step}:short"),
+                            str(turn),
+                            step,
+                        )
+                    )
+            await append(ModelRequested(ModelRequest("test", session.messages)))
+            message_id = f"{turn}:{step}"
+            await append(AssistantChunk("hello ", message_id=message_id))
+            await append(AssistantChunk("world", message_id=message_id))
+            await append(AssistantMessage(Message("assistant", "hello world", id=message_id)))
+            await append(StepEnd(str(turn), step))
+        await append(TurnEnd(str(turn)))
+        boundaries.append(len(session))
+        if turn in (2, 4):
+            await append(
+                CompactionApplied(
+                    boundaries[turn - 1],
+                    "Summary",
+                    preserve_turns=("0",),
+                )
+            )
+    assert session._history._chunks == {}
+
+
+async def test_completed_legacy_stream_does_not_enable_a_permanent_history_fold():
+    message = Message("assistant", "legacy", id="old")
+    session = Session(
+        "legacy",
+        seed=[
+            AssistantChunk("legacy", message_id="old"),
+            AssistantMessage(message),
+            ObservationPolicyApplied(2),
+        ],
+    )
+
+    def unexpected_fold(events):
+        pytest.fail("Ordinary appends refolded the history after a completed legacy stream")
+
+    session._history._fold = unexpected_fold
+    for index in range(30):
+        await session.append(TurnStart(str(index)))
+        await session.append(StepStart(str(index), 1))
+        await session.append(
+            ObservationRecorded(
+                Observation("browser", f"full {index}", f"short {index}"),
+                str(index),
+                1,
+            )
+        )
+        await session.append(ModelRequested(ModelRequest("test", session.messages)))
+        await session.append(StepEnd(str(index), 1))
+        await session.append(TurnEnd(str(index)))
+        assert session.messages == derive_messages(session.events)
+    assert session._history._chunks == {}
