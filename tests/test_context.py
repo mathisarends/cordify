@@ -53,8 +53,6 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
 
 
 async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payload(tmp_path):
-    from harnessed.adapters.deepseek import DeepSeekLLM
-
     diff = tmp_path / "PR.diff"
     diff.write_text("+ fixed login", encoding="utf-8")
     image = tmp_path / "screenshot.png"
@@ -66,11 +64,8 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
         message = request.messages[0]
         assert "File: PR.diff\n+ fixed login" in message.text
         assert any(isinstance(part, ImagePart) for part in message.content)
-        payload = DeepSeekLLM(api_key="unused")._payload(request)
-        assert payload["messages"][0]["content"][2]["type"] == "image_url"
-        assert payload["messages"][0]["content"][2]["image_url"]["url"].startswith(
-            "data:image/png;"
-        )
+        image_part = next(part for part in message.content if isinstance(part, ImagePart))
+        assert image_part.url.startswith("data:image/png;")
         diff.write_text("changed after admission", encoding="utf-8")
         restored = tuple(
             decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.session.events

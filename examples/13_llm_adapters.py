@@ -1,38 +1,55 @@
-"""Run with: uv run python -m examples.13_llm_adapters"""
+"""Run with: uv run python -m examples.13_llm_adapters (offline Model contract)."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-from harnessed.adapters.base import LLM, RetryPolicy
-from harnessed.adapters.replay import ScriptedLLM
-from harnessed.presets import minimal
-from harnessed.seams import ModelChunk, ModelRequest
-from harnessed.seams.llm import LLM as LLMProtocol
+from harnessed import Agent
+from harnessed.core.messages import Message
+from harnessed.models import Model, ModelChunk, ModelInfo, ModelRequest, ModelResponse
 
 
-class DemoLLM(LLM):
-    def __init__(self, *, retry: RetryPolicy | None = None):
-        super().__init__(retry=retry)
-        self.attempts = 0
+class EchoStream:
+    def __init__(self, text: str):
+        self.text, self.finished = text, False
 
-    async def _stream_once(self, request: ModelRequest) -> AsyncIterator[ModelChunk]:
-        self.attempts += 1
-        print(f"Provider attempt: {self.attempts}")
-        if self.attempts == 1:
-            raise ConnectionError("Simulated connection failure before the first chunk")
-        yield ModelChunk(text="Recovered with the shared retry helper.")
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> ModelChunk:
+        if self.finished:
+            raise StopAsyncIteration
+        self.finished = True
+        return ModelChunk(text=self.text)
+
+    def response(self) -> ModelResponse:
+        if not self.finished:
+            raise RuntimeError("Finish the stream first")
+        return ModelResponse(Message("assistant", self.text))
+
+
+class EchoModel:
+    """Structural implementation: no Harnessed or SDK base class is required."""
+
+    info = ModelInfo("local-echo", context_window=4096)
+
+    async def request(self, request: ModelRequest) -> ModelResponse:
+        return ModelResponse(Message("assistant", f"Echo: {request.messages[-1].text}"))
+
+    @asynccontextmanager
+    async def stream(self, request: ModelRequest):
+        response = await self.request(request)
+        try:
+            yield EchoStream(response.message.text)
+        finally:
+            print("Stream resources closed.")
 
 
 async def main():
-    # Consumers depend on the seam; the adapter class is an implementation choice.
-    adapter: LLMProtocol = DemoLLM(retry=RetryPolicy(max_attempts=3, initial_delay=0.05))
-    async with minimal(adapter).session("adapter-llm") as agent:
-        print((await agent.run("Hello")).text)
-
-    # ScriptedLLM implements the same Protocol directly, without retry inheritance.
-    replay: LLMProtocol = ScriptedLLM(["A structural adapter works in the same harness."])
-    async with minimal(replay).session("plain-llm") as agent:
-        print((await agent.run("Hello again")).text)
+    model: Model = EchoModel()
+    result = await Agent(model=model).run("Hello from a custom Python model.")
+    print(result.text)
+    # Real providers use PydanticAIModel or model='provider:model'; HTTP,
+    # provider retries and native stream parsing stay in the provider SDK.
 
 
 if __name__ == "__main__":

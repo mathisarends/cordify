@@ -15,10 +15,8 @@ from pathlib import Path
 
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from harnessed import ModelRequest, RunControl, user
-from harnessed.adapters.deepseek import DeepSeekLLM
-from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed import Agent, Plugin, tool
+from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
 import harnessed
 
 package = Path(harnessed.__file__).resolve()
@@ -28,18 +26,21 @@ assert installed.metadata['Name'] == 'harnessed'
 assert (installed.read_text('top_level.txt') or '').split() == ['harnessed']
 assert installed.locate_file('harnessed/__init__.py').resolve() == package
 assert (package.parent / 'py.typed').is_file()
-assert DeepSeekLLM()._payload(ModelRequest('test', (user('hello'),)))['stream'] is True
+
+class Calculator(Plugin):
+    @tool(readonly=True)
+    async def add(self, a: int, b: int) -> int:
+        return a + b
 
 async def main():
-    async with minimal(ScriptedLLM(['installed wheel works'])).session('wheel') as agent:
-        await agent.pause()
-        await agent.followup('hello')
-        assert isinstance(agent.session.control, RunControl) and agent.status == 'paused'
-        await agent.resume()
-        await agent.when_idle()
-        assert agent.session.messages[-1].text == 'installed wheel works'
-        await agent.stop()
-        assert agent.status == 'stopped'
+    agent = Agent(model=ScriptedModel([call('add', a=19, b=23), reply('42')]),
+                  plugins=[Calculator()], instructions='Fixed instructions.')
+    async with agent.session('wheel') as session:
+        result = await session.run('Add')
+        assert result.text == '42'
+        assert assert_tool_called(result, 'add', a=19, b=23)[1].content == '42'
+        assert await session.prompt.render() == 'Fixed instructions.'
+    assert not any(name.startswith('pydantic_ai') for name in sys.modules)
 
 asyncio.run(main())
 print('Installed harnessed wheel, metadata, public API, and SDK smoke checks verified.')

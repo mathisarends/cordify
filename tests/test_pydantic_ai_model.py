@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -8,8 +9,14 @@ from pydantic_ai import messages as native
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 
 from harnessed import Agent, Plugin, tool
-from harnessed.core.errors import AuthError, ConfigError
-from harnessed.core.messages import Message
+from harnessed.core.errors import (
+    AuthError,
+    ConfigError,
+    InvalidRequest,
+    ProviderUnavailable,
+    RateLimited,
+)
+from harnessed.core.messages import ImagePart, Message, TextPart
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import Session
@@ -110,6 +117,112 @@ async def test_native_authentication_errors_map_to_host_error_types():
     model = PydanticAIModel(FunctionModel(denied))
     with pytest.raises(AuthError):
         await model.request(ModelRequest("fixture", (Message("user", "hi"),)))
+
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        (429, RateLimited),
+        (422, InvalidRequest),
+        (503, ProviderUnavailable),
+    ],
+)
+async def test_native_http_failures_map_without_a_second_retry_layer(status, expected):
+    from pydantic_ai import exceptions
+
+    calls = []
+
+    def failed(messages, info):
+        calls.append(True)
+        raise exceptions.ModelHTTPError(status, "fixture", body={"error": "unavailable"})
+
+    with pytest.raises(expected) as error:
+        await PydanticAIModel(FunctionModel(failed)).request(
+            ModelRequest("fixture", (Message("user", "hi"),))
+        )
+    assert error.value.status_code == status and len(calls) == 1
+
+
+async def test_user_images_are_translated_without_flattening_the_prompt():
+    received = []
+
+    def respond(messages, info):
+        received.extend(messages)
+        return native.ModelResponse(parts=[native.TextPart("seen")])
+
+    request = ModelRequest(
+        "fixture",
+        (Message("user", (TextPart("Look"), ImagePart("https://example.test/image.png"))),),
+    )
+    await PydanticAIModel(FunctionModel(respond)).request(request)
+    prompt = received[-1].parts[0].content
+    assert prompt[0] == "Look" and isinstance(prompt[1], native.ImageUrl)
+    assert prompt[1].url == "https://example.test/image.png"
+
+
+async def test_owned_and_borrowed_models_follow_the_native_resource_context(monkeypatch):
+    import pydantic_ai.models as models
+
+    depth = [0]
+
+    class ResourceModel(FunctionModel):
+        async def __aenter__(self):
+            depth[0] += 1
+            return self
+
+        async def __aexit__(self, *exc):
+            depth[0] -= 1
+
+    async def chunks(messages, info):
+        assert depth[0] > 0
+        yield "done"
+
+    model = ResourceModel(stream_function=chunks)
+    original = models.infer_model
+    monkeypatch.setattr(
+        models,
+        "infer_model",
+        lambda value, *a, **kw: model if isinstance(value, str) else original(value, *a, **kw),
+    )
+    owned = PydanticAIModel("test:owned")
+    app = Agent(model=owned)
+    async with app.session() as one:
+        async with app.session() as two:
+            await one.run("One")
+            await two.run("Two")
+            assert depth[0] == 2
+        assert depth[0] == 1
+    assert depth[0] == 0
+    async with model:
+        await Agent(model=model).run("Borrowed")
+        assert depth[0] == 1
+    assert depth[0] == 0
+
+
+async def test_aborting_a_native_stream_closes_its_generator():
+    closed, started = asyncio.Event(), asyncio.Event()
+
+    async def chunks(messages, info):
+        try:
+            yield "partial"
+            started.set()
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    model = PydanticAIModel(FunctionModel(stream_function=chunks))
+
+    async def consume():
+        async with model.stream(ModelRequest("fixture", (Message("user", "hi"),))) as stream:
+            async for _ in stream:
+                pass
+
+    task = asyncio.create_task(consume())
+    await asyncio.wait_for(started.wait(), 2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert closed.is_set()
 
 
 def _openai_sse(parts, finish):

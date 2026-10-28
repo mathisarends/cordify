@@ -6,7 +6,6 @@ from ._exports import exported
 logging.getLogger("harnessed").addHandler(logging.NullHandler())
 
 if TYPE_CHECKING:
-    from harnessed.adapters.base import RetryPolicy as RetryPolicy
     from harnessed.adapters.compaction import ExtractiveCompactor as ExtractiveCompactor
     from harnessed.adapters.compaction import LLMCompactor as LLMCompactor
     from harnessed.adapters.spill import LocalSpillStore as LocalSpillStore
@@ -123,7 +122,6 @@ _EXPORTS = {
     "Step": ("harnessed.core.session.turns", "Step"),
     "Turn": ("harnessed.core.session.turns", "Turn"),
     "derive_turns": ("harnessed.core.session.turns", "derive_turns"),
-    "RetryPolicy": ("harnessed.adapters.base", "RetryPolicy"),
     "Agent": ("harnessed.agent", "Agent"),
     "AgentFactory": ("harnessed.core.loop", "AgentFactory"),
     "AgentHandle": ("harnessed.core.loop", "AgentHandle"),
@@ -217,7 +215,6 @@ __all__ = [
     "Step",
     "Turn",
     "derive_turns",
-    "RetryPolicy",
     "Agent",
     "AgentFactory",
     "AgentHandle",

@@ -1,41 +1,31 @@
-"""Set DEEPSEEK_API_KEY, then run: uv run python -m examples.04_deepseek"""
+"""Set DEEPSEEK_API_KEY; uv sync --extra openai; python -m examples.04_deepseek."""
 
 import asyncio
 import os
 from pathlib import Path
 
-from harnessed import Harness
-from harnessed.adapters.deepseek import deepseek
-from harnessed.core.session.events import ToolCalled
-from harnessed.core.stream import TextDelta
-from harnessed.plugins._context.instructions import agents_md, persona
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.filesystem import fs_local, fs_tools
-from harnessed.plugins.sessions import session_jsonl
+from harnessed import Agent, Section
+from harnessed.events import TextDelta, ToolCalled
+from harnessed.plugins import AgentLoop, Filesystem, JsonlSessions
 
 
 async def main():
     workspace = Path.cwd()
-    harness = Harness(
-        [
-            agent_loop(),
-            deepseek(model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")),
-            fs_local(workspace),
-            fs_tools(),
-            persona("Help the user understand this Python project. Answer in English."),
-            agents_md(workspace / "AGENTS.md"),
-            session_jsonl(root=".sessions"),
-        ]
+    agent = Agent(
+        model=f"deepseek:{os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')}",
+        instructions=[
+            "Help the user understand this Python project. Answer in English.",
+            Section.from_file(workspace / "AGENTS.md", missing_ok=True),
+        ],
+        plugins=[Filesystem(workspace), AgentLoop(max_steps=8), JsonlSessions()],
     )
-
-    # Opening this id again resumes the saved history.
-    async with harness.session("project-tour", max_steps=8) as agent:
-        async for event in agent.stream("Read pyproject.toml and explain the package."):
+    async with agent.session("project-tour") as session:
+        async for event in session.stream("Read pyproject.toml and explain the package."):
             match event:
                 case TextDelta(text=text):
                     print(text, end="", flush=True)
-                case ToolCalled(name=name):
-                    print(f"\n-> {name}")
+                case ToolCalled(call=call):
+                    print(f"\n-> {call.name}")
         print()
 
 

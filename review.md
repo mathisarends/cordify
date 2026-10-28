@@ -11,19 +11,17 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 ### P0-6 — Complete neutral model/message contracts
 
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
-  all stream-only LLM compatibility paths. Wire the model's context window into
-  budgets; do not silently assume 128k for unknown models.
+  all stream-only LLM compatibility paths.
 - Rename the remaining message reasoning field and type stop reasons throughout;
   verify accept/continue/fail max-token behavior through the public result API.
 - Support multimodal tool results and model history, including the output-limit,
   spill and token-counting paths. Preserve native provider response state.
 - Finish moving the remaining feature contracts to their consumers; FS is now
   collocated with its implementation and bounded, schema-validated tools.
-- Allow asynchronous provider token counting, retaining a cheap approximation.
 
 ### P0-7 — Finish the public facade and remove duplicate paths
 
-- Remove llms/, presets.py, Harness and the old presets after their remaining
+- Remove presets.py, Harness and the old presets after their remaining
   consumers migrate. The application facade is now independent of Harness.
 - Finish converting optional built-ins to CapWords classes using public APIs.
 - Reduce root exports, sort/check __all__, and remove duplicate class names,
@@ -48,26 +46,16 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   expose raw durable/transient subscriptions separately.
 - Expose the public Session API without the legacy agent.session indirection.
 
-### P1-4 — Finish the two plugin authoring styles
-
-- Keep ParamSpec factory signatures, immutable recipe keywords, and validated
-  class Config. Mutable mount state belongs in setup; clients/locks stay shared.
-- Finish converting optional built-ins to CapWords classes.
-
 ### P1-6 — Loop configuration and composition
 
 - Remove the legacy services.py and preset setup after migrating their remaining
   consumers. AgentLoop now provides its registry/prompt/runtime services, and the
   application path no longer installs implicit compaction or spill stores.
-- Keep the tested single-install/single-disposer behavior and public settle barrier.
 
 ### P1-8 — Boundary validation
 
-- Use Pydantic for external options/configuration and the persistence codec;
-  keep internal hot-path values as frozen dataclasses.
 - Replace remaining duplicated hand-written option validators with declarative
   constraints. Put FS/range limits in the tool's JSON schema.
-- Retain strict tool-form validation, registration-time schemas and cached plans.
 
 ### P1-9 — Tool declarations and context
 
@@ -76,9 +64,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-10 — Finish the PydanticAI migration
 
-- The Direct API bridge and native provider mock spikes are implemented.
-- Remove DeepSeekLLM, its wire models/SSE parser, the retry base/RetryPolicy and
-  deepseek extra. Keep optional openai/anthropic/google extras on pydantic-ai-slim.
 - Use upstream context-window metadata when available and explicit overrides;
   document unsupported native request/response capabilities clearly.
 - Verify missing-extra errors, owned/borrowed client lifetimes, stream abort,
@@ -86,15 +71,13 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-11 — Finish Option C across the default application
 
-- Instructions then plugin guidance, literally and in order, fixed per session;
-  placement/replacement/omission, file sections and origins already work.
 - Remove legacy persona/agents_md and order/stable prompt APIs from defaults.
 
 ## P2 — Structure, typing, docs and testing
 
 ### P2-1 — Type hook signatures
 
-- Publish Next[R] and type emit, bail and waterfall callbacks so invalid event
+- Type emit, bail and waterfall callbacks so invalid event
   or return types fail in ty. Type all examples and verify positive/negative
   consumer cases. Existing tool/plugin/Inject/run contracts already run in CI.
 
@@ -122,7 +105,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P2-8 — English documentation and examples
 
-- Replace the oversized README with the current application quickstart and links.
 - Add guides/concepts/reference docs, example snippets and a strict docs CI build.
 - Keep early examples focused on the application API and explicit plugin sugar;
   migrate all later examples off removed APIs, with real control/context examples.

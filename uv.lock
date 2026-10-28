@@ -471,9 +471,6 @@ dependencies = [
 anthropic = [
     { name = "pydantic-ai-slim", extra = ["anthropic"] },
 ]
-deepseek = [
-    { name = "httpx" },
-]
 google = [
     { name = "pydantic-ai-slim", extra = ["google"] },
 ]
@@ -483,7 +480,6 @@ openai = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -493,17 +489,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", marker = "extra == 'deepseek'", specifier = ">=0.27,<1" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", specifier = ">=2.63,<3" },
     { name = "pydantic-ai-slim", extras = ["google"], marker = "extra == 'google'", specifier = ">=2.63,<3" },
     { name = "pydantic-ai-slim", extras = ["openai"], marker = "extra == 'openai'", specifier = ">=2.63,<3" },
 ]
-provides-extras = ["deepseek", "openai", "anthropic", "google"]
+provides-extras = ["openai", "anthropic", "google"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.27,<1" },
     { name = "pre-commit", specifier = ">=4,<5" },
     { name = "pytest", specifier = ">=8,<10" },
     { name = "pytest-asyncio", specifier = ">=1,<2" },
