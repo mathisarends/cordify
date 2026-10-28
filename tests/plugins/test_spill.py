@@ -1,5 +1,3 @@
-"""Spill follows session storage, retains metadata and applies finite quotas."""
-
 import json
 
 import pytest

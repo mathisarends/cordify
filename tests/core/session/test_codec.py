@@ -1,5 +1,3 @@
-"""Strict persisted discriminators and explicit version-one migrations."""
-
 import pytest
 
 from harnessed.core.messages import ToolCall, User

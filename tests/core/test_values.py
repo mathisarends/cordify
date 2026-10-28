@@ -1,5 +1,3 @@
-"""Frozen mapping payloads have an explicit, predictable hashing contract."""
-
 from collections.abc import Hashable
 
 import pytest

@@ -1,5 +1,3 @@
-"""Mixed tool results remain lossless across policies, history and replay."""
-
 import json
 
 import pytest

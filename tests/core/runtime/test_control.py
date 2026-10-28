@@ -1,5 +1,3 @@
-"""Public run-control boundaries, persistence and concurrent callers."""
-
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import FrozenInstanceError

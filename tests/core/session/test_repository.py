@@ -1,5 +1,3 @@
-"""Stored session management never starts unrelated capabilities or a model."""
-
 import asyncio
 import os
 import subprocess

@@ -1,5 +1,3 @@
-"""Static consumer contracts, checked by ty in every CI matrix cell."""
-
 from collections.abc import AsyncGenerator
 from typing import assert_never, assert_type
 

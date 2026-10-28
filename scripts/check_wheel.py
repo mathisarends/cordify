@@ -1,5 +1,3 @@
-"""Install and exercise the built wheel in a temporary, isolated environment."""
-
 import os
 import subprocess
 import sys

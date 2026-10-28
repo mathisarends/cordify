@@ -1,7 +1,3 @@
-"""Response validation, retry boundaries and durable output contracts."""
-
-from __future__ import annotations
-
 import asyncio
 from dataclasses import replace
 

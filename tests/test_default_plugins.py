@@ -1,5 +1,3 @@
-"""The normal application path uses only replaceable public plugins."""
-
 import asyncio
 
 import pytest

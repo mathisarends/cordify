@@ -1,5 +1,3 @@
-"""Session artifact namespaces, restart behavior and cancellation-safe disk I/O."""
-
 import asyncio
 import threading
 

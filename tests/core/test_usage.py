@@ -1,5 +1,3 @@
-"""Neutral usage accounting, cache semantics and legacy log migration."""
-
 from harnessed import Agent
 from harnessed.core.model import ModelChunk, ModelUsage, sum_usage
 from harnessed.core.session.codec import decode_event, encode_event

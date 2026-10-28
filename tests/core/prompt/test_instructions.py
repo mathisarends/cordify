@@ -1,5 +1,3 @@
-"""Reversible prompt snapshots; application guidance is covered in test_app.py."""
-
 import pytest
 
 from harnessed import Agent, Plugin, Section

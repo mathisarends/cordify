@@ -1,5 +1,3 @@
-"""Bounded I/O, edit atomicity and the public filesystem plugin."""
-
 import json
 from pathlib import Path
 

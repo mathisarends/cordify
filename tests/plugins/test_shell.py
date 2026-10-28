@@ -1,5 +1,3 @@
-"""Native subprocess capture and descendant ownership on every CI platform."""
-
 import asyncio
 import sys
 

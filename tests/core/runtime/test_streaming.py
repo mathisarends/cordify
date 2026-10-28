@@ -1,7 +1,3 @@
-"""The small UI stream owns its turn and its temporary approval responder."""
-
-from __future__ import annotations
-
 import asyncio
 
 import pytest

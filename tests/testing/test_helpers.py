@@ -1,5 +1,3 @@
-"""Public offline helpers exercise real registration, approval and log paths."""
-
 from pathlib import Path
 
 import pytest

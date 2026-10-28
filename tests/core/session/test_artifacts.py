@@ -1,7 +1,3 @@
-"""Forked logs retain independently owned, content-verified artifact files."""
-
-from __future__ import annotations
-
 import asyncio
 
 import pytest

@@ -1,7 +1,3 @@
-"""Per-tool policies survive every declaration path and are fixed at batch planning."""
-
-from __future__ import annotations
-
 import pytest
 
 from harnessed import Agent, Context, Plugin, plugin, tool

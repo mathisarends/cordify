@@ -1,5 +1,3 @@
-"""User-facing options reject coercion, non-finite values and unknown policies."""
-
 import pytest
 from pydantic import TypeAdapter, ValidationError
 

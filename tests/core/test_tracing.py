@@ -1,5 +1,3 @@
-"""Span nesting separates approval waiting from actual tool execution."""
-
 from contextlib import contextmanager
 
 import pytest

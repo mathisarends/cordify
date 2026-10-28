@@ -1,7 +1,3 @@
-"""Lazy catalogs, safe resources, complete instruction output and durable retention."""
-
-from __future__ import annotations
-
 import json
 
 import pytest

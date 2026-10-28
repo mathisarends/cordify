@@ -1,5 +1,3 @@
-"""Positive and intentionally invalid consumer callbacks; ty checks both in CI."""
-
 from typing import assert_type
 
 from harnessed.kernel import Bail, Context, Emit, Inject, PluginBase, Waterfall, hook
