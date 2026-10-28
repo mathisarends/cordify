@@ -96,11 +96,12 @@ class SessionInbox:
             event = InboxAdded.create(
                 message, mode, context=contributions, settings=settings, output_schema=output_schema
             )
+            offset = len(self.log.events)
             try:
                 await self.log.append(event)
             finally:
                 # An acknowledged write survives cancellation of its submitting caller.
-                if any(item.message.id == message.id for item in self.log.inbox.pending):
+                if any(record is event for record in self.log.events[offset:]):
                     if prepared is not None:
                         prepared(event)
                     if event.wakeup:

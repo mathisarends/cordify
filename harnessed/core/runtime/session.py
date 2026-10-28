@@ -6,6 +6,7 @@ from typing import Any, Unpack, overload
 from harnessed.core.approvals import Approver
 from harnessed.core.attachments import Attachment
 from harnessed.core.compaction import CompactionManager
+from harnessed.core.errors import SessionClosed
 from harnessed.core.hooks import (
     SessionAppended,
 )
@@ -22,6 +23,7 @@ from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
 from harnessed.core.runtime.approvals import SessionApprovals, request_approval, revoke_approval
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
+from harnessed.core.runtime.handles import RunHandle, SubmittedRun
 from harnessed.core.runtime.inbox import InboxItem, SessionInbox
 from harnessed.core.runtime.options import AgentOptions, RunOptions
 from harnessed.core.runtime.result import _NO_OUTPUT, RunResult, result_from_events
@@ -33,8 +35,10 @@ from harnessed.core.session.events import (
     CompactionApplied,
     InboxAdded,
     InboxMode,
+    InboxRemoved,
     OutputValidated,
     SessionEvent,
+    TurnEnd,
     TurnStart,
 )
 from harnessed.core.session.session import SessionLog
@@ -71,6 +75,8 @@ class Session:
         ctx.provide(SessionInbox, self.inbox)
         ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox))
         self._subscribers: set[asyncio.Queue] = set()
+        self._submissions: dict[str, SubmittedRun] = {}
+        self._submitted_turns: dict[str, SubmittedRun] = {}
         self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
         self._output_values = OutputValues()
@@ -190,13 +196,59 @@ class Session:
 
     def _session_event(self, event: SessionAppended):
         if event.log is self.log:
+            self._submission_event(event.event, event.seq)
             if isinstance(event.event, AgentControlChanged):
                 self.control.synchronize()
             else:
                 self.control.notify()
             self._publish(event.event)
 
+    def _submission_event(self, event: SessionEvent, seq: int) -> None:
+        submitted = None
+        if isinstance(event, TurnStart):
+            submitted = self._submissions.get(event.input_id)
+            if submitted is not None:
+                submitted.start, submitted.turn_id = seq, event.turn_id
+                self._submitted_turns[event.turn_id] = submitted
+            return
+        if isinstance(event, InboxRemoved):
+            submitted = self._submissions.get(event.message_id)
+            records = (submitted.input, event) if submitted is not None else ()
+        elif isinstance(event, TurnEnd):
+            submitted = self._submitted_turns.get(event.turn_id)
+            records = (
+                (submitted.input, *self.log.events[submitted.start : seq + 1])
+                if submitted is not None and submitted.start is not None
+                else ()
+            )
+        else:
+            return
+        if submitted is not None:
+            try:
+                value = self.control.error or self._result(records, schema=submitted.schema)
+            except Exception as error:
+                value = error
+            self._finish_submission(submitted, value)
+
+    def _finish_submission(
+        self, submitted: SubmittedRun, value: RunResult[Any] | Exception
+    ) -> None:
+        self._submissions.pop(submitted.handle.id, None)
+        if submitted.turn_id is not None:
+            self._submitted_turns.pop(submitted.turn_id, None)
+        submitted.handle._finish(value)
+        submitted.expectation.__exit__(None, None, None)
+
     def _publish(self, event: AgentEvent | None):
+        if event is None:
+            failure = self.control.error
+            if failure is None and (self.control.closing or self.status is SessionStatus.CLOSED):
+                failure = SessionClosed(
+                    "This handle closed before the turn finished; reopen the session to continue"
+                )
+            if failure is not None:
+                for submitted in tuple(self._submissions.values()):
+                    self._finish_submission(submitted, failure)
         for queue in self._subscribers:
             queue.put_nowait(event)
 
@@ -328,24 +380,63 @@ class Session:
         settings: Mapping[str, Any] | None = None,
         output: type[Any] | None = None,
     ) -> RunResult[Any]:
+        handle = await self.submit(
+            content, attachments=attachments, context=context, settings=settings, output=output
+        )
+        return await handle.result()
+
+    @overload
+    async def submit[T](
+        self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
+    ) -> RunHandle[T]: ...
+
+    @overload
+    async def submit(
+        self, content: str | Message, *, output: None = None, **options: Unpack[RunOptions]
+    ) -> RunHandle[None]: ...
+
+    async def submit(
+        self,
+        content: str | Message,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+        settings: Mapping[str, Any] | None = None,
+        output: type[Any] | None = None,
+    ) -> RunHandle[Any]:
+        """Durably enqueue a turn and return its session-owned completion handle."""
+        self.control.check_open()
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
-        with self._output_values.expect(schema):
-            events = tuple(
-                [
-                    event
-                    async for event in stream_turn(
-                        self,
-                        content,
-                        attachments=attachments,
-                        context=context,
-                        settings=settings,
-                        output_schema=schema,
-                    )
-                    if isinstance(event, SessionEvent)
-                ]
+        expectation = self._output_values.expect(schema)
+        expectation.__enter__()
+        submitted = None
+        offset = len(self.log.events)
+
+        def prepared(item: InboxAdded):
+            nonlocal submitted
+            submitted = SubmittedRun(RunHandle(item.message.id), item, schema, expectation)
+            self._submissions[item.message.id] = submitted
+            # An input observer can wake the driver before append() returns.
+            for seq in range(offset, len(self.log.events)):
+                self._submission_event(self.log.events[seq], seq)
+
+        try:
+            await self.inbox._send(
+                content,
+                "followup",
+                attachments=attachments,
+                context=context,
+                settings=settings,
+                output_schema=schema,
+                prepared=prepared,
             )
-            return self._result(events, schema=schema)
+        except BaseException:
+            if submitted is None:
+                expectation.__exit__(None, None, None)
+            raise
+        assert submitted is not None
+        return submitted.handle
 
     def _result(
         self, events: tuple[SessionEvent, ...], *, schema: OutputSchema | None = None
@@ -423,8 +514,10 @@ class Session:
         await self.control.abort(keep_inbox=keep_inbox)
 
     async def aclose(self) -> None:
-        await self.control.close()
-        self._publish(None)
+        try:
+            await self.control.close()
+        finally:
+            self._publish(None)
 
     async def _drive(self):
         token = _driving.set(self)

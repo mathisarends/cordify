@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from harnessed.core.plugin import PluginContext as Context
     from harnessed.core.prompt.values import Section as Section
     from harnessed.core.runtime.control import SessionStatus as SessionStatus
+    from harnessed.core.runtime.handles import RunHandle as RunHandle
     from harnessed.core.runtime.result import RunResult as RunResult
     from harnessed.core.runtime.session import Session as Session
     from harnessed.core.stream import TextDelta as TextDelta
@@ -42,6 +43,7 @@ _EXPORTS = {
     "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
     "Plugin": ("harnessed.core.plugin", "Plugin"),
     "PluginConflict": ("harnessed.agent", "PluginConflict"),
+    "RunHandle": ("harnessed.core.runtime.handles", "RunHandle"),
     "RunResult": ("harnessed.core.runtime.result", "RunResult"),
     "Section": ("harnessed.core.prompt.values", "Section"),
     "Session": ("harnessed.core.runtime.session", "Session"),
@@ -68,6 +70,7 @@ __all__ = [
     "Plugin",
     "PluginConflict",
     "PolicyDecision",
+    "RunHandle",
     "RunResult",
     "Section",
     "Session",

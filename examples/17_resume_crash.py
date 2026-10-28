@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate
-from harnessed.core.session.events import InboxAdded, LogTailRecovered, ToolReturned
+from harnessed.core.session.events import LogTailRecovered, ToolReturned
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.testing import ScriptedModel
@@ -45,7 +45,7 @@ def torn_append(root: Path):
 
 async def crash_worker(root: Path):
 
-    def answer(call):
+    def answer(request):
         print("First process: granting ALWAYS for work.", flush=True)
         return ApprovalAnswer.ALWAYS
 
@@ -54,14 +54,7 @@ async def crash_worker(root: Path):
         await session.run("First task.")
         await session.pause()
         await session.context.set("external-state", "External state changed before the crash.")
-        enqueued = asyncio.Event()
-
-        @session.on(InboxAdded)
-        def submitted(event):
-            enqueued.set()
-
-        queued = asyncio.create_task(session.run("Queued task from the first process."))
-        await enqueued.wait()
+        queued = await session.submit("Queued task from the first process.")
         assert not queued.done()
         torn_append(root)
         print("First process: exiting without Context or writer teardown.", flush=True)
@@ -71,8 +64,8 @@ async def crash_worker(root: Path):
 async def resume(root: Path):
     asked = []
 
-    def answer(call):
-        asked.append(call.id)
+    def answer(request):
+        asked.append(request.call.id)
         return ApprovalAnswer.DENY
 
     model = ScriptedModel(

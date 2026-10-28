@@ -28,13 +28,13 @@ async def main():
     async with agent.session("inbox") as session:
         await session.context.set("project-python", "This project uses Python 3.12+.")
         print(f"After a quiet context update: {session.status}, {len(model.requests)} requests")
-        first = asyncio.create_task(session.run("Analyze the project."))
+        first = await session.submit("Analyze the project.")
         await model.started.wait()
         await session.steer("Focus on the tests.")
         await session.context.set("project-tests", "Unit tests already exist.")
-        second = asyncio.create_task(session.run("Write a summary afterward."))
+        second = await session.submit("Write a summary afterward.")
         model.proceed.set()
-        results = await asyncio.gather(first, second)
+        results = (await first.result(), await second.result())
         await session.wait_until_idle()
         assert results[0].turn_id != results[1].turn_id
         for index, request in enumerate(model.requests, 1):

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from harnessed import Agent as AppAgent
 from harnessed import Context as PluginContext
-from harnessed import Plugin, ToolContext, tool
+from harnessed import Plugin, RunHandle, ToolContext, tool
 from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
@@ -45,6 +45,10 @@ async def structured_consumer(agent: AppAgent, session: Agent) -> None:
     assert_type(result, RunResult[Triage])
     assert_type(result.output.severity, int)
     assert_type(await agent.run("Triage", output=Triage), RunResult[Triage])
+    handle = await session.submit("Triage", output=Triage)
+    assert_type(handle, RunHandle[Triage])
+    assert_type(await handle.result(), RunResult[Triage])
+    assert_type((await handle.result()).output.severity, int)
     _ = result.output.missing  # ty: ignore[unresolved-attribute]
     await session.run("Triage", output="wrong type")  # ty: ignore[no-matching-overload]
 
