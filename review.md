@@ -1,6 +1,6 @@
 # Harnessed – Review implementation tracker
 
-**Implementation status (2026-10-28):** Findings below describe the reviewed snapshot, not necessarily the current code. Struck-through findings have been fixed and verified; partial findings remain open. Existing SDK entry points stay supported while improvements are introduced. The optional retry helper keeps the explicitly requested name `LLM`; OpenTelemetry remains deferred.
+**Implementation status (2026-10-28):** Findings below describe the reviewed snapshot, not necessarily the current code. Struck-through findings have been fixed and verified; partial findings remain open. The latest `api-target.md` takes precedence: optional PydanticAI integration through one `PydanticAIModel` adapter, the `Model` seam and `Agent(model=...)`. Custom provider implementations and `RetryPolicy` are superseded and will be removed during migration. Kernel, plugin lifetimes, the Harnessed loop and durable log remain independent. OpenTelemetry remains deferred.
 
 - P1-6 (partial): duplicate session installation and duplicate cleanup removed; presets now use public `Context.install(..., settle=True)`.
 - P1-3: resolved — registration-time binding plans, weak callable cache, no DI reflection in listener/tool dispatch.
@@ -19,7 +19,7 @@
 - P0-6 (partial): model stop reasons now survive in the core log/results; usage exposes neutral input/output/total properties.
 - P0-7 / 3.1 (partial): `Agent(llm=..., instructions=..., plugins=...)` is available, with explicit slot replacement/conflict checks and an ephemeral `run`. It uses the same public plugins as the expanded composition. Low-level runtime imports are explicit `AgentHandle` imports; the broad compatibility exports remain.
 - P0-5 (partial): the application Agent defaults to read-only ALLOW / side-effect ASK; no approval responder yields unavailable. `Approvals(trust="all")` is the explicit opt-out. Legacy presets and shell hardening remain open.
-- P0-1 (partial): inbox, approvals, control, requests and turns now advance on append. Immutable snapshots are cached; approval/grant and wakeup indexes avoid history scans, and `last`/`since` index exact event kinds. Generated valid logs compare every state against full-fold oracles. Message history and compaction/rule scans remain open.
+- P0-1 (partial): inbox, approvals, control, requests, turns and ordinary message history advance on append. Immutable snapshots are cached; approval/grant and wakeup indexes avoid history scans, and `last`/`since` index exact event kinds. Generated valid logs compare every state against full-fold oracles. Observation/legacy-chunk history still uses a cached full fold; compaction rebuilds history once, and some policy scans remain open.
 - P1-10 (partial): pooled owned HTTP clients with explicit close and shared session leases; borrowed clients stay open. HTTP failures have typed neutral errors and readable bodies; Retry-After wins over full-jitter backoff. Provider stop reasons reach the log. Generic/Anthropic adapters and the legacy constructor's default model remain open.
 - P2-9: first examples now show the application facade and its expanded plugin composition; the previous lifecycle example remains as example 23.
 - Remaining findings: open; implementation and verification are in progress.
@@ -361,7 +361,7 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
 
 Factory-Funktionen, die Instanzen zurückgeben, werden auf einen der beiden Stile umgestellt.
 
-**Entscheidung zur Benennung:** Alle mitgelieferten Plugins werden Klassen (Stil 2) und heißen damit in CapWords: `AgentLoop`, `MemorySessions`, `JsonlSessions`, `Subagent`, `Service` (statt `provide`), `ContextValue`, `Instructions` und `NoopTracer`. Heute bestimmt die Bauart die Schreibweise (`agent_loop` klein, `Rules` groß). Ein Umbau von Funktion zu Klasse wäre dann ein Breaking Change am öffentlichen Namen. Der funktionale Stil (Stil 1) bleibt für Nutzer. Kleinbuchstaben in `plugins=[...]` heißen dann: selbst geschrieben. Offen ist nur der Name des LLM-Plugins, weil `LLM` schon das Protocol ist ([`api-target.md`](api-target.md), Abschnitt 19).
+**Entscheidung zur Benennung:** Alle mitgelieferten Plugins werden Klassen (Stil 2) und heißen damit in CapWords: `AgentLoop`, `MemorySessions`, `JsonlSessions`, `Subagent`, `Service` (statt `provide`), `ContextValue`, `Instructions` und `NoopTracer`. Heute bestimmt die Bauart die Schreibweise (`agent_loop` klein, `Rules` groß). Ein Umbau von Funktion zu Klasse wäre dann ein Breaking Change am öffentlichen Namen. Der funktionale Stil (Stil 1) bleibt für Nutzer. Kleinbuchstaben in `plugins=[...]` heißen dann: selbst geschrieben. Offen ist nur der Name des LLM-Plugins, weil `LLM` schon das Protocol ist ([`api-target.md`](api-target.md), Abschnitt 20).
 
 #### ~~P1-5 · Ambient-Owner-Auflösung über `Context.current()`~~
 

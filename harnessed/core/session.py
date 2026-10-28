@@ -55,6 +55,7 @@ from .events import (
     TurnStart,
     UserMessage,
 )
+from .history import MessageProjection
 from .inbox import Inbox
 from .stream import SessionPublished, TransientEvent
 from .turns import Turn, TurnProjection
@@ -345,6 +346,7 @@ class Session:
         self._requests = list(derive_requests(self._events))
         self._request_snapshot: tuple[ModelRequest, ...] | None = None
         self._turns = TurnProjection(self._events)
+        self._history = MessageProjection(self._events, _derive_message_entries)
         for seq, event in enumerate(self._events):
             if isinstance(event, CompactionApplied):
                 _validate_compaction(self._events, event, seq)
@@ -370,7 +372,7 @@ class Session:
 
     @property
     def messages(self) -> tuple[Message, ...]:
-        return derive_messages(self._events)
+        return self._history.snapshot(self._events)
 
     @property
     def requests(self) -> tuple[ModelRequest, ...]:
@@ -460,6 +462,7 @@ class Session:
             self._last[type(event)] = (seq, event)
             self._snapshot = None
             self._turns.apply(event)
+            self._history.apply(event, seq, self._events)
             if isinstance(event, InboxAdded):
                 self._pending[event.message.id] = event
                 if event.wakeup:

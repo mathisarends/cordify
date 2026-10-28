@@ -54,10 +54,8 @@ class PreStep(Waterfall[StepDecision]):
         for message in reversed(self.messages):
             if message.role == "user":
                 return message.text
-        for event in reversed(self.agent.session.events):
-            if isinstance(event, UserMessage):
-                return event.message.text
-        return ""
+        event = self.agent.session.last(UserMessage)
+        return event.message.text if event is not None else ""
 
 
 @dataclass(frozen=True)

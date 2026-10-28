@@ -12,14 +12,8 @@ class LatestObservationOnly(Plugin):
         self.max_summaries = max_summaries
 
     async def setup(self, agent: Inject[Agent]):
-        self._previous = next(
-            (
-                event.max_summaries
-                for event in reversed(agent.session.events)
-                if isinstance(event, ObservationPolicyApplied)
-            ),
-            None,
-        )
+        previous = agent.session.last(ObservationPolicyApplied)
+        self._previous = previous.max_summaries if previous is not None else None
         await agent.session.append(ObservationPolicyApplied(self.max_summaries))
 
     async def teardown(self, agent: Inject[Agent]):

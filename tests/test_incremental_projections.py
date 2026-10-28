@@ -20,7 +20,7 @@ from harnessed.core.events import (
     UserMessage,
 )
 from harnessed.core.inbox import Inbox
-from harnessed.core.session import Session, derive_requests
+from harnessed.core.session import Session, derive_messages, derive_requests
 from harnessed.core.turns import derive_turns
 from harnessed.seams.models import Decision, Message, ModelRequest, ToolCall
 
@@ -40,6 +40,8 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         assert session.control == RunControl(prefix)
         assert session.turns == derive_turns(prefix)
         assert session.requests == derive_requests(prefix)
+        assert session.messages == derive_messages(prefix)
+        assert session.messages is session.messages
         assert session.events is session.events
         snapshots.append((session.events, session.inbox, session.approvals, session.turns))
 

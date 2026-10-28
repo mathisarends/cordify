@@ -661,14 +661,8 @@ class Agent:
             accepted = (*decision.messages, *(item.message for item in self._step_push))
             await self.session.append(StepStart(turn, step))
             prompt = await self.ctx[SystemPrompt].render()
-            previous = next(
-                (
-                    event.content
-                    for event in reversed(self.session.events)
-                    if isinstance(event, SystemMessage)
-                ),
-                None,
-            )
+            previous_event = self.session.last(SystemMessage)
+            previous = previous_event.content if previous_event is not None else None
             if prompt != previous:
                 await self.session.append(SystemMessage(prompt))
             accepted_ids = {message.id for message in accepted}
