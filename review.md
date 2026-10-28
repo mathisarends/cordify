@@ -11,6 +11,10 @@
 - P1-5: resolved — explicit registration owners plus debug logging, ambient ownership remains the documented fallback.
 - P1-11: resolved — direct sync section evaluation, explicit overrides, invalidation and fixed-duration caching.
 - P0-5 (partial): exception redaction and `ToolError`; configurable `agent_loop(error_formatter=...)`. P1-9 (partial): `ToolNameConflict`, explicit overrides.
+- P1-4 (partial): ParamSpec-preserving factories, class plugin `Config` validation, shared client/lock configuration, mutable mount state in `setup`, proper built-in base initialization. Legacy clone overrides remain compatible.
+- P2-1: resolved — public consumer `assert_type` checks are part of ty CI; plugin status is a Literal. P2-3: resolved — public Context constructor, direct-listener disposers, named priorities, failure-effect regression tests.
+- P0-4 (partial): library NullHandler, registration/tool logs and immediate `PluginFailed` reporting; Tracer seam remains open.
+- Target decisions: MCP and the OTel exporter remain deferred according to `api-target.md`; existing functional/Bundle registration stays supported.
 - Remaining findings: open; implementation and verification are in progress.
 
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
@@ -320,10 +324,10 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
   - einen Generator mit `@plugin` (`fs_local`, `persona`);
   - eine `Plugin`-Subklasse mit `@hook`/`@tool` (`Rules`, `SpillLargeResults`);
   - eine Factory-Funktion, die eine Instanz zurückgibt (`approval_gate`, `deepseek()`).
-- `SpillLargeResults` und `LatestObservationOnly` rufen `super().__init__()` nicht auf und laufen nur dank Klassenattribut-Fallbacks.
-- `Plugin.clone()` ist `copy.deepcopy(self)` (`kernel/declarations.py:95-96`). Das scheitert bei Clients, Locks und Closures.
+~~- `SpillLargeResults` und `LatestObservationOnly` rufen `super().__init__()` nicht auf und laufen nur dank Klassenattribut-Fallbacks.~~
+~~- `Plugin.clone()` ist `copy.deepcopy(self)` (`kernel/declarations.py:95-96`). Das scheitert bei Clients, Locks und Closures.~~
 - Plugins halten mutablen Zustand in `__init__` (`Rules._counts`, `LatestObservationOnly._previous`), der nur durch `clone` pro Mount getrennt wird.
-- Die Overloads von `plugin()` geben `Callable[..., PluginSpec]` zurück (`kernel/plugin.py:273`). Dadurch gibt es keine IDE-Hilfe für `fs_local(root=...)`.
+~~- Die Overloads von `plugin()` geben `Callable[..., PluginSpec]` zurück (`kernel/plugin.py:273`). Dadurch gibt es keine IDE-Hilfe für `fs_local(root=...)`.~~
 ~~- `PluginSpec` ist frozen, enthält aber ein mutables `kwargs: dict`.~~
 
 **→ Empfehlung:** Genau zwei Stile.
@@ -460,21 +464,21 @@ Zielbild: [`api-target.md`](api-target.md), Abschnitt 4.
 
 ### P2: Konventionen, Organisation, Feinschliff
 
-- **P2-1 · Typing-Tiefe.** `ty --error-on-warning` läuft in CI, das ist gut. Ob die *öffentliche* API so typisiert ist, wie Nutzer sie erleben, prüft aber noch nichts (z. B. ParamSpec-Verlust in P1-4). Dazu kommt `PluginHandle.status` (`kernel/plugin.py:91`) als `str` statt `Literal`.
+~~- **P2-1 · Typing-Tiefe.** `ty --error-on-warning` läuft in CI, das ist gut. Ob die *öffentliche* API so typisiert ist, wie Nutzer sie erleben, prüft aber noch nichts (z. B. ParamSpec-Verlust in P1-4). Dazu kommt `PluginHandle.status` (`kernel/plugin.py:91`) als `str` statt `Literal`.~~
   **→ Empfehlung:**
   - Ein `tests/typing/`-Ordner mit `assert_type`-Fällen für die wichtigsten Signaturen (`tool`, `plugin`, `Inject`, `run`), den ty mitprüft.
   - **Hooks typisieren.** Heute sind `event` und `next_` in allen Beispielen untypisiert. `next_` ist ein lokales `async def` in `kernel/events.py:103`, für das es keinen öffentlichen Typ gibt. Vorschlag: `type Next[R] = Callable[[], Awaitable[R]]` im Kernel, exportiert über `harnessed.hooks`. `hook`/`ctx.hook` werden generisch, sodass ein Waterfall-Hook `async def f(event: E, next_: Next[R]) -> R` heißt und der Typechecker einen falschen Rückgabetyp meldet. Für emit gilt `(event: E) -> None`, für bail `(event: E) -> R | None`. README und Beispiele zeigen ausschließlich typisierte Hooks.
   - Statusfelder als `Literal` oder `Enum`.
 - **P2-2 · Lokale Imports als Zyklus-Workaround** (`presets.py:67-69`, `129-130`, `154-158`; `plugins/permissions/approval.py:49`; `kernel/plugin.py`).
   **→ Empfehlung:** Zyklen über die Aufteilung in P1-1 und P1-9 auflösen. Danach verbietet Ruff mit `PLC0415` (import-outside-toplevel) neue lokale Imports.
-- **P2-3 · Kleinkram im Kernel:**
+~~- **P2-3 · Kleinkram im Kernel:**~~
 ~~  - `self.listeners.insert(0, ...) if prepend else self.listeners.append(...)` steht als Ausdruck in Statement-Position (`kernel/events.py`).~~
     **→ Empfehlung:** Ein normales `if`.
-  - Der Kwarg `_scope` ist privat, steht aber im öffentlichen Konstruktor (`kernel/context.py:48`).
+~~  - Der Kwarg `_scope` ist privat, steht aber im öffentlichen Konstruktor (`kernel/context.py:48`).~~
     **→ Empfehlung:** Eine Klassenmethode `Context._child(...)`.
   - `setup` läuft außerhalb des `try` (`kernel/declarations.py`), sodass `teardown` nach einem fehlgeschlagenen `setup` nicht läuft und halb allokierte Ressourcen leaken.
     **→ Empfehlung:** `contextlib`-Semantik: Ressourcen über `ctx.effect(...)` registrieren, die auch bei einem Fehler in `setup` abgebaut werden.
-  - Prioritäten sind nackte Zahlen (`approval_gate` mit `priority=-100`), und „niedriger läuft zuerst“ steht nur im Code.
+~~  - Prioritäten sind nackte Zahlen (`approval_gate` mit `priority=-100`), und „niedriger läuft zuerst“ steht nur im Code.~~
     **→ Empfehlung:** Benannte Konstanten (`Priority.GUARD`, `Priority.DEFAULT`, `Priority.OBSERVE`) plus Docstring an `hook`.
 - **P2-4 · Hashbarkeit.** `freeze()` erzeugt `MappingProxyType`. Frozen Dataclasses mit solchen Feldern sind dadurch nicht hashbar, obwohl `frozen=True` das suggeriert.
   **→ Empfehlung:** `eq=True, unsafe_hash=False` bewusst setzen und dokumentieren, oder `frozendict`-artige Tupel von Paaren verwenden, wo Hashbarkeit gebraucht wird.

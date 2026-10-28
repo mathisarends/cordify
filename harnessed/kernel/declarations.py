@@ -39,7 +39,7 @@ class Bundle:
     def add_hook(
         self, event: type[Event], callback: Callable, *, prepend: bool = False, priority: int = 0
     ):
-        if type(priority) is not int:
+        if not isinstance(priority, int) or isinstance(priority, bool):
             raise TypeError("Listener priority must be an integer")
         self._hooks.append((event, callback, prepend, priority))
         return callback
@@ -97,7 +97,12 @@ class Plugin:
         self.registrations = tuple(registrations)
 
     def clone(self):
-        return copy.deepcopy(self)
+        """Create a mount instance, sharing configuration without copying clients/locks.
+
+        Allocate mutable per-mount state in setup(), and register resources with
+        ctx.effect() immediately so failed setup also releases them.
+        """
+        return copy.copy(self)
 
     async def setup(self, *args: Any, **kwargs: Any):
         pass

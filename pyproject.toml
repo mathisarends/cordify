@@ -59,4 +59,4 @@ python-version = "3.12"
 python-platform = "all"
 
 [tool.ty.src]
-include = ["harnessed", "examples", "scripts"]
+include = ["harnessed", "examples", "scripts", "tests/typing"]

@@ -2,6 +2,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, ClassVar, overload
 
+from pydantic import BaseModel, ConfigDict
+
 from harnessed.kernel import Context
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.kernel.declarations import HookEntry, Registration
@@ -142,6 +144,17 @@ class Bundle(KernelBundle):
 
 
 class Plugin(KernelPlugin):
+    """A plugin recipe with validated configuration and state allocated in setup."""
+
+    class Config(BaseModel):
+        model_config = ConfigDict(
+            extra="forbid",
+            frozen=True,
+            strict=True,
+            allow_inf_nan=False,
+            hide_input_in_errors=True,
+        )
+
     def __init__(
         self,
         *,
@@ -150,9 +163,11 @@ class Plugin(KernelPlugin):
         tools: Iterable[Callable] = (),
         needs: Iterable | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
+        **configuration: Any,
     ):
         super().__init__(name=name, hooks=hooks, needs=needs, registrations=registrations)
         self.tools = tuple(tools)
+        self.config = self.Config.model_validate(configuration)
 
     def _registration_entries(self):
         return (

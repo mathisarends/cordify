@@ -1,7 +1,7 @@
 from collections.abc import Callable, Iterable
 
 from harnessed.core.events import ToolPolicy
-from harnessed.kernel import Context, plugin
+from harnessed.kernel import Context, Priority, plugin
 from harnessed.seams.approver import Approver
 from harnessed.seams.models import Decision
 
@@ -11,7 +11,7 @@ def approval_gate(
     risky: Iterable[str],
     ask: Callable | None = None,
     scope: str = "approval-gate",
-    priority: int = -100,
+    priority: int = Priority.GUARD,
 ):
     risky = frozenset(risky)
     if any(not isinstance(name, str) or not name for name in risky):

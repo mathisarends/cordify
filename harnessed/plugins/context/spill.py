@@ -11,6 +11,7 @@ from harnessed.seams.tokens import TokenCounter
 
 class SpillLargeResults(Plugin):
     def __init__(self, max_tokens: int = 8000, *, preview_tokens: int = 256):
+        super().__init__()
         if type(max_tokens) is not int or max_tokens < 1:
             raise ValueError("max_tokens must be a positive integer")
         if type(preview_tokens) is not int or preview_tokens < 0:

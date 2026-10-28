@@ -87,7 +87,6 @@ class Rules(Plugin):
         self.rules = tuple(rules)
         if any(not isinstance(rule, Rule) or not rule.actions for rule in self.rules):
             raise ValueError("Each rule needs at least one note, inject or steer action")
-        self._counts: Counter = Counter()
 
     def _count(
         self, index: int, rule: Rule, call: ToolCall, result: ToolResult, counter: TokenCounter
@@ -100,7 +99,7 @@ class Rules(Plugin):
         return key, self._counts[key]
 
     async def setup(self, agent: Inject[Agent], counter: Inject[TokenCounter]):
-        self._counts.clear()
+        self._counts: Counter = Counter()
         stored = [event for event in agent.session.events if isinstance(event, RuleEvaluated)]
         restored = False
         for index in range(len(self.rules)):

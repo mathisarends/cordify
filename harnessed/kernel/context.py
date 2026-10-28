@@ -45,11 +45,17 @@ class Context:
     child which inherits parent services and listeners, with local overrides.
     """
 
-    def __init__(self, *, _scope: _Scope | None = None):
-        self._scope = _scope or _Scope()
+    def __init__(self):
+        self._scope = _Scope()
         self._stack = AsyncExitStack()
         self._closed = False
         self._handle: PluginHandle | None = None
+
+    @classmethod
+    def _child(cls, scope: _Scope) -> "Context":
+        child = cls()
+        child._scope = scope
+        return child
 
     @classmethod
     def current(cls) -> "Context | None":
@@ -124,8 +130,8 @@ class Context:
 
     def extend(self) -> "Context":
         self._check_open()
-        child = Context(
-            _scope=_Scope(
+        child = Context._child(
+            _Scope(
                 parent=self._scope,
                 runtime=self._scope.runtime,
                 event_bus=EventBus(self._scope.event_bus),
@@ -143,7 +149,9 @@ class Context:
             self.add_listener(event, callback, prepend=prepend, priority=priority)
             return callback
 
-        return register(fn) if fn is not None else register
+        if fn is not None:
+            return self.add_listener(event, fn, prepend=prepend, priority=priority)
+        return register
 
     def add_listener[E: Event[Any]](
         self, event: type[E], callback: Callable, *, prepend: bool = False, priority: int = 0

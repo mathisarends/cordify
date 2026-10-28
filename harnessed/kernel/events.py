@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import TYPE_CHECKING, Any, cast
 
 from .di import BindingPlan, binding_plan
@@ -16,8 +17,24 @@ class Event[R]:
     pass
 
 
+class Priority(IntEnum):
+    """Lower priorities run first; equal priorities retain registration order."""
+
+    GUARD = -100
+    DEFAULT = 0
+    OBSERVE = 100
+
+
 class Emit(Event[None]):
     """Await observers by ascending priority, then registration order."""
+
+
+@dataclass(frozen=True)
+class PluginFailed(Emit):
+    """A plugin setup failed; the original error is also reported by settle()."""
+
+    plugin: str
+    error: Exception
 
 
 class Bail[R](Event[R | None]):
@@ -51,7 +68,7 @@ class EventBus:
         if not isinstance(event, type) or not issubclass(event, Event):
             raise TypeError("Listener keys must be Event classes")
         owner._check_open()
-        if type(priority) is not int:
+        if not isinstance(priority, int) or isinstance(priority, bool):
             raise TypeError("Listener priority must be an integer")
         listener = _Listener(event, callback, owner, binding_plan(callback), priority)
         log.debug(
@@ -129,7 +146,8 @@ class EventBus:
 
 
 def on(event: type[Event], *, prepend: bool = False, priority: int = 0):
-    if type(priority) is not int:
+    """Declare a hook. Lower priorities run first; equal priorities retain order."""
+    if not isinstance(priority, int) or isinstance(priority, bool):
         raise TypeError("Listener priority must be an integer")
 
     def decorate(callback):

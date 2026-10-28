@@ -18,6 +18,7 @@ from harnessed import (
 from harnessed.adapters.spill import LocalSpillStore
 from harnessed.core.events import ToolReturned
 from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.core.tools import ToolError
 from harnessed.plugins.context.providers import spill_store
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.plugins.tools.fs import fs_local, fs_tools
@@ -83,7 +84,7 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
     @features.tool
     async def large() -> str:
         if stage == "error":
-            raise ValueError(text)
+            raise ToolError(text)
         return text if stage == "execution" else "small"
 
     @features.on(ReviewToolResult)

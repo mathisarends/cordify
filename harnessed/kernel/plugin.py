@@ -1,15 +1,19 @@
 import asyncio
 import inspect
+import logging
 from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, overload
 
 from .declarations import Bundle, Plugin
 from .di import bind_injected, injections
+from .events import PluginFailed
 from .events import on as hook
 from .keys import ServiceKey
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "Bundle",
@@ -87,7 +91,7 @@ class PluginHandle:
         from .context import Context
 
         self.name, self.spec, self._mount = spec.name, spec, mount
-        self.ctx = Context(_scope=mount._scope)
+        self.ctx = Context._child(mount._scope)
         self.ctx._closed = True
         self.status: Literal["waiting", "starting", "active", "stopping", "failed", "disposed"] = (
             "waiting"
@@ -174,7 +178,7 @@ class PluginHandle:
                 self.status = "waiting"
                 return
             self.status = "starting"
-            self.ctx = child = Context(_scope=self._mount._scope)
+            self.ctx = child = Context._child(self._mount._scope)
             child._handle = self
             for binding in signature:
                 provider = binding.owner._handle
@@ -216,6 +220,12 @@ class PluginHandle:
                 self.status = "waiting" if cancelled else "failed"
                 self._failed_signature = None if cancelled else signature
                 self.error = exc if isinstance(exc, Exception) else None
+                if self.error is not None:
+                    log.error("Plugin %s setup failed", self.name, exc_info=exc)
+                    try:
+                        await self._mount.dispatch(PluginFailed(self.name, self.error))
+                    except Exception:
+                        log.exception("PluginFailed observer failed for %s", self.name)
                 await child.aclose()
                 raise
 
@@ -276,15 +286,19 @@ class PluginSpec:
 
 
 @overload
-def plugin[F: Callable[..., AsyncGenerator]](fn: F, /) -> Callable[..., PluginSpec]: ...
+def plugin[**P](
+    fn: Callable[Concatenate[Any, P], AsyncGenerator[None, None]], /
+) -> Callable[P, PluginSpec]: ...
 
 
 @overload
-def plugin(
+def plugin[**P](
     *,
     needs: Iterable[ServiceKey[Any]] = (),
     name: str | None = None,
-) -> Callable[[Callable[..., AsyncGenerator]], Callable[..., PluginSpec]]: ...
+) -> Callable[
+    [Callable[Concatenate[Any, P], AsyncGenerator[None, None]]], Callable[P, PluginSpec]
+]: ...
 
 
 def plugin(fn=None, /, *, needs: Iterable[ServiceKey[Any]] = (), name: str | None = None):
