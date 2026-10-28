@@ -4,14 +4,14 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Inject, Plugin, PolicyDecision, ToolCall, ToolResult, hook, tool
+from harnessed import Agent, Plugin, PolicyDecision, ToolResult, tool
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.hooks import ExecuteTool
-from harnessed.models import ModelChunk
+from harnessed.kernel import Inject, hook
 from harnessed.plugins import Approvals, Service
 from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
-from harnessed.testing import ScriptedModel
+from harnessed.testing import ScriptedModel, call
 
 budget = ToolOutputLimit(max_chars=1024)
 
@@ -43,21 +43,9 @@ async def main():
         await asyncio.to_thread(Path(directory, "large.log").write_text, source, encoding="utf-8")
         model = ScriptedModel(
             [
-                [ModelChunk(tool_call=ToolCall("cat_log"))],
-                [
-                    ModelChunk(
-                        tool_call=ToolCall(
-                            "read_file", {"path": "large.log", "offset": 0, "limit": 40}
-                        )
-                    )
-                ],
-                [
-                    ModelChunk(
-                        tool_call=ToolCall(
-                            "read_file", {"path": "large.log", "offset": 40, "limit": 40}
-                        )
-                    )
-                ],
+                call(LargeResultsTools.cat_log),
+                call(FilesystemTools.read_file, path="large.log", offset=0, limit=40),
+                call(FilesystemTools.read_file, path="large.log", offset=40, limit=40),
                 "Read bounded outputs and continued with explicit character ranges.",
             ]
         )

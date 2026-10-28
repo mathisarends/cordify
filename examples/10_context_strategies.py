@@ -2,9 +2,9 @@
 
 import asyncio
 
-from harnessed import Agent, Inject, Observation, Plugin, Session, hook, tool
+from harnessed import Agent, Observation, Plugin, Session, events, tool
 from harnessed.core.hooks import PreStep
-from harnessed.core.session.events import CompactionApplied, SpillCreated
+from harnessed.kernel import Inject, hook
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Compaction, LatestObservationOnly, Spill, at_ratio
 from harnessed.testing import ScriptedModel, call
@@ -63,9 +63,9 @@ async def main():
         await session.run("Old task context: " + "x" * 2000)
         print((await session.run("Inspect the report.")).text)
         for event in session.events:
-            if isinstance(event, CompactionApplied):
+            if isinstance(event, events.compaction.Applied):
                 print(f"Compacted event prefix [0, {event.through}): {event.summary[:100]}")
-            elif isinstance(event, SpillCreated):
+            elif isinstance(event, events.spill.Created):
                 print(f"Spilled {event.tokens} estimated tokens to {event.ref.path}")
         print("Current observation:", model.requests[-1].messages[-1].text)
 

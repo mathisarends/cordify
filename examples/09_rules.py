@@ -2,20 +2,11 @@
 
 import asyncio
 
-from harnessed import (
-    Agent,
-    Inject,
-    Plugin,
-    PolicyDecision,
-    Session,
-    ToolCall,
-    ToolResult,
-    hook,
-    tool,
-)
+from harnessed import Agent, Plugin, PolicyDecision, Session, ToolCall, ToolResult, events, tool
 from harnessed.core.messages import user
-from harnessed.events import InboxAdded, ToolFinished
+from harnessed.events import InboxAdded
 from harnessed.hooks import ReviewToolResult
+from harnessed.kernel import Inject, hook
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.plugins.rules import Rules, when
@@ -84,7 +75,7 @@ async def demo(name, policy):
                 print(f"{event.mode}: {event.message.text}")
 
         async for event in session.stream("Run the tests and investigate failures."):
-            if isinstance(event, ToolFinished):
+            if isinstance(event, events.tool.Finished):
                 print(f"exit_code={event.result.exit_code}: {event.result.content}")
         assert session.context.values
         assert any(

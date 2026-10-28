@@ -33,6 +33,7 @@ nav:
       - Models: guides/models.md
       - Structured answers: guides/structured-output.md
       - Streaming: guides/streaming.md
+      - Events and extensions: guides/events.md
       - Tools and hooks: guides/tools.md
       - Plugins: guides/plugins.md
       - Context: guides/context.md

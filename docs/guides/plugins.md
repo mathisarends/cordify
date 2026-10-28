@@ -17,7 +17,7 @@ agent = Agent(
     plugins=[
         AgentLoop(max_steps=50, max_parallel_tools=4),
         ToolOutputLimit(max_chars=16_000),
-        Filesystem("."),
+        Filesystem(root="."),
         JsonlSessions(".harnessed/sessions"),
     ],
 )
@@ -36,7 +36,9 @@ which runs on a fresh shallow copy for each mount. Register cleanup with
 register their own reversible effects.
 
 ```python
-from harnessed import Context, Plugin
+from harnessed import Plugin
+from harnessed.kernel import Context
+
 
 class Watcher(Plugin):
     async def setup(self, ctx: Context) -> None:
@@ -46,7 +48,8 @@ class Watcher(Plugin):
 ```
 
 Async-generator function plugins run setup before `yield` and teardown after it.
-The [tool guide](tools.md) shows the function form with `@ctx.tool` and `@ctx.hook`.
+They compose services and hooks. Public tools use `Plugin` methods, as shown in
+the [tool guide](tools.md).
 
 ## Explicit needs and per-call injection
 
@@ -55,8 +58,10 @@ from typing import Protocol
 from harnessed import Inject, Plugin, tool
 from harnessed.plugins import Service
 
+
 class Database(Protocol):
     async def lookup(self, key: str) -> str: ...
+
 
 class Lookup(Plugin):
     needs = (Database,)
@@ -98,3 +103,28 @@ The tool plugin explicitly needs the backend. Removing its provider suspends the
 tools, and a replacement provider restarts them. Injection resolves the current
 backend for every call. `FilesystemTools` exposes bounded `read_file` and
 `write_file`; `Filesystem` also provides discovery, editing and deletion tools.
+
+## Configuration models stay outside plugin classes
+
+```python
+from pydantic import Field
+from harnessed import Plugin, PluginConfig
+
+
+class FailureNudgeConfig(PluginConfig):
+    threshold: int = Field(default=2, ge=1)
+
+
+class FailureNudge(Plugin):
+    Config = FailureNudgeConfig
+    config: FailureNudgeConfig
+
+    def __init__(self, threshold: int = 2):
+        super().__init__(threshold=threshold)
+```
+
+The Config alias selects validation; the annotation types `self.config`. The
+explicit constructor gives callers ordinary Python signatures and IDE completion.
+All built-in configuration models follow this module-level pattern. Small plugins
+can use a normal constructor without a separate configuration model. Allocate
+mutable per-mount state in setup; constructors describe reusable recipes.

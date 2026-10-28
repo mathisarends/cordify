@@ -24,7 +24,8 @@ examples live in the topic guides. Optional features are imported from
 | Member | Behavior |
 | --- | --- |
 | run(prompt, output=None, attachments=(), context=None, settings=None) | Queue and await this turn's RunResult[T] |
-| stream(prompt, output=None, ...) | Eight UI event kinds, ending with TurnFinished(result) |
+| submit(prompt, output=None, ...) | Acknowledge queued input and return RunHandle[T] |
+| stream(prompt, output=None, ...) | Namespaced UI and custom events, ending with events.turn.Finished |
 | steer(content) | Send a next-step correction and return its InboxItem |
 | context.set(name, value) / remove(name) | Await a durable changed fact/removal |
 | inbox.pending / remove(id) | Frozen queued input snapshot / durable removal |
@@ -38,7 +39,9 @@ examples live in the topic guides. Optional features are imported from
 | subscribe(transient=False) | Independent raw log subscription |
 | events / messages / turns / usage / last(Event) | Durable values and projected snapshots |
 | status | SessionStatus: IDLE, RUNNING, PAUSED, STOPPING, CLOSED |
-| log | Advanced append-only SessionLog service |
+| emit(event) | Persist a declared durable event or publish a transient notification |
+| approvals.answer(id, decision) / revoke(id) | Acknowledged response / durable grant revocation |
+| log | Advanced append-only SessionLog service and event catalog |
 
 Await methods that perform durable writes. Closed handles raise SessionClosed.
 See [session boundaries and restart behavior](../guides/sessions.md).
@@ -70,10 +73,11 @@ unhashable. See [values and record versions](../concepts/values.md).
 | API | Purpose |
 | --- | --- |
 | Plugin / @tool | Class-based reusable capability |
-| @plugin / Context.tool | Small async-generator capability |
+| PluginConfig / Config = MyConfig | Module-level validated configuration model |
+| @plugin | Kernel services and hooks in an async generator |
 | needs / Inject[T] | Temporal lifetime / per-call service resolution |
 | @hook / Context.hook | Typed observer, bail or waterfall extension |
-| ToolContext | Call, log, signal, cancelled and progress |
+| ToolContext | Call, log, signal, cancelled, progress and emit |
 | ctx.effect(cleanup) | Owned idempotent sync/async cleanup |
 | Service(T, implementation) | Structural dependency registration |
 
@@ -81,3 +85,15 @@ A keyword-only ToolContext is implicit; ordinary dependencies use Inject.
 Model-filled parameters become a strict Pydantic form; unknown fields and invalid
 values fail before invocation. See [tools and hooks](../guides/tools.md) and
 [composition](../guides/plugins.md).
+
+## Event data and namespaces
+
+`harnessed.events` exposes `text.Delta`, `reasoning.Delta`, `tool.Started`,
+`tool.Finished`, `approval.Needed`, `turn.Finished`, `compaction.Applied` and
+`spill.Created`, among other namespaces. Every event has an explicit namespaced
+`type` discriminator. See [events and schemas](../guides/events.md).
+
+`StreamEvent[T]` describes the built-in UI union. `EventStream[T]` includes the
+application extension bases. Declare frozen dataclasses extending `DurableEvent`
+or `TransientEvent` and list them on `Plugin.events`. EventRegistry supplies
+session-local validation, durable schemas and encode/decode operations.

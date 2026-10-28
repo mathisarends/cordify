@@ -1,7 +1,7 @@
 # Conversations, logs and branches
 
 `Agent` holds reusable configuration. `Agent.session()` opens a live `Session`,
-which exposes `run`, `stream`, context, usage, messages, events and turn snapshots
+which exposes `run`, `submit`, `stream`, context, usage, messages, events and turn snapshots
 directly. `SessionLog` is the underlying append-only store and projection layer;
 advanced integrations can inspect it through `session.log` or inject it as a service.
 
@@ -26,6 +26,25 @@ agent = Agent(model="deepseek:deepseek-chat", plugins=[JsonlSessions()])
 Each `run` queues its own turn. Concurrent calls receive separate results and do
 not wait for later turns to finish. The session's full log and accumulated usage
 remain available independently of any one result.
+
+## Submit without waiting for completion
+
+```python
+first = await session.submit("Inspect the project.")
+second = await session.submit("Then write a summary.")
+print((await first.result()).text)
+print((await second.result()).text)
+```
+
+`submit()` returns after the input is durably acknowledged. Its `RunHandle[T]`
+provides `id`, `done()` and an awaitable `result()`. Runs execute in queue order
+under the session's existing driver. No background task is created per handle.
+`run()` is the convenience form that submits and waits for the result.
+
+Repeated result waits return the same result, including the originally validated
+structured output. Cancelling a result waiter leaves the run queued or executing.
+Driver errors are delivered through the handle; closing the session fails unfinished
+live handles with SessionClosed while retaining their durable inputs or paused turn.
 
 ## Fork a closed prefix
 
@@ -68,12 +87,12 @@ versions, validation and replay semantics.
 ## Control a live run
 
 ```python
-running = asyncio.create_task(session.run("Review the patch."))
-await session.pause()             # Wait for the complete model/tool step to commit.
+running = await session.submit("Review the patch.")
+await session.pause()  # Wait for the complete model/tool step to commit.
 await session.context.set("ci", "Tests passed.")
-await session.resume()            # Continue the same turn.
-result = await running
-await session.wait_until_idle()   # Wait for all queued turns too.
+await session.resume()  # Continue the same turn.
+result = await running.result()
+await session.wait_until_idle()  # Wait for all queued turns too.
 ```
 
 `stop()` finishes the current step and returns `StopReason.STOPPED` to its run.
@@ -102,11 +121,9 @@ See [the runnable control example](https://github.com/mathisarends/cordify/blob/
 
 ```python
 await session.pause()
-queued = asyncio.create_task(session.run("Review after the current task."))
-# Once the task has submitted its input:
-# item = session.inbox.pending[0]
-# await session.inbox.remove(item.id)
-# assert (await queued).stop_reason is StopReason.DISCARDED
+queued = await session.submit("Review after the current task.")
+await session.inbox.remove(queued.id)
+assert (await queued.result()).stop_reason is StopReason.DISCARDED
 await session.resume()
 ```
 
@@ -133,8 +150,8 @@ addressing over this shared storage contract without importing the JSONL plugin.
 ## List and delete stored conversations
 
 ```python
-ids = await agent.sessions.list()       # Sorted tuple of session IDs.
-await agent.sessions.delete("old-task") # Log, artifacts and recovery sidecars.
+ids = await agent.sessions.list()  # Sorted tuple of session IDs.
+await agent.sessions.delete("old-task")  # Log, artifacts and recovery sidecars.
 ```
 
 Deleting a live session raises SessionLocked, including when another process owns

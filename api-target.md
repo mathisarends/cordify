@@ -43,7 +43,7 @@ Harnessed bleibt beim Prinzip von Cordis und DSH: Ein Agent ist eine Liste von P
 |---|---|---|---|
 | **1 · App** | Wer einen Agent baut | `harnessed`, `harnessed.models`, `harnessed.plugins` | `Agent`, `Session`, `RunResult`, Stream-Events, mitgelieferte Plugins *benutzen*, Tool-Plugins (`Plugin` + `@tool`) *schreiben* |
 | **2 · Plugin** | Wer das Verhalten des Loops ändert | zusätzlich `harnessed.hooks`, `harnessed.events` | `hook`, `Inject`, Hook-Events, Slots |
-| **3 · Kernel** | Wer ein eigenes Framework darauf baut | `harnessed.kernel`, `harnessed.seams` | `Context`, Services, `needs`, Effects |
+| **3 · Kernel** | Wer ein eigenes Framework darauf baut | `harnessed.kernel`, bei Bedarf die besitzende `harnessed.core`-Schicht | `Context`, Services, `needs`, Effects |
 
 Ein Plugin, das nur Tools enthält, ist die einfachste Plugin-Form. Es braucht weder Context noch Hooks und gehört deshalb schon zu Ebene 1. Hooks beginnen in Abschnitt 14.
 
@@ -51,19 +51,19 @@ Ein Plugin, das nur Tools enthält, ist die einfachste Plugin-Form. Es braucht w
 
 ```python
 from harnessed import (
-    Agent, Session, SessionStatus, RunResult, StopReason, Plugin, plugin, tool, Section, ToolError, ToolContext, Image,  # app basics
-    TextDelta, ReasoningDelta, ToolStarted, ToolProgress,                            # stream events
-    ToolFinished, ApprovalNeeded, TurnFinished,
-    Context, hook, Inject,                                                           # level 2
+    Agent, Session, SessionStatus, RunHandle, RunResult, StopReason,
+    Plugin, PluginConfig, tool, Section, ToolError, ToolContext, Image,
+    ApprovalRequest, PolicyDecision, events,
 )
-from harnessed.hooks import Next, PrepareRequest, ToolPolicy, ReviewToolResult, Priority   # level 2
-from harnessed.models import PydanticAIModel          # only for own options; settings: pydantic_ai.settings.ModelSettings
-from harnessed.plugins import (                                         # every built-in plugin lives here
+from harnessed.kernel import Context, hook, Inject
+from harnessed.hooks import Next, PrepareRequest, ToolPolicy, ReviewToolResult, Priority
+from harnessed.models import PydanticAIModel
+from harnessed.plugins import (
     AgentLoop, JsonlSessions, Service, ContextValue,
     Approvals, ApprovalAnswer, Compaction, at_ratio, every_turns, Spill, ToolOutputLimit,
     Filesystem, Shell, Skills, Skill,
 )
-from harnessed.testing import ScriptedModel
+from harnessed.testing import ScriptedModel, call
 ```
 
 ---
@@ -111,7 +111,7 @@ agent = Agent(
     model="deepseek:deepseek-chat",
     instructions="You are a careful support agent.",
     plugins=[
-        Orders(api_url="https://orders.internal"),     # lookup_order, refund
+        Orders(api_url="https://orders.internal"),  # lookup_order, refund
         JsonlSessions(".harnessed/sessions"),
         Approvals(approver=ask_in_slack, trust=["lookup_order"]),
         Compaction(trigger=at_ratio(0.8)),
@@ -147,33 +147,29 @@ agent = Agent(..., plugins=[Weather()])
 - Sync-Methoden sind erlaubt und laufen in einem Thread. Sie sind **nicht abbrechbar** (P1-9).
 - Der Rückgabewert darf `str`, `Image`, eine Liste daraus, ein Pydantic-Modell oder ein `dict` sein. Modelle und Dicts werden als JSON serialisiert.
 
-**Funktionaler Stil** für sehr kleine Fälle, gleiche Semantik:
-
-```python
-@plugin
-async def calculator(ctx: Context):
-    @ctx.tool(readonly=True)
-    async def add(a: int, b: int) -> int:
-        """Add two integers."""
-        return a + b
-
-    yield
-
-
-agent = Agent(..., plugins=[calculator()])
-```
+Öffentliche Tools werden ausschließlich als `@tool`-Methoden eines Plugins registriert.
+`ctx.tool`, `Bundle.tool`, `Session.tool`, `add_tool` und Funktionslisten sind keine
+weiteren öffentlichen Wege. Kleine funktionale Kernel-Plugins bleiben für Services
+und Hooks verfügbar; für Tools wird auch bei wenigen Methoden eine Klasse verwendet.
 
 ### 2.2 Config, Zustand und Lebenszyklus
 
 ```python
-class GitHub(Plugin):
-    class Config(BaseModel):
-        token: SecretStr
-        default_org: str | None = None
+class GitHubConfig(PluginConfig):
+    token: SecretStr
+    default_org: str | None = None
 
-    async def setup(self, ctx):                       # per mount; state lives here only
+
+class GitHub(Plugin):
+    Config = GitHubConfig
+    config: GitHubConfig
+
+    def __init__(self, token: SecretStr, default_org: str | None = None):
+        super().__init__(token=token, default_org=default_org)
+
+    async def setup(self, ctx):  # per mount; state lives here only
         self.client = GitHubClient(self.config.token)
-        ctx.effect(self.client.aclose)                 # closed on dispose
+        ctx.effect(self.client.aclose)  # closed on dispose
 
     @tool(readonly=True)
     async def list_issues(self, repo: str) -> str:
@@ -186,7 +182,7 @@ class GitHub(Plugin):
         ...
 
 
-agent = Agent(..., plugins=[GitHub(token=os.environ["GITHUB_TOKEN"])])   # validated by Config
+agent = Agent(..., plugins=[GitHub(token=os.environ["GITHUB_TOKEN"])])  # validated by Config
 ```
 
 ### 2.3 Parameter mit Grenzen
@@ -217,10 +213,11 @@ Die Grenzen stehen im JSON-Schema, das Modell sieht sie also. Ungültige Argumen
 ### 2.4 Wirkung deklarieren (steuert Approvals)
 
 ```python
-@tool(readonly=True)          # never asks
+@tool(readonly=True)  # never asks
 async def search(self, query: str) -> str: ...
 
-@tool                         # default: side_effects=True -> ASK unless trusted
+
+@tool  # default: side_effects=True -> ASK unless trusted
 async def send_email(self, to: str, body: str) -> str: ...
 ```
 
@@ -230,13 +227,13 @@ Was das für Approvals bedeutet, steht in Abschnitt 9.
 
 ```python
 @tool(
-    name="fs.write",                  # default: method name
-    description="...",                # default: docstring
+    name="fs.write",  # default: method name
+    description="...",  # default: docstring
     readonly=False,
-    timeout=30,                       # seconds, default from AgentLoop(tool_timeout=...)
+    timeout=30,  # seconds, default from AgentLoop(tool_timeout=...)
     resources=lambda args: [f"file:{args['path']}"],  # parallel scheduling: same key = serialized
-    output_limit=8_000,               # overrides ToolOutputLimit for this tool
-    override=True,                    # explicitly replace an existing tool with this name
+    output_limit=8_000,  # overrides ToolOutputLimit for this tool
+    override=True,  # explicitly replace an existing tool with this name
 )
 async def write_file(self, path: str, content: str) -> str: ...
 ```
@@ -252,13 +249,13 @@ class Deployer(Plugin):
         self,
         service: str,
         *,
-        ctx: ToolContext,                 # per call, invisible to the model
+        ctx: ToolContext,  # per call, invisible to the model
         http: Inject[httpx.AsyncClient],  # any service from the Agent's context
     ) -> str:
         """Deploy a service."""
         await ctx.progress(f"deploying {service}")  # shows up as ToolProgress in the stream
         async for line in stream_logs(http, service):
-            if ctx.cancelled:                         # cooperative cancellation
+            if ctx.cancelled:  # cooperative cancellation
                 raise ToolError("Deployment cancelled.")
         return "ok"
 ```
@@ -306,8 +303,8 @@ class Browser(Plugin):
 Auch zur Laufzeit gibt es keinen Sonderweg: Man aktiviert ein Plugin in der Session.
 
 ```python
-dispose = session.use(GitHub(token=...))   # tools are available from the next step on
-dispose()                                  # removes plugin and tools again
+handle = await session.use(GitHub(token=...))  # tools are available from the next step on
+await handle.aclose()  # removes plugin and tools again
 ```
 
 - Gibt es einen Tool-Namen doppelt, scheitert der Start mit **`ToolNameConflict`**, es sei denn, das spätere Tool setzt `override=True` (P1-9).
@@ -323,8 +320,10 @@ dispose()                                  # removes plugin and tools again
 
 ```python
 # 1. normal case: a pydantic-ai model string, no extra import
-agent = Agent(model="deepseek:deepseek-chat")                 # key: DEEPSEEK_API_KEY, extra: harnessed[openai]
-agent = Agent(model="anthropic:claude-sonnet-4-5")            # key: ANTHROPIC_API_KEY, extra: harnessed[anthropic]
+agent = Agent(model="deepseek:deepseek-chat")  # key: DEEPSEEK_API_KEY, extra: harnessed[openai]
+agent = Agent(
+    model="anthropic:claude-sonnet-4-5"
+)  # key: ANTHROPIC_API_KEY, extra: harnessed[anthropic]
 
 # 2. special configuration (Azure, own base_url, vLLM, Ollama, ...): pass the pydantic-ai model directly
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -371,7 +370,9 @@ agent = Agent(
         settings=ModelSettings(temperature=0.2, max_tokens=8_000, parallel_tool_calls=True),
     ),
     plugins=[
-        AgentLoop(max_steps=50, tool_timeout=30, on_max_tokens="continue"),  # replaces the default loop
+        AgentLoop(
+            max_steps=50, tool_timeout=30, on_max_tokens="continue"
+        ),  # replaces the default loop
     ],
 )
 
@@ -386,14 +387,16 @@ await session.run("...", settings=ModelSettings(temperature=0))
 
 ### 3.4 Eigenes Model
 
-`Model` ist unser eigenes Protokoll in `harnessed.seams`. Wer kein pydantic-ai will, implementiert es direkt:
+`Model` ist unser eigenes Protokoll, öffentlich über `harnessed.models` verfügbar. Wer kein pydantic-ai will, implementiert es direkt:
 
 ```python
-from harnessed.seams import Model, ModelInfo, ModelRequest, ModelResponse, ModelStream
+from harnessed.models import Model, ModelInfo, ModelRequest, ModelResponse, ModelStream
 
 
 class MyModel:  # satisfies the Model protocol, no base class needed
-    info = ModelInfo(name="my-model", context_window=200_000, max_output=16_000, supports_images=True)
+    info = ModelInfo(
+        name="my-model", context_window=200_000, max_output=16_000, supports_images=True
+    )
 
     async def request(self, request: ModelRequest) -> ModelResponse: ...
 
@@ -427,7 +430,7 @@ from harnessed import Agent, Plugin, Section, tool
 
 
 class GitHub(Plugin):
-    guidance = "Call list_issues before create_issue."   # class attribute, appended automatically
+    guidance = "Call list_issues before create_issue."  # class attribute, appended automatically
 
     @tool(readonly=True)
     async def list_issues(self, repo: str) -> str:
@@ -438,9 +441,9 @@ agent = Agent(
     model=...,
     instructions=[
         "You are a careful support agent.",
-        Section.from_file("AGENTS.md"),    # read once at session start
+        Section.from_file("AGENTS.md"),  # read once at session start
     ],
-    plugins=[GitHub(token=...), Weather()],   # Weather.guidance = "Prefer metric units."
+    plugins=[GitHub(token=...), Weather()],  # Weather.guidance = "Prefer metric units."
 )
 ```
 
@@ -483,12 +486,12 @@ agent = Agent(
     model=...,
     instructions=[
         "You are a careful support agent.",
-        github.guidance,                        # 1. place it yourself; not appended again
+        github.guidance,  # 1. place it yourself; not appended again
         "Never close issues without asking.",
     ],
     plugins=[
         github,
-        Weather(guidance=None),                 # 2. drop it
+        Weather(guidance=None),  # 2. drop it
         Shop(guidance="Only quote EUR prices."),  # 3. replace it
     ],
 )
@@ -525,7 +528,9 @@ from harnessed.plugins import ContextValue
 agent = Agent(
     model=...,
     instructions="You are a careful support agent.",
-    plugins=[ContextValue("date", lambda: f"Today is {date.today():%Y-%m-%d}.")],   # evaluated per step
+    plugins=[
+        ContextValue("date", lambda: f"Today is {date.today():%Y-%m-%d}.")
+    ],  # evaluated per step
 )
 
 # at runtime, e.g. after login
@@ -559,16 +564,18 @@ from harnessed.plugins import JsonlSessions
 
 agent = Agent(
     model=...,
-    plugins=[JsonlSessions(".harnessed/sessions", durability="flush")],  # "buffered" | "flush" | "fsync"
+    plugins=[
+        JsonlSessions(".harnessed/sessions", durability="flush")
+    ],  # "buffered" | "flush" | "fsync"
 )
 
 async with agent.session("support-4711") as session:  # resumes if the log exists
     await session.run("...")
 
 # reading
-session.messages          # projected history (after compaction)
-session.events            # full append-only log, typed
-session.usage             # summed usage of the whole session
+session.messages  # projected history (after compaction)
+session.events  # full append-only log, typed
+session.usage  # summed usage of the whole session
 session.last(ToolFinished)
 
 # fork: new session from a prefix of the log
@@ -579,7 +586,7 @@ async with agent.session(branch) as alt:
 
 # managing
 await agent.sessions.list()
-await agent.sessions.delete("support-4711")     # also deletes spill files
+await agent.sessions.delete("support-4711")  # also deletes spill files
 ```
 
 - **Persistenz ist ein Plugin im Slot `sessions`.** Der Default ist `MemorySessions()`. SQLite oder Postgres kommen später als weitere Plugins.
@@ -593,13 +600,13 @@ await agent.sessions.delete("support-4711")     # also deletes spill files
 ```python
 result = await session.run("Summarize the open issues.")
 
-result.text            # final assistant text of *this* turn
-result.output          # typed output (see below), else None
-result.usage           # Usage(input_tokens, output_tokens, cache_read_tokens, reasoning_tokens, cost)
-result.stop_reason     # StopReason (StrEnum): END, MAX_TOKENS, MAX_STEPS, STOPPED, ABORTED, DISCARDED
+result.text  # final assistant text of *this* turn
+result.output  # typed output (see below), else None
+result.usage  # Usage(input_tokens, output_tokens, cache_read_tokens, reasoning_tokens, cost)
+result.stop_reason  # StopReason (StrEnum): END, MAX_TOKENS, MAX_STEPS, STOPPED, ABORTED, DISCARDED
 result.turn_id
-result.messages        # messages of this turn
-result.tool_calls      # (ToolCall, ToolResult) pairs of this turn
+result.messages  # messages of this turn
+result.tool_calls  # (ToolCall, ToolResult) pairs of this turn
 ```
 
 **Structured Output:**
@@ -612,7 +619,7 @@ class Triage(BaseModel):
 
 
 result = await session.run("Triage this bug report: ...", output=Triage)
-result.output.severity     # typed as Triage
+result.output.severity  # typed as Triage
 ```
 
 **Anhänge:**
@@ -629,39 +636,89 @@ result = await agent.run("What is 19 + 23?")
 
 ---
 
-## 7. Streaming
+## 7. Streaming und eigene Events
 
 ```python
+from harnessed import events
+
 async for event in session.stream("Refactor utils.py"):
     match event:
-        case TextDelta(text=text):
+        case events.text.Delta(text=text):
             print(text, end="", flush=True)
-        case ReasoningDelta(text=text):
+        case events.reasoning.Delta(text=text):
             ui.thinking(text)
-        case ToolStarted(call=call):
+        case events.tool.Started(call=call):
             ui.spinner(call.name, call.arguments)
-        case ToolProgress(call_id=cid, text=text):
+        case events.tool.Progress(call_id=cid, text=text):
             ui.progress(cid, text)
-        case ToolFinished(call=call, result=result):
+        case events.tool.Finished(call=call, result=result):
             ui.done(call.name, result.status)
-        case ApprovalNeeded(request=req):
-            await req.answer(ApprovalAnswer.ALLOW)
-        case TurnFinished(result=result):
+        case events.approval.Needed(request_id=request_id):
+            await session.approvals.answer(request_id, ApprovalAnswer.ALLOW)
+        case events.compaction.Applied(summary=summary):
+            ui.summary(summary)
+        case events.spill.Created(ref=ref):
+            ui.artifact(ref.path)
+        case events.turn.Finished(result=result):
             print(result.usage)
 ```
 
-- `StreamEvent` ist eine abgeschlossene Union aus 8 Typen. `match` ist erschöpfend prüfbar.
-- `TextDelta` und `ReasoningDelta` sind **transient**: Sie werden emittiert, aber nicht persistiert (P0-2).
-- Der Stream endet mit dem **eigenen** Turn.
+- Tags sind explizite stabile Literale wie `text.delta`, `reasoning.delta`, `tool.started`
+  und `turn.finished`; ein Python-Klassenname bestimmt nicht das Speicherformat.
+- `StreamEvent[T]` ist eine Pydantic-kompatible discriminated union der Built-in-UI-Events.
+  `EventStream[T]` ergänzt die Basistypen für eigene Events. Klassen-Patterns erhalten den
+  präzisen `RunResult[T]`-Typ bei Structured Output.
+- Text- und Reasoning-Deltas sind transient. Das Log speichert die vollständige Nachricht.
+- Approval-Events enthalten Daten; Antworten laufen über `session.approvals.answer`.
+- Der Stream endet mit dem eigenen Turn. Rohes Log und Live-Notifications sind separat über
+  `session.subscribe()` bzw. `session.subscribe(transient=True)` abonnierbar.
 
-**Rohes Log abonnieren** (für Audit oder Sync in eine Datenbank):
+Eigene Events sind frozen Dataclasses; Pydantic übernimmt Validierung, Union und Schema:
 
 ```python
-async for event in session.subscribe():                # durable events only
-    ...
-async for event in session.subscribe(transient=True):  # plus deltas
-    ...
+from dataclasses import dataclass, field
+from typing import Annotated, Literal
+from pydantic import Field, TypeAdapter
+from harnessed import Plugin, ToolContext, events, tool
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectIndexed(events.DurableEvent):
+    files: int
+    type: Literal["project.indexed"] = field(default="project.indexed", kw_only=True)
+
+
+class Indexer(Plugin):
+    events = (ProjectIndexed,)
+
+    @tool(readonly=True)
+    async def index(self, *, ctx: ToolContext) -> str:
+        await ctx.emit(ProjectIndexed(files=42))
+        return "Indexed."
+
+
+type ProjectEvent = Annotated[
+    events.BuiltinEvent | ProjectIndexed, Field(discriminator="type")
+]
+adapter = TypeAdapter(ProjectEvent)
 ```
+
+`TransientEvent` statt `DurableEvent` liefert dieselbe Erweiterung ohne Persistenz.
+Der Agent sammelt `Plugin.events` vor dem Laden gespeicherter Logs. Die Registry ist
+sessionlokal; verschiedene Klassen mit demselben Tag sind ein Konfigurationsfehler.
+Runtime-Plugins registrieren ihre Typen vor Setup. Codecs bleiben nach Dispose bekannt,
+damit bereits gespeicherte Events lesbar bleiben. Replay führt Tools und Observer nicht
+erneut aus. Eigene Datensätze ändern die Core-Zustandsmaschine nicht automatisch.
+
+`events.EventRegistry([...])` bietet `schema()`, `encode()` und `decode()` für persistente
+Events. Das laufende Gesamtverzeichnis liegt unter `session.log.registry`. Zum Decodieren
+von Pydantic-Endergebnissen mit eigenen Log-Events kann der Adapter diese Registry als
+`context={"events": registry}` erhalten. JSONL-Version 4 migriert beim Lesen alte Slash-
+und Klassen-Tags; bestehende Logs werden nicht umgeschrieben.
+
+Dynamisch geladene Plugins können eine statische Python-Union nicht nachträglich ändern.
+Anwendungen deklarieren ihre konkrete Union daher explizit, wenn sie alle eigenen
+Varianten statisch prüfen möchten. Die Registry übernimmt die dynamische Validierung.
 
 ---
 
@@ -671,27 +728,38 @@ Inbox und Run-Control sind Core-Mechanismus und kein Plugin, weil sie das Log-Fo
 
 ### 8.1 Nachrichten während eines Turns
 
-Es gibt genau drei Wege, während eines Turns etwas an das Modell zu geben:
+Runs werden über `run` oder `submit` eingereiht; `steer` liefert Korrekturen und
+`context.set` verändert Fakten ohne einen Turn zu starten:
 
 ```python
 # while a turn is running, from a different task or the UI:
-result = await session.run("And afterwards, write tests.")   # waits: queued as its own turn after the current one
-await session.steer("Use pathlib, not os.path.")             # into the running turn, before the next step
-session.context.set("ci", "CI is red on main.")              # a fact, sent with the next step, never starts one
+result = await session.run(
+    "And afterwards, write tests."
+)  # waits: queued as its own turn after the current one
+await session.steer("Use pathlib, not os.path.")  # into the running turn, before the next step
+await session.context.set("ci", "CI is red on main.")  # a fact, sent with the next step, never starts one
 
-session.inbox.pending      # tuple of InboxItem (queued runs and steers)
+session.inbox.pending  # tuple of InboxItem (queued runs and steers)
 await session.inbox.remove(item.id)
 ```
 
 | Aufruf | Wohin | Läuft ein Turn? | Session idle? | Gibt zurück |
 |---|---|---|---|---|
 | `run(text)` / `stream(text)` | eigener, **neuer** Turn | Wird in die Inbox gestellt und startet, wenn alle Turns davor fertig sind. | Startet sofort. | `RunResult` bzw. Events **dieses** Turns |
+| `submit(text)` | eigener neuer Turn | Aufnahme wird bestätigt, Ausführung bleibt eingereiht. | Startet sofort. | `RunHandle[T]` |
 | `steer(text)` | in den **laufenden** Turn | Wird vor dem nächsten Step als User-Message eingefügt, nachdem die Tool-Calls des aktuellen Steps committed sind. | Startet einen neuen Turn, ohne darauf zu warten. | `InboxItem` |
 | `context.set(name, value)` | Kontext (4.4) | Geht mit dem nächsten Step mit. | Geht mit dem nächsten Turn mit. Startet nichts. | `None` |
 
 Regeln:
 - **`run()` wartet, statt zu werfen.** Es gibt kein `SessionBusy` und keine eigene Follow-up-Methode. Das entspricht der Queue von Codex (Tab), Claude Code (`queueSubmit`) und LangGraph (`enqueue`). Jeder `run()` bekommt seinen eigenen Turn und sein eigenes `RunResult`, die Ergebnisse vermischen sich also nicht.
-- **Ohne Warten** startet man den Turn als Task: `task = asyncio.create_task(session.run(text))`. Eine eigene `queue()`-Methode gibt es bewusst nicht.
+- **Ohne auf das Ergebnis zu warten:** `handle = await session.submit(text)`. Der Aufruf
+  bestätigt die durable Aufnahme; `await handle.result()` liefert das Ergebnis. Der Handle
+  bietet außerdem `id` und `done()`. `run` ist Submit plus Ergebnis-Wait; beide nutzen den
+  vorhandenen Session-Driver, ohne pro Handle einen Hintergrund-Task anzulegen.
+- **Handle-Lebenszeit:** Wiederholtes `result()` liefert dasselbe typisierte Ergebnis.
+  Ein abgebrochener Ergebnis-Wait bricht den Run nicht ab. Driver-Fehler kommen über den
+  Handle; beim Schließen scheitern unfertige Live-Handles mit `SessionClosed`, während
+  gespeicherte Inputs und pausierte Turns erhalten bleiben.
 - **Reihenfolge:** Gestellte Turns laufen in der Reihenfolge ihres Aufrufs. Mehrere `steer()` vor demselben Step werden zusammen und in Reihenfolge eingefügt.
 - **In `PAUSED`** nimmt die Inbox weiter an, es startet aber nichts bis `resume()`.
 - **Entfernte oder verworfene Turns:** Wird ein gestellter Turn per `inbox.remove()` entfernt oder durch `stop()`/`abort()` verworfen (8.2), bekommt der wartende `run()` ein `RunResult` mit `stop_reason=StopReason.DISCARDED` und keine Exception.
@@ -703,10 +771,10 @@ Regeln:
 ### 8.2 Run-Control
 
 ```python
-await session.pause()      # finish the current step, then wait
-await session.resume()     # continue with the next step
-await session.stop()       # graceful: finish the current step, then end the turn
-await session.abort()      # immediately: cancel the model call and tools, repair the log, end the turn
+await session.pause()  # finish the current step, then wait
+await session.resume()  # continue with the next step
+await session.stop()  # graceful: finish the current step, then end the turn
+await session.abort()  # immediately: cancel the model call and tools, repair the log, end the turn
 ```
 
 | Methode | Was mit dem laufenden Step passiert | Danach | Status währenddessen → danach | Kehrt zurück, wenn … |
@@ -730,18 +798,18 @@ Regeln für alle vier:
 from harnessed import SessionStatus
 
 session.status is SessionStatus.RUNNING
-await session.wait_until_idle()                    # until IDLE and the inbox is empty
+await session.wait_until_idle()  # until IDLE and the inbox is empty
 async with asyncio.timeout(30):
     await session.wait_until_idle()
 ```
 
 ```python
 class SessionStatus(StrEnum):
-    IDLE = "idle"           # no turn running, inbox empty or waiting for the next turn
-    RUNNING = "running"     # a turn is running
-    PAUSED = "paused"       # a turn is paused between two steps
-    STOPPING = "stopping"   # stop() or abort() is in progress
-    CLOSED = "closed"       # the session is closed; every method raises SessionClosed
+    IDLE = "idle"  # no turn running, inbox empty or waiting for the next turn
+    RUNNING = "running"  # a turn is running
+    PAUSED = "paused"  # a turn is paused between two steps
+    STOPPING = "stopping"  # stop() or abort() is in progress
+    CLOSED = "closed"  # the session is closed; every method raises SessionClosed
 ```
 
 | von → nach | Auslöser |
@@ -764,53 +832,52 @@ class SessionStatus(StrEnum):
 ## 9. Approvals
 
 ```python
-from harnessed.plugins import Approvals, ApprovalAnswer, ApprovalRequest, Filesystem, Shell
+from harnessed import ApprovalAnswer, ApprovalRequest, PolicyDecision
+from harnessed.plugins import Approvals, Filesystem
 
 
-async def ask_in_terminal(req: ApprovalRequest) -> ApprovalAnswer:
-    print(f"{req.call.name}({req.call.arguments})  [y]es / [n]o / [a]lways")
-    return {"y": ApprovalAnswer.ALLOW, "a": ApprovalAnswer.ALWAYS}.get(input(), ApprovalAnswer.DENY)
+async def approve(request: ApprovalRequest) -> ApprovalAnswer:
+    print(request.call.name, request.call.arguments)
+    return ApprovalAnswer.ALLOW
 
 
 agent = Agent(
-    model=...,
+    model=model,
     plugins=[
-        Filesystem(root="."),                  # read_file (readonly), write_file, edit
-        Shell(),                               # run_command
-        Approvals(                             # replaces the default Approvals() in slot "approvals"
-            approver=ask_in_terminal,          # or None: answer via stream (ApprovalNeeded)
-            trust=["write_file"],              # never asks for these
-            deny=["run_command"],              # always refuses these
-            timeout=300,                       # unanswered -> DENY
+        Filesystem(root=workspace),
+        WorkspaceTools(),
+        FailureNudge(threshold=2),
+        Approvals(
+            default=PolicyDecision.ALLOW,
+            require=[WorkspaceTools.count_lines],
+            approver=approve,
         ),
     ],
 )
 ```
 
-| Tool | Policy |
-|---|---|
-| `readonly=True` | ALLOW |
-| in `trust` | ALLOW |
-| in `deny` | DENY (das Modell erfährt: „denied by policy“) |
-| alles andere | ASK → Approver oder Stream-Event |
+| Reihenfolge | Regel | Entscheidung |
+|---|---|---|
+| 1 | in `deny` | DENY, ohne Nachfrage |
+| 2 | in `require` | ASK, auch bei readonly, Trust oder erlaubender Policy |
+| 3 | `policy(call)` liefert einen Wert | diese PolicyDecision |
+| 4 | in `trust` oder readonly | ALLOW |
+| 5 | übrige Tools | `default`, zunächst PolicyDecision.ASK |
 
-- Der **Mechanismus** (Requests, Grants, Durability) ist Core. Die **Policy** ist das Plugin `Approvals`, das per Default mit „readonly → ALLOW, sonst ASK“ aktiv ist.
-- `ApprovalAnswer.ALWAYS` gilt bis Session-Ende, ist durable und lässt sich mit `await session.approvals.revoke(grant_id)` zurücknehmen.
-- Ohne Approver und ohne Stream-Konsumenten scheitert eine ASK-Entscheidung mit `ApprovalRequired`, statt zu hängen.
-- **Opt-out für Skripte:** `Approvals(trust="all")`.
-- **Feingranulare Regeln** (z. B. nach Argumenten) gibt es über eine Policy-Funktion:
-
-```python
-def policy(call: ToolCall) -> PolicyDecision | None:   # None = fall back to defaults
-    if call.name == "run_command" and call.arguments["argv"][0] in {"ls", "git"}:
-        return PolicyDecision.ALLOW
-    return None
-
-
-Approvals(approver=..., policy=policy)
-```
-
-Wer mehr braucht, schreibt ein eigenes Plugin auf den Hook `ToolPolicy` (14.3).
+- `default=PolicyDecision.ALLOW` ersetzt den String-Sentinel für vollständiges Vertrauen.
+- Tool-Referenzen kommen von dekorierten Klassenmethoden oder gebundenen Plugin-Rezepten.
+  Sie erhalten `@tool(name=...)`, prüfen die aktive Deklaration und scheitern bei fehlenden
+  Tools am Session-Start. String-Namen bleiben für dynamische Integrationen möglich.
+- Callbacks und strukturelle `Approver.ask(request)` erhalten dieselben ApprovalRequest-Daten.
+  Normale Aufrufer brauchen weder Service-Wrapper noch CallbackApprover.
+- `ALLOW` gilt für den Aufruf; `ALWAYS` erzeugt einen durablen Grant pro Tool und Scope.
+  `await session.approvals.revoke(request_id)` widerruft ihn; Forks widerrufen standardmäßig.
+- Ohne Callback oder aktiven UI-Responder liefert ASK sofort ein unavailable-Ergebnis.
+  `Approvals(timeout=...)` begrenzt die Antwortzeit auf einen positiven endlichen Wert.
+- UI-Antworten erfolgen über `await session.approvals.answer(request_id, decision)` und
+  warten auf das Persistenz-Acknowledgement. Identische Antworten sind idempotent.
+- Unabhängige harte Guards bleiben über `ApprovalGate(risky=[WorkspaceTools.count_lines])`
+  und den öffentlichen `ToolPolicy`-Hook komponierbar.
 
 ---
 
@@ -822,13 +889,13 @@ from harnessed.plugins import Compaction, Spill, ToolOutputLimit, at_ratio, ever
 agent = Agent(
     model=...,
     plugins=[
-        ToolOutputLimit(max_chars=16_000),       # replaces the default (32k)
-        Spill(threshold_tokens=8_000),           # large results -> file + read_spill tool
+        ToolOutputLimit(max_chars=16_000),  # replaces the default (32k)
+        Spill(threshold_tokens=8_000),  # large results -> file + read_spill tool
         Compaction(
-            trigger=at_ratio(0.8),               # or every_turns(10), or any callable
+            trigger=at_ratio(0.8),  # or every_turns(10), or any callable
             keep_turns=2,
-            summarizer=None,                     # None = the Agent's model
-            focus="Keep file paths, decisions and open TODOs.",   # hint for the summarizer
+            summarizer=None,  # None = the Agent's model
+            focus="Keep file paths, decisions and open TODOs.",  # hint for the summarizer
         ),
     ],
 )
@@ -843,7 +910,9 @@ def trigger(state: ContextState) -> bool:
     return state.ratio > 0.7 or state.turns_since_compaction > 20
 
 
-Compaction(trigger=trigger, summarizer="deepseek:deepseek-chat")  # cheaper model, same forms as model=
+Compaction(
+    trigger=trigger, summarizer="deepseek:deepseek-chat"
+)  # cheaper model, same forms as model=
 ```
 
 - Manuell compacten: `await session.compact()`. Der Mechanismus ist Core, nur das *Wann* ist ein Plugin.
@@ -876,7 +945,7 @@ lead = Agent(
             researcher,
             name="research",
             description="Delegate a research question.",
-            output=ResearchReport,            # optional structured output
+            output=ResearchReport,  # optional structured output
         ),
     ],
 )
@@ -920,10 +989,10 @@ agent = Agent(
     model="anthropic:claude-sonnet-5-5",
     plugins=[
         Skills(
-            "./skills",                                   # folder of skill folders
-            "~/.harnessed/skills",                          # earlier entries win on name clashes
-            Skill.from_dir("./vendor/pdf-forms"),         # a single skill folder
-            Skill(                                        # inline, without a folder (tests, DB, ...)
+            "./skills",  # folder of skill folders
+            "~/.harnessed/skills",  # earlier entries win on name clashes
+            Skill.from_dir("./vendor/pdf-forms"),  # a single skill folder
+            Skill(  # inline, without a folder (tests, DB, ...)
                 name="release-notes",
                 description="Write release notes. Use when asked for a changelog or release notes.",
                 instructions="1. Collect merged PRs since the last tag. ...",
@@ -1014,52 +1083,59 @@ async def redact_secrets(ctx: Context, *, patterns: list[str] = DEFAULT_PATTERNS
         result = await next_()
         return result.with_text(regex.sub("[REDACTED]", result.text))
 
-    yield                      # plugin active until here; teardown after yield
+    yield  # plugin active until here; teardown after yield
 
 
-agent = Agent(..., plugins=[redact_secrets(patterns=[r"sk-\w+"])])   # IDE knows `patterns`
+agent = Agent(..., plugins=[redact_secrets(patterns=[r"sk-\w+"])])  # IDE knows `patterns`
 ```
 
 ### 14.2 Klassenbasiert (Hooks und Tools zusammen)
 
 ```python
-from pydantic import BaseModel, PositiveInt
-from harnessed import Context, Plugin, PolicyDecision, events, hook, tool
+from pydantic import PositiveInt
+from harnessed import Plugin, PluginConfig, PolicyDecision, events, tool
+from harnessed.kernel import Context, hook
 from harnessed.hooks import Next, ToolPolicy
 
 
+class RateLimitConfig(PluginConfig):
+    max_calls_per_turn: PositiveInt = 20
+
+
 class RateLimit(Plugin):
-    class Config(BaseModel):
-        max_calls_per_turn: PositiveInt = 20
+    Config = RateLimitConfig
+    config: RateLimitConfig
 
-    async def setup(self, ctx: Context) -> None:   # per mount; state lives here only
+    def __init__(self, max_calls_per_turn: int = 20):
+        super().__init__(max_calls_per_turn=max_calls_per_turn)
+
+    async def setup(self, ctx: Context) -> None:  # per mount; state lives here only
         self.calls = 0
 
-    @hook(events.TurnStarted)                 # react to log events
-    async def reset(self, event: events.TurnStarted) -> None:
+    @hook(events.turn.Started)  # react to log events
+    async def reset(self, event: events.turn.Started) -> None:
         self.calls = 0
 
-    @hook(ToolPolicy)                         # hook: may decide
+    @hook(ToolPolicy)  # hook: may decide
     async def limit(self, event: ToolPolicy, next_: Next[PolicyDecision]) -> PolicyDecision:
         self.calls += 1
         if self.calls > self.config.max_calls_per_turn:
             return PolicyDecision.DENY
         return await next_()
 
-    @tool(readonly=True)                      # same plugin, also a tool
+    @tool(readonly=True)  # same plugin, also a tool
     async def remaining_calls(self) -> int:
         """How many tool calls are left in this turn."""
         return self.config.max_calls_per_turn - self.calls
 
 
-agent = Agent(..., plugins=[RateLimit(max_calls_per_turn=10)])   # validated by Config
+agent = Agent(..., plugins=[RateLimit(max_calls_per_turn=10)])  # validated by Config
 ```
 
 Ein eigenes Plugin kann auch einen Default ersetzen, indem es denselben Slot belegt:
 
 ```python
-class PostgresSessions(Plugin, slot="sessions"):
-    ...
+class PostgresSessions(Plugin, slot="sessions"): ...
 ```
 
 ### 14.3 Hook-Katalog (`harnessed.hooks`)
@@ -1107,14 +1183,16 @@ from harnessed.hooks import Priority
 class Metrics(Plugin):
     async def setup(self, ctx: Context) -> None:
         client = MetricsClient(...)
-        ctx.provide(MetricsClient, client)   # service for everyone else
-        ctx.effect(client.aclose)            # closed on dispose
+        ctx.provide(MetricsClient, client)  # service for everyone else
+        ctx.effect(client.aclose)  # closed on dispose
 
 
 class SlowToolAlert(Plugin):
     @hook(events.ToolFinished)
     async def check(
-        self, event: events.ToolFinished, metrics: Inject[MetricsClient | None]   # optional
+        self,
+        event: events.ToolFinished,
+        metrics: Inject[MetricsClient | None],  # optional
     ) -> None:
         if metrics and event.duration > 10:
             metrics.incr("slow_tool", tool=event.call.name)
@@ -1133,6 +1211,7 @@ class SlowToolAlert(Plugin):
 
 ```python
 import logging
+
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("harnessed.tools").setLevel(logging.DEBUG)
 ```
@@ -1142,7 +1221,7 @@ logging.getLogger("harnessed.tools").setLevel(logging.DEBUG)
 ```python
 class MyTracer(Plugin, slot="tracer"):
     async def setup(self, ctx):
-        ctx.provide(Tracer, MyTracerImpl())   # one method: span(name, **attrs)
+        ctx.provide(Tracer, MyTracerImpl())  # one method: span(name, **attrs)
 ```
 
 | Span | Attribute (Auszug) |
@@ -1187,10 +1266,12 @@ from harnessed.testing import ScriptedModel, InMemoryFS, FakeShell, assert_tool_
 
 
 async def test_adds_numbers():
-    model = ScriptedModel([
-        call("add", a=19, b=23),
-        reply("The result is 42."),
-    ])
+    model = ScriptedModel(
+        [
+            call("add", a=19, b=23),
+            reply("The result is 42."),
+        ]
+    )
     agent = Agent(model=model, plugins=[Calculator()])
 
     result = await agent.run("What is 19 + 23?")
@@ -1210,13 +1291,16 @@ async def test_add_directly():
 **Fakes sind Plugins** und ersetzen die echten über denselben Slot:
 
 ```python
-agent = coding(model=ScriptedModel([...]), plugins=[InMemoryFS({"a.py": "x = 1"}), FakeShell({"pytest": "1 passed"})])
+agent = coding(
+    model=ScriptedModel([...]),
+    plugins=[InMemoryFS({"a.py": "x = 1"}), FakeShell({"pytest": "1 passed"})],
+)
 ```
 
 **pytest-Plugin:**
 
 ```python
-def test_coding_agent(harnessed_session):              # fixture from harnessed.testing
+def test_coding_agent(harnessed_session):  # fixture from harnessed.testing
     session = harnessed_session(coding(...), script=[...])
 ```
 
@@ -1257,10 +1341,10 @@ async with Context() as root:
 
     @root.plugin(needs=[DB])
     async def indexer(ctx: Context, db: Inject[DB]):
-        task = ctx.spawn(index_forever(db))       # cancelled automatically on dispose
+        task = ctx.spawn(index_forever(db))  # cancelled automatically on dispose
         yield
 
-    await root.settle()                           # wait for all needs to resolve, raise setup errors
+    await root.settle()  # wait for all needs to resolve, raise setup errors
 ```
 
 ---
@@ -1282,7 +1366,7 @@ async with Context() as root:
 | Run-Control-Verben? | entschieden | `pause`, `resume`, `stop` (graceful), `abort` (sofort). `cancel` entfällt, weil es neben `stop` nicht unterscheidbar ist. Alle vier sind idempotent (8.2). |
 | Status und Warten? | entschieden | `session.status` ist ein `SessionStatus`-`StrEnum` mit festen Übergängen. `wait_until_idle()` ersetzt `when_idle()` (8.3). |
 | Nachrichten während eines Turns? | entschieden | `run()`/`stream()` warten, wenn die Session beschäftigt ist, und bekommen einen eigenen Turn (kein `followup`, kein `SessionBusy`). `steer()` geht in den laufenden Turn. `inject` entfällt zugunsten von `session.context.set()` (8.1). |
-| Schreibweise mitgelieferter Plugins? | entschieden | **Alle mitgelieferten Plugins sind Klassen** und damit CapWords: `AgentLoop`, `MemorySessions`, `JsonlSessions`, `Subagent`, `Service`, `ContextValue`, `Instructions`, `NoopTracer`. Die Bauart eines Plugins schlägt so nicht mehr auf seinen öffentlichen Namen durch. Die Funktionsform mit `@plugin` bleibt für Nutzer. |
+| Schreibweise mitgelieferter Plugins? | entschieden | **Alle mitgelieferten Plugins sind Klassen** und damit CapWords: `AgentLoop`, `MemorySessions`, `JsonlSessions`, `Subagent`, `Service`, `ContextValue`, `Instructions`, `NoopTracer`. Die Bauart eines Plugins schlägt so nicht mehr auf seinen öffentlichen Namen durch. Die Funktionsform mit `@plugin` bleibt für Services und Hooks; Tools sind Methoden. |
 | Plugin hinter `model=`? | entschieden | Keine eigene Klasse: `model=x` ist Zucker für `Service(Model, x)` (3.1). |
 | Skills? | entschieden | **Referenzimplementierung als Plugin `Skills`** im offenen Agent-Skills-Format (`SKILL.md`). Der Katalog ist die `guidance`, Anweisungen kommen über `load_skill`, Dateien über `read_skill_file`, Skripte nur über `Shell`. Quellen sind explizit, der frühere Eintrag gewinnt, und ein kaputter Skill ist ein `ConfigError` (12). |
 | YAML für die Skill-Frontmatter? | offen | **Empfehlung: Extra `harnessed[skills]` mit `pyyaml`**, analog zu den Models. Alternativen: `pyyaml` als Kernabhängigkeit (einfacher, aber eine Abhängigkeit mehr für alle) oder ein eigener Mini-Parser (fragil bei `metadata`). |
@@ -1292,3 +1376,11 @@ async with Context() as root:
 | OTel-Exporter? | später | Jetzt nur Logging und der `tracer`-Slot. `OtelTracer` kommt als Extra, ohne Breaking Change. |
 | `agent.run()` ohne Session-Block? | offen | **Empfehlung: ja.** Das macht Skripte und Tests einzeilig. |
 | Sync-Callbacks überall erlauben? | offen | **Empfehlung: ja** für Tools, Instructions und Approver. Synchron wird direkt aufgerufen, nur Tools laufen in einem Thread. |
+
+## Ergänzung: idiomatische Konfiguration
+
+Alle mitgelieferten Plugin-Config-Modelle stehen auf Modulebene, etwa `AgentLoopConfig`.
+Die Klasse deklariert `Config = AgentLoopConfig` und `config: AgentLoopConfig`.
+Explizit typisierte Konstruktoren geben Aufrufern normale Python-Signaturen und
+IDE-Vervollständigung; Pydantic validiert Grenzen, Literale und externe Werte.
+Kleine Plugins benötigen keine eigene Config-Klasse, wenn ein normaler Konstruktor reicht.

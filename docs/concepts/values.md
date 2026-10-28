@@ -6,7 +6,7 @@ proxies and lists become tuples. Mutating an input dictionary after construction
 cannot change a recorded call or request.
 
 Immutability does not promise hashability. Values containing arbitrary mappings,
-model responses, run results, turn/step snapshots, plugin recipes and all durable
+model responses, run results, turn/step snapshots, plugin recipes and built-in durable
 events deliberately set `__hash__ = None`. Equality remains structural. Use message,
 call, turn or session IDs as lookup keys instead of inserting the whole value into
 a set or dictionary.
@@ -17,9 +17,15 @@ serialize the intended JSON payload with a defined canonical encoding and hash
 those bytes.
 
 The persistence codec has a separate versioned boundary. New records use version
-3 and class-derived tags, such as `TurnStart` and `ToolReturned`. Version-one tags, usage fields and version-one/two message shapes are migrated while reading. Unknown fields, invalid discriminators,
-non-finite numbers and malformed nested values are rejected. Neither replay nor
-migration modifies the original append-only log.
+4 and explicit namespaced tags, such as `turn.started` and `tool.returned`.
+Version-one slash tags, version-two/three class tags, legacy usage fields and
+version-one/two message shapes migrate while reading. Unknown fields, invalid
+discriminators, non-finite numbers and malformed nested values are rejected.
+Replay and migration never rewrite the original append-only log.
+
+[Application events](../guides/events.md) use a session-local catalog assembled
+before loading persistence. Frozen dataclasses remain the event values; Pydantic
+validates their discriminated unions and supplies the durable JSON schema.
 
 ## Message roles
 

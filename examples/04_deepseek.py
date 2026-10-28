@@ -4,8 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from harnessed import Agent, ApprovalAnswer, Section
-from harnessed.events import ApprovalNeeded, TextDelta, ToolStarted
+from harnessed import Agent, ApprovalAnswer, Section, events
 from harnessed.plugins import AgentLoop, Filesystem, JsonlSessions
 
 
@@ -17,16 +16,16 @@ async def main():
             "Help the user understand this Python project. Answer in English.",
             Section.from_file(workspace / "AGENTS.md", missing_ok=True),
         ],
-        plugins=[Filesystem(workspace), AgentLoop(max_steps=8), JsonlSessions()],
+        plugins=[Filesystem(root=workspace), AgentLoop(max_steps=8), JsonlSessions()],
     )
     async with agent.session("project-tour") as session:
         async for event in session.stream("Read pyproject.toml and explain the package."):
             match event:
-                case TextDelta(text=text):
+                case events.text.Delta(text=text):
                     print(text, end="", flush=True)
-                case ToolStarted(call=call):
+                case events.tool.Started(call=call):
                     print(f"\n-> {call.name}")
-                case ApprovalNeeded(request_id=request_id, call=call):
+                case events.approval.Needed(request_id=request_id, call=call):
                     answer = await asyncio.to_thread(input, f"Allow {call.name}? [y/N] ")
                     await session.approvals.answer(
                         request_id,

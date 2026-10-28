@@ -3,11 +3,9 @@
 import asyncio
 
 from examples.features.workspace import FailureNudge, WorkspaceTools
-from harnessed import Agent, ApprovalAnswer, PolicyDecision, ToolCall
-from harnessed.events import ToolFinished, ToolProgress
-from harnessed.models import ModelChunk
+from harnessed import Agent, ApprovalAnswer, PolicyDecision, events
 from harnessed.plugins import Approvals, Filesystem
-from harnessed.testing import ScriptedModel
+from harnessed.testing import ScriptedModel, call
 
 
 async def main():
@@ -18,8 +16,8 @@ async def main():
 
     model = ScriptedModel(
         [
-            [ModelChunk(tool_call=ToolCall("count_lines", {"path": "missing-example-file.txt"}))],
-            [ModelChunk(tool_call=ToolCall("count_lines", {"path": "missing-example-file.txt"}))],
+            call(WorkspaceTools.count_lines, path="missing-example-file.txt"),
+            call(WorkspaceTools.count_lines, path="missing-example-file.txt"),
             "The file is missing. I will check the path first.",
         ]
     )
@@ -39,11 +37,13 @@ async def main():
     async with agent.session("bundles") as session:
         async for event in session.stream("Count the lines in the example file."):
             match event:
-                case ToolProgress(text=text):
+                case events.tool.Progress(text=text):
                     print(f"Progress: {text}")
-                case ToolFinished(result=result):
+                case events.tool.Finished(result=result):
                     print(f"Result ({result.status}): {result.content}")
-        schema = model.requests[0].tools[0].parameters
+        schema = next(
+            tool.parameters for tool in model.requests[0].tools if tool.name == "count_lines"
+        )
         print(f"Model arguments: {list(schema['properties'])}")
         final_request = model.requests[-1]
         print("\nNudge in next request:")

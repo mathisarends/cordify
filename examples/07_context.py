@@ -6,22 +6,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol
 
-from harnessed import (
-    Agent,
-    Context,
-    File,
-    Image,
-    Inject,
-    Plugin,
-    Section,
-    Session,
-    ToolCall,
-    hook,
-    plugin,
-    tool,
-)
+from harnessed import Agent, File, Image, Plugin, Section, Session, ToolCall, tool
 from harnessed.core.session.events import ContextMessage
 from harnessed.hooks import PreStep
+from harnessed.kernel import Context, Inject, hook, plugin
 from harnessed.models import ModelChunk
 from harnessed.plugins import ContextValue
 from harnessed.testing import ScriptedModel

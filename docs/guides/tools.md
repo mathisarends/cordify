@@ -1,36 +1,42 @@
-# Tools and small function plugins
+# Tools and hooks
 
-Use a `Plugin` with `@tool` methods for reusable capabilities. A short
-`@plugin` function can register the same declarations through its owned Context:
+Declare public tools as `@tool` methods on a `Plugin`. Method names, docstrings
+and annotations supply their names, descriptions and strict argument schemas.
+There is one public registration path, including tools mounted at runtime:
 
 ```python
-from harnessed import Context, Inject, plugin
-from harnessed.core.tools.registry import ToolRegistry
+from harnessed import Plugin, tool
+from harnessed.kernel import Inject
 from my_application import Database
 
-@plugin(needs=[ToolRegistry, Database])
-async def lookups(ctx: Context):
-    @ctx.tool(readonly=True)
-    async def lookup(key: str, *, db: Inject[Database]) -> str:
+
+class Lookups(Plugin):
+    needs = (Database,)
+
+    @tool(readonly=True)
+    async def lookup(self, key: str, *, db: Inject[Database]) -> str:
         """Look up a record by its key."""
         return await db.lookup(key)
-    yield
+
+
+# plugins=[Lookups()] initially, or await session.use(Lookups()) at runtime.
 ```
 
-`needs` expresses the lifetime: when Database disappears, the function plugin
-tears down and its registrations disappear. It restarts when the service returns.
-`Inject` expresses where each argument comes from; injected fields never appear
-in the model's tool schema. Services resolve again for every call.
+`needs` controls the plugin's lifetime. Removing Database disposes its tools;
+restoring the service restarts the plugin. `Inject` resolves per-call services
+and keeps those arguments out of the model's schema. Related tools, hooks,
+configuration and cleanup belong to the same class.
 
-The root `Context` adds agent-tool declarations to the standalone
-`harnessed.kernel.Context`. Kernel-only consumers use the latter without loading
-Pydantic or any agent runtime. Both retain the kernel's reversible effects,
-child scopes, services and hooks. A captured `ctx.tool` always owns its registrations.
+`Context`, `Bundle` and `Session` do not provide separate tool decorators or
+function-list registration. Functional kernel plugins remain useful for services
+and hooks. Kernel consumers use `harnessed.kernel.Context` without importing
+Pydantic or the agent runtime.
 
 ## Per-call state
 
 ```python
 from harnessed import Plugin, ToolContext, tool
+
 
 class Worker(Plugin):
     @tool
@@ -60,7 +66,7 @@ when execution finishes out of order. An explicit `override=True` is required to
 replace an existing live tool name. Removing that registration restores the
 previous owner.
 
-See [the runnable functional plugin example](https://github.com/mathisarends/cordify/blob/main/examples/06_explicit_registration.py).
+See [the runnable class plugin example](https://github.com/mathisarends/cordify/blob/main/examples/06_explicit_registration.py).
 
 ## Hook signatures
 
@@ -106,3 +112,26 @@ Spill runs inside ordinary review hooks at `Priority.OBSERVE`, so a default-prio
 rule can add a note to the final preview. Rule conditions inspect the original
 execution result before lossy spill/limit transforms; their match bits travel with
 the canonical result for replay.
+
+## Refer to tools without repeating their wire names
+
+Use decorated method references in policies and scripted model responses:
+
+```python
+from harnessed.plugins import Approvals, Filesystem
+from harnessed.testing import ScriptedModel, call
+
+model = ScriptedModel([
+    call(Filesystem.read_file, path="large.log", offset=0, limit=40),
+    call(Filesystem.read_file, path="large.log", offset=40, limit=40),
+    "Read the requested ranges.",
+])
+policy = Approvals(require=[Filesystem.delete_file])
+```
+
+`call(method, **arguments)` validates the model arguments immediately, excluding
+`self` and injected services. References honor `@tool(name=...)` and reject
+arbitrary undecorated functions. For dynamic wire-level tests, string tool names
+remain available. Reference arguments are schema-validated at runtime; this helper
+does not claim static keyword checking through an arbitrary method's injected
+parameters. File offsets and limits count Unicode characters, not bytes or lines.

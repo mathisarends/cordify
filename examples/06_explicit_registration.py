@@ -2,11 +2,11 @@
 
 import asyncio
 
-from harnessed import Agent, Inject, Plugin, ToolResult, tool
+from harnessed import Agent, Plugin, ToolResult, tool
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.hooks import Next, ReviewToolResult
-from harnessed.kernel import hook
+from harnessed.kernel import Inject, hook
 from harnessed.testing import ScriptedModel, call
 
 

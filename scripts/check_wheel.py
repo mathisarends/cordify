@@ -14,8 +14,7 @@ import re
 
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from harnessed import Agent, Plugin, tool
-from harnessed.events import TurnFinished
+from harnessed import Agent, Plugin, events, tool
 from harnessed.plugins import Skill, Skills
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
 from pydantic import BaseModel
@@ -44,7 +43,7 @@ class Answer(BaseModel):
     value: int
 
 async def main():
-    agent = Agent(model=ScriptedModel([call('add', a=19, b=23), reply('42')]),
+    agent = Agent(model=ScriptedModel([call(Calculator.add, a=19, b=23), reply('42')]),
                   plugins=[Calculator()], instructions='Fixed instructions.')
     async with agent.session('wheel') as session:
         result = await session.run('Add')
@@ -55,8 +54,14 @@ async def main():
         'Answer', output=Answer)
     assert isinstance(typed.output, Answer) and typed.output.value == 42
     async with Agent(model=ScriptedModel([call('final_answer', value=43)])).session() as session:
-        events = [event async for event in session.stream('Answer', output=Answer)]
-        assert isinstance(events[-1], TurnFinished) and events[-1].result.output.value == 43
+        notifications = [event async for event in session.stream('Answer', output=Answer)]
+        assert isinstance(notifications[-1], events.turn.Finished)
+        assert notifications[-1].result.output.value == 43
+    async with Agent(model=ScriptedModel([reply('queued result')])).session() as session:
+        handle = await session.submit('Submit')
+        assert (await handle.result()).text == 'queued result'
+        assert handle.done()
+    assert events.text.Delta('message', 'hello').type == 'text.delta'
     inline = Skill(name='notes', description='Write notes.', instructions='Keep notes concise.')
     async with Agent(model=ScriptedModel([call('load_skill', name='notes'), reply('Loaded')]),
                      plugins=[Skills(inline)]).session() as session:

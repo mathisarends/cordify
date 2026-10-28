@@ -55,7 +55,7 @@ It is reusable; each session owns its runtime and plugin lifetimes.
 ```python
 from harnessed.testing import ScriptedModel, assert_tool_called, call, reply
 
-model = ScriptedModel([call("add", a=19, b=23), reply("42")])
+model = ScriptedModel([call(Calculator.add, a=19, b=23), reply("42")])
 agent = Agent(model=model, plugins=[Calculator()])
 
 # Inside an async function:
@@ -69,10 +69,11 @@ Start with the [documentation index](docs/index.md) or the
 [SDK reference](docs/reference/sdk.md).
 
 - [Models and provider settings](docs/guides/models.md)
-- [Tools, function plugins and cancellation](docs/guides/tools.md)
+- [Tools, hooks and cancellation](docs/guides/tools.md)
 - [Plugin composition and lifecycle](docs/guides/plugins.md)
 - [Instructions and changing context](docs/guides/context.md)
 - [Sessions, controls, persistence and forks](docs/guides/sessions.md)
+- [Namespaced events and custom extensions](docs/guides/events.md)
 - [Approvals and headless operation](docs/guides/approvals.md)
 - [Offline testing](docs/guides/testing.md)
 - [Executable examples](docs/guides/examples.md)

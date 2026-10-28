@@ -65,7 +65,7 @@ harnessed/
   __init__.py              # facade: Agent, Session, RunResult, Plugin, tool, ... (~20 names)
   agent.py                 # Agent facade: resolves model=, instructions=, defaults, PluginConflict
   hooks.py                 # facade: re-exports core.hooks (Next, PrepareRequest, ToolPolicy, ...)
-  events.py                # facade: re-exports stream and log events
+  events/                  # public namespaces: text, reasoning, tool, approval, ...
 
   kernel/                  # standalone: no harnessed imports, no third-party packages (unchanged)
     __init__.py            # Context, Inject, Key, plugin, hook, Event kinds
@@ -77,6 +77,7 @@ harnessed/
     model.py               # Model protocol, ModelInfo, ModelRequest/Response/Chunk/Stream, Usage
     tokens.py              # TokenCounter protocol + ApproximateTokenCounter (default)
     errors.py              # HarnessedError tree incl. ProviderError, ConfigError, PluginConflict
+    event_registry.py      # session-local custom event catalogs and schemas
     plugin.py              # public Plugin base (@tool methods, guidance, slot), Service
     hooks.py               # hook events (Waterfall/Bail/Emit), Next
     stream.py              # public StreamEvent union (transient)
@@ -96,7 +97,7 @@ harnessed/
     session/
       session.py           # Session (append, fork, resume)
       events.py            # persistable log events
-      codec.py             # encode/decode (Pydantic union)
+      codec.py             # versioned encode/decode (Pydantic union; v1-v3 migration)
       store.py             # SessionStore protocol + MemorySessions (slot "sessions")
       projections.py       # messages, turns, inbox, approvals, status (incremental)
     runtime/               # was core/loop.py (908 lines)
@@ -175,7 +176,7 @@ Die Pfade aus `api-target.md` bleiben fast gleich. Nur `seams` verschwindet:
 | `harnessed` | `agent.py`, `core/*` (re-exportiert) |
 | `harnessed.models` | `core/model.py` (Protokoll, Typen), `models/pydantic_ai.py` |
 | `harnessed.plugins` | `plugins/*` und die Default-Plugins aus `core` (`AgentLoop`, `Approvals`, `ToolOutputLimit`, `Service`, `ContextValue`) |
-| `harnessed.hooks`, `harnessed.events` | `core/hooks.py`, `core/stream.py`, `core/session/events.py` |
+| `harnessed.hooks`, `harnessed.events.*` | `core/hooks.py`, `core/stream.py`, `core/session/events.py` |
 | `harnessed.kernel` | `kernel/` |
 | `harnessed.testing` | `testing/` |
 
@@ -261,3 +262,14 @@ tests/
 4. `core/loop.py`, `core/events.py` und `core/session.py` aufteilen (gemeinsam mit P0-1 und P1-1 aus der Review).
 5. `models/pydantic_ai.py` einführen, DeepSeek-Adapter und `adapters/` entfernen.
 6. `Harness` und `presets.py` löschen (Beispiele und Tests auf `Agent` umstellen), Re-Exports am alten Ort löschen, Tests spiegeln.
+
+## Ergänzung: bestätigte DX-Erweiterungen
+
+Tools werden öffentlich ausschließlich als Methoden eines Plugin registriert.
+Config-Modelle stehen auf Modulebene und werden durch explizite Konstruktoren sowie
+`Config = MyConfig` und `config: MyConfig` angebunden. Das öffentliche `events/`-Paket
+enthält nur Namespace-Fassaden; Event-Werte und die sessionlokale EventRegistry gehören
+zum Core. `core/runtime/handles.py` enthält RunHandle und dessen Completion-Zustand;
+Submit und Run verwenden den bestehenden Session-Driver. Pure History-Folds leben in
+`core/session/history.py`, sodass JSON-fähige Ergebnis-Events den veränderlichen
+SessionLog nicht importieren müssen. Der Kernel bleibt standardbibliotheksbasiert.
