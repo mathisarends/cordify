@@ -1,0 +1,75 @@
+import asyncio
+
+from harnessed.core.events import InboxAdded, TurnEnd
+from harnessed.core.stream import TextDelta
+from harnessed.presets import minimal
+from harnessed.seams.models import ModelChunk, ModelUsage
+
+
+class TwoTurns:
+    def __init__(self):
+        self.started = [asyncio.Event(), asyncio.Event()]
+        self.release = [asyncio.Event(), asyncio.Event()]
+        self.index = 0
+
+    async def stream(self, request):
+        index = self.index
+        self.index += 1
+        self.started[index].set()
+        await self.release[index].wait()
+        yield ModelChunk(text=f"reply {index + 1}")
+        yield ModelChunk(usage=ModelUsage(10 + index, 2), stop_reason="end")
+
+
+async def test_concurrent_runs_return_their_own_text_usage_and_turn_without_waiting_for_idle():
+    model = TwoTurns()
+    async with minimal(model).session("concurrent") as session:
+        queued = asyncio.Event()
+
+        @session.on(InboxAdded)
+        def sent(event):
+            if event.message.text == "second":
+                queued.set()
+
+        first = asyncio.create_task(session.run("first"))
+        await model.started[0].wait()
+        second = asyncio.create_task(session.run("second"))
+        try:
+            # Let followup append before completing the first turn.
+            await queued.wait()
+            model.release[0].set()
+            await model.started[1].wait()
+            one = await asyncio.wait_for(asyncio.shield(first), timeout=1)
+            assert not second.done()
+            assert one.text == "reply 1" and one.usage.total_tokens == 12
+            assert one.stop_reason == "end"
+            assert [message.text for message in one.messages] == ["first", "reply 1"]
+        finally:
+            model.release[0].set()
+            model.release[1].set()
+        two = await second
+        assert two.text == "reply 2" and two.usage.total_tokens == 13
+        assert two.turn_id != one.turn_id
+
+
+async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
+    model = TwoTurns()
+    async with minimal(model).session("stream-turn") as session:
+
+        async def collect():
+            return [event async for event in session.stream("first")]
+
+        streaming = asyncio.create_task(collect())
+        await model.started[0].wait()
+        await session.followup("second")
+        try:
+            model.release[0].set()
+            await model.started[1].wait()
+            events = await asyncio.wait_for(asyncio.shield(streaming), timeout=1)
+            assert (
+                "".join(event.text for event in events if isinstance(event, TextDelta)) == "reply 1"
+            )
+            assert isinstance(events[-1], TurnEnd)
+        finally:
+            model.release[1].set()
+        await session.when_idle()

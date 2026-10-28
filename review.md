@@ -15,6 +15,8 @@
 - P2-1: resolved — public consumer `assert_type` checks are part of ty CI; plugin status is a Literal. P2-3: resolved — public Context constructor, direct-listener disposers, named priorities, failure-effect regression tests.
 - P0-4 (partial): library NullHandler, registration/tool logs and immediate `PluginFailed` reporting; Tracer seam remains open.
 - Target decisions: MCP and the OTel exporter remain deferred according to `api-target.md`; existing functional/Bundle registration stays supported.
+- P1-2 (partial): concurrent runs/streams are bound to durable input IDs and end with their own turn; `RunResult` now contains usage, stop reason, turn ID, messages and tool/result pairs. Stable UI stream types and structured output remain open.
+- P0-6 (partial): model stop reasons now survive in the core log/results; usage exposes neutral input/output/total properties.
 - Remaining findings: open; implementation and verification are in progress.
 
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
@@ -301,10 +303,14 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
 - Aufteilen in `ModelStepper`, `ToolExecutor`, `ApprovalService` und `InboxService` als eigene Services im Context. Plugins injizieren genau das, was sie brauchen.
 - Der Agent bleibt eine dünne Fassade.
 - Zustand als `enum AgentState` plus Transitionstabelle. Unerlaubte Übergänge werfen an *einer* Stelle, statt dass jede Methode mit `if self._closing or self._canceling:` beginnt.
+- **Nach außen:** `session.status` wird ein `SessionStatus`-`StrEnum` (`IDLE`, `RUNNING`, `PAUSED`, `STOPPING`, `CLOSED`) mit festen Übergängen statt eines String-Literals.
+- **Run-Control:** `pause`, `resume`, `stop` (graceful) und `abort` (sofort). `cancel` wird zu `abort`, weil es neben `stop` nicht unterscheidbar ist. Alle vier sind idempotent. Wer auf `run()` wartet, bekommt bei `stop`/`abort` keine Exception, sondern ein `RunResult` mit `stop_reason`.
+- `when_idle()` wird zu `wait_until_idle()`: Es wartet auf `IDLE` und eine leere Inbox, und der Timeout kommt von außen über `asyncio.timeout`.
+- Die genaue Semantik steht in [`api-target.md`](api-target.md), Abschnitte 8.2 und 8.3.
 
 #### P1-2 · `RunResult` und `stream()` sind für Anwender zu roh
 - `RunResult(text, events)` enthält weder Usage, Kosten, `stop_reason`, `turn_id` noch Structured Output.
-- Ein **concurrent `run()`** liefert den letzten Assistant-Text des ganzen Idle-Intervalls statt des eigenen Turns.
+~~- Ein **concurrent `run()`** liefert den letzten Assistant-Text des ganzen Idle-Intervalls statt des eigenen Turns.~~
 - `stream()` liefert rohe Log-Events und endet erst, wenn der Driver idle ist.
 
 **→ Empfehlung:**
@@ -467,7 +473,7 @@ Zielbild: [`api-target.md`](api-target.md), Abschnitt 4.
 ~~- **P2-1 · Typing-Tiefe.** `ty --error-on-warning` läuft in CI, das ist gut. Ob die *öffentliche* API so typisiert ist, wie Nutzer sie erleben, prüft aber noch nichts (z. B. ParamSpec-Verlust in P1-4). Dazu kommt `PluginHandle.status` (`kernel/plugin.py:91`) als `str` statt `Literal`.~~
   **→ Empfehlung:**
   - Ein `tests/typing/`-Ordner mit `assert_type`-Fällen für die wichtigsten Signaturen (`tool`, `plugin`, `Inject`, `run`), den ty mitprüft.
-  - **Hooks typisieren.** Heute sind `event` und `next_` in allen Beispielen untypisiert. `next_` ist ein lokales `async def` in `kernel/events.py:103`, für das es keinen öffentlichen Typ gibt. Vorschlag: `type Next[R] = Callable[[], Awaitable[R]]` im Kernel, exportiert über `harnessed.hooks`. `hook`/`ctx.hook` werden generisch, sodass ein Waterfall-Hook `async def f(event: E, next_: Next[R]) -> R` heißt und der Typechecker einen falschen Rückgabetyp meldet. Für emit gilt `(event: E) -> None`, für bail `(event: E) -> R | None`. README und Beispiele zeigen ausschließlich typisierte Hooks.
+  - **Offen trotz P2-1: Hooks typisieren.** Heute sind `event` und `next_` in allen Beispielen untypisiert. `next_` ist ein lokales `async def` in `kernel/events.py:103`, für das es keinen öffentlichen Typ gibt. Vorschlag: `type Next[R] = Callable[[], Awaitable[R]]` im Kernel, exportiert über `harnessed.hooks`. `hook`/`ctx.hook` werden generisch, sodass ein Waterfall-Hook `async def f(event: E, next_: Next[R]) -> R` heißt und der Typechecker einen falschen Rückgabetyp meldet. Für emit gilt `(event: E) -> None`, für bail `(event: E) -> R | None`. README und Beispiele zeigen ausschließlich typisierte Hooks.
   - Statusfelder als `Literal` oder `Enum`.
 - **P2-2 · Lokale Imports als Zyklus-Workaround** (`presets.py:67-69`, `129-130`, `154-158`; `plugins/permissions/approval.py:49`; `kernel/plugin.py`).
   **→ Empfehlung:** Zyklen über die Aufteilung in P1-1 und P1-9 auflösen. Danach verbietet Ruff mit `PLC0415` (import-outside-toplevel) neue lokale Imports.
@@ -505,7 +511,7 @@ Zielbild: [`api-target.md`](api-target.md), Abschnitt 4.
         tools.md               # @tool, validation, readonly/side_effects, parallelism
         sessions.md            # persistence, resume, fork
         streaming.md           # StreamEvent, UIs
-        inbox-and-control.md   # followup/steer/inject, pause/resume/stop
+        inbox-and-control.md   # followup/steer/inject, pause/resume/stop/abort, SessionStatus
         approvals.md
         context-management.md  # output limit, spill, compaction
         providers.md           # openai-compatible, deepseek, anthropic, custom adapters
@@ -557,7 +563,7 @@ async with harness.session("calculator") as agent:
 
 ```python
 from harnessed import Agent, Plugin, tool
-from harnessed.llms import openai_compatible  # or: deepseek, anthropic
+from harnessed.llms import OpenAICompatibleLLM  # or: DeepSeekLLM, AnthropicLLM
 
 
 class Calculator(Plugin):
@@ -568,7 +574,7 @@ class Calculator(Plugin):
 
 
 agent = Agent(
-    llm=openai_compatible(model="deepseek-chat"),
+    llm=OpenAICompatibleLLM(model="deepseek-chat"),
     instructions="Keep answers concise.",
     plugins=[Calculator()],
 )
@@ -649,7 +655,7 @@ Defaults und `PolicyDecision`/`ApprovalAnswer` stehen in P0-5 und P0-6.
 | Modul | Inhalt |
 |---|---|
 | `harnessed` | `Agent`, `Session`, `RunResult`, `tool`, `ToolError`, `ToolContext`, `Plugin`, `plugin`, `hook`, `Inject`, `Message`, `ToolResult`, `StreamEvent`-Typen (etwa 20 Namen) |
-| `harnessed.llms` | LLM-Adapter: `openai_compatible`, `deepseek`, `anthropic` (Extra), Basisklasse `StreamingLLM` |
+| `harnessed.llms` | LLM-Adapter als Klassen `<Provider>LLM`: `OpenAICompatibleLLM`, `DeepSeekLLM`, `AnthropicLLM` (Extra), Basisklasse `StreamingLLM`. Der Name sagt, dass es ein LLM ist, und kollidiert nicht mit `import anthropic`. |
 | `harnessed.events` | Log-Events (persistierbar) |
 | `harnessed.hooks` | Hook-Events (`PrepareRequest`, `ToolPolicy`, …) |
 | `harnessed.plugins` | **Alle** mitgelieferten Plugins an einem Ort: Defaults (`agent_loop`, `memory_sessions`, `ToolOutputLimit`, `Approvals`) und Opt-ins (`jsonl_sessions`, `Compaction`, `Spill`, `Rules`, `LatestObservationOnly`, `provide`) |

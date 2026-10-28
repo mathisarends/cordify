@@ -14,6 +14,7 @@ from harnessed.seams.models import (
     Decision,
     Message,
     ModelRequest,
+    ModelUsage,
     Observation,
     ToolCall,
     ToolResult,
@@ -63,7 +64,7 @@ from .execution import ToolCallContext
 from .outputs import ToolOutputLimit
 from .prompt import SystemPrompt
 from .scheduling import ToolPlan, ToolScheduler, ToolScheduling
-from .session import Session
+from .session import Session, derive_messages
 from .stream import SessionPublished, TextDelta, TransientEvent
 from .tools import ErrorFormatter, ToolRegistry, format_tool_error
 
@@ -103,6 +104,21 @@ class AgentOptions:
 class RunResult:
     text: str
     events: tuple[SessionEvent, ...]
+    usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
+    stop_reason: str = "end"
+    turn_id: str | None = None
+    messages: tuple[Message, ...] = ()
+
+    @property
+    def tool_calls(self) -> tuple[tuple[ToolCall, ToolResult], ...]:
+        calls = {
+            event.call.id: event.call for event in self.events if isinstance(event, ToolCalled)
+        }
+        return tuple(
+            (calls[event.call_id], event.result)
+            for event in self.events
+            if isinstance(event, ToolReturned) and event.call_id in calls
+        )
 
 
 class AgentFactory(Protocol):
@@ -392,10 +408,13 @@ class Agent:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
     ) -> RunResult:
-        offset = len(self.session.events)
-        await self.followup(content, attachments=attachments, context=context)
-        await self.when_idle()
-        events = self.session.events[offset:]
+        events = tuple(
+            [
+                event
+                async for event in self.stream(content, attachments=attachments, context=context)
+                if isinstance(event, SessionEvent)
+            ]
+        )
         text = next(
             (
                 event.message.text
@@ -404,7 +423,33 @@ class Agent:
             ),
             "",
         )
-        return RunResult(text, events)
+        usages = [event.usage for event in events if isinstance(event, ModelUsageRecorded)]
+        usage = ModelUsage(
+            sum(item.prompt_tokens for item in usages),
+            sum(item.completion_tokens for item in usages),
+            sum(item.prompt_cache_hit_tokens or 0 for item in usages)
+            if any(item.prompt_cache_hit_tokens is not None for item in usages)
+            else None,
+            sum(item.prompt_cache_miss_tokens or 0 for item in usages)
+            if any(item.prompt_cache_miss_tokens is not None for item in usages)
+            else None,
+        )
+        turn = next((event for event in events if isinstance(event, TurnEnd)), None)
+        final = next(
+            (event for event in reversed(events) if isinstance(event, AssistantMessage)), None
+        )
+        reason = (
+            final.stop_reason
+            if final is not None and final.stop_reason is not None
+            else "end"
+            if turn is not None and turn.reason == "completed"
+            else turn.reason
+            if turn is not None
+            else "stopped"
+        )
+        return RunResult(
+            text, events, usage, reason, turn.turn_id if turn else None, derive_messages(events)
+        )
 
     async def stream(
         self,
@@ -416,10 +461,31 @@ class Agent:
         queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._subscribers.add(queue)
         try:
-            await self.followup(content, attachments=attachments, context=context)
-            while (event := await queue.get()) is not None:
+            input_id = await self.followup(content, attachments=attachments, context=context)
+            turn_id = None
+            while True:
+                event = await queue.get()
+                if event is None:
+                    if self._error is not None:
+                        raise self._error
+                    if any(item.message.id == input_id for item in self.inbox.pending):
+                        self._wake()
+                        continue
+                    return
+                if isinstance(event, TurnStart):
+                    if event.input_id == input_id:
+                        turn_id = event.turn_id
+                if turn_id is None:
+                    if isinstance(event, InboxAdded) and event.message.id == input_id:
+                        yield event
+                    if isinstance(event, InboxRemoved) and event.message_id == input_id:
+                        return
+                    continue
                 yield event
-            await self.when_idle()
+                if isinstance(event, TurnEnd) and event.turn_id == turn_id:
+                    if event.reason == "interrupted" and self._error is not None:
+                        raise self._error
+                    return
         finally:
             self._subscribers.discard(queue)
 
@@ -525,7 +591,10 @@ class Agent:
         turn = previous.id if previous is not None else uuid4().hex
         first_step = len(previous.steps) + 1 if previous is not None else 1
         if previous is None:
-            await self.session.append(TurnStart(turn))
+            candidates = self.inbox.next_turn or self.inbox.next_step
+            await self.session.append(
+                TurnStart(turn, candidates[0].message.id if candidates else None)
+            )
         elif previous.steps and not await self._continue_turn(previous.steps[-1]):
             await self.session.append(TurnEnd(turn))
             return True
@@ -741,6 +810,7 @@ class Agent:
     async def _respond(self, request: ModelRequest) -> Message:
         message_id, calls = uuid4().hex, []
         text, reasoning = [], []
+        stop_reason = None
 
         def message():
             return Message(
@@ -757,6 +827,8 @@ class Agent:
                 if close := getattr(stream, "aclose", None):
                     stack.push_async_callback(close)
                 async for chunk in stream:
+                    if chunk.stop_reason is not None:
+                        stop_reason = chunk.stop_reason
                     if chunk.usage is not None:
                         await self.session.append(ModelUsageRecorded(chunk.usage))
                     if chunk.text or chunk.reasoning:
@@ -774,7 +846,7 @@ class Agent:
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
         final = message()
-        await self.session.append(AssistantMessage(final))
+        await self.session.append(AssistantMessage(final, stop_reason=stop_reason))
         return final
 
 

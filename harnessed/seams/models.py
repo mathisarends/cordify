@@ -228,6 +228,18 @@ class ModelUsage:
             return None
         return hit / (hit + miss)
 
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+    @property
+    def input_tokens(self) -> int:
+        return self.prompt_tokens
+
+    @property
+    def output_tokens(self) -> int:
+        return self.completion_tokens
+
 
 @dataclass(frozen=True)
 class ModelChunk:
@@ -235,6 +247,7 @@ class ModelChunk:
     reasoning: str = ""
     tool_call: ToolCall | None = None
     usage: ModelUsage | None = None
+    stop_reason: Literal["end", "tool_calls", "max_tokens", "content_filter", "error"] | None = None
 
 
 def message_from_dict(data: dict) -> Message:

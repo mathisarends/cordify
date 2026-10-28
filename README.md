@@ -1676,3 +1676,14 @@ go to the library logger. Schema errors retain field validation guidance without
 input values. Customize this with `agent_loop(error_formatter=callback)` where
 `callback(call, exception)` returns the message. Tools may declare `readonly=True`;
 this metadata is available to approval policies.
+
+### Turn-scoped results
+
+`run()` and `stream()` are bound to the input that created their turn. Concurrent
+calls return their own reply and finish at that turn's boundary; `when_idle()`
+continues to wait for the entire driver. `RunResult` exposes `text`, `usage`
+(with `input_tokens`, `output_tokens`, `total_tokens`), `stop_reason`, `turn_id`,
+`messages`, `tool_calls` and the durable events for that run. Providers may emit
+`ModelChunk(stop_reason=...)`; the value survives replay in `AssistantMessage`.
+Missing provider stop metadata falls back to the turn outcome. Costs are not
+estimated without provider pricing information.

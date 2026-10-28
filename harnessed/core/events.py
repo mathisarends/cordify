@@ -270,6 +270,7 @@ class InboxRemoved(SessionEvent):
 class TurnStart(SessionEvent):
     type: ClassVar[str] = "turn/start"
     turn_id: str
+    input_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -401,6 +402,7 @@ class AssistantMessage(SessionEvent):
     type: ClassVar[str] = "assistant/message"
     message: Message
     interrupted: bool = False
+    stop_reason: str | None = None
 
 
 @dataclass(frozen=True)
