@@ -1,5 +1,5 @@
 from collections.abc import AsyncGenerator
-from typing import assert_never, assert_type
+from typing import assert_type
 
 from pydantic import BaseModel
 
@@ -11,14 +11,7 @@ from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session as Agent
 from harnessed.events import (
-    ApprovalNeeded,
-    ReasoningDelta,
-    StatusChanged,
-    StreamEvent,
-    TextDelta,
-    ToolFinished,
-    ToolProgress,
-    ToolStarted,
+    EventStream,
     TurnFinished,
 )
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
@@ -58,25 +51,11 @@ async def structured_consumer(agent: AppAgent, session: Agent) -> None:
 
 async def typed_stream(session: Agent) -> None:
     async for event in session.stream("Triage", output=Triage):
-        assert_type(event, StreamEvent[Triage])
-        if event.type == "turn.finished":
+        assert_type(event, EventStream[Triage])
+        if isinstance(event, TurnFinished):
             assert_type(event, TurnFinished[Triage])
             assert_type(event.result, RunResult[Triage])
             assert_type(event.result.output.severity, int)
-        else:
-            match event:
-                case (
-                    TextDelta()
-                    | ReasoningDelta()
-                    | ToolStarted()
-                    | ToolProgress()
-                    | ToolFinished()
-                    | ApprovalNeeded()
-                    | StatusChanged()
-                ):
-                    pass
-                case _:
-                    assert_never(event)
 
 
 async def functional_scope(ctx: Context) -> None:

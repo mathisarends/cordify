@@ -5,6 +5,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from harnessed.core.prompt.values import Section
+from harnessed.core.session.events import SessionEvent
+from harnessed.core.stream import TransientEvent
 from harnessed.kernel import Context, Key
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.kernel.declarations import HookEntry, Registration
@@ -42,6 +44,7 @@ class Plugin(KernelPlugin):
     """A plugin recipe with validated configuration and state allocated in setup."""
 
     config: Any
+    events: tuple[type[SessionEvent | TransientEvent], ...] = ()
 
     guidance: str | Section | None = None
 

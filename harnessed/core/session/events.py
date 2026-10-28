@@ -47,6 +47,10 @@ class SessionEvent(Emit):
         return type(self).__name__
 
 
+class DurableEvent(SessionEvent):
+    """Extension point for application data that survives session replay."""
+
+
 @dataclass(frozen=True)
 class AgentControlChanged(SessionEvent):
     __hash__ = None

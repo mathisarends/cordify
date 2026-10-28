@@ -1,19 +1,11 @@
 import asyncio
 from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager
-from enum import StrEnum
 
 from harnessed.core.errors import SessionClosed
+from harnessed.core.session.control import SessionStatus as SessionStatus
 from harnessed.core.session.events import AgentControlChanged
 from harnessed.core.session.session import SessionLog
-
-
-class SessionStatus(StrEnum):
-    IDLE = "idle"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STOPPING = "stopping"
-    CLOSED = "closed"
 
 
 class StopAtBoundary(Exception):

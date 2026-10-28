@@ -1,5 +1,6 @@
 from typing import Any
 
+from harnessed.core.event_registry import EventRegistry
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalRequested,
@@ -7,6 +8,7 @@ from harnessed.core.session.events import (
     AssistantMessage,
     CompactionApplied,
     ContextValueChanged,
+    DurableEvent,
     InboxAdded,
     InboxRemoved,
     LogEvent,
@@ -29,15 +31,16 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.stream import (
     ApprovalNeeded,
+    EventStream,
     ReasoningDelta,
     StatusChanged,
     StreamEvent,
     TextDelta,
     ToolFinished,
     ToolStarted,
-    TransientEvent,
     TurnFinished,
 )
+from harnessed.core.stream import CustomTransientEvent as TransientEvent
 
 from . import (
     approval,
@@ -57,7 +60,6 @@ from . import (
     turn,
 )
 
-DurableEvent = SessionEvent
 type BuiltinEvent = LogEvent | StreamEvent[Any]
 
 
@@ -71,6 +73,8 @@ __all__ = [
     "CompactionApplied",
     "ContextValueChanged",
     "DurableEvent",
+    "EventRegistry",
+    "EventStream",
     "InboxAdded",
     "InboxRemoved",
     "ModelRequested",

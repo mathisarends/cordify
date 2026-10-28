@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import json
 import math
+from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict, TypeAdapter
 
@@ -17,9 +21,17 @@ from harnessed.core.session.events import (
     SessionEvent,
 )
 
+if TYPE_CHECKING:
+    from harnessed.core.event_registry import EventRegistry
+    from harnessed.core.stream import TransientEvent
 
-def _validate_event(event: SessionEvent) -> None:
-    if SESSION_EVENT_TYPES.get(getattr(event, "type", None)) is not type(event):
+
+def _validate_event(
+    event: SessionEvent | TransientEvent,
+    kinds: Mapping[str, type] | None = None,
+) -> None:
+    kinds = SESSION_EVENT_TYPES if kinds is None else kinds
+    if kinds.get(getattr(event, "type", None)) is not type(event):
         raise TypeError("Only registered frozen SessionEvent instances may be appended")
 
     def immutable(value):
@@ -140,20 +152,22 @@ _ADAPTER = TypeAdapter(
 )
 
 
-def event_schema() -> dict:
+def event_schema(*, registry: EventRegistry | None = None) -> dict:
     """Return the discriminated JSON schema of the current durable event values."""
-    return _ADAPTER.json_schema()
+    return registry.schema() if registry is not None else _ADAPTER.json_schema()
 
 
-def encode_event(event: SessionEvent) -> dict:
+def encode_event(event: SessionEvent, *, registry: EventRegistry | None = None) -> dict:
     """Encode a canonical class tag and the current version without mutable state."""
-    _validate_event(event)
+    if not isinstance(event, SessionEvent):
+        raise TypeError("Only durable events can be persisted")
+    registry.validate(event) if registry is not None else _validate_event(event)
     data = to_dict(event)
     data.pop("type")
     return {"version": CURRENT_VERSION, "type": event.type, "data": data}
 
 
-def decode_event(record: dict) -> SessionEvent:
+def decode_event(record: dict, *, registry: EventRegistry | None = None) -> SessionEvent:
     """Validate a frozen tagged union, migrating the original version-one tags."""
     if not isinstance(record, dict) or set(record) - {"version", "seq", "type", "data"}:
         raise ValueError("Invalid session record envelope")
@@ -169,7 +183,8 @@ def decode_event(record: dict) -> SessionEvent:
         tag = _LEGACY_TYPES.get(tag, tag)
     if version < 4:
         tag = _CLASS_TAGS.get(tag, tag)
-    if tag not in SESSION_EVENT_TYPES:
+    kinds = registry._types if registry is not None else SESSION_EVENT_TYPES
+    if tag not in kinds or not issubclass(kinds[tag], SessionEvent):
         raise ValueError(f"Unknown session event type: {tag}")
     body = record.get("data")
     if not isinstance(body, dict):
@@ -203,6 +218,7 @@ def decode_event(record: dict) -> SessionEvent:
     elif version == 1 and tag == "tool.policy.applied" and body.get("decision") == "always":
         body["decision"] = "allow"
         body.setdefault("source", "approval")
-    event = _ADAPTER.validate_json(json.dumps({**body, "type": tag}, allow_nan=False), strict=True)
-    _validate_event(event)
+    adapter = registry.adapter if registry is not None else _ADAPTER
+    event = adapter.validate_json(json.dumps({**body, "type": tag}, allow_nan=False), strict=True)
+    registry.validate(event) if registry is not None else _validate_event(event)
     return event

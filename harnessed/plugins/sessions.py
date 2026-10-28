@@ -12,6 +12,7 @@ from typing import Literal
 from uuid import uuid4
 
 from harnessed.core.errors import SessionLocked
+from harnessed.core.event_registry import EventRegistry
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.codec import CURRENT_VERSION, decode_event, encode_event
 from harnessed.core.session.events import LogTailRecovered, SessionEvent
@@ -23,7 +24,7 @@ from harnessed.core.session.files import (
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionPersistence, SessionStore, validate_session_id
-from harnessed.kernel import Context, run_sync
+from harnessed.kernel import Context, Inject, run_sync
 
 if os.name == "nt":
     import msvcrt
@@ -43,10 +44,12 @@ class JsonlPersistence:
         self,
         root: str | Path,
         *,
+        registry: EventRegistry | None = None,
         fsync: bool = False,
         recover_tail: bool = False,
         durability: Literal["buffered", "flush", "fsync"] = "flush",
     ):
+        self.registry = registry or EventRegistry()
         self.root = Path(root)
         self._root_ready = False
         if durability not in ("buffered", "flush", "fsync"):
@@ -110,11 +113,11 @@ class JsonlPersistence:
                             or record["seq"] != seq
                         ):
                             raise ValueError(f"Invalid session record at line {seq + 1}")
-                        events.append(decode_event(record))
+                        events.append(decode_event(record, registry=self.registry))
                         offset += len(line)
                         boundaries.add(offset)
             if tail is not None:
-                Session(session_id, seed=events)
+                Session(session_id, seed=events, registry=self.registry)
                 self._archive_tail(session_id, offset, tail)
                 with path.open("r+b") as stream:
                     stream.truncate(offset)
@@ -235,7 +238,7 @@ class JsonlPersistence:
         stream, lock, expected = self._files[session_id]
         if seq != expected:
             raise ValueError(f"Session sequence mismatch: expected {expected}, got {seq}")
-        record = {"seq": seq, **encode_event(event)}
+        record = {"seq": seq, **encode_event(event, registry=self.registry)}
         # No await between writing and advancing the in-process append position.
         stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
         if self.durability != "buffered":
@@ -309,13 +312,13 @@ class JsonlSessions(Plugin, slot="sessions"):
     def __init__(self, root: str | Path = ".harnessed/sessions", **options):
         super().__init__(root=Path(root), **options)
 
-    async def setup(self, ctx: Context):
-        ctx.provide(SessionStore, _JsonlStore(self.config))
+    async def setup(self, ctx: Context, registry: Inject[EventRegistry | None]):
+        ctx.provide(SessionStore, _JsonlStore(self.config, registry or EventRegistry()))
 
 
 class _JsonlStore:
-    def __init__(self, config: JsonlSessions.Config):
-        self.config = config
+    def __init__(self, config: JsonlSessionsConfig, registry: EventRegistry):
+        self.config, self.registry = config, registry
 
     def files(self, session_id: str) -> SessionFiles:
         session_id = validate_session_id(session_id)
@@ -336,12 +339,14 @@ class _JsonlStore:
         return await run_sync(collect)
 
     async def delete(self, session_id: str) -> None:
-        persistence = JsonlPersistence(**self.config.model_dump())
+        persistence = JsonlPersistence(**self.config.model_dump(), registry=self.registry)
         await run_sync(partial(persistence._delete, validate_session_id(session_id)))
 
     @asynccontextmanager
     async def open(self, session_id: str) -> AsyncGenerator[SessionPersistence]:
-        persistence = await run_sync(partial(JsonlPersistence, **self.config.model_dump()))
+        persistence = await run_sync(
+            partial(JsonlPersistence, **self.config.model_dump(), registry=self.registry)
+        )
         try:
             yield persistence
         finally:

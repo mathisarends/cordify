@@ -2,6 +2,7 @@ from collections.abc import Iterable
 from contextlib import asynccontextmanager
 
 from harnessed.core.errors import ConfigError
+from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
 from harnessed.core.plugin import Service
 from harnessed.core.session.store import SessionStore, validate_session_id
@@ -12,7 +13,8 @@ from harnessed.kernel.plugin import as_plugin_spec
 class SessionRepository:
     """Mount the sessions slot and explicit service dependencies for each operation."""
 
-    def __init__(self, plugins: Iterable[PluginLike]):
+    def __init__(self, plugins: Iterable[PluginLike], *, registry: EventRegistry | None = None):
+        self._registry = registry or EventRegistry()
         self._plugins = tuple(
             plugin
             for plugin in plugins
@@ -23,6 +25,7 @@ class SessionRepository:
     @asynccontextmanager
     async def _store(self):
         async with Context() as ctx:
+            ctx.provide(EventRegistry, self._registry.copy())
             await ctx.install(self._plugins, settle=True)
             if SessionStore not in ctx:
                 raise ConfigError("The sessions plugin has unresolved service dependencies")

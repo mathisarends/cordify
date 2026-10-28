@@ -1,13 +1,17 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Annotated, Any, Literal
+
+from pydantic import PlainSerializer, PlainValidator, ValidationInfo, WithJsonSchema
 
 from harnessed.core.errors import OutputUnavailable
 from harnessed.core.messages import (
     Message,
     ToolCall,
     ToolResult,
+    to_dict,
 )
 from harnessed.core.model import ModelUsage, StopReason, sum_usage
+from harnessed.core.session.codec import CURRENT_VERSION, decode_event
 from harnessed.core.session.events import (
     AssistantMessage,
     ModelUsageRecorded,
@@ -18,14 +22,36 @@ from harnessed.core.session.events import (
     ToolReturned,
     TurnEnd,
 )
-from harnessed.core.session.session import derive_messages
+from harnessed.core.session.history import derive_messages
 
 
+@dataclass(frozen=True)
 class _NoOutput:
-    pass
+    type: Literal["output.unavailable"] = "output.unavailable"
 
 
 _NO_OUTPUT = _NoOutput()
+
+
+def _result_event(value: Any, info: ValidationInfo) -> SessionEvent:
+    if isinstance(value, SessionEvent):
+        return value
+    if not isinstance(value, dict):
+        raise ValueError("Result events require tagged data")
+    body = dict(value)
+    tag = body.pop("type", None)
+    registry = info.context.get("events") if isinstance(info.context, dict) else None
+    return decode_event({"version": CURRENT_VERSION, "type": tag, "data": body}, registry=registry)
+
+
+type ResultEvent = Annotated[
+    SessionEvent,
+    PlainValidator(_result_event),
+    PlainSerializer(to_dict, when_used="json"),
+    WithJsonSchema(
+        {"type": "object", "required": ["type"], "properties": {"type": {"type": "string"}}}
+    ),
+]
 
 
 @dataclass(frozen=True)
@@ -34,8 +60,10 @@ class RunResult[T]:
 
     __hash__ = None
     text: str
-    events: tuple[SessionEvent, ...]
-    usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
+    events: tuple[ResultEvent, ...]
+    usage: Annotated[ModelUsage, PlainSerializer(to_dict, when_used="json")] = field(
+        default_factory=lambda: ModelUsage(0)
+    )
     stop_reason: StopReason = StopReason.END
     turn_id: str | None = None
     messages: tuple[Message, ...] = ()

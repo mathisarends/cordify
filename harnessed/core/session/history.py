@@ -2,12 +2,14 @@ from collections.abc import Callable, Iterable
 from xml.sax.saxutils import escape, quoteattr
 
 from harnessed.core.messages import Assistant, Message, System, ToolReply, User
+from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
     AssistantChunk,
     AssistantMessage,
     CompactionApplied,
     ContextMessage,
     ContextValueChanged,
+    ModelRequested,
     ObservationPolicyApplied,
     ObservationRecorded,
     SessionEvent,
@@ -67,6 +69,7 @@ class MessageProjection:
                 AssistantMessage,
                 ToolReturned,
                 ContextValueChanged,
+                ModelRequested,
                 SystemMessage,
             ),
         ):
@@ -161,6 +164,7 @@ class MessageProjection:
                 CompactionApplied,
                 ContextMessage,
                 ContextValueChanged,
+                ModelRequested,
                 ObservationPolicyApplied,
                 ObservationRecorded,
                 SystemMessage,
@@ -271,3 +275,167 @@ class MessageProjection:
 
     def origin(self, seq: int) -> str | None:
         return self._origins.get(seq)
+
+
+def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
+    return tuple(event.request for event in events if isinstance(event, ModelRequested))
+
+
+def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Assistant]:
+    streams: dict[str, tuple[int, list[str], list[str]]] = {}
+    completed = set()
+    for seq, event in enumerate(events):
+        if isinstance(event, AssistantChunk):
+            _, text, reasoning = streams.setdefault(event.message_id, (seq, [], []))
+            text.append(event.text)
+            reasoning.append(event.reasoning)
+        elif isinstance(event, AssistantMessage):
+            completed.add(event.message.id)
+    return {
+        seq: Assistant("".join(text), reasoning="".join(reasoning), id=message_id)
+        for message_id, (seq, text, reasoning) in streams.items()
+        if message_id not in completed
+    }
+
+
+def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, Message], ...]:
+    events = tuple(events)
+    partials = _pending_assistant_messages(events)
+    active_turn, active_step, max_summaries = None, None, None
+    observations: dict[str, list[int]] = {}
+    for seq, event in enumerate(events):
+        match event:
+            case TurnStart(turn_id=turn_id):
+                active_turn = turn_id
+            case StepStart(turn_id=turn_id, step=step):
+                active_step = (turn_id, step)
+            case StepEnd():
+                active_step = None
+            case TurnEnd():
+                active_turn, active_step = None, None
+            case ObservationPolicyApplied(max_summaries=limit):
+                max_summaries = limit
+            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
+                observations.setdefault(observation.source, []).append(seq)
+    visible_observations = set()
+    for indices in observations.values():
+        older = [
+            seq
+            for seq in indices
+            if isinstance(observation := events[seq], ObservationRecorded)
+            and (observation.turn_id, observation.step) != active_step
+        ]
+        visible_observations.update(
+            older if max_summaries is None else older[-max_summaries:] if max_summaries else ()
+        )
+    entries: list[tuple[int, Message]] = []
+    originals: list[tuple[int, Message]] = []
+
+    def add(seq, message):
+        entries.append((seq, message))
+        originals.append((seq, message))
+
+    turn_offsets = {}
+    current_turn = None
+    current_context: dict[str, tuple[int, Message]] = {}
+    for seq, event in enumerate(events):
+        if isinstance(event, TurnStart):
+            current_turn = event.turn_id
+        turn_offsets[seq] = current_turn
+        if isinstance(event, TurnEnd):
+            current_turn = None
+        if seq in partials:
+            add(seq, partials[seq])
+        match event:
+            case SystemMessage(content=content):
+                entries = [(offset, m) for offset, m in entries if m.id != "system"]
+                if content:
+                    entries.insert(0, (seq, System(content, id="system")))
+            case UserMessage(message=message) | AssistantMessage(message=message):
+                add(seq, message)
+            case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
+                if lifetime == "session" or turn_id == active_turn:
+                    add(seq, message)
+            case ContextValueChanged(name=name, value=value):
+                content = (
+                    f'<context name={quoteattr(name)} removed="true"/>'
+                    if value is None
+                    else f"<context name={quoteattr(name)}>{escape(value)}</context>"
+                )
+                message = User(content, id=f"context:{event.id}")
+                add(seq, message)
+                if value is None:
+                    current_context.pop(name, None)
+                else:
+                    current_context[name] = (seq, message)
+            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
+                content = (
+                    observation.full if active_step == (turn_id, step) else observation.summary
+                )
+                if content and (active_step == (turn_id, step) or seq in visible_observations):
+                    add(
+                        seq,
+                        User(
+                            content,
+                            id=f"observation:{turn_id}:{step}:{observation.source}",
+                        ),
+                    )
+            case ToolReturned(call_id=call_id, result=result):
+                add(
+                    seq,
+                    ToolReply(
+                        result.content,
+                        tool_call_id=call_id,
+                        id=call_id,
+                        status=result.status,
+                        exit_code=result.exit_code,
+                    ),
+                )
+            case CompactionApplied(through=through, summary=summary, preserve_turns=preserved):
+                entries = [
+                    (offset, message)
+                    for offset, message in entries
+                    if (
+                        offset >= through
+                        or message.id == "system"
+                        or turn_offsets.get(offset) in preserved
+                    )
+                    and not message.id.startswith("compaction:")
+                ]
+                retained_offsets = {offset for offset, _ in entries}
+                entries.extend(
+                    (offset, message)
+                    for offset, message in originals
+                    if offset < through
+                    and turn_offsets.get(offset) in preserved
+                    and offset not in retained_offsets
+                )
+                # Latest dynamic facts survive compaction, independently of summaries.
+                entries = [
+                    (offset, message)
+                    for offset, message in entries
+                    if offset >= through or not message.id.startswith("context:")
+                ]
+                retained_offsets = {offset for offset, _ in entries}
+                entries.extend(
+                    (offset, message)
+                    for offset, message in current_context.values()
+                    if offset not in retained_offsets
+                )
+                entries.sort(key=lambda item: -1 if item[1].id == "system" else item[0])
+                position = 1 if entries and entries[0][1].id == "system" else 0
+                entries.insert(
+                    position,
+                    (
+                        seq,
+                        System(
+                            f"Conversation summary:\n{summary}",
+                            id=f"compaction:{event.id or seq}",
+                        ),
+                    ),
+                )
+    return tuple(entries)
+
+
+def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
+    return tuple(message for _, message in _derive_message_entries(events))

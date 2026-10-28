@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from harnessed.core.messages import ToolCall
-from harnessed.core.session.events import ToolProgress
+from harnessed.core.session.events import SessionEvent, ToolProgress
+from harnessed.core.stream import TransientEvent
 
 if TYPE_CHECKING:
     from harnessed.core.runtime.inbox import SessionInbox
@@ -27,6 +28,9 @@ class ToolContext:
 
     async def progress(self, text: str):
         await self.session.append(ToolProgress(self.call.id, text))
+
+    async def emit(self, event: SessionEvent | TransientEvent) -> None:
+        await self.session.emit(event)
 
 
 class ToolContexts(Protocol):

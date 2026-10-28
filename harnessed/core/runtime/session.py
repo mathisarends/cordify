@@ -39,8 +39,8 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.stream import (
+    EventStream,
     SessionPublished,
-    StreamEvent,
     TransientEvent,
 )
 from harnessed.core.tools.context import BoundToolContexts, ToolContexts
@@ -107,6 +107,10 @@ class Session:
         """Create a branch from a closed log prefix; pass it to Agent.session()."""
         return self.log.fork(session_id, at=at, inherit_approvals=inherit_approvals)
 
+    async def emit(self, event: SessionEvent | TransientEvent) -> None:
+        self.control.check_open()
+        await self.log.emit(event)
+
     async def subscribe(self, *, transient: bool = False):
         """Observe the raw log independently of any individual run/stream call."""
         async for event in self.log.subscribe(transient=transient):
@@ -114,8 +118,14 @@ class Session:
 
     async def use(self, plugin):
         """Mount a recipe at runtime; its guidance is context, never system text."""
+        self.log.registry.register(getattr(plugin, "events", ()))
         handle = await self.ctx.plugin(plugin)
-        await self.ctx.settle()
+        try:
+            await self.ctx.settle()
+            self.ctx[ToolRegistry].validate_references()
+        except BaseException:
+            await handle.aclose()
+            raise
         self._runtime_guidance[handle] = f"plugin:{handle.name}:{id(handle):x}"
         if handle.status == "active":
             await self._plugin_activated(PluginActivated(handle))
@@ -364,12 +374,12 @@ class Session:
     @overload
     def stream[T](
         self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
-    ) -> AsyncGenerator[StreamEvent[T], None]: ...
+    ) -> AsyncGenerator[EventStream[T], None]: ...
 
     @overload
     def stream(
         self, content: str | Message, *, output: None = None, **options: Unpack[RunOptions]
-    ) -> AsyncGenerator[StreamEvent[None], None]: ...
+    ) -> AsyncGenerator[EventStream[None], None]: ...
 
     async def stream(
         self,
@@ -379,7 +389,7 @@ class Session:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
         output: type[Any] | None = None,
-    ) -> AsyncGenerator[StreamEvent[Any], None]:
+    ) -> AsyncGenerator[EventStream[Any], None]:
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
         with self._output_values.expect(schema):

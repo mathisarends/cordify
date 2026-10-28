@@ -1,7 +1,16 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 
 from harnessed.core.session.events import AgentControlChanged, ControlState, SessionEvent
+
+
+class SessionStatus(StrEnum):
+    IDLE = "idle"
+    RUNNING = "running"
+    PAUSED = "paused"
+    STOPPING = "stopping"
+    CLOSED = "closed"
 
 
 @dataclass(frozen=True, init=False)

@@ -14,11 +14,15 @@ from harnessed.core.runtime.control import SessionStatus
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalResolved,
+    CompactionApplied,
+    DurableEvent,
     InboxAdded,
     InboxRemoved,
     OutputValidated,
     OutputValidationFailed,
     SessionEvent,
+    SpillCreated,
+    SpillExpired,
     ToolCalled,
     ToolProgress,
     ToolReturned,
@@ -27,9 +31,10 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.stream import (
     ApprovalNeeded,
+    CustomTransientEvent,
+    EventStream,
     ReasoningDelta,
     StatusChanged,
-    StreamEvent,
     TextDelta,
     ToolFinished,
     ToolStarted,
@@ -108,8 +113,8 @@ class StreamApprovals:
 
 async def ui_events(
     session: Session, raw: AsyncGenerator[AgentEvent, None], *, schema: OutputSchema | None = None
-) -> AsyncGenerator[StreamEvent[Any], None]:
-    """Expose eight event kinds and exactly one terminal result on normal completion."""
+) -> AsyncGenerator[EventStream[Any], None]:
+    """Expose UI notifications and declared extensions, with one terminal result."""
     events: list[SessionEvent] = []
     calls = {}
     control_calls: set[str] = set()
@@ -122,6 +127,10 @@ async def ui_events(
                 if event.call_id is not None:
                     control_calls.add(event.call_id)
             elif isinstance(event, TextDelta | ReasoningDelta | ApprovalNeeded):
+                yield event
+            elif isinstance(event, CompactionApplied | SpillCreated | SpillExpired):
+                yield event
+            elif isinstance(event, DurableEvent | CustomTransientEvent):
                 yield event
             elif isinstance(event, ToolCalled) and event.call.id not in control_calls:
                 calls[event.call.id] = event.call

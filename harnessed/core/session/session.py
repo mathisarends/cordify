@@ -2,41 +2,31 @@ import asyncio
 from bisect import bisect_right
 from collections.abc import AsyncIterator, Iterable
 from typing import cast
-from xml.sax.saxutils import escape, quoteattr
 
 from harnessed.core.approvals import Approval, ApprovalState, approval_transition
+from harnessed.core.event_registry import EventRegistry
 from harnessed.core.hooks import SessionAppended
 from harnessed.core.messages import (
-    Assistant,
     Message,
-    System,
     ToolCall,
-    ToolReply,
     ToolResult,
-    User,
 )
 from harnessed.core.model import ModelRequest, ModelUsage, sum_usage
-from harnessed.core.session.codec import _validate_event
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalResolved,
     ApprovalRevoked,
-    AssistantChunk,
     AssistantMessage,
     CompactionApplied,
     ContextMessage,
-    ContextValueChanged,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
     ModelUsageRecorded,
-    ObservationPolicyApplied,
-    ObservationRecorded,
     SessionEvent,
     StepEnd,
     StepStart,
-    SystemMessage,
     ToolCompleted,
     ToolExecutionStarted,
     ToolReturned,
@@ -45,176 +35,18 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.files import SessionFiles
-from harnessed.core.session.history import MessageProjection
+from harnessed.core.session.history import (
+    MessageProjection,
+    _derive_message_entries,
+    _pending_assistant_messages,
+)
+from harnessed.core.session.history import derive_messages as derive_messages
+from harnessed.core.session.history import derive_requests as derive_requests
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.store import SessionPersistence, validate_session_id
 from harnessed.core.session.turns import Turn, TurnProjection
 from harnessed.core.stream import SessionPublished, TransientEvent
 from harnessed.kernel.context import Context
-
-
-def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
-    return tuple(event.request for event in events if isinstance(event, ModelRequested))
-
-
-def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Assistant]:
-    streams: dict[str, tuple[int, list[str], list[str]]] = {}
-    completed = set()
-    for seq, event in enumerate(events):
-        if isinstance(event, AssistantChunk):
-            _, text, reasoning = streams.setdefault(event.message_id, (seq, [], []))
-            text.append(event.text)
-            reasoning.append(event.reasoning)
-        elif isinstance(event, AssistantMessage):
-            completed.add(event.message.id)
-    return {
-        seq: Assistant("".join(text), reasoning="".join(reasoning), id=message_id)
-        for message_id, (seq, text, reasoning) in streams.items()
-        if message_id not in completed
-    }
-
-
-def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, Message], ...]:
-    events = tuple(events)
-    partials = _pending_assistant_messages(events)
-    active_turn, active_step, max_summaries = None, None, None
-    observations: dict[str, list[int]] = {}
-    for seq, event in enumerate(events):
-        match event:
-            case TurnStart(turn_id=turn_id):
-                active_turn = turn_id
-            case StepStart(turn_id=turn_id, step=step):
-                active_step = (turn_id, step)
-            case StepEnd():
-                active_step = None
-            case TurnEnd():
-                active_turn, active_step = None, None
-            case ObservationPolicyApplied(max_summaries=limit):
-                max_summaries = limit
-            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
-                observations.setdefault(observation.source, []).append(seq)
-    visible_observations = set()
-    for indices in observations.values():
-        older = [
-            seq
-            for seq in indices
-            if isinstance(observation := events[seq], ObservationRecorded)
-            and (observation.turn_id, observation.step) != active_step
-        ]
-        visible_observations.update(
-            older if max_summaries is None else older[-max_summaries:] if max_summaries else ()
-        )
-    entries: list[tuple[int, Message]] = []
-    originals: list[tuple[int, Message]] = []
-
-    def add(seq, message):
-        entries.append((seq, message))
-        originals.append((seq, message))
-
-    turn_offsets = {}
-    current_turn = None
-    current_context: dict[str, tuple[int, Message]] = {}
-    for seq, event in enumerate(events):
-        if isinstance(event, TurnStart):
-            current_turn = event.turn_id
-        turn_offsets[seq] = current_turn
-        if isinstance(event, TurnEnd):
-            current_turn = None
-        if seq in partials:
-            add(seq, partials[seq])
-        match event:
-            case SystemMessage(content=content):
-                entries = [(offset, m) for offset, m in entries if m.id != "system"]
-                if content:
-                    entries.insert(0, (seq, System(content, id="system")))
-            case UserMessage(message=message) | AssistantMessage(message=message):
-                add(seq, message)
-            case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
-                if lifetime == "session" or turn_id == active_turn:
-                    add(seq, message)
-            case ContextValueChanged(name=name, value=value):
-                content = (
-                    f'<context name={quoteattr(name)} removed="true"/>'
-                    if value is None
-                    else f"<context name={quoteattr(name)}>{escape(value)}</context>"
-                )
-                message = User(content, id=f"context:{event.id}")
-                add(seq, message)
-                if value is None:
-                    current_context.pop(name, None)
-                else:
-                    current_context[name] = (seq, message)
-            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
-                content = (
-                    observation.full if active_step == (turn_id, step) else observation.summary
-                )
-                if content and (active_step == (turn_id, step) or seq in visible_observations):
-                    add(
-                        seq,
-                        User(
-                            content,
-                            id=f"observation:{turn_id}:{step}:{observation.source}",
-                        ),
-                    )
-            case ToolReturned(call_id=call_id, result=result):
-                add(
-                    seq,
-                    ToolReply(
-                        result.content,
-                        tool_call_id=call_id,
-                        id=call_id,
-                        status=result.status,
-                        exit_code=result.exit_code,
-                    ),
-                )
-            case CompactionApplied(through=through, summary=summary, preserve_turns=preserved):
-                entries = [
-                    (offset, message)
-                    for offset, message in entries
-                    if (
-                        offset >= through
-                        or message.id == "system"
-                        or turn_offsets.get(offset) in preserved
-                    )
-                    and not message.id.startswith("compaction:")
-                ]
-                retained_offsets = {offset for offset, _ in entries}
-                entries.extend(
-                    (offset, message)
-                    for offset, message in originals
-                    if offset < through
-                    and turn_offsets.get(offset) in preserved
-                    and offset not in retained_offsets
-                )
-                # Latest dynamic facts survive compaction, independently of summaries.
-                entries = [
-                    (offset, message)
-                    for offset, message in entries
-                    if offset >= through or not message.id.startswith("context:")
-                ]
-                retained_offsets = {offset for offset, _ in entries}
-                entries.extend(
-                    (offset, message)
-                    for offset, message in current_context.values()
-                    if offset not in retained_offsets
-                )
-                entries.sort(key=lambda item: -1 if item[1].id == "system" else item[0])
-                position = 1 if entries and entries[0][1].id == "system" else 0
-                entries.insert(
-                    position,
-                    (
-                        seq,
-                        System(
-                            f"Conversation summary:\n{summary}",
-                            id=f"compaction:{event.id or seq}",
-                        ),
-                    ),
-                )
-    return tuple(entries)
-
-
-def derive_messages(events: Iterable[SessionEvent]) -> tuple[Message, ...]:
-    return tuple(message for _, message in _derive_message_entries(events))
 
 
 def _validate_compaction(events, event: CompactionApplied, seq: int):
@@ -243,7 +75,11 @@ class SessionLog:
         seed: Iterable[SessionEvent] = (),
         persistence: SessionPersistence | None = None,
         files: SessionFiles | None = None,
+        registry: EventRegistry | None = None,
     ):
+        self.registry = registry or (
+            ctx[EventRegistry] if ctx is not None and EventRegistry in ctx else EventRegistry()
+        )
         self.id = validate_session_id(session_id)
         self.ctx = ctx
         self._events = list(seed)
@@ -260,7 +96,7 @@ class SessionLog:
         self._lock = asyncio.Lock()
         self._repair_lock = asyncio.Lock()
         for event in self._events:
-            _validate_event(event)
+            self.registry.validate(event)
             if isinstance(event, ModelUsageRecorded):
                 self._usage = (
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
@@ -423,7 +259,7 @@ class SessionLog:
             grants.pop(record.request_id, None)
 
     async def append(self, event: SessionEvent) -> None:
-        _validate_event(event)
+        self.registry.validate(event)
         cancelled = False
         async with self._lock:
             if isinstance(event, InboxAdded) and event.message.id in self._pending:
@@ -492,7 +328,8 @@ class SessionLog:
                 self._usage = (
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
                 )
-            self._notify(event)
+            self.registry.validate(event)
+        self._notify(event)
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
             await self.ctx.dispatch(event)
@@ -509,10 +346,20 @@ class SessionLog:
         """Deliver a live event without persistence or projection changes."""
         if not isinstance(event, TransientEvent):
             raise TypeError("publish requires a TransientEvent")
+        self.registry.validate(event)
         self._notify(event)
         if self.ctx is not None:
             await self.ctx.dispatch(SessionPublished(self, event))
             await self.ctx.dispatch(event)
+
+    async def emit(self, event: SessionEvent | TransientEvent) -> None:
+        """Persist durable data or publish a live notification through the same catalog."""
+        if isinstance(event, SessionEvent):
+            await self.append(event)
+        elif isinstance(event, TransientEvent):
+            await self.publish(event)
+        else:
+            raise TypeError("emit requires a durable or transient event")
 
     async def repair_interrupted(self) -> None:
         """Close unfinished activity and answer tool calls after cancellation or resume."""
@@ -601,6 +448,6 @@ class SessionLog:
         )
         if not inherit_approvals:
             seed.extend(ApprovalRevoked(item.request_id, "fork") for item in approvals.grants)
-        branch = SessionLog(session_id, seed=seed)
+        branch = SessionLog(session_id, seed=seed, registry=self.registry.copy())
         branch._fork_files = self._files if self._files is not None else self._fork_files
         return branch

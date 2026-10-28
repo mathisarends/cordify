@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, final
 
 from pydantic import Field
 
 from harnessed.core.messages import ToolCall, ToolResult
-from harnessed.core.session.events import ToolProgress
+from harnessed.core.runtime.result import RunResult
+from harnessed.core.session.control import SessionStatus
+from harnessed.core.session.events import (
+    CompactionApplied,
+    DurableEvent,
+    SpillCreated,
+    SpillExpired,
+    ToolProgress,
+)
 from harnessed.kernel.events import Emit
 
 if TYPE_CHECKING:
-    from harnessed.core.runtime.control import SessionStatus
-    from harnessed.core.runtime.result import RunResult
     from harnessed.core.session.session import SessionLog as Session
 
 
@@ -21,6 +27,10 @@ class TransientEvent(Emit):
     @property
     def type(self) -> str:
         return type(self).__name__
+
+
+class CustomTransientEvent(TransientEvent):
+    """Extension point for live application notifications."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +76,7 @@ class StatusChanged(TransientEvent):
     status: SessionStatus
 
 
+@final
 @dataclass(frozen=True, slots=True)
 class TurnFinished[T](TransientEvent):
     __hash__ = None
@@ -83,9 +94,14 @@ type StreamEvent[T] = Annotated[
         | ApprovalNeeded
         | StatusChanged
         | TurnFinished[T]
+        | CompactionApplied
+        | SpillCreated
+        | SpillExpired
     ),
     Field(discriminator="type"),
 ]
+
+type EventStream[T] = StreamEvent[T] | DurableEvent | CustomTransientEvent
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from harnessed.core.approvals import Approvals
 from harnessed.core.errors import ConfigError, PluginConflict
+from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
 from harnessed.core.outputs import OutputTypes
 from harnessed.core.plugin import PluginContext, Service
@@ -87,7 +88,10 @@ class Agent:
                 occupied[spec.slot] = len(defaults)
             defaults.append(value)
         self.plugins = tuple(defaults)
-        self.sessions = SessionRepository(self.plugins)
+        self._events = EventRegistry(
+            kind for plugin in self.plugins for kind in getattr(plugin, "events", ())
+        )
+        self.sessions = SessionRepository(self.plugins, registry=self._events)
         self._outputs = OutputTypes()
 
     @asynccontextmanager
@@ -96,6 +100,7 @@ class Agent:
     ):
         """Open or resume a conversation; omit its ID to create a new one."""
         async with PluginContext() as ctx:
+            ctx.provide(EventRegistry, self._events.copy())
             for output in restore_outputs:
                 self._outputs.register(output)
             ctx.provide(OutputTypes, self._outputs)
