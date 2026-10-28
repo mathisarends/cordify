@@ -6,6 +6,7 @@
 - P1-3: resolved — registration-time binding plans, weak callable cache, no DI reflection in listener/tool dispatch.
 - 1.2 optional/named injection: resolved — `Inject[T | None]` and `Annotated[T, InjectMarker(key)]`. Optional injection does not restart plugins.
 - P1-4 (partial): immutable plugin keyword configuration. P1-9 (partial): cached tool schemas and redundant validation removed.
+- P0-2: resolved — `Session.publish(TextDelta)` is transient; the model buffer commits one completed/interrupted `AssistantMessage`. Legacy chunk logs remain readable for resume.
 - Remaining findings: open; implementation and verification are in progress.
 
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
@@ -132,7 +133,9 @@ class Session:
 - Ein Property-Test stellt sicher, dass `fold(events) == incremental(events)` für zufällige Logs gilt. Damit bleibt die heutige Korrektheit erhalten.
 - `session.last(StepStart)` und `session.since(StepStart)` ersetzen das Rückwärtsscannen in den Plugins.
 
-#### P0-2 · Jeder Token-Chunk ist ein persistiertes Event
+#### ~~P0-2 · Jeder Token-Chunk ist ein persistiertes Event~~
+
+**Resolved:** Live deltas have no persistence writes or projection work. Cancellation/error commits the in-memory partial. Legacy chunk decoding/repair remains for existing logs; abrupt process termination can lose the active response. Tests: `test_event_log.py`, `test_agent.py`, `test_run_control.py`.
 - `core/loop.py:733-736` hängt für jeden Stream-Chunk ein `AssistantChunk` an das Log.
 - Pro Token heißt das: ein JSON-Encode, ein Datei-Write mit Flush (optional `fsync`), zwei Bus-Dispatches (`SessionAppended` plus Event) und zweimal DI-Reflection (P1-3).
 - Gebraucht werden die Chunks heute nur für zwei Dinge: für den Live-Stream (`Agent._session_event` → Subscriber-Queues) und für `_pending_assistant_messages`, das nach einem Abbruch den Teiltext rekonstruiert (`core/session.py:131`).
@@ -420,13 +423,24 @@ Regel für Contributor: *„Kommt der Wert von außen (User-Config, Datei, Netzw
 - **Strategisch** ist DeepSeek der einzige Provider.
   **→ Empfehlung:** Ein generischer **OpenAI-kompatibler** Adapter als Basis (deckt DeepSeek, vLLM, Ollama, OpenRouter und Together ab), DeepSeek als dünne Subklasse, dazu ein Anthropic-Adapter als Extra.
 
-#### P1-11 · Prompt-Sektionen
-- Synchrone Section-Callables laufen per `asyncio.to_thread` (`core/prompt.py:62`), obwohl sie meist triviale String-Funktionen sind.
-  **→ Empfehlung:** Synchron direkt aufrufen. Wer I/O braucht, schreibt die Section als `async def`.
-- `stable=True` cached **für immer**.
-  **→ Empfehlung:** Ein `SystemPrompt.invalidate(name)` und optional `stable_for=timedelta(...)`.
-- Der Name ist der Schlüssel, ein zweites `persona(...)` ersetzt das erste still.
-  **→ Empfehlung:** Wie bei Tools (P1-9): Ersetzen nur mit `override=True`, sonst ein Fehler.
+#### P1-11 · System-Prompt: implizit, cache-feindlich, still überschreibend
+- **Implizite Komposition:** Jedes Plugin kann über `SystemPrompt.section(name, content, order=...)` (`core/prompt.py:27`) Text einfügen. Wo er landet, bestimmen Order-Zahlen und das `stable`-Flag (stabile Sections vor dynamischen). Der Nutzer sieht weder, was im Prompt steht, noch, woher es kommt.
+- **Dynamische Sections im System-Prompt:** `agents_md()` ist `stable=False` und wird jeden Step neu gelesen. Ein Callable wie `current_date` liegt ebenfalls im System-Prompt. Jede Änderung schreibt eine neue `SystemMessage` an Position 0 und bricht den Prompt-Cache des Providers ab dem ersten Token.
+- **`stable=True` cached für immer**, auch bei einem Callable.
+- **Doppelte Namen überschreiben still:** Ein zweites `persona(...)` ersetzt das erste.
+- **Sync-Callables laufen per `asyncio.to_thread`** (`core/prompt.py:62`), obwohl sie meist triviale String-Funktionen sind.
+
+**→ Empfehlung:** Den System-Prompt explizit machen und von dynamischem Kontext trennen.
+1. **`instructions=` ist der komplette System-Prompt** als geordnete Liste aus `str` und `Section(name, text)`. Er wird wörtlich übernommen, in Listenreihenfolge, getrennt durch Leerzeilen. Es gibt keine Order-Zahlen und kein `stable`-Flag.
+2. **Plugins schreiben nicht selbst in den Prompt**, sie bieten Text als Wert an (`GitHub.guidance`), den die App in die Liste setzt. Der Text bleibt beim Plugin, die Platzierung ist sichtbar.
+3. **Der System-Prompt ist pro Session fest.** `agents_md()` wird `Section.from_file("AGENTS.md")`, einmal beim Start der Session gelesen.
+4. **Was sich ändert, ist Kontext:** `context(name, fn)` als Plugin bzw. `session.context.set(...)`. Das Modell bekommt ihn als `<context name="…">`-User-Message vor der neuen Nachricht, nur bei Änderung. Das vorhandene `ContextMessage`-Event trägt das bereits.
+5. **`agent.prompt`** zeigt die Komposition mit Herkunft jeder Section, den aktuellen Kontext und angebotene, aber ungenutzte `guidance`.
+6. **Doppelte Section-Namen sind ein Fehler**, außer mit `override=True` (wie bei Tools, P1-9). Sync-Callables für Kontext werden direkt aufgerufen.
+
+DSH löst das anders: Plugins registrieren Sections selbst, und eine zentrale Tabelle vergibt Order-Zahlen (`SECTION_ORDERS` in `packages/core/system-prompt`). Das funktioniert für eine geschlossene App mit bekannten Plugins und eigener UI. In einem SDK mit Plugins von Dritten kollidieren die Zahlen, und die Platzierung bleibt unsichtbar. Die Trennung in Sections und Kontext übernehmen wir dagegen von DSH.
+
+Zielbild: [`api-target.md`](api-target.md), Abschnitt 4.
 
 #### P1-12 · `Rules` blähen das Log auf
 `Rules.review` hängt für **jede Regel × jedes Tool-Result** ein `RuleEvaluated` an (`plugins/permissions/rules.py:126`). Bei 10 Regeln und 500 Tool-Calls sind das 5000 Events für reine Zähler.
@@ -673,7 +687,7 @@ Quer dazu gilt: **Alles Optionale ist ein Plugin**, und Built-ins haben keinen p
 | `CacheBreakpoints`, `CacheMetrics` | **Entfernen** | No-op (1.2). |
 | `Rules` / `when()` | **Opt-in in `harnessed.plugins`**, nur noch `RuleTriggered` persistieren (P1-12) | DSH-Heuristik, eine Meinung, keine Infrastruktur. |
 | Observations, `LatestObservationOnly` | **Opt-in in `harnessed.plugins`.** Der Core behält `ObservationRecorded`. | Nischig. |
-| `persona`, `agents_md` | `instructions=` als Agent-Parameter; `agents_md` im `coding`-Preset | Ein Plugin für einen String ist zu viel Zeremonie. |
+| `persona`, `agents_md` | `instructions=` als Agent-Parameter; `agents_md` wird `Section.from_file("AGENTS.md")` in der `instructions`-Liste des `coding`-Presets (P1-11) | Ein Plugin für einen String ist zu viel Zeremonie, und der Prompt soll explizit komponiert sein. |
 | FS- und Shell-Tools, `coding`-Preset | **Entweder richtig oder als Beispiel.** Richtig heißt: `list_dir`, `glob`, `grep`, `edit`, eine gehärtete Shell (P0-5) und `ASK` als Default. | Die Preset-Qualität ist der erste Eindruck. |
 | Token-Counting, Kontextfenster | Approximation als Fallback, ansonsten liefert der Adapter Counter und `ModelInfo` (P0-6) | 128k global ist für die meisten Modelle falsch. |
 | Provider | **OpenAI-kompatibel als Basis, DeepSeek als Subklasse, Anthropic als Extra** (P1-10) | Ein Provider ist zu wenig. |

@@ -54,6 +54,7 @@ from .events import (
     UserMessage,
 )
 from .inbox import Inbox
+from .stream import SessionPublished, TransientEvent
 from .turns import Turn, derive_turns
 
 
@@ -341,6 +342,14 @@ class Session:
             self._events.append(event)
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
+            await self.ctx.dispatch(event)
+
+    async def publish(self, event: TransientEvent) -> None:
+        """Deliver a live event without persistence or projection changes."""
+        if not isinstance(event, TransientEvent):
+            raise TypeError("publish requires a TransientEvent")
+        if self.ctx is not None:
+            await self.ctx.dispatch(SessionPublished(self, event))
             await self.ctx.dispatch(event)
 
     async def repair_interrupted(self) -> None:

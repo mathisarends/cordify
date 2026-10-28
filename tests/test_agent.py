@@ -21,7 +21,6 @@ from harnessed import (
     tool,
 )
 from harnessed.core.events import (
-    AssistantChunk,
     AssistantMessage,
     ModelRequested,
     PreStep,
@@ -31,6 +30,7 @@ from harnessed.core.events import (
     TurnEnd,
     TurnStart,
 )
+from harnessed.core.stream import TextDelta
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.services import llm
@@ -54,9 +54,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
     harness = Harness([agent_loop(), llm(model), features], model="test-model")
     async with harness.session("math") as agent:
         events = [event async for event in agent.stream("Add 1 and 2")]
-        assert (
-            "".join(e.text for e in events if isinstance(e, AssistantChunk)) == "The result is 3."
-        )
+        assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "The result is 3."
         assert [e.text for e in events if isinstance(e, ToolProgress)] == ["adding"]
         assert any(isinstance(e, ToolReturned) and e.result.content == "3" for e in events)
         recorded = [e.request for e in agent.session.events if isinstance(e, ModelRequested)]
@@ -361,7 +359,7 @@ async def test_observer_failure_closes_model_iterator_before_run_returns():
 
     async with Harness([agent_loop(), llm(ResourceLLM())]).session("resource") as agent:
 
-        @agent.on(AssistantChunk)
+        @agent.on(TextDelta)
         def broken(event):
             raise ValueError("observer failure")
 

@@ -3,7 +3,8 @@
 import asyncio
 
 from harnessed import Context, Harness, ModelChunk, ToolCall, ToolRegistry, plugin
-from harnessed.core.events import AssistantChunk, ToolCalled, ToolReturned
+from harnessed.core.events import ToolCalled, ToolReturned
+from harnessed.core.stream import TextDelta
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.context.instructions import persona
 from harnessed.plugins.services import llm
@@ -40,7 +41,7 @@ async def main():
     async with harness.session("calculator") as agent:
         async for event in agent.stream("What is 19 + 23?"):
             match event:
-                case AssistantChunk(text=text):
+                case TextDelta(text=text):
                     print(text, end="", flush=True)
                 case ToolCalled(call=call):
                     print(f"-> {call.name}({dict(call.arguments)})")

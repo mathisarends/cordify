@@ -966,9 +966,12 @@ TokenCounter, Compactor, and SpillStore services for each session.
 Session events and model values are immutable; the inbox and model history
 are derived from the log. `session_jsonl()` stores versioned JSONL with an
 exclusive OS write lock. `ModelRequested` contains the actual request.
-`AssistantChunk` is also a durable session event: chunks are stored before
-being published live. Resume completes partial responses, closes interrupted
-turns, and fills in missing tool results.
+`TextDelta` is a transient live event: token updates are published without
+writing to the log. Each response is persisted once as `AssistantMessage`.
+Cancellation and stream errors persist the buffered partial response; a hard
+process crash can lose the current response. Resume closes interrupted turns
+and fills in missing tool results. Legacy logs containing `AssistantChunk`
+remain readable.
 
 `PreStep` is a waterfall over the user messages offered at that boundary.
 `StepDecision(messages)` accepts them; `StepDecision.reject()` leaves them in
@@ -1136,7 +1139,7 @@ alongside an independent write.
 ## The session log is the source of truth
 
 The log contains only registered `frozen` dataclasses such as `TurnStart`,
-`StepStart`, `AssistantChunk`, `AssistantMessage`, `ToolCalled`,
+`StepStart`, `AssistantMessage`, `ToolCalled`,
 `ToolCompleted`, and `ToolReturned`.
 Session, codec, and seed import also validate nested values for immutability.
 `session.events` returns an immutable tuple snapshot; `append()` adds events.
@@ -1157,10 +1160,10 @@ assert replay.requests == requests
 
 `derive_messages()` builds conversation history from the log: the system prompt,
 user and assistant messages, tool results, context, observations, and compaction.
-An open stream appears as one partial assistant message.
-Its `AssistantChunk` events share a `message_id`; the final `AssistantMessage`
-uses the same ID. The projection combines them exactly once without generating
-new random IDs.
+Live `TextDelta` events share a `message_id` with the final `AssistantMessage`.
+They do not change the history projection. `Session.publish()` delivers live
+events; `Session.append()` commits durable events. Legacy chunk logs still
+project and repair partial messages without duplicating completed replies.
 
 `derive_requests()` returns the `ModelRequest` snapshots actually sent,
 including tool schemas, token limit, cache breakpoints, and changes made by

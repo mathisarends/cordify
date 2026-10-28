@@ -29,7 +29,6 @@ from .events import (
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
-    AssistantChunk,
     AssistantMessage,
     ConfigureRequest,
     ContextMessage,
@@ -65,9 +64,10 @@ from .outputs import ToolOutputLimit
 from .prompt import SystemPrompt
 from .scheduling import ToolPlan, ToolScheduler, ToolScheduling
 from .session import Session
+from .stream import SessionPublished, TextDelta, TransientEvent
 from .tools import ToolRegistry
 
-type AgentEvent = SessionEvent
+type AgentEvent = SessionEvent | TransientEvent
 _preparing: ContextVar["Agent | None"] = ContextVar("harnessed_preparing", default=None)
 _driving: ContextVar["Agent | None"] = ContextVar("harnessed_driving", default=None)
 
@@ -128,6 +128,7 @@ class Agent:
         self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
         ctx.on(SessionAppended, self._session_event)
+        ctx.on(SessionPublished, self._stream_event)
 
     @property
     def inbox(self):
@@ -193,6 +194,10 @@ class Agent:
     def _publish(self, event: AgentEvent | None):
         for queue in self._subscribers:
             queue.put_nowait(event)
+
+    def _stream_event(self, event: SessionPublished):
+        if event.session is self.session:
+            self._publish(event.event)
 
     async def _send(
         self,
@@ -723,11 +728,15 @@ class Agent:
 
     async def _respond(self, request: ModelRequest) -> Message:
         message_id, calls = uuid4().hex, []
+        text, reasoning = [], []
 
-        def partial_message():
-            return next(
-                (message for message in self.session.messages if message.id == message_id),
-                None,
+        def message():
+            return Message(
+                "assistant",
+                "".join(text),
+                tuple(calls),
+                reasoning_content="".join(reasoning),
+                id=message_id,
             )
 
         try:
@@ -739,27 +748,22 @@ class Agent:
                     if chunk.usage is not None:
                         await self.session.append(ModelUsageRecorded(chunk.usage))
                     if chunk.text or chunk.reasoning:
-                        await self.session.append(
-                            AssistantChunk(chunk.text, chunk.reasoning, message_id=message_id)
+                        text.append(chunk.text)
+                        reasoning.append(chunk.reasoning)
+                        await self.session.publish(
+                            TextDelta(message_id, chunk.text, chunk.reasoning)
                         )
                     if chunk.tool_call is not None:
                         calls.append(chunk.tool_call)
         except BaseException:
-            if partial := partial_message():
-                await self.session.append(AssistantMessage(partial, interrupted=True))
+            if text or reasoning:
+                await self.session.append(AssistantMessage(message(), interrupted=True))
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
-        partial = partial_message()
-        message = Message(
-            "assistant",
-            partial.text if partial else "",
-            tuple(calls),
-            reasoning_content=partial.reasoning_content if partial else "",
-            id=message_id,
-        )
-        await self.session.append(AssistantMessage(message))
-        return message
+        final = message()
+        await self.session.append(AssistantMessage(final))
+        return final
 
 
 class ReactLoopFactory:

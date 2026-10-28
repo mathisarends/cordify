@@ -20,6 +20,7 @@ from harnessed.core.events import (
     UserMessage,
 )
 from harnessed.core.session import decode_event, derive_messages, derive_requests, encode_event
+from harnessed.core.stream import TextDelta
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
@@ -31,7 +32,7 @@ def roundtrip(events):
     )
 
 
-async def test_live_chunks_are_committed_once_before_observers_and_match_jsonl_replay(tmp_path):
+async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_replay(tmp_path):
     model = ScriptedLLM(
         [[ModelChunk(reasoning="think"), ModelChunk(text="hello "), ModelChunk(text="world")]]
     )
@@ -39,18 +40,19 @@ async def test_live_chunks_are_committed_once_before_observers_and_match_jsonl_r
     observed = []
     async with harness.session("durable-chunks") as agent:
 
-        @agent.on(AssistantChunk)
+        @agent.on(TextDelta)
         def observe(event):
-            assert agent.session.events[-1] is event
+            assert event not in agent.session.events
             records = (tmp_path / "durable-chunks.jsonl").read_text().splitlines()
-            assert decode_event(json.loads(records[-1])) == event
+            assert all(record["type"] != "assistant/chunk" for record in map(json.loads, records))
             observed.append(event)
 
         live = [event async for event in agent.stream("hello")]
         log = agent.session.events
-        chunks = tuple(event for event in log if isinstance(event, AssistantChunk))
-        assert chunks == tuple(observed)
-        assert chunks == tuple(event for event in live if isinstance(event, AssistantChunk))
+        assert not any(isinstance(event, AssistantChunk) for event in log)
+        chunks = tuple(observed)
+        assert len(chunks) == 3
+        assert chunks == tuple(event for event in live if isinstance(event, TextDelta))
         final = next(event for event in log if isinstance(event, AssistantMessage))
         assert {chunk.message_id for chunk in chunks} == {final.message.id}
         assert final.message.text == "hello world" and final.message.reasoning_content == "think"
@@ -157,13 +159,13 @@ async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     assert len(child.messages) == 2 and child.events[: len(completed)] == parent.events
 
 
-async def test_unpersisted_chunks_are_neither_published_nor_committed_in_a_final_message():
+async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_visible():
     class FailingPersistence:
         async def load(self, session_id):
             return ()
 
         async def append(self, session_id, seq, event):
-            if isinstance(event, AssistantChunk):
+            if isinstance(event, AssistantMessage):
                 raise OSError("storage unavailable")
 
     from harnessed import SessionPersistence, plugin
@@ -179,7 +181,8 @@ async def test_unpersisted_chunks_are_neither_published_nor_committed_in_a_final
         with pytest.raises(OSError, match="storage unavailable"):
             async for event in agent.stream("hello"):
                 live.append(event)
-        assert not any(isinstance(e, AssistantChunk | AssistantMessage) for e in live)
+        assert any(isinstance(e, TextDelta) for e in live)
+        assert not any(isinstance(e, AssistantMessage) for e in live)
         assert not any(
             isinstance(e, AssistantChunk | AssistantMessage) for e in agent.session.events
         )

@@ -50,3 +50,19 @@ async def test_session_installs_waiting_plugins_once_and_disposes_agent_once(mon
         assert starts == [agent]
         assert (await agent.run("hello")).text == "ready"
     assert closes == [agent]
+
+
+async def test_agent_service_remains_available_during_dependent_teardown():
+    from harnessed import Agent, Inject, Plugin
+
+    seen = []
+
+    class Dependent(Plugin):
+        needs = (Agent,)
+
+        async def teardown(self, agent: Inject[Agent]):
+            seen.append(agent.id)
+
+    async with minimal(ScriptedLLM([]), plugins=[Dependent()]).session("teardown-owner"):
+        pass
+    assert seen == ["teardown-owner"]

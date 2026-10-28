@@ -8,10 +8,17 @@ from .core.loop import Agent, AgentFactory, AgentOptions
 from .core.outputs import ToolOutputLimit
 from .core.session import Session, SessionPersistence
 from .kernel.context import Context
-from .kernel.plugin import PluginLike
+from .kernel.plugin import PluginLike, plugin
 from .seams.llm import LLM
 
 __all__ = ["Harness", "minimal", "coding", "headless"]
+
+
+@plugin
+async def _agent_service(ctx: Context, agent: Agent):
+    """Make teardown ordering follow the same needs graph as plugin startup."""
+    ctx.provide(Agent, agent)
+    yield
 
 
 class Harness:
@@ -105,8 +112,12 @@ class Harness:
                 session = Session(session_id, ctx=ctx, seed=seed, persistence=persistence)
                 await session.repair_interrupted()
                 agent = ctx[AgentFactory].create(ctx, session, options)
+                try:
+                    await ctx.plugin(_agent_service(agent))
+                except BaseException:
+                    await agent.aclose()
+                    raise
                 ctx.effect(agent.aclose)
-                ctx.provide(Agent, agent)
                 await ctx.settle()
                 agent.start()
                 yield agent

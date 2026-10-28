@@ -12,8 +12,9 @@ from harnessed import (
     derive_messages,
     derive_requests,
 )
-from harnessed.core.events import AssistantChunk, UserMessage
+from harnessed.core.events import AssistantMessage, UserMessage
 from harnessed.core.session import decode_event, encode_event
+from harnessed.core.stream import TextDelta
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -34,7 +35,7 @@ async def main():
     )
     async with minimal(model, plugins=[math]).session("source") as agent:
         async for event in agent.stream("Add 2 and 3"):
-            if isinstance(event, AssistantChunk):
+            if isinstance(event, TextDelta):
                 print(event.text, end="", flush=True)
         print()
         log = agent.session.events
@@ -46,7 +47,10 @@ async def main():
     assert replay.messages == derive_messages(log)
     assert replay.requests == derive_requests(log) == tuple(model.requests)
     print("Recorded requests:", len(replay.requests))
-    print("Replayed chunks:", "".join(e.text for e in restored if isinstance(e, AssistantChunk)))
+    print(
+        "Replayed reply:",
+        "".join(e.message.text for e in restored if isinstance(e, AssistantMessage)),
+    )
 
     # Request snapshots include the exact messages and tool schemas used at each step.
     print("Last model history:", [(m.role, m.text) for m in replay.requests[-1].messages])
