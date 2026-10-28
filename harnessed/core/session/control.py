@@ -23,4 +23,4 @@ class RunControl:
 
     @property
     def stopped(self) -> bool:
-        return self.state in ("stopping", "stopped")
+        return self.state in ("stopping", "aborting", "stopped")

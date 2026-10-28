@@ -1,464 +1,346 @@
+"""Public run-control boundaries, persistence and concurrent callers."""
+
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from harnessed import (
-    AgentControlChanged,
-    ApprovalRequest,
-    Bundle,
-    Inject,
-    Message,
-    ModelChunk,
-    ModelRequest,
-    RunControl,
-    ToolCall,
-    ToolContext,
-    system,
-)
-from harnessed import Session as Agent
-from harnessed.core.hooks import PreStep, ReviewToolResult, StepDecision
+from harnessed import Agent, Inject, Plugin, SessionClosed, SessionStatus, StopReason, tool
+from harnessed.core.messages import ApprovalAnswer, Message, ToolCall
+from harnessed.core.model import ModelChunk, ModelRequest
+from harnessed.core.runtime.control import SessionControl
 from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
+    AgentControlChanged,
     AssistantChunk,
     AssistantMessage,
-    InboxAdded,
     ModelRequested,
     StepStart,
     ToolReturned,
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
-from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed.core.session.session import SessionLog
+from harnessed.core.tools.context import ToolContext
+from harnessed.plugins import Approvals, JsonlSessions
+from harnessed.testing import ScriptedModel, call
+
+
+async def wait(awaitable):
+    return await asyncio.wait_for(awaitable, 3)
+
+
+async def wait_stopping(session):
+    async with asyncio.timeout(3):
+        while session.status is not SessionStatus.STOPPING:
+            await session.control._changed.wait()
+
+
+class GatedModel(ScriptedModel):
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.started, self.release, self.closed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    @asynccontextmanager
+    async def stream(self, request):
+        async with super().stream(request) as stream:
+            if len(self.requests) == 1:
+                try:
+                    self.started.set()
+                    await self.release.wait()
+                    yield stream
+                finally:
+                    self.closed.set()
+            else:
+                yield stream
 
 
 @pytest.mark.parametrize("phase", ["model", "tools"])
-async def test_pause_finishes_the_entire_step_then_resume_continues_the_same_turn(phase):
-    ready, release = asyncio.Event(), asyncio.Event()
-    tools, executed = Bundle("pause-tools"), []
-    calls = [ToolCall("work", {"index": index}) for index in range(3)]
-    active = 0
+async def test_pause_waits_for_a_whole_step_and_resume_keeps_its_turn(phase):
+    started, release = asyncio.Event(), asyncio.Event()
+    active, executed = [], []
 
-    @tools.tool(parallel=True)
-    async def work(index: int) -> str:
-        nonlocal active
-        active += 1
-        if phase == "tools":
-            if active == 3:
-                ready.set()
-            await release.wait()
-        executed.append(index)
-        return str(index)
+    class Tools(Plugin):
+        @tool(readonly=True, parallel=True)
+        async def work(self, index: int) -> str:
+            active.append(index)
+            if phase == "tools":
+                if len(active) == 3:
+                    started.set()
+                await release.wait()
+            executed.append(index)
+            return str(index)
 
-    class Model:
-        def __init__(self):
-            self.requests = []
-
-        async def stream(self, request):
-            self.requests.append(request)
-            if len(self.requests) == 1:
-                if phase == "model":
-                    ready.set()
-                    await release.wait()
-                for call in calls:
-                    yield ModelChunk(tool_call=call)
-            else:
-                yield ModelChunk(text=f"answer {len(self.requests)}")
-
-    model = Model()
-    async with minimal(model, plugins=[tools]).session("pause-step") as agent:
-        running = asyncio.create_task(agent.run("first task"))
-        try:
-            await asyncio.wait_for(ready.wait(), 2)
-            turn_id = agent.log.turns[-1].id
-            await agent.pause()
-            assert agent.status == "pausing"
-            await agent.followup("second task")
-            with pytest.raises(TimeoutError):
-                await asyncio.wait_for(agent.when_paused(), 0.02)
-            assert not running.done() and len(model.requests) == 1
-            release.set()
-            await asyncio.wait_for(agent.when_paused(), 2)
-            assert agent.status == "paused" and sorted(executed) == [0, 1, 2]
-            results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
-            assert [e.call_id for e in results] == [call.id for call in calls]
-            assert all(not e.result.is_error for e in results)
-            assert not running.done() and not agent.log.turns[-1].closed
-            assert agent.log.turns[-1].steps[-1].closed
-            await agent.resume()
-            await asyncio.wait_for(running, 2)
-            assert [len(turn.steps) for turn in agent.log.turns] == [2, 1]
-            assert agent.log.turns[0].id == turn_id
-            assert len(model.requests) == 3 and len(executed) == 3
-        finally:
-            release.set()
-            if not running.done():
-                await agent.stop()
-                await running
-
-
-async def test_pause_after_a_final_answer_does_not_make_an_extra_model_call():
-    tools = Bundle("pause-on-answer")
-    requested = asyncio.Event()
-
-    class Model:
-        async def stream(self, request):
-            yield ModelChunk(text="complete answer")
-
-    @tools.on(AssistantMessage)
-    async def pause(event, agent: Inject[Agent]):
-        await agent.pause()
-        requested.set()
-
-    async with minimal(Model(), plugins=[tools]).session("answer") as agent:
-        await agent.followup("task")
-        await asyncio.wait_for(requested.wait(), 2)
-        await asyncio.wait_for(agent.when_paused(), 2)
-        assert agent.log.turns[-1].steps[-1].closed
-        await agent.resume()
-        await asyncio.wait_for(agent.when_idle(), 2)
-        assert agent.log.turns[-1].closed and len(agent.log.requests) == 1
-
-
-async def test_idle_pause_queues_all_input_modes_and_control_calls_are_idempotent():
-    model = ScriptedLLM(["done"])
-    async with minimal(model).session("idle-pause") as agent:
-        await agent.pause()
-        await agent.when_paused()
-        prefix = agent.log.events
-        await agent.pause()
-        assert agent.log.events == prefix
-        await agent.inject(system("quiet context"))
-        await agent.followup("task")
-        await agent.steer("focus")
+    calls = [ToolCall("work", {"index": n}) for n in range(3)]
+    replies = [[ModelChunk(tool_call=c) for c in calls], "first done", "second done"]
+    model = GatedModel(replies) if phase == "model" else ScriptedModel(replies)
+    if phase == "model":
+        started, release = model.started, model.release
+    async with Agent(model=model, plugins=[Tools()]).session() as session:
+        first = asyncio.create_task(session.run("first"))
+        await wait(started.wait())
+        pause = asyncio.create_task(session.pause())
         await asyncio.sleep(0)
-        assert agent.status == "paused" and not model.requests and len(agent.inbox.pending) == 3
-        await agent.resume()
-        prefix = agent.log.events
-        await agent.resume()
-        assert agent.log.events == prefix
-        await asyncio.wait_for(agent.when_idle(), 2)
-        assert len(model.requests) == 1 and not agent.inbox.pending
+        assert not pause.done() and session.status is SessionStatus.RUNNING
+        second = asyncio.create_task(session.run("second"))
+        await asyncio.sleep(0)
+        release.set()
+        await wait(pause)
+        assert session.status is SessionStatus.PAUSED
+        assert not first.done() and not second.done() and len(model.requests) == 1
+        returned = [e.call_id for e in session.events if isinstance(e, ToolReturned)]
+        assert returned == [c.id for c in calls] and sorted(executed) == [0, 1, 2]
+        await session.pause()
+        await session.resume()
+        assert (await wait(first)).text == "first done"
+        assert (await wait(second)).text == "second done"
+        await wait(session.wait_until_idle())
+        assert [len(t.steps) for t in session.turns] == [2, 1]
+        assert session.status is SessionStatus.IDLE
 
 
-@pytest.mark.parametrize("phase", ["model", "tools", "approval"])
-async def test_stop_cancels_current_activity_and_closes_the_turn_without_repeating_calls(phase):
-    ready, closed = asyncio.Event(), asyncio.Event()
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_stop_and_abort_return_distinct_results_and_discard_waiting_runs(immediate):
+    model = GatedModel(["a complete step", "fresh task"])
+    async with Agent(model=model).session() as session:
+        running = asyncio.create_task(session.run("first"))
+        await wait(model.started.wait())
+        queued = asyncio.create_task(session.run("queued"))
+        await asyncio.sleep(0)
+        terminate = asyncio.create_task(session.abort() if immediate else session.stop())
+        await asyncio.sleep(0)
+        if not immediate:
+            await wait_stopping(session)
+            assert session.status is SessionStatus.STOPPING and not terminate.done()
+            assert not model.closed.is_set()
+            model.release.set()
+        await wait(terminate)
+        result = await wait(running)
+        assert result.stop_reason is (StopReason.ABORTED if immediate else StopReason.STOPPED)
+        assert result.text == ("" if immediate else "a complete step")
+        assert (await wait(queued)).stop_reason is StopReason.DISCARDED
+        assert model.closed.is_set() and session.status is SessionStatus.IDLE
+        assert not session.inbox.pending
+        prefix = session.events
+        await session.stop()
+        await session.abort()
+        await session.resume()
+        assert session.events == prefix
+        assert (await session.run("new task")).text == "fresh task"
+
+
+async def test_abort_overtakes_a_graceful_stop_without_repeated_cancellation():
+    model = GatedModel(["never delivered"])
+    async with Agent(model=model).session() as session:
+        running = asyncio.create_task(session.run("task"))
+        await wait(model.started.wait())
+        stopping = asyncio.create_task(session.stop())
+        await asyncio.sleep(0)
+        await wait_stopping(session)
+        assert not stopping.done()
+        await wait(asyncio.gather(session.abort(), session.abort()))
+        await wait(stopping)
+        assert (await wait(running)).stop_reason is StopReason.ABORTED
+        assert session.status is SessionStatus.IDLE
+
+
+@pytest.mark.parametrize("phase", ["tools", "approval"])
+async def test_abort_drains_tools_or_approvals_and_repairs_outstanding_calls(phase):
+    started, closed = asyncio.Event(), asyncio.Event()
     contexts = []
-    tools = Bundle("stop-tools")
 
-    @tools.tool(parallel=True)
-    async def wait(call: Inject[ToolContext]) -> str:
-        if phase == "approval":
-            pytest.fail("Tool executed before approval")
-        contexts.append(call)
-        ready.set()
+    class Tools(Plugin):
+        @tool(readonly=phase != "approval")
+        async def work(self, call: Inject[ToolContext]) -> str:
+            contexts.append(call)
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+            return "never"
+
+    async def approve(request):
+        started.set()
         try:
             await asyncio.Event().wait()
         finally:
             closed.set()
+        return ApprovalAnswer.ALLOW
 
-    class Model:
-        def __init__(self):
-            self.requests = []
-
-        async def stream(self, request):
-            self.requests.append(request)
-            if phase == "model":
-                yield ModelChunk(text="visible prefix")
-                ready.set()
-                try:
-                    await asyncio.Event().wait()
-                finally:
-                    closed.set()
-            else:
-                yield ModelChunk(tool_call=ToolCall("wait"))
-
-    plugins = [tools, approval_gate(risky={"wait"})] if phase == "approval" else [tools]
-    model = Model()
-    async with minimal(model, plugins=plugins).session("stop") as agent:
-        if phase == "approval":
-
-            @agent.on(ApprovalRequest)
-            async def ask(event):
-                ready.set()
-                try:
-                    await asyncio.Event().wait()
-                finally:
-                    closed.set()
-
-        await agent.followup("task")
-        await asyncio.wait_for(ready.wait(), 2)
-        await agent.followup("discard queued task")
-        await asyncio.wait_for(agent.stop(), 2)
-        assert closed.is_set() and agent.status == "stopped"
-        assert agent.log.turns[-1].reason == "stopped"
-        assert not agent.inbox.pending and not agent.log.approvals.pending
-        assert all(context.signal.is_set() for context in contexts)
-        prefix = agent.log.events
-        await agent.stop()
-        assert agent.log.events == prefix
-        await agent.resume()
-        await agent.when_idle()
-        assert agent.status == "idle" and len(model.requests) == 1
+    async with Agent(
+        model=ScriptedModel([call("work")]), plugins=[Tools(), Approvals(approver=approve)]
+    ).session() as session:
+        running = asyncio.create_task(session.run("task"))
+        await wait(started.wait())
+        await wait(session.abort())
+        assert (await wait(running)).stop_reason is StopReason.ABORTED
+        assert closed.is_set() and all(c.signal.is_set() for c in contexts)
+        assert not session.approvals.pending
+        results = [e.result for e in session.events if isinstance(e, ToolReturned)]
+        assert len(results) == 1 and results[0].is_error and "aborted" in results[0].content
 
 
-@pytest.mark.parametrize("keep_inbox", [False, True])
-async def test_stop_can_retain_queued_inputs_but_never_resumes_the_stopped_turn(keep_inbox):
-    ready = asyncio.Event()
-
-    class Model:
-        def __init__(self):
-            self.requests = []
-
-        async def stream(self, request):
-            self.requests.append(request)
-            if len(self.requests) == 1:
-                ready.set()
-                await asyncio.Event().wait()
-            yield ModelChunk(text="done")
-
-    model = Model()
-    async with minimal(model).session("retained") as agent:
-        await agent.followup("abandoned task")
-        await asyncio.wait_for(ready.wait(), 2)
-        await agent.followup("queued task")
-        await agent.inject(system("queued context"))
-        await agent.stop(keep_inbox=keep_inbox)
-        assert len(agent.inbox.pending) == (2 if keep_inbox else 0)
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_termination_can_preserve_waiting_runs_as_separate_turns(immediate):
+    model = GatedModel(["first", "second"])
+    async with Agent(model=model).session() as session:
+        first = asyncio.create_task(session.run("first"))
+        await wait(model.started.wait())
+        second = asyncio.create_task(session.run("second"))
         await asyncio.sleep(0)
-        assert len(model.requests) == 1
-        await agent.resume()
-        await asyncio.wait_for(agent.when_idle(), 2)
-        assert len(model.requests) == (2 if keep_inbox else 1)
-        if keep_inbox:
-            assert [turn.reason for turn in agent.log.turns] == ["stopped", "completed"]
-        await agent.stop()
-        assert (await agent.run("new task")).text == "done"
-
-
-async def test_stop_clears_a_paused_idle_inbox_without_a_runner():
-    async with minimal(ScriptedLLM(["new work"])).session("no-runner") as agent:
-        await agent.pause()
-        await agent.followup("discard")
-        await agent.stop()
-        assert agent.status == "stopped" and not agent.inbox.pending
-        assert (await agent.run("fresh task")).text == "new work"
-
-
-async def test_close_and_reopen_a_paused_session_continues_at_the_next_step(tmp_path):
-    tools, executed, paused = Bundle("persistent-pause"), [], asyncio.Event()
-
-    @tools.tool
-    async def work() -> str:
-        executed.append(True)
-        return "stored result"
-
-    @tools.on(ReviewToolResult)
-    async def pause(event, next_, agent: Inject[Agent]):
-        result = await next_()
-        await agent.pause()
-        paused.set()
-        return result
-
-    first = ScriptedLLM([[ModelChunk(tool_call=ToolCall("work"))]])
-    async with minimal(first, plugins=[tools, session_jsonl(tmp_path)]).session("saved") as agent:
-        await agent.followup("task")
-        await asyncio.wait_for(paused.wait(), 2)
-        await asyncio.wait_for(agent.when_paused(), 2)
-        turn_id, prefix = agent.log.turns[-1].id, agent.log.events
-        assert not agent.log.turns[-1].closed
-    model = ScriptedLLM(["continued"])
-    async with minimal(model, plugins=[tools, session_jsonl(tmp_path)]).session("saved") as agent:
-        assert agent.status == "paused" and agent.log.events == prefix
+        operation = session.abort if immediate else session.stop
+        stopping = asyncio.create_task(operation(keep_inbox=True))
         await asyncio.sleep(0)
+        model.release.set()
+        await wait(stopping)
+        assert (await wait(first)).stop_reason in (StopReason.STOPPED, StopReason.ABORTED)
+        # A retained run still owns its own turn; it never resumes the ended turn.
+        await session.resume()
+        assert (await wait(second)).text == "second"
+        assert len(session.turns) == 2 and all(t.closed for t in session.turns)
+
+
+async def test_pause_and_wait_until_idle_block_until_resume_and_reject_after_close():
+    async with Agent(model=ScriptedModel(["done"])).session() as session:
+        await session.pause()
+        await session.pause()
+        assert session.status is SessionStatus.PAUSED
+        run = asyncio.create_task(session.run("queued"))
+        idle = asyncio.create_task(session.wait_until_idle())
+        await asyncio.sleep(0)
+        assert not run.done() and not idle.done()
+        await session.resume()
+        await wait(idle)
+        assert (await wait(run)).text == "done"
+    assert session.status is SessionStatus.CLOSED
+    for method in (
+        session.pause,
+        session.resume,
+        session.stop,
+        session.abort,
+        session.wait_until_idle,
+    ):
+        with pytest.raises(SessionClosed):
+            await method()
+    with pytest.raises(SessionClosed):
+        await session.run("closed")
+
+
+async def test_control_service_rejects_self_waits_and_abort_before_runner_starts():
+    class Tools(Plugin):
+        @tool(readonly=True)
+        async def work(self, control: Inject[SessionControl]) -> str:
+            for method in (control.pause, control.stop, control.abort, control.wait_until_idle):
+                with pytest.raises(RuntimeError, match="own control boundary"):
+                    await method()
+            return "done"
+
+    model = ScriptedModel([call("work"), "done"])
+    async with Agent(model=model, plugins=[Tools()]).session() as session:
+        await session.followup("discard before the task starts")
+        await session.abort()
+        assert not session.inbox.pending and session.status is SessionStatus.IDLE
+        assert (await session.run("real task")).text == "done"
+
+
+async def test_paused_session_reopens_at_the_next_step_without_repeating_tools(tmp_path):
+    started, release, executed = asyncio.Event(), asyncio.Event(), []
+
+    class Tools(Plugin):
+        @tool(readonly=True)
+        async def work(self) -> str:
+            started.set()
+            await release.wait()
+            executed.append(True)
+            return "stored result"
+
+    def agent(model):
+        return Agent(model=model, plugins=[Tools(), JsonlSessions(tmp_path)])
+
+    async with agent(ScriptedModel([call("work")])).session("saved") as session:
+        running = asyncio.create_task(session.run("task"))
+        await wait(started.wait())
+        pause = asyncio.create_task(session.pause())
+        await asyncio.sleep(0)
+        release.set()
+        await wait(pause)
+        prefix, turn_id = session.events, session.turns[-1].id
+        assert not running.done() and session.turns[-1].steps[-1].closed
+    await wait(running)
+    model = ScriptedModel(["continued"])
+    async with agent(model).session("saved") as session:
+        assert session.status is SessionStatus.PAUSED and session.events == prefix
         assert not model.requests
-        await agent.resume()
-        await asyncio.wait_for(agent.when_idle(), 2)
-        turn = agent.log.turns[-1]
-        assert turn.id == turn_id and turn.closed and len(turn.steps) == 2
-        assert executed == [True]
-        assert any(m.text == "stored result" for m in model.requests[0].messages)
+        await session.resume()
+        await wait(session.wait_until_idle())
+        assert session.turns[-1].id == turn_id and len(session.turns[-1].steps) == 2
+        assert executed == [True] and any(
+            m.text == "stored result" for m in model.requests[0].messages
+        )
 
 
-async def test_crash_during_a_pause_request_preserves_partial_output_and_requires_resume(tmp_path):
-    persistence = JsonlPersistence(tmp_path)
-    await persistence.load("crash")
-    session = Session("crash", persistence=persistence)
+@pytest.mark.parametrize("state", ["active", "pausing", "stopping", "aborting"])
+async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_turn(state):
+    log = SessionLog("crash")
     for event in (
         TurnStart("turn"),
         StepStart("turn", 1),
         UserMessage(Message("user", "task")),
         ModelRequested(ModelRequest("model", (Message("user", "task"),))),
-        # A saved request and partial output were interrupted before the pause boundary.
-        AgentControlChanged("pausing"),
+        AgentControlChanged(state),
         AssistantChunk("visible", message_id="message"),
     ):
-        await session.append(event)
-    await persistence.aclose()
-    model = ScriptedLLM(["continued"])
-    async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("crash") as agent:
-        assert agent.status == "paused" and not model.requests
-        turn = agent.log.turns[-1]
-        assert not turn.closed and turn.steps[-1].reason == "interrupted"
-        partial = next(e for e in agent.log.events if isinstance(e, AssistantMessage))
-        assert partial.interrupted and partial.message.text == "visible"
-        await agent.resume()
-        await asyncio.wait_for(agent.when_idle(), 2)
-        assert agent.log.turns[-1].id == "turn"
-        assert len(agent.log.turns[-1].steps) == 2
-        assert any(m.text == "visible" for m in model.requests[0].messages)
-
-
-@pytest.mark.parametrize("keep_inbox", [False, True])
-async def test_repair_finishes_a_durable_stop_request_and_is_idempotent(keep_inbox):
-    session = Session("stopping")
-    for event in (
-        TurnStart("turn"),
-        StepStart("turn", 1),
-        InboxAdded.create(Message("user", "queued"), "followup"),
-        AgentControlChanged("stopping", keep_inbox),
-    ):
-        await session.append(event)
-    await session.repair_interrupted()
-    assert session.turns[-1].reason == "stopped" and session.control.state == "stopped"
-    assert bool(session.inbox.pending) is keep_inbox
-    prefix = session.events
-    await session.repair_interrupted()
-    assert session.events == prefix
-    replay = Session("replay", seed=tuple(decode_event(encode_event(e)) for e in prefix))
-    assert replay.control == session.control and replay.inbox == session.inbox
+        await log.append(event)
+    await log.repair_interrupted()
+    paused = state == "pausing"
+    assert log.control.state == ("paused" if paused else "active")
+    assert log.turns[-1].closed is not paused
+    if not paused:
+        assert log.turns[-1].reason == "aborted"
+    partial = next(e for e in log.events if isinstance(e, AssistantMessage))
+    assert partial.interrupted and partial.message.text == "visible"
+    prefix = log.events
+    await log.repair_interrupted()
+    assert log.events == prefix
+    replay = SessionLog("replay", seed=[decode_event(encode_event(e)) for e in prefix])
+    assert replay.control == log.control == RunControl(log.events)
     with pytest.raises(FrozenInstanceError):
         replay.control.state = "active"
-    assert RunControl(()) == Session("default").control
-
-
-async def test_control_methods_reject_self_waits_and_disposed_agents():
-    tools = Bundle("self-wait")
-    requested = asyncio.Event()
-
-    @tools.tool
-    async def work(agent: Inject[Agent]) -> str:
-        await agent.pause()
-        requested.set()
-        with pytest.raises(RuntimeError, match="own pause"):
-            await agent.when_paused()
-        with pytest.raises(RuntimeError, match="outside"):
-            await agent.stop()
-        return "done"
-
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("work"))], "done"])
-    async with minimal(model, plugins=[tools]).session("guards") as agent:
-        with pytest.raises(RuntimeError, match="no pending pause"):
-            await agent.when_paused()
-        await agent.followup("task")
-        await asyncio.wait_for(requested.wait(), 2)
-        await asyncio.wait_for(agent.when_paused(), 2)
-        await agent.stop()
-    for method in (agent.pause, agent.resume, agent.stop):
-        with pytest.raises(RuntimeError, match="disposed"):
-            await method()
-
-
-async def test_stream_stays_open_during_pause_and_reports_control_changes_until_completion():
-    tools, paused, received = Bundle("stream"), asyncio.Event(), []
-
-    @tools.tool
-    async def work() -> str:
-        return "ok"
-
-    @tools.on(ReviewToolResult)
-    async def pause(event, next_, agent: Inject[Agent]):
-        await agent.pause()
-        return await next_()
-
-    model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("work"))], "final answer"])
-    async with minimal(model, plugins=[tools]).session("stream") as agent:
-
-        async def collect():
-            async for event in agent.stream("task"):
-                received.append(event)
-                if isinstance(event, AgentControlChanged) and event.state == "paused":
-                    paused.set()
-
-        stream = asyncio.create_task(collect())
-        try:
-            await asyncio.wait_for(paused.wait(), 2)
-            assert not stream.done()
-            await agent.resume()
-            await asyncio.wait_for(stream, 2)
-            assert [e.state for e in received if isinstance(e, AgentControlChanged)] == [
-                "pausing",
-                "paused",
-                "active",
-            ]
-            assert agent.log.messages[-1].text == "final answer"
-        finally:
-            if not stream.done():
-                await agent.stop()
-                await stream
-
-
-async def test_a_failed_step_reports_its_error_and_can_resume_after_pause_repair():
-    ready, release = asyncio.Event(), asyncio.Event()
-
-    class Model:
-        def __init__(self):
-            self.calls = 0
-
-        async def stream(self, request):
-            self.calls += 1
-            if self.calls == 1:
-                ready.set()
-                await release.wait()
-                raise ValueError("provider failed")
-            yield ModelChunk(text="recovered")
-
-    async with minimal(Model()).session("failure") as agent:
-        await agent.followup("task")
-        await asyncio.wait_for(ready.wait(), 2)
-        await agent.pause()
-        release.set()
-        with pytest.raises(ValueError, match="provider failed"):
-            await asyncio.wait_for(agent.when_paused(), 2)
-        await agent.resume()
-        await asyncio.wait_for(agent.when_idle(), 2)
-        assert agent.log.messages[-1].text == "recovered"
-        assert len(agent.log.turns[-1].steps) == 2
-
-
-async def test_resume_from_a_pause_acknowledged_as_the_driver_exits_does_not_lose_wakeup():
-    tools, calls = Bundle("reject-once"), []
-    resumed = asyncio.Event()
-
-    @tools.on(PreStep)
-    async def reject_once(event, next_):
-        calls.append(True)
-        if len(calls) == 1:
-            await event.agent.pause()
-            return StepDecision.reject()
-        return await next_()
-
-    @tools.on(AgentControlChanged)
-    async def resume_on_ack(event, agent: Inject[Agent]):
-        if event.state == "paused":
-            await agent.resume()
-            resumed.set()
-
-    model = ScriptedLLM(["accepted"])
-    async with minimal(model, plugins=[tools]).session("exit-race") as agent:
-        await agent.followup("task")
-        await asyncio.wait_for(resumed.wait(), 2)
-        await asyncio.sleep(0)
-        await asyncio.wait_for(agent.when_idle(), 2)
-        assert model.requests and agent.log.messages[-1].text == "accepted"
 
 
 @pytest.mark.parametrize("state, keep_inbox", [("unknown", False), ("paused", True), ("active", 1)])
 def test_invalid_control_events_cannot_enter_the_log(state, keep_inbox):
     with pytest.raises(ValueError):
         AgentControlChanged(state, keep_inbox)
+
+
+async def test_cancelling_a_stop_caller_does_not_cancel_the_step():
+    model = GatedModel(["completed step"])
+    async with Agent(model=model).session() as session:
+        run = asyncio.create_task(session.run("task"))
+        await wait(model.started.wait())
+        stop = asyncio.create_task(session.stop())
+        await wait_stopping(session)
+        stop.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await stop
+        assert not model.closed.is_set()
+        model.release.set()
+        assert (await wait(run)).stop_reason is StopReason.STOPPED
+        await wait(session.wait_until_idle())
+
+
+async def test_resume_from_a_durable_pause_listener_does_not_deadlock():
+    async with Agent(model=ScriptedModel(["done"])).session() as session:
+
+        async def resume(event):
+            if event.state == "paused":
+                await session.resume()
+
+        session.on(AgentControlChanged, resume)
+        await wait(session.pause())
+        assert session.status is SessionStatus.IDLE
+        assert (await session.run("task")).text == "done"

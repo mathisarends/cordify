@@ -6,7 +6,14 @@ from collections.abc import Iterable
 from contextlib import asynccontextmanager
 
 from harnessed.core.messages import Message, ToolCall
-from harnessed.core.model import ModelChunk, ModelInfo, ModelRequest, ModelResponse, ModelUsage
+from harnessed.core.model import (
+    ModelChunk,
+    ModelInfo,
+    ModelRequest,
+    ModelResponse,
+    ModelUsage,
+    StopReason,
+)
 
 
 class ScriptedModel:
@@ -76,7 +83,7 @@ class _Stream:
                     reasoning_content="".join(self._reasoning),
                 ),
                 self._usage,
-                self._stop_reason or ("tool_calls" if self._calls else "end"),
+                self._stop_reason or (StopReason.TOOL_CALLS if self._calls else StopReason.END),
             )
             raise StopAsyncIteration from None
         self._text.append(chunk.text)
@@ -109,5 +116,6 @@ def reply(text: str, *, reasoning: str = "", usage: ModelUsage | None = None) ->
 def call(name: str, /, **arguments) -> ModelResponse:
     """Script one model tool call; keyword arguments are its model-supplied form."""
     return ModelResponse(
-        Message("assistant", tool_calls=(ToolCall(name, arguments),)), stop_reason="tool_calls"
+        Message("assistant", tool_calls=(ToolCall(name, arguments),)),
+        stop_reason=StopReason.TOOL_CALLS,
     )

@@ -245,6 +245,7 @@ class SessionLog:
         self._observers: dict[asyncio.Queue, bool] = {}
         self._subscriptions_closed = False
         self._lock = asyncio.Lock()
+        self._repair_lock = asyncio.Lock()
         for event in self._events:
             _validate_event(event)
             if isinstance(event, ModelUsageRecorded):
@@ -502,6 +503,10 @@ class SessionLog:
 
     async def repair_interrupted(self) -> None:
         """Close unfinished activity and answer tool calls after cancellation or resume."""
+        async with self._repair_lock:
+            await self._repair_interrupted()
+
+    async def _repair_interrupted(self) -> None:
         control = self.control
         for approval in self.approvals.pending:
             await self.append(ApprovalResolved(approval.request_id, status="interrupted"))
@@ -536,22 +541,29 @@ class SessionLog:
             if call.id in completed:
                 await self.append(ToolReturned(call.id, completed[call.id]))
                 continue
-            message = "Tool execution interrupted"
+            message = "Tool execution interrupted" if control.paused else "Tool execution aborted"
             if call.id in started:
                 message += "; external outcome is unknown. Inspect external state before retrying."
             await self.append(ToolReturned(call.id, ToolResult.error(message)))
         if turn is not None:
             if step is not None:
-                await self.append(StepEnd(turn, step, "interrupted"))
+                await self.append(
+                    StepEnd(turn, step, "interrupted" if control.paused else "aborted")
+                )
             if not control.paused:
-                await self.append(TurnEnd(turn, "stopped" if control.stopped else "interrupted"))
+                reason = (
+                    "stopped"
+                    if control.state in ("stopping", "stopped") and step is None
+                    else "aborted"
+                )
+                await self.append(TurnEnd(turn, reason))
         if control.state == "pausing":
             await self.append(AgentControlChanged("paused"))
         if control.stopped and not control.keep_inbox:
             for item in self.inbox.pending:
-                await self.append(InboxRemoved(item.message.id, "stopped"))
-        if control.state == "stopping":
-            await self.append(AgentControlChanged("stopped", control.keep_inbox))
+                await self.append(InboxRemoved(item.message.id, "discarded"))
+        if control.stopped:
+            await self.append(AgentControlChanged("active"))
 
     def fork(
         self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from .messages import Message
-from .model import ModelChunk, ModelInfo, ModelRequest, ModelResponse, ModelUsage
+from .model import ModelChunk, ModelInfo, ModelRequest, ModelResponse, ModelUsage, StopReason
 
 
 class LegacyModel:
@@ -55,7 +55,7 @@ class _Stream:
         self._response = ModelResponse(
             Message("assistant", "".join(text), tuple(calls), reasoning_content="".join(reasoning)),
             usage,
-            reason or ("tool_calls" if calls else "end"),
+            reason or (StopReason.TOOL_CALLS if calls else StopReason.END),
         )
 
     def response(self) -> ModelResponse:

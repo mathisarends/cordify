@@ -62,7 +62,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
         assert model.requests[0].model == "test-model"
         assert [m.role for m in model.requests[1].messages] == ["user", "assistant", "tool"]
         assert agent.status == "idle"
-    assert agent.status == "disposed"
+    assert agent.status == "closed"
 
 
 class PausingLLM:
@@ -227,7 +227,7 @@ async def test_function_plugin_can_inject_current_agent_and_implicit_dependencie
     async def observer(ctx, agent: Inject[Agent], registry: Inject[ToolRegistry]):
         observed.append((agent.id, registry))
         yield
-        assert agent.status == "disposed"
+        assert agent.status == "closed"
 
     harness = Harness([observer(), agent_loop(), llm(ScriptedLLM(["done"]))])
     async with harness.session("injected-agent") as agent:
@@ -303,8 +303,8 @@ async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
         await agent.cancel()
         partial = next(e for e in agent.log.events if isinstance(e, AssistantMessage))
         assert partial.interrupted and partial.message.content == "visible prefix"
-        assert isinstance(agent.log.events[-1], TurnEnd)
-        assert agent.log.events[-1].reason == "interrupted"
+        assert isinstance(agent.log.last(TurnEnd), TurnEnd)
+        assert agent.log.last(TurnEnd).reason == "aborted"
 
 
 async def test_cancel_tool_answers_outstanding_call_and_sets_signal():

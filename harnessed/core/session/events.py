@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 type InboxMode = Literal["followup", "steer", "inject"]
 type InboxTarget = Literal["next-turn", "next-step"]
-type ControlState = Literal["active", "pausing", "paused", "stopping", "stopped"]
+type ControlState = Literal["active", "pausing", "paused", "stopping", "aborting", "stopped"]
 type StepOutcome = Literal["completed", "interrupted", "aborted"]
 type TurnOutcome = Literal[
     "completed", "interrupted", "stopped", "max_steps", "rejected", "aborted", "discarded"
@@ -53,12 +53,12 @@ class AgentControlChanged(SessionEvent):
     keep_inbox: bool = False
 
     def __post_init__(self):
-        if self.state not in ("active", "pausing", "paused", "stopping", "stopped"):
+        if self.state not in ("active", "pausing", "paused", "stopping", "aborting", "stopped"):
             raise ValueError("Unknown agent control state")
         if type(self.keep_inbox) is not bool or (
-            self.keep_inbox and self.state not in ("stopping", "stopped")
+            self.keep_inbox and self.state not in ("stopping", "aborting", "stopped")
         ):
-            raise ValueError("keep_inbox applies only to stopping or stopped agents")
+            raise ValueError("keep_inbox applies only to stop or abort requests")
 
 
 @dataclass(frozen=True)
@@ -224,7 +224,7 @@ class InboxRemoved(SessionEvent):
 
     type: Literal["InboxRemoved"] = field(default="InboxRemoved", kw_only=True)
     message_id: Identifier
-    reason: Literal["claimed", "canceled", "stopped"] = "claimed"
+    reason: Literal["claimed", "canceled", "stopped", "discarded"] = "claimed"
 
 
 @dataclass(frozen=True)

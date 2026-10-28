@@ -107,8 +107,8 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     await persistence.aclose()
     harness = Harness([agent_loop(), llm(ScriptedLLM(["recovered"])), session_jsonl(tmp_path)])
     async with harness.session("interrupted") as agent:
-        assert isinstance(agent.log.events[-1], TurnEnd)
-        assert agent.log.events[-1].reason == "interrupted"
+        assert isinstance(agent.log.last(TurnEnd), TurnEnd)
+        assert agent.log.last(TurnEnd).reason == "aborted"
         results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
         assert len(results) == 1 and results[0].call_id == "call-1"
         assert (await agent.run("continue")).text == "recovered"

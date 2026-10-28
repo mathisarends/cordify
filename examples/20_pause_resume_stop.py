@@ -3,136 +3,97 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from harnessed import Bundle, Inject, ModelChunk, ToolCall
-from harnessed import Session as Agent
-from harnessed.core.hooks import ReviewToolResult
-from harnessed.plugins.sessions import session_jsonl
-from harnessed.presets import minimal
-from harnessed.testing import ScriptedLLM
+from harnessed import Agent, Plugin, SessionStatus, StopReason, tool
+from harnessed.plugins import JsonlSessions
+from harnessed.testing import ScriptedModel, call
 
 
-async def pause_a_tool_batch():
-    tools = Bundle("batch")
-    started, release = asyncio.Event(), asyncio.Event()
-    running_tools, completed = [], []
+class Work(Plugin):
+    def __init__(self):
+        super().__init__()
+        self.started, self.release = asyncio.Event(), asyncio.Event()
+        self.finished = []
 
-    @tools.tool(parallel=True)
-    async def process_item(item: str) -> str:
-        """Process an independent work item."""
-        running_tools.append(item)
-        if len(running_tools) == 3:
-            started.set()
-        await release.wait()
-        completed.append(item)
+    @tool(readonly=True)
+    async def process(self, item: str) -> str:
+        """Process one work item; observe cancellation of an async operation."""
+        self.started.set()
+        await self.release.wait()
+        self.finished.append(item)
         return f"Processed {item}"
 
-    model = ScriptedLLM(
-        [
-            [
-                ModelChunk(tool_call=ToolCall("process_item", {"item": item}))
-                for item in ("a", "b", "c")
-            ],
-            "The current task is complete.",
-            "The queued follow-up is complete.",
-        ]
-    )
-    async with minimal(model, plugins=[tools]).session("batch") as agent:
-        running = asyncio.create_task(agent.run("Process a, b and c."))
-        await started.wait()
-        turn_id = agent.log.turns[-1].id
 
-        await agent.pause()  # Requests a pause; active tools may still finish.
-        print("After pause request:", agent.status)  # pausing
-        await agent.followup("Summarize the results afterward.")
-        release.set()
-        await agent.when_paused()  # All results are stored; no next model call starts.
-        print("At the boundary:", agent.status, "; completed items:", completed)
-        assert not running.done() and len(model.requests) == 1
+async def pause_and_resume():
+    work = Work()
+    model = ScriptedModel([call("process", item="a"), "First complete.", "Second complete."])
+    async with Agent(model=model, plugins=[work]).session() as session:
+        first = asyncio.create_task(session.run("Process a."))
+        await work.started.wait()
+        pausing = asyncio.create_task(session.pause())
+        second = asyncio.create_task(session.run("Then summarize."))
+        await asyncio.sleep(0)
+        assert not pausing.done()  # pause() waits for the complete step.
+        work.release.set()
+        await pausing
+        assert session.status is SessionStatus.PAUSED and not first.done()
+        print("Paused after committing tool results:", work.finished)
+        await session.context.set("ci", "The latest checks passed.")  # Quiet, durable context.
+        await session.resume()
+        print((await first).text, (await second).text)
+        await session.wait_until_idle()
 
-        await agent.resume()  # Same turn and next step, followed by the queued turn.
+
+async def end_a_turn(*, immediate: bool):
+    work = Work()
+    model = ScriptedModel([call("process", item="a"), "Fresh work complete."])
+    async with Agent(model=model, plugins=[work]).session() as session:
+        running = asyncio.create_task(session.run("Start work."))
+        await work.started.wait()
+        queued = asyncio.create_task(session.run("Queued work."))
+        await asyncio.sleep(0)
+        if immediate:
+            await session.abort()  # Cancel the tool now and repair its outstanding call.
+        else:
+            stopping = asyncio.create_task(session.stop())  # Complete the current step.
+            await asyncio.sleep(0)
+            assert not stopping.done()
+            work.release.set()
+            await stopping
         result = await running
-        print("After resume:", agent.status, ";", result.text)
-        assert agent.log.turns[0].id == turn_id
-        assert [len(turn.steps) for turn in agent.log.turns] == [2, 1]
-
-
-async def stop_current_work():
-    started = asyncio.Event()
-
-    class SlowFirstModel:
-        def __init__(self):
-            self.calls = 0
-
-        async def stream(self, request):
-            self.calls += 1
-            if self.calls == 1:
-                yield ModelChunk(text="Visible output before stopping.")
-                started.set()
-                await asyncio.Event().wait()
-            else:
-                yield ModelChunk(text="New work finished.")
-
-    model = SlowFirstModel()
-    async with minimal(model).session("stop") as agent:
-        await agent.followup("Start a long task.")
-        await started.wait()
-        await agent.followup("Keep this separate task for later.")
-
-        await agent.stop(keep_inbox=True)  # Cancel now; preserve only queued inputs.
-        print("After stop:", agent.status, "; queued inputs:", len(agent.inbox.pending))
-        assert agent.log.turns[-1].reason == "stopped"
-        assert agent.log.messages[-1].text == "Visible output before stopping."
-
-        await agent.resume()  # Runs the queued task; never repeats the stopped call.
-        await agent.when_idle()
-        assert model.calls == 2
-        print("Turn outcomes:", [turn.reason for turn in agent.log.turns])
-
-        await agent.stop()  # By default, discard pending inputs too.
-        print("A fresh run after stop:", (await agent.run("Start a new task.")).text)
+        assert result.stop_reason is (StopReason.ABORTED if immediate else StopReason.STOPPED)
+        assert (await queued).stop_reason is StopReason.DISCARDED
+        assert session.status is SessionStatus.IDLE
+        print("Turn ended:", result.stop_reason, "; completed work:", work.finished)
+        print((await session.run("Start a fresh task.")).text)
 
 
 async def reopen_a_paused_session(directory: str):
-    tools, pause_requested, executed = Bundle("saved"), asyncio.Event(), []
+    work = Work()
+    plugins = [work, JsonlSessions(directory, durability="fsync")]
+    agent = Agent(model=ScriptedModel([call("process", item="saved")]), plugins=plugins)
+    async with agent.session("saved") as session:
+        running = asyncio.create_task(session.run("Process and continue later."))
+        await work.started.wait()
+        pausing = asyncio.create_task(session.pause())
+        await asyncio.sleep(0)
+        work.release.set()
+        await pausing
+        turn_id = session.turns[-1].id
+    await running  # Closing ends this live handle; the durable pause remains.
 
-    @tools.tool
-    async def save_checkpoint() -> str:
-        """Store the result of one work item."""
-        executed.append(True)
-        return "Checkpoint result stored."
-
-    @tools.on(ReviewToolResult)
-    async def pause_after_result(event, next_, agent: Inject[Agent]):
-        result = await next_()
-        await agent.pause()  # Hooks can request a pause without waiting for themselves.
-        pause_requested.set()
-        return result
-
-    def compose(model):
-        return minimal(model, plugins=[tools, session_jsonl(directory, fsync=True)])
-
-    first = ScriptedLLM([[ModelChunk(tool_call=ToolCall("save_checkpoint"))]])
-    async with compose(first).session("saved") as agent:
-        await agent.followup("Store a result and continue afterward.")
-        await pause_requested.wait()
-        await agent.when_paused()
-        turn_id = agent.log.turns[-1].id
-        print("Closing the paused session with its completed step in JSONL.")
-
-    # A fresh harness and model reconstruct the paused state from the same log.
-    fresh = ScriptedLLM(["Continued from the stored result."])
-    async with compose(fresh).session("saved") as agent:
-        print("After reopening:", agent.status)
-        assert not fresh.requests and agent.status == "paused"
-        await agent.resume()
-        await agent.when_idle()
-        assert agent.log.turns[-1].id == turn_id and len(executed) == 1
-        print(agent.log.messages[-1].text, "Tool executed once.")
+    fresh = Agent(model=ScriptedModel(["Continued from stored results."]), plugins=plugins)
+    async with fresh.session("saved") as session:
+        assert session.status is SessionStatus.PAUSED
+        await session.resume()
+        await session.wait_until_idle()
+        assert session.turns[-1].id == turn_id and len(work.finished) == 1
+        print(session.messages[-1].text, "Tool executed once.")
 
 
 async def main():
-    await pause_a_tool_batch()
-    await stop_current_work()
+    await pause_and_resume()
+    await end_a_turn(immediate=False)
+    await end_a_turn(immediate=True)
     with TemporaryDirectory(prefix="harnessed-control-") as directory:
         await reopen_a_paused_session(directory)
 

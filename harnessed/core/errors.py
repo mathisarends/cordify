@@ -17,6 +17,10 @@ class SessionLocked(HarnessedError, RuntimeError):
     pass
 
 
+class SessionClosed(HarnessedError, RuntimeError):
+    """An operation requires an open live session."""
+
+
 class ProviderError(HarnessedError, RuntimeError):
     def __init__(
         self,

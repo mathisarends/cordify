@@ -33,9 +33,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Finish separating inbox/control from the live Session and provide dedicated
   services instead of making every plugin depend on the driver.
-- Replace interacting boolean flags with SessionStatus and centralized legal
-  transitions. Implement the approved pause/resume/stop/abort boundaries and
-  durable outcomes; update race/restart tests and examples.
 
 ### P1-2 — Structured results and a small UI stream
 

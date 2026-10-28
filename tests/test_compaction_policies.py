@@ -210,7 +210,7 @@ async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
             await agent.run("small")
         assert error.value.limit == 100 and error.value.reserve_tokens == 20
         assert model.requests == []
-        assert agent.log.turns[-1].reason == "interrupted"
+        assert agent.log.turns[-1].reason == "aborted"
 
 
 async def test_threshold_uses_guard_limit_and_reserved_output_budget():

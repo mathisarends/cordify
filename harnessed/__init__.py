@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from harnessed.core.attachments import Image as Image
     from harnessed.core.budget import ContextBudget as ContextBudget
     from harnessed.core.budget import ContextBudgetExceeded as ContextBudgetExceeded
+    from harnessed.core.errors import SessionClosed as SessionClosed
     from harnessed.core.hooks import ApprovalRequest as ApprovalRequest
     from harnessed.core.hooks import ExecuteTool as ExecuteTool
     from harnessed.core.hooks import PreStep as PreStep
@@ -39,12 +40,14 @@ if TYPE_CHECKING:
     from harnessed.core.model import ModelChunk as ModelChunk
     from harnessed.core.model import ModelRequest as ModelRequest
     from harnessed.core.model import ModelUsage as ModelUsage
+    from harnessed.core.model import StopReason as StopReason
     from harnessed.core.model import ToolDefinition as ToolDefinition
     from harnessed.core.plugin import Bundle as Bundle
     from harnessed.core.plugin import Plugin as Plugin
     from harnessed.core.prompt.system_prompt import SystemPrompt as SystemPrompt
     from harnessed.core.prompt.values import Section as Section
     from harnessed.core.runtime.agent_loop import AgentFactory
+    from harnessed.core.runtime.control import SessionStatus as SessionStatus
     from harnessed.core.runtime.options import AgentOptions
     from harnessed.core.runtime.result import RunResult
     from harnessed.core.runtime.session import Session as Session
@@ -101,6 +104,9 @@ if TYPE_CHECKING:
     from harnessed.seams.llm import LLM as LLM
     from harnessed.seams.spill import SpillStore as SpillStore
 _EXPORTS = {
+    "SessionStatus": ("harnessed.core.runtime.control", "SessionStatus"),
+    "SessionClosed": ("harnessed.core.errors", "SessionClosed"),
+    "StopReason": ("harnessed.core.model", "StopReason"),
     "Section": ("harnessed.core.prompt.values", "Section"),
     "ToolError": ("harnessed.core.tools.registry", "ToolError"),
     "PluginConflict": ("harnessed.agent", "PluginConflict"),

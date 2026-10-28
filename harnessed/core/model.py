@@ -6,11 +6,23 @@ import math
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, runtime_checkable
+from enum import StrEnum
+from typing import Any, Protocol, runtime_checkable
 
 from .messages import Message, ToolCall, freeze, message_from_dict
 
-type StopReason = Literal["end", "tool_calls", "max_tokens", "content_filter", "error"]
+
+class StopReason(StrEnum):
+    END = "end"
+    TOOL_CALLS = "tool_calls"
+    MAX_TOKENS = "max_tokens"
+    CONTENT_FILTER = "content_filter"
+    ERROR = "error"
+    MAX_STEPS = "max_steps"
+    STOPPED = "stopped"
+    ABORTED = "aborted"
+    DISCARDED = "discarded"
+    REJECTED = "rejected"
 
 
 @dataclass(frozen=True)
@@ -121,6 +133,10 @@ class ModelChunk:
     usage: ModelUsage | None = None
     stop_reason: StopReason | None = None
 
+    def __post_init__(self):
+        if self.stop_reason is not None:
+            object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
+
 
 @dataclass(frozen=True, slots=True)
 class ModelInfo:
@@ -135,7 +151,10 @@ class ModelResponse:
     __hash__ = None
     message: Message
     usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
-    stop_reason: StopReason = "end"
+    stop_reason: StopReason = StopReason.END
+
+    def __post_init__(self):
+        object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
 
 
 class ModelStream(Protocol):

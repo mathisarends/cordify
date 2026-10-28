@@ -97,8 +97,8 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
         await started.wait()
         await agent.cancel()
         turn = agent.log.turns[-1]
-        assert turn.closed and turn.reason == "interrupted"
-        assert turn.steps[-1].closed and turn.steps[-1].reason == "interrupted"
+        assert turn.closed and turn.reason == "aborted"
+        assert turn.steps[-1].closed and turn.steps[-1].reason == "aborted"
         assert agent.status == "idle"
 
 
