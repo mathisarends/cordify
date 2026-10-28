@@ -1,3 +1,5 @@
+"""Provider-independent model contracts; optional integrations live in harnessed.models."""
+
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
