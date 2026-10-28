@@ -53,8 +53,29 @@ class AgentLoop(Plugin, slot="loop"):
 
     config: AgentLoopConfig
 
-    def __init__(self, *, error_formatter: ErrorFormatter | None = None, **options):
-        super().__init__(**options)
+    def __init__(
+        self,
+        *,
+        max_steps: int = 32,
+        tool_timeout: float = 30.0,
+        max_parallel_tools: int = 4,
+        approval_timeout: float = 300.0,
+        max_tokens: int | None = None,
+        context_window: int | None = None,
+        on_max_tokens: Literal["accept", "continue", "fail"] = "accept",
+        output_retries: int = 2,
+        error_formatter: ErrorFormatter | None = None,
+    ):
+        super().__init__(
+            max_steps=max_steps,
+            tool_timeout=tool_timeout,
+            max_parallel_tools=max_parallel_tools,
+            approval_timeout=approval_timeout,
+            max_tokens=max_tokens,
+            context_window=context_window,
+            on_max_tokens=on_max_tokens,
+            output_retries=output_retries,
+        )
         self.error_formatter = error_formatter
 
     async def setup(self, ctx: Context):
@@ -66,7 +87,7 @@ class AgentLoop(Plugin, slot="loop"):
 
 
 class _Factory(ReactLoopFactory):
-    def __init__(self, config: AgentLoop.Config, error_formatter: ErrorFormatter | None):
+    def __init__(self, config: AgentLoopConfig, error_formatter: ErrorFormatter | None):
         super().__init__(error_formatter=error_formatter)
         self.config = config
 

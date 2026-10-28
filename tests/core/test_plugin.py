@@ -30,9 +30,12 @@ async def test_plugin_mount_does_not_deepcopy_external_clients_or_locks():
 
 
 def test_plugin_config_schema_validates_external_options():
+    class ConfiguredConfig(BaseModel):
+        limit: int = Field(gt=0)
+
     class Configured(Plugin):
-        class Config(BaseModel):
-            limit: int = Field(gt=0)
+        Config = ConfiguredConfig
+        config: ConfiguredConfig
 
     assert Configured(limit=3).config.limit == 3
     with pytest.raises(ValidationError):

@@ -202,8 +202,22 @@ class ShellTools(Plugin):
 
     config: ShellToolsConfig
 
-    def __init__(self, cwd: str | Path = ".", **options):
-        super().__init__(cwd=Path(cwd), **options)
+    def __init__(
+        self,
+        cwd: str | Path = ".",
+        *,
+        timeout: float = 30.0,
+        max_timeout: float = 600.0,
+        max_output_bytes: int = 1_048_576,
+        env: dict[str, str] | None = None,
+    ):
+        super().__init__(
+            cwd=Path(cwd),
+            timeout=timeout,
+            max_timeout=max_timeout,
+            max_output_bytes=max_output_bytes,
+            env=env,
+        )
 
     async def setup(self, ctx: Context):
         self.cwd = await run_sync(self.config.cwd.resolve)
@@ -230,9 +244,22 @@ class Shell(ShellTools, slot="shell"):
     )
 
     def __init__(
-        self, cwd: str | Path = ".", *, implementation: ShellBackend | None = None, **options
+        self,
+        cwd: str | Path = ".",
+        *,
+        implementation: ShellBackend | None = None,
+        timeout: float = 30.0,
+        max_timeout: float = 600.0,
+        max_output_bytes: int = 1_048_576,
+        env: dict[str, str] | None = None,
     ):
-        super().__init__(cwd=cwd, **options)
+        super().__init__(
+            cwd=cwd,
+            timeout=timeout,
+            max_timeout=max_timeout,
+            max_output_bytes=max_output_bytes,
+            env=env,
+        )
         self.implementation = implementation
 
     async def setup(self, ctx: Context):

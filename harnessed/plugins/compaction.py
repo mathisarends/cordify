@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, Annotated
 
@@ -82,9 +82,21 @@ class Compaction(Plugin, slot="compaction"):
         *,
         trigger: Callable[[ContextState], bool] = _DEFAULT_TRIGGER,
         summarizer: Summarizer | Model | str | NativeModel | None = None,
-        **options,
+        keep_turns: int = 2,
+        keep_first_turns: int = 0,
+        preserve_turns: Iterable[str] = (),
+        summary_tokens: int = 2048,
+        focus: str = "",
     ):
-        super().__init__(needs=[Model, TokenCounter], trigger=trigger, **options)
+        super().__init__(
+            needs=[Model, TokenCounter],
+            trigger=trigger,
+            keep_turns=keep_turns,
+            keep_first_turns=keep_first_turns,
+            preserve_turns=preserve_turns,
+            summary_tokens=summary_tokens,
+            focus=focus,
+        )
         self.summarizer = summarizer
 
     async def setup(self, ctx: Context):

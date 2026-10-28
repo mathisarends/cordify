@@ -15,6 +15,7 @@ from harnessed.events import (
     TurnFinished,
 )
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
+from harnessed.plugins import AgentLoop, JsonlSessions, Spill
 
 
 @plugin
@@ -83,6 +84,15 @@ def invalid_message_shapes() -> None:
     Assistant("answer", tool_call_id="wrong role")  # ty: ignore[unknown-argument]
     ToolReply("missing call ID")  # ty: ignore[missing-argument]
     ModelResponse(User("wrong model response role"))  # ty: ignore[invalid-argument-type]
+
+
+def plugin_configuration_signatures() -> None:
+    loop = AgentLoop(max_steps=8)
+    assert_type(loop.config.max_steps, int)
+    assert_type(Spill(max_files=4).config.max_files, int)
+    assert_type(JsonlSessions(recover_tail=True).config.recover_tail, bool)
+    AgentLoop(max_steps="8")  # ty: ignore[invalid-argument-type]
+    AgentLoop(max_step=8)  # ty: ignore[unknown-argument]
 
 
 async def repository_consumer(agent: AppAgent) -> None:

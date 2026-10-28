@@ -203,12 +203,16 @@ async def test_ratio_requires_known_metadata_or_a_loop_override():
         lambda: Compaction(preserve_turns="turn-id"),
         lambda: Compaction(preserve_turns=[1]),
         lambda: Compaction(focus=3),
-        lambda: Compaction(unknown=1),
     ],
 )
 def test_options_and_triggers_validate_at_configuration(create):
     with pytest.raises(ValueError):
         create()
+
+
+def test_unknown_constructor_options_fail_at_the_python_signature():
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        Compaction(unknown=1)
 
 
 async def test_async_triggers_and_non_boolean_trigger_results_are_rejected():

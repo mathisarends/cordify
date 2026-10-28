@@ -18,12 +18,14 @@ if TYPE_CHECKING:
     from harnessed.core.messages import ToolResult as ToolResult
     from harnessed.core.model import StopReason as StopReason
     from harnessed.core.plugin import Plugin as Plugin
+    from harnessed.core.plugin import PluginConfig as PluginConfig
     from harnessed.core.plugin import PluginContext as Context
     from harnessed.core.prompt.values import Section as Section
     from harnessed.core.runtime.control import SessionStatus as SessionStatus
     from harnessed.core.runtime.handles import RunHandle as RunHandle
     from harnessed.core.runtime.result import RunResult as RunResult
     from harnessed.core.runtime.session import Session as Session
+    from harnessed.core.session.events import ApprovalRequested as ApprovalRequest
     from harnessed.core.stream import TextDelta as TextDelta
     from harnessed.core.tools.context import ToolContext as ToolContext
     from harnessed.core.tools.decorator import tool as tool
@@ -34,6 +36,7 @@ if TYPE_CHECKING:
 
 _EXPORTS = {
     "Agent": ("harnessed.agent", "Agent"),
+    "ApprovalRequest": ("harnessed.core.session.events", "ApprovalRequested"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "Context": ("harnessed.core.plugin", "PluginContext"),
     "File": ("harnessed.core.attachments", "File"),
@@ -42,6 +45,7 @@ _EXPORTS = {
     "Observation": ("harnessed.core.messages", "Observation"),
     "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
     "Plugin": ("harnessed.core.plugin", "Plugin"),
+    "PluginConfig": ("harnessed.core.plugin", "PluginConfig"),
     "PluginConflict": ("harnessed.agent", "PluginConflict"),
     "RunHandle": ("harnessed.core.runtime.handles", "RunHandle"),
     "RunResult": ("harnessed.core.runtime.result", "RunResult"),
@@ -62,12 +66,14 @@ _EXPORTS = {
 __all__ = [
     "Agent",
     "ApprovalAnswer",
+    "ApprovalRequest",
     "Context",
     "File",
     "Image",
     "Inject",
     "Observation",
     "Plugin",
+    "PluginConfig",
     "PluginConflict",
     "PolicyDecision",
     "RunHandle",

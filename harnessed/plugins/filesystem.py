@@ -160,8 +160,10 @@ class FilesystemTools(Plugin):
     async def read_file(
         self,
         path: str,
-        offset: Annotated[int, Field(ge=0)] = 0,
-        limit: Annotated[int, Field(ge=1, le=16_000)] = 8000,
+        offset: Annotated[int, Field(ge=0, description="Unicode characters to skip")] = 0,
+        limit: Annotated[
+            int, Field(ge=1, le=16_000, description="Maximum Unicode characters to read")
+        ] = 8000,
         *,
         fs: Inject[FS],
     ) -> str:
@@ -199,8 +201,8 @@ class Filesystem(FilesystemTools, slot="filesystem"):
         "Use glob and grep to discover relevant files."
     )
 
-    def __init__(self, root: str | Path = ".", *, implementation: FS | None = None, **options):
-        super().__init__(root=Path(root), **options)
+    def __init__(self, root: str | Path = ".", *, implementation: FS | None = None):
+        super().__init__(root=Path(root))
         self.implementation = implementation
 
     async def setup(self, ctx: Context):

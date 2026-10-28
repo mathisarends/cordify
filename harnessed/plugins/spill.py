@@ -156,6 +156,21 @@ class Spill(Plugin, slot="spill"):
 
     config: SpillConfig
 
+    def __init__(
+        self,
+        *,
+        threshold_tokens: int = 8000,
+        preview_tokens: int = 256,
+        max_files: int = 128,
+        max_bytes: int = 32 * 1024 * 1024,
+    ):
+        super().__init__(
+            threshold_tokens=threshold_tokens,
+            preview_tokens=preview_tokens,
+            max_files=max_files,
+            max_bytes=max_bytes,
+        )
+
     async def setup(self, ctx: Context, session: Inject[SessionLog], files: Inject[SessionFiles]):
         self.store = _SessionSpills(files, session, self.config)
         await self.store.recover()

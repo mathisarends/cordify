@@ -309,8 +309,14 @@ class JsonlSessions(Plugin, slot="sessions"):
 
     config: JsonlSessionsConfig
 
-    def __init__(self, root: str | Path = ".harnessed/sessions", **options):
-        super().__init__(root=Path(root), **options)
+    def __init__(
+        self,
+        root: str | Path = ".harnessed/sessions",
+        *,
+        durability: Literal["buffered", "flush", "fsync"] = "flush",
+        recover_tail: bool = False,
+    ):
+        super().__init__(root=Path(root), durability=durability, recover_tail=recover_tail)
 
     async def setup(self, ctx: Context, registry: Inject[EventRegistry | None]):
         ctx.provide(SessionStore, _JsonlStore(self.config, registry or EventRegistry()))
