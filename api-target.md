@@ -355,7 +355,7 @@ google = ["pydantic-ai-slim[google]"]
 
 - `pip install harnessed[openai]` reicht für DeepSeek, weil DeepSeek die OpenAI-kompatible API nutzt.
 - Fehlt das Extra, wirft `Agent(model="anthropic:...")` einen `ConfigError` mit dem genauen Befehl, z. B. `pip install harnessed[anthropic]`.
-- `pydantic_ai` wird an **genau einer Stelle** importiert: `harnessed/models/pydantic_ai.py` (Schicht `adapters`). Kernel, Seams und Core kennen es nicht.
+- `pydantic_ai` wird an **genau einer Stelle** importiert: `harnessed/models/pydantic_ai.py` (Schicht `models`). Kernel und Core kennen das Provider-SDK nicht.
 
 ### 3.3 Einstellungen
 
@@ -363,6 +363,7 @@ Model-Settings sind die `ModelSettings` von pydantic-ai, wir definieren keine ei
 
 ```python
 from pydantic_ai.settings import ModelSettings
+from harnessed.models import TokenLimitBehavior
 
 agent = Agent(
     model=PydanticAIModel(
@@ -371,7 +372,7 @@ agent = Agent(
     ),
     plugins=[
         AgentLoop(
-            max_steps=50, tool_timeout=30, on_max_tokens="continue"
+            max_steps=50, tool_timeout=30, on_max_tokens=TokenLimitBehavior.CONTINUE
         ),  # replaces the default loop
     ],
 )
@@ -560,13 +561,13 @@ Was ein einzelnes Tool betrifft, gehört in seinen **Docstring**, den das Modell
 ## 5. Sessions und Persistenz
 
 ```python
-from harnessed.plugins import JsonlSessions
+from harnessed.plugins import Durability, JsonlSessions
 
 agent = Agent(
     model=...,
     plugins=[
-        JsonlSessions(".harnessed/sessions", durability="flush")
-    ],  # "buffered" | "flush" | "fsync"
+        JsonlSessions(".harnessed/sessions", durability=Durability.FLUSH)
+    ],  # Durability.BUFFERED, FLUSH oder FSYNC
 )
 
 async with agent.session("support-4711") as session:  # resumes if the log exists
@@ -713,8 +714,9 @@ erneut aus. Eigene Datensätze ändern die Core-Zustandsmaschine nicht automatis
 `events.EventRegistry([...])` bietet `schema()`, `encode()` und `decode()` für persistente
 Events. Das laufende Gesamtverzeichnis liegt unter `session.log.registry`. Zum Decodieren
 von Pydantic-Endergebnissen mit eigenen Log-Events kann der Adapter diese Registry als
-`context={"events": registry}` erhalten. JSONL-Version 4 migriert beim Lesen alte Slash-
-und Klassen-Tags; bestehende Logs werden nicht umgeschrieben.
+`context={"events": registry}` erhalten. JSONL verwendet ausschließlich Version 1
+mit den kanonischen dotted Tags. Unbekannte oder frühere experimentelle Formate
+werden abgewiesen; bestehende Logs werden nicht umgeschrieben.
 
 Dynamisch geladene Plugins können eine statische Python-Union nicht nachträglich ändern.
 Anwendungen deklarieren ihre konkrete Union daher explizit, wenn sie alle eigenen
@@ -1384,3 +1386,21 @@ Die Klasse deklariert `Config = AgentLoopConfig` und `config: AgentLoopConfig`.
 Explizit typisierte Konstruktoren geben Aufrufern normale Python-Signaturen und
 IDE-Vervollständigung; Pydantic validiert Grenzen, Literale und externe Werte.
 Kleine Plugins benötigen keine eigene Config-Klasse, wenn ein normaler Konstruktor reicht.
+
+## Verbindliche Python-Stilentscheidungen
+
+Plugins bleiben Unterklassen von `Plugin`; Abhängigkeiten können als
+`class WorkspaceTools(Plugin, needs=(FileSystemBackend,))` deklariert werden.
+Der Dateisystem-Baustein heißt `Filesystem(root=...)`, das Backend-Protokoll
+`FileSystemBackend`, die lokale Implementierung `LocalFileSystem`.
+
+Geschlossene Zustände und Policies verwenden `StrEnum`; Discriminators behalten
+`Literal[Enum.MEMBER]`. Event-Tags sind dotted, etwa `assistant.message`,
+`tool.progress` und `step.end`. Eigene Plugins dürfen eigene Discriminator-Enums
+verwenden. Es gibt keine Migrationen früherer unveröffentlichter Formate.
+
+Für persistierte strukturierte Antworten ist
+`OutputContract("support.triage.v1", Triage)` die explizite versionierbare Form.
+`output=Triage` bleibt der einfache Weg. Wiederaufnahme braucht die registrierte
+Identität und ein passendes Schema; ein gleiches Schema allein identifiziert
+keine Python-Validierungslogik.

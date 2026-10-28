@@ -97,19 +97,24 @@ harnessed/
     session/
       session.py           # Session (append, fork, resume)
       events.py            # persistable log events
-      codec.py             # versioned encode/decode (Pydantic union; v1-v3 migration)
+      codec.py             # versioned encode/decode (Pydantic union; one canonical format)
       store.py             # SessionStore protocol + MemorySessions (slot "sessions")
       projections.py       # messages, turns, inbox, approvals, status (incremental)
     runtime/               # was core/loop.py (908 lines)
       agent_loop.py        # AgentLoop plugin (slot "loop")
-      stepper.py           # one model step
-      executor.py          # tool execution incl. approvals and output limit
+      stepper.py           # StepRunner: one model step
+      executor.py          # ToolExecutor: approvals, execution, result review
+      turns.py             # TurnRunner: turn continuation
+      respond.py           # ModelResponder: provider stream and durable answer
+      output.py            # OutputHandler: structured-output preparation/validation
+      streaming.py         # stream projection and approval responder
+      session.py           # public Session facade
       inbox.py             # run queue and steer
       control.py           # SessionStatus, pause/resume/stop/abort
       result.py            # RunResult, StopReason
 
   models/                  # provider integrations, everything behind extras
-    __init__.py            # re-exports Model & co. from core.model; PydanticAIModel (lazy)
+    __init__.py            # re-exports Model & co. from core.model; PydanticAIModel (SDK imported on use)
     pydantic_ai.py         # the only module that imports pydantic_ai
     context_windows.py     # table of known context windows
 
@@ -273,3 +278,22 @@ zum Core. `core/runtime/handles.py` enthält RunHandle und dessen Completion-Zus
 Submit und Run verwenden den bestehenden Session-Driver. Pure History-Folds leben in
 `core/session/history.py`, sodass JSON-fähige Ergebnis-Events den veränderlichen
 SessionLog nicht importieren müssen. Der Kernel bleibt standardbibliotheksbasiert.
+
+## Umgesetzte Runtime- und API-Konventionen
+
+`TurnRunner` und `StepRunner` besitzen die Ablaufsteuerung. `ModelResponder`,
+`ToolExecutor` und `OutputHandler` erhalten ihre konkreten Abhängigkeiten;
+`RunResults` materialisiert Antworten. `Session` besitzt die öffentlichen Controls,
+Subscriptions und Run-Handles. Freie Funktionen nehmen keine Session als
+Pseudo-`self` entgegen. `project_stream_events` projiziert den Rohstream mit
+Klassenmustern und einer expliziten Statusabbildung.
+
+`PromptComposition` verarbeitet normalisierte `PromptContribution`-Werte.
+Lifecycle-Registrierungen laufen durch `Context.register` und
+`RegistrationState.active`. Öffentliche Feature-Facades verwenden direkte
+Reexports. Nur der SDK-Root bleibt lazy, damit `harnessed.kernel` ausschließlich
+die Standardbibliothek benötigt; `__init__.pyi` liefert seine statischen Exporte.
+
+Das unreleased Speicherformat hat ausschließlich Version 1 und dotted Event-Tags.
+Output-Verträge werden anhand registrierter Python-Validatoridentität aufgelöst;
+ein gleiches JSON-Schema allein genügt ausdrücklich nicht.

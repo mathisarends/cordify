@@ -16,12 +16,11 @@ hash is process-local; it is not a persistent fingerprint. For content addressin
 serialize the intended JSON payload with a defined canonical encoding and hash
 those bytes.
 
-The persistence codec has a separate versioned boundary. New records use version
-4 and explicit namespaced tags, such as `turn.start` and `tool.returned`.
-Version-one slash tags, version-two/three class tags, legacy usage fields and
-version-one/two message shapes migrate while reading. Unknown fields, invalid
-discriminators, non-finite numbers and malformed nested values are rejected.
-Replay and migration never rewrite the original append-only log.
+The persistence codec has a separate versioned boundary. Records require version
+1 and explicit dotted tags, such as `turn.start` and `tool.returned`. This is the
+single canonical format for the unreleased package. Older experimental formats,
+unknown fields, invalid discriminators, non-finite numbers and malformed nested
+values are rejected without rewriting the append-only log.
 
 [Application events](../guides/events.md) use a session-local catalog assembled
 before loading persistence. Frozen dataclasses remain the event values; Pydantic
@@ -37,8 +36,7 @@ and image parts. `user(...)` and `system(...)` are convenience constructors.
 
 The Core field is `reasoning`. Provider-specific fields, including DeepSeek's
 `reasoning_content` and Anthropic signatures, stay inside the optional adapter's
-opaque frozen `provider_state`. Legacy logs migrate to the new role shapes when
-read. Unsigned synthetic or interrupted reasoning remains available for audit
+opaque frozen `provider_state`. Unsigned synthetic or interrupted reasoning remains available for audit
 and is omitted from native provider history; complete signed responses replay
 through their original provider state.
 
@@ -46,3 +44,8 @@ ToolReply retains the original status and exit code alongside its content. Nativ
 provider history therefore distinguishes failed or denied tools from successful
 results instead of relying on error words in the text. Unknown tool availability
 is a failure; policy/user denial remains a denial.
+
+Closed choices use `StrEnum`: message roles, tool status, loop token-limit behavior,
+and turn/control outcomes. Each event still declares a concrete
+`Literal[EventKind.MEMBER]`, which preserves discriminator-based narrowing and JSON
+schemas. Application events may define a separate enum without extending core.

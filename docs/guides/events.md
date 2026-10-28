@@ -19,8 +19,9 @@ async for event in session.stream("Inspect the project."):
 
 Tags are stable namespaced strings, including `text.delta`, `reasoning.delta`,
 `tool.started`, `approval.needed`, `compaction.applied` and `spill.created`.
-They do not depend on the Python class name. Flat event-class imports remain
-available for existing consumers; new code should use namespaces.
+They do not depend on the Python class name. Use namespaces for built-in classes.
+The corresponding discriminator members are available as `events.EventKind`;
+closed states and outcomes are exported alongside their event namespaces.
 
 ## Declare application events
 
@@ -30,15 +31,20 @@ Every extension declares one explicit `Literal` tag with the same default:
 
 ```python
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Literal
 
 from harnessed import Plugin, ToolContext, events, tool
 
 
+class ProjectEventKind(StrEnum):
+    INDEXED = "project.indexed"
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectIndexed(events.DurableEvent):
     files: int
-    type: Literal["project.indexed"] = field(default="project.indexed", kw_only=True)
+    type: Literal[ProjectEventKind.INDEXED] = field(default=ProjectEventKind.INDEXED, kw_only=True)
 
 
 class Indexer(Plugin):

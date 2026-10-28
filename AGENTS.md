@@ -83,3 +83,17 @@ There is no released storage/API compatibility contract yet. Keep one canonical
 current format; remove legacy migrations and transitional aliases rather than
 adding compatibility layers for unreleased formats. Retain an explicit format
 version for future released changes.
+
+Normalize plugin prompt metadata into typed `PromptContribution` values at the
+agent boundary. `PromptComposition` renders these contributions. Tool scheduling
+captures one `PreparedToolCall`; it must not silently follow replaced bindings.
+
+Use `Context.register()` for owned registrations and `RegistrationState.active`
+for visibility; do not inspect private Context state from higher layers. Public
+event classes live behind the `harnessed.events` namespaces. Feature/model facades
+use explicit re-exports; only the SDK root stays lazy to preserve kernel isolation,
+with its type stub checked against the runtime export table.
+
+Output restoration matches a registered validator identity and its schema, never
+JSON Schema alone. Use versioned `OutputContract` keys for persisted application
+workflows and bump the key when Python validation behavior changes.

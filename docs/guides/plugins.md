@@ -63,8 +63,7 @@ class Database(Protocol):
     async def lookup(self, key: str) -> str: ...
 
 
-class Lookup(Plugin):
-    needs = (Database,)
+class Lookup(Plugin, needs=(Database,)):
 
     @tool(readonly=True)
     async def lookup(self, key: str, *, db: Inject[Database]) -> str:
@@ -119,7 +118,7 @@ class FailureNudge(Plugin):
     Config = FailureNudgeConfig
     config: FailureNudgeConfig
 
-    def __init__(self, threshold: int = 2):
+    def __init__(self, threshold: int = 2) -> None:
         super().__init__(threshold=threshold)
 ```
 
@@ -128,3 +127,16 @@ explicit constructor gives callers ordinary Python signatures and IDE completion
 All built-in configuration models follow this module-level pattern. Small plugins
 can use a normal constructor without a separate configuration model. Allocate
 mutable per-mount state in setup; constructors describe reusable recipes.
+
+Closed loop and storage choices are enums, including
+`harnessed.models.TokenLimitBehavior` and `harnessed.plugins.Durability`:
+
+```python
+from harnessed.models import TokenLimitBehavior
+from harnessed.plugins import AgentLoop, Durability, JsonlSessions
+
+plugins = [
+    AgentLoop(on_max_tokens=TokenLimitBehavior.CONTINUE),
+    JsonlSessions(durability=Durability.FSYNC),
+]
+```

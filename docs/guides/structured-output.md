@@ -46,15 +46,30 @@ records the accepted JSON and its assistant-message ID; `OutputValidationFailed`
 records repair attempts. Neither event imports or serializes a Python class.
 Live results reuse the validated object so custom validators run once.
 
-After restarting the process, register the Python types needed by unfinished or
-queued turns before opening the session:
+For persisted workflows, give the validator an application-owned versioned key:
 
 ```python
+from harnessed import OutputContract
+
+triage_output = OutputContract("support.triage.v1", Triage)
+
+async def triage_persisted(session, report: str) -> Triage:
+    return (await session.run(report, output=triage_output)).output
+
 async def resume(agent: Agent):
-    async with agent.session("triage-session", restore_outputs=[Triage]) as session:
+    async with agent.session("triage-session", restore_outputs=[triage_output]) as session:
         await session.resume()
         await session.wait_until_idle()
 ```
+
+Change the key when validation semantics change, including custom validators that
+leave JSON Schema unchanged. A key cannot name two different validators in one
+registry. Restoration matches the key and verifies the schema; equal schemas alone
+never substitute Python validators. No key is used to import Python code.
+
+`output=Triage` remains supported and derives its identity from the supplied type.
+Restore it with `restore_outputs=[Triage]`. Generic types such as `list[int]` and
+`list[str]` also retain distinct identities.
 
 An application that reuses the same `Agent` already knows its output types. Closed
 history can be read without a validator registry. An unknown pending contract fails

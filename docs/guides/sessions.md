@@ -60,7 +60,7 @@ the active artifact references from that prefix. Opening the branch copies those
 files into its own namespace and verifies their recorded SHA-256 digests. Later
 parent files are excluded, and deleting the branch leaves the parent's files intact.
 The file copy happens when the branch is opened: if retention has removed a source
-file by then, the branch records it as missing. Legacy external paths are never read.
+file by then, the branch records it as missing. Invalid external paths are never read.
 
 A fork retains the original frozen values without changing the parent. Approval grants are
 revoked in the new branch unless `inherit_approvals=True` is explicitly requested.

@@ -14,8 +14,8 @@ examples live in the topic guides. Optional features are imported from
 | instructions | Text or a sequence of text/Section values |
 | plugins | Explicit configured plugins, merged with default slots |
 | agent.plugins | Tuple of resolved plugins |
-| agent.prompt | Inspectable instruction/guidance plan |
-| agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types |
+| agent.prompt | Inspectable PromptComposition of instructions and guidance |
+| agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types/contracts |
 | agent.run(prompt, **options) | One run in a fresh session |
 | agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
 
@@ -56,7 +56,8 @@ policy slots explicitly.
 
 A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,
 `turn_id`, typed `stop_reason` and `(ToolCall, ToolResult)` pairs in `tool_calls`.
-Passing `output=T` adds a validated `output` of type `T`; an unstructured result's
+Passing `output=T` or `output=OutputContract("answer.v1", T)` adds a validated
+`output` of type `T`; an unstructured result's
 output is None. See [structured answers](../guides/structured-output.md) for retry
 limits, incomplete turns and restoration after a process restart.
 The [UI stream](../guides/streaming.md) carries text/reasoning deltas, tool lifecycle,
@@ -75,9 +76,10 @@ unhashable. See [values and record versions](../concepts/values.md).
 | Plugin / @tool | Class-based reusable capability |
 | PluginConfig / Config = MyConfig | Module-level validated configuration model |
 | @plugin | Kernel services and hooks in an async generator |
-| needs / Inject[T] | Temporal lifetime / per-call service resolution |
+| class Capability(Plugin, needs=(Backend,)) / Inject[T] | Temporal lifetime / per-call service resolution |
 | @hook / Context.hook | Typed observer, bail or waterfall extension |
 | ToolContext | Call, log, signal, cancelled, progress and emit |
+| ctx.register(install) / RegistrationState.active | Owned registration and lifecycle visibility |
 | ctx.effect(cleanup) | Owned idempotent sync/async cleanup |
 | Service(T, implementation) | Structural dependency registration |
 
