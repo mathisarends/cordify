@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol, runtime_checkable
 
-from .models import ModelChunk, ModelRequest
+from harnessed.core.model import ModelChunk, ModelRequest
 
 
 class LLM(Protocol):

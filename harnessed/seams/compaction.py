@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from .models import Message
+from harnessed.core.messages import Message
 
 
 class Compactor(Protocol):

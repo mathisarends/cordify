@@ -24,6 +24,8 @@
 - P2-9: first examples now show the application facade and its expanded plugin composition; the previous lifecycle example remains as example 23.
 - Remaining findings: open; implementation and verification are in progress.
 
+**Current migration:** The approved `api-target.md` and `structure-target.md` supersede the old six-layer/provider proposals below. Canonical message values now live in `core/messages.py`, model values in `core/model.py`; old paths temporarily re-export them. Architecture checks enforce optional integration isolation and plugin independence. Optional PydanticAI provider extras are locked; model adapter/loop migration is next.
+
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
 **Umfang:** gesamtes Paket `harnessed/` (kernel, seams, core, plugins, adapters, presets), README und Beispiele
 **Maßstab:** ein production-grade SDK, mit dem man moderne, anspruchsvolle Agents baut, und zwar gerne

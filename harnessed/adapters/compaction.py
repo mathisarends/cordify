@@ -2,8 +2,9 @@ import json
 from contextlib import AsyncExitStack
 
 from harnessed.core.budget import truncate
+from harnessed.core.messages import Message, to_dict
+from harnessed.core.model import ModelRequest
 from harnessed.seams.llm import LLM
-from harnessed.seams.models import Message, ModelRequest, to_dict
 from harnessed.seams.tokens import TokenCounter
 
 from .tokens import ApproximateTokenCounter

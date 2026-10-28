@@ -10,12 +10,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "harnessed"
-LAYERS = {"kernel": 0, "seams": 1, "core": 2, "plugins": 3, "adapters": 3}
+LAYERS = {"kernel": 0, "core": 1, "plugins": 2, "models": 2, "integrations": 2}
+# Transitional packages are removed as their features move to the target structure.
+LEGACY_LAYERS = {"seams": 1, "adapters": 2}
 
 
 def test_imports_follow_layer_direction_and_public_boundaries():
     violations = []
-    for layer, rank in LAYERS.items():
+    ranks = LAYERS | LEGACY_LAYERS
+    for layer, rank in ranks.items():
         for path in (PACKAGE / layer).rglob("*.py"):
             parts = path.relative_to(ROOT).with_suffix("").parts
             package = ".".join(parts[:-1])
@@ -42,15 +45,33 @@ def test_imports_follow_layer_direction_and_public_boundaries():
                     target = module.split(".")[1:2]
                     if target == ["_exports"]:
                         continue
-                    if not target or target[0] not in LAYERS:
+                    if not target or target[0] not in ranks:
                         violations.append(
                             f"{path.relative_to(ROOT)}:{node.lineno}: facade {module}"
                         )
-                    elif LAYERS[target[0]] > rank:
+                    elif ranks[target[0]] > rank:
                         violations.append(
                             f"{path.relative_to(ROOT)}:{node.lineno}: upward {module}"
                         )
     assert violations == []
+
+
+def test_optional_integrations_and_features_are_isolated():
+    for path in PACKAGE.rglob("*.py"):
+        relative = path.relative_to(PACKAGE).as_posix()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            imported = []
+            if isinstance(node, ast.Import):
+                imported = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                imported = [node.module or ""]
+            for module in imported:
+                if module == "pydantic_ai" or module.startswith("pydantic_ai."):
+                    assert relative == "models/pydantic_ai.py", relative
+                if module == "yaml":
+                    assert relative == "plugins/skills.py", relative
+                if relative.startswith("plugins/") and path.name != "__init__.py":
+                    assert not module.startswith("harnessed.plugins."), relative
 
 
 def test_kernel_import_is_independent_of_agents_adapters_and_third_party_packages():

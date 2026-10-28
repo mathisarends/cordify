@@ -6,20 +6,18 @@ from types import MappingProxyType
 from typing import Protocol, cast
 from xml.sax.saxutils import escape, quoteattr
 
-from harnessed.kernel.context import Context
-from harnessed.seams.models import (
+from harnessed.core.messages import (
     Message,
-    ModelRequest,
-    ModelUsage,
     Observation,
     SpillRef,
     ToolCall,
     ToolResult,
     message_from_dict,
-    request_from_dict,
     to_dict,
     tool_result_from_dict,
 )
+from harnessed.core.model import ModelRequest, ModelUsage, request_from_dict
+from harnessed.kernel.context import Context
 
 from .approvals import Approval, Approvals, approval_transition
 from .control import RunControl

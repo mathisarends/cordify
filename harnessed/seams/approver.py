@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from .models import Decision, ToolCall
+from harnessed.core.messages import Decision, ToolCall
 
 
 class ApprovalUnavailable(RuntimeError):

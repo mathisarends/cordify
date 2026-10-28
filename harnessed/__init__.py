@@ -36,6 +36,21 @@ if TYPE_CHECKING:
     from harnessed.core.loop import AgentHandle as AgentHandle
     from harnessed.core.loop import AgentOptions as AgentOptions
     from harnessed.core.loop import RunResult as RunResult
+    from harnessed.core.messages import Decision as Decision
+    from harnessed.core.messages import ImagePart as ImagePart
+    from harnessed.core.messages import Message as Message
+    from harnessed.core.messages import Observation as Observation
+    from harnessed.core.messages import OutputTruncation as OutputTruncation
+    from harnessed.core.messages import SpillRef as SpillRef
+    from harnessed.core.messages import TextPart as TextPart
+    from harnessed.core.messages import ToolCall as ToolCall
+    from harnessed.core.messages import ToolResult as ToolResult
+    from harnessed.core.messages import system as system
+    from harnessed.core.messages import user as user
+    from harnessed.core.model import ModelChunk as ModelChunk
+    from harnessed.core.model import ModelRequest as ModelRequest
+    from harnessed.core.model import ModelUsage as ModelUsage
+    from harnessed.core.model import ToolDefinition as ToolDefinition
     from harnessed.core.outputs import ToolOutputLimit as ToolOutputLimit
     from harnessed.core.prompt import SystemPrompt as SystemPrompt
     from harnessed.core.session import Session as Session
@@ -83,21 +98,6 @@ if TYPE_CHECKING:
     from harnessed.seams.compaction import Compactor as Compactor
     from harnessed.seams.fs import FS as FS
     from harnessed.seams.llm import LLM as LLM
-    from harnessed.seams.models import Decision as Decision
-    from harnessed.seams.models import ImagePart as ImagePart
-    from harnessed.seams.models import Message as Message
-    from harnessed.seams.models import ModelChunk as ModelChunk
-    from harnessed.seams.models import ModelRequest as ModelRequest
-    from harnessed.seams.models import ModelUsage as ModelUsage
-    from harnessed.seams.models import Observation as Observation
-    from harnessed.seams.models import OutputTruncation as OutputTruncation
-    from harnessed.seams.models import SpillRef as SpillRef
-    from harnessed.seams.models import TextPart as TextPart
-    from harnessed.seams.models import ToolCall as ToolCall
-    from harnessed.seams.models import ToolDefinition as ToolDefinition
-    from harnessed.seams.models import ToolResult as ToolResult
-    from harnessed.seams.models import system as system
-    from harnessed.seams.models import user as user
     from harnessed.seams.shell import ProcResult as ProcResult
     from harnessed.seams.shell import Shell as Shell
     from harnessed.seams.spill import SpillStore as SpillStore
@@ -119,7 +119,7 @@ _EXPORTS = {
     "PeriodicCompaction": ("harnessed.plugins._context.compaction", "PeriodicCompaction"),
     "SlidingWindowCompaction": ("harnessed.plugins._context.compaction", "SlidingWindowCompaction"),
     "ToolOutputLimit": ("harnessed.core.outputs", "ToolOutputLimit"),
-    "OutputTruncation": ("harnessed.seams.models", "OutputTruncation"),
+    "OutputTruncation": ("harnessed.core.messages", "OutputTruncation"),
     "Step": ("harnessed.core.turns", "Step"),
     "Turn": ("harnessed.core.turns", "Turn"),
     "derive_turns": ("harnessed.core.turns", "derive_turns"),
@@ -157,20 +157,20 @@ _EXPORTS = {
     "Harness": ("harnessed.presets", "Harness"),
     "LLM": ("harnessed.seams.llm", "LLM"),
     "Approver": ("harnessed.seams.approver", "Approver"),
-    "Decision": ("harnessed.seams.models", "Decision"),
-    "ImagePart": ("harnessed.seams.models", "ImagePart"),
-    "Message": ("harnessed.seams.models", "Message"),
-    "ModelChunk": ("harnessed.seams.models", "ModelChunk"),
-    "ModelRequest": ("harnessed.seams.models", "ModelRequest"),
-    "ModelUsage": ("harnessed.seams.models", "ModelUsage"),
-    "Observation": ("harnessed.seams.models", "Observation"),
-    "SpillRef": ("harnessed.seams.models", "SpillRef"),
-    "TextPart": ("harnessed.seams.models", "TextPart"),
-    "ToolCall": ("harnessed.seams.models", "ToolCall"),
-    "ToolDefinition": ("harnessed.seams.models", "ToolDefinition"),
-    "ToolResult": ("harnessed.seams.models", "ToolResult"),
-    "system": ("harnessed.seams.models", "system"),
-    "user": ("harnessed.seams.models", "user"),
+    "Decision": ("harnessed.core.messages", "Decision"),
+    "ImagePart": ("harnessed.core.messages", "ImagePart"),
+    "Message": ("harnessed.core.messages", "Message"),
+    "ModelChunk": ("harnessed.core.model", "ModelChunk"),
+    "ModelRequest": ("harnessed.core.model", "ModelRequest"),
+    "ModelUsage": ("harnessed.core.model", "ModelUsage"),
+    "Observation": ("harnessed.core.messages", "Observation"),
+    "SpillRef": ("harnessed.core.messages", "SpillRef"),
+    "TextPart": ("harnessed.core.messages", "TextPart"),
+    "ToolCall": ("harnessed.core.messages", "ToolCall"),
+    "ToolDefinition": ("harnessed.core.model", "ToolDefinition"),
+    "ToolResult": ("harnessed.core.messages", "ToolResult"),
+    "system": ("harnessed.core.messages", "system"),
+    "user": ("harnessed.core.messages", "user"),
     "Bundle": ("harnessed.core.features", "Bundle"),
     "Plugin": ("harnessed.core.features", "Plugin"),
     "hook": ("harnessed.kernel.plugin", "hook"),

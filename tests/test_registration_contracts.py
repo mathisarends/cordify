@@ -2,10 +2,10 @@ from datetime import timedelta
 
 import pytest
 
+from harnessed.core.messages import ToolCall
 from harnessed.core.prompt import PromptSectionConflict, SystemPrompt
 from harnessed.core.tools import ToolError, ToolNameConflict, ToolRegistry
 from harnessed.kernel import Context
-from harnessed.seams.models import ToolCall
 
 
 async def test_explicit_owner_controls_tool_and_prompt_lifetime():

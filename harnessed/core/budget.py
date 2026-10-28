@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from harnessed.seams.models import ModelRequest
+from harnessed.core.model import ModelRequest
 from harnessed.seams.tokens import TokenCounter
 
 

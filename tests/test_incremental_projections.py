@@ -20,9 +20,10 @@ from harnessed.core.events import (
     UserMessage,
 )
 from harnessed.core.inbox import Inbox
+from harnessed.core.messages import Decision, Message, ToolCall
+from harnessed.core.model import ModelRequest
 from harnessed.core.session import Session, derive_messages, derive_requests
 from harnessed.core.turns import derive_turns
-from harnessed.seams.models import Decision, Message, ModelRequest, ToolCall
 
 
 @pytest.mark.parametrize("seed", range(12))

@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from harnessed.seams.models import ToolCall
+from harnessed.core.messages import ToolCall
 
 from .events import ToolProgress
 

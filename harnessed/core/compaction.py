@@ -1,7 +1,8 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from harnessed.seams.models import Message, ModelRequest
+from harnessed.core.messages import Message
+from harnessed.core.model import ModelRequest
 
 from .events import CompactionApplied, SessionEvent, TurnEnd, TurnStart
 from .session import _derive_message_entries, derive_messages

@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from .models import SpillRef
+from harnessed.core.messages import SpillRef
 
 
 class SpillStore(Protocol):

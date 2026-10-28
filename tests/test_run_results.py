@@ -1,9 +1,9 @@
 import asyncio
 
 from harnessed.core.events import InboxAdded, TurnEnd
+from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.stream import TextDelta
 from harnessed.presets import minimal
-from harnessed.seams.models import ModelChunk, ModelUsage
 
 
 class TwoTurns:

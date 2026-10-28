@@ -2,7 +2,8 @@ import json
 import math
 from collections.abc import Iterable
 
-from harnessed.seams.models import ImagePart, Message, ModelRequest, to_dict
+from harnessed.core.messages import ImagePart, Message, to_dict
+from harnessed.core.model import ModelRequest
 
 
 class ApproximateTokenCounter:

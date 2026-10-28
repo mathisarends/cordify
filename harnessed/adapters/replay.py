@@ -2,7 +2,7 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncIterator, Iterable
 
-from harnessed.seams.models import ModelChunk, ModelRequest
+from harnessed.core.model import ModelChunk, ModelRequest
 
 
 class ScriptedLLM:

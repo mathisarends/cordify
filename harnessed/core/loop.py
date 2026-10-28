@@ -6,20 +6,13 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
+from harnessed.core.messages import Decision, Message, Observation, ToolCall, ToolResult
+from harnessed.core.model import ModelRequest, ModelUsage
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 from harnessed.seams.approver import ApprovalUnavailable, Approver
 from harnessed.seams.llm import LLM
-from harnessed.seams.models import (
-    Decision,
-    Message,
-    ModelRequest,
-    ModelUsage,
-    Observation,
-    ToolCall,
-    ToolResult,
-)
 from harnessed.seams.tokens import TokenCounter
 
 from .approvals import validate_approval_timeout

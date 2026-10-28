@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
-from harnessed.seams.models import SpillRef
+from harnessed.core.messages import SpillRef
 
 
 class LocalSpillStore:

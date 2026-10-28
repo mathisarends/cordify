@@ -2,9 +2,9 @@ import pytest
 
 from harnessed import Agent, Plugin, PluginConflict, Section, ToolCall, tool
 from harnessed.core.events import CompactionApplied, ContextValueChanged, TurnEnd, TurnStart
+from harnessed.core.model import ModelChunk
 from harnessed.core.session import Session
 from harnessed.plugins import Approvals, context, instructions, llm
-from harnessed.seams.models import ModelChunk
 from harnessed.testing import ScriptedLLM
 
 

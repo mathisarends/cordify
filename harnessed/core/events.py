@@ -2,17 +2,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 from uuid import uuid4
 
+from harnessed.core.messages import Decision, Message, Observation, SpillRef, ToolCall, ToolResult
+from harnessed.core.model import ModelRequest, ModelUsage
 from harnessed.kernel.events import Bail, Emit, Waterfall
-from harnessed.seams.models import (
-    Decision,
-    Message,
-    ModelRequest,
-    ModelUsage,
-    Observation,
-    SpillRef,
-    ToolCall,
-    ToolResult,
-)
 
 if TYPE_CHECKING:
     from .loop import Agent

@@ -13,7 +13,8 @@ from pydantic import (
     model_validator,
 )
 
-from harnessed.seams.models import ImagePart, Message, ModelRequest, TextPart, to_dict
+from harnessed.core.messages import ImagePart, Message, TextPart, to_dict
+from harnessed.core.model import ModelRequest
 
 type NonEmpty = Annotated[str, Field(min_length=1, pattern=r"\S")]
 type Counter = Annotated[int, Field(ge=0)]

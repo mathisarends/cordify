@@ -1,6 +1,6 @@
 from dataclasses import dataclass, replace
 
-from harnessed.seams.models import OutputTruncation, ToolResult
+from harnessed.core.messages import OutputTruncation, ToolResult
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from harnessed.seams.models import (
+from harnessed.core.messages import (
     ContentPart,
     ImagePart,
     Message,

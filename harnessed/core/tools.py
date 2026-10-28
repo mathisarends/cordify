@@ -8,10 +8,11 @@ from typing import Any, cast, overload
 
 from pydantic import ValidationError
 
+from harnessed.core.messages import ToolCall, ToolResult, result_content, to_dict
+from harnessed.core.model import ToolDefinition
 from harnessed.kernel.context import Context
 from harnessed.kernel.di import BindingPlan, binding_plan
 from harnessed.kernel.effects import Disposer, run_sync
-from harnessed.seams.models import ToolCall, ToolDefinition, ToolResult, result_content, to_dict
 from harnessed.seams.shell import ProcResult
 
 from .execution import ToolCallContext

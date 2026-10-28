@@ -6,10 +6,10 @@ from collections.abc import Callable, Iterable
 from harnessed.core.events import ToolPolicy
 from harnessed.core.features import Plugin
 from harnessed.core.loop import Agent
+from harnessed.core.messages import Decision, ToolCall
 from harnessed.core.tools import ToolRegistry
 from harnessed.kernel import Inject, Priority, hook
 from harnessed.seams.approver import Approver
-from harnessed.seams.models import Decision, ToolCall
 
 
 class _Callback:

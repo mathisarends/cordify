@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from .models import ModelRequest
+from harnessed.core.model import ModelRequest
 
 
 class TokenCounter(Protocol):

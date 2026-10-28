@@ -18,11 +18,18 @@ these through `harnessed.kernel.context`, `.di`, or `.plugin`. Keep the facade's
 exports in `harnessed/kernel/__init__.py` stable when reorganizing kernel internals.
 Kernel implementation modules may use sibling imports to avoid import cycles.
 
-Keep imports pointed at their owning layer. Layers from lowest to highest are
-`kernel`, `seams`, `core`, `plugins` / `adapters`, and `presets`. A layer may
-depend on lower layers; the standalone kernel must stay independent of agents
-and third-party packages. Internal modules should import their dependencies from
-the owning module or layer rather than the top-level `harnessed` facade.
+Keep imports pointed at their owning layer. The target layers, from lowest to
+highest, are `kernel`, `core`, `plugins` / `models` / `integrations`, then
+`agent.py` and public facades. The standalone kernel uses only the standard
+library. Core may depend on kernel and Pydantic. Optional features depend on
+core, kernel and their own extras; features never import another plugin.
+Only `models/pydantic_ai.py` imports PydanticAI; only `plugins/skills.py` imports
+YAML. Internal modules import their owning layer, not the root facade.
+
+Follow `api-target.md` and `structure-target.md` during migration. `seams`,
+`adapters`, `app`, `llms` and `presets` are transitional and must receive no new
+provider implementations. Prefer canonical `core.messages` / `core.model`
+imports; remove old re-exports once consumers have migrated.
 
 Ruff enforces the parent-relative import rule with `TID252` and
 `ban-relative-imports = "parents"`. Run `uv run ruff check .` before committing;

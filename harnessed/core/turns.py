@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from harnessed.seams.models import ModelRequest
+from harnessed.core.model import ModelRequest
 
 from .events import ModelRequested, SessionEvent, StepEnd, StepStart, TurnEnd, TurnStart
 

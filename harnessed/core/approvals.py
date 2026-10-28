@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from math import isfinite
 
-from harnessed.seams.models import Decision
+from harnessed.core.messages import Decision
 
 from .events import ApprovalRequested, ApprovalResolved, ApprovalRevoked, SessionEvent
 
