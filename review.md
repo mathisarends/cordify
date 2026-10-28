@@ -1,4 +1,4 @@
-# Remaining review work
+# Review status
 
 The approved [API target](api-target.md) and [structure target](structure-target.md)
 are authoritative. This file contains open work only. Completed findings and
@@ -6,14 +6,10 @@ superseded provider designs have been removed; their details remain in Git histo
 Do not add more native provider clients, retry policies, or presets. PydanticAI is
 an optional Direct API integration; the Harnessed kernel, loop and log remain independent.
 
-## P2 — Structure, typing, docs and testing
+There are no open findings in the current review scope. Implemented findings have
+been removed; the tests, topic guides and Git history record the resulting contracts.
 
-### P2-8 — English documentation and examples
-
-- Keep early examples focused on the application API and explicit plugin sugar;
-  migrate all later examples off removed APIs, with real control/context examples.
-
-## Target features and policies
+## Deferred scope
 
 Subagents, MCP, OTel, UI applications, RAG and eval systems remain outside the
 current implementation scope.

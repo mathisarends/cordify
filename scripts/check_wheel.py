@@ -16,6 +16,7 @@ from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
 from harnessed import Agent, Plugin, tool
 from harnessed.events import TurnFinished
+from harnessed.plugins import Skill, Skills
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
 from pydantic import BaseModel
 import harnessed
@@ -56,6 +57,11 @@ async def main():
     async with Agent(model=ScriptedModel([call('final_answer', value=43)])).session() as session:
         events = [event async for event in session.stream('Answer', output=Answer)]
         assert isinstance(events[-1], TurnFinished) and events[-1].result.output.value == 43
+    inline = Skill(name='notes', description='Write notes.', instructions='Keep notes concise.')
+    async with Agent(model=ScriptedModel([call('load_skill', name='notes'), reply('Loaded')]),
+                     plugins=[Skills(inline)]).session() as session:
+        result = await session.run('Load notes')
+        assert 'Keep notes concise.' in result.tool_calls[0][1].text
     assert not any(name.startswith('pydantic_ai') for name in sys.modules)
     assert not any(name in sys.modules for name in ('mkdocs', 'markdown', 'yaml'))
 
