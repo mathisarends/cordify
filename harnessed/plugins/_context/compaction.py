@@ -1,3 +1,4 @@
+import logging
 import math
 from collections.abc import Iterable
 from dataclasses import replace
@@ -10,11 +11,17 @@ from harnessed.core.events import CompactionApplied, PrepareRequest, StepStart
 from harnessed.core.features import Plugin
 from harnessed.core.loop import Agent
 from harnessed.core.tokens import TokenCounter, count_request
+from harnessed.core.tracing import span
 from harnessed.kernel import Inject, hook
 from harnessed.seams.compaction import Compactor
 
+log = logging.getLogger(__name__)
+
 
 class _Compaction(Plugin):
+    async def setup(self):
+        self._retry_after_turns = 0
+
     def __init__(
         self,
         *,
@@ -48,16 +55,13 @@ class _Compaction(Plugin):
         agent: Inject[Agent],
     ):
         request = await next_()
+        if agent.session.closed_turn_count < self._retry_after_turns:
+            return request
         events = agent.session.events
-        start = next(
-            (
-                seq
-                for seq, item in reversed(tuple(enumerate(events)))
-                if isinstance(item, StepStart)
-            ),
-            -1,
-        )
-        if any(isinstance(item, CompactionApplied) for item in events[start + 1 :]):
+        step_offset = agent.session.last_offset(StepStart)
+        start = step_offset if step_offset is not None else -1
+        last_compaction = agent.session.last_offset(CompactionApplied)
+        if last_compaction is not None and last_compaction > start:
             return request
         plan = plan_compaction(
             events,
@@ -67,7 +71,8 @@ class _Compaction(Plugin):
         )
         if plan is None or not await self._due(request, agent, counter, plan.new_turns):
             return request
-        summary = await compactor.summarize(plan.messages, max_tokens=self.summary_tokens)
+        with span(agent.ctx, "compaction", session_id=agent.id, through=plan.through):
+            summary = await compactor.summarize(plan.messages, max_tokens=self.summary_tokens)
         if not isinstance(summary, str) or not summary.strip():
             raise ValueError("Compactor must return a non-empty summary")
         summary = truncate(summary, self.summary_tokens, counter)
@@ -89,6 +94,13 @@ class _Compaction(Plugin):
         before = await count_request(counter, request)
         after = await count_request(counter, compacted)
         if after >= before:
+            self._retry_after_turns = agent.session.closed_turn_count + 2
+            log.warning(
+                "%s did not reduce context (%s -> %s tokens); retry after two more turns",
+                type(self).__name__,
+                before,
+                after,
+            )
             return request
         applied = replace(applied, before_tokens=before, after_tokens=after)
         await agent.session.append(applied)

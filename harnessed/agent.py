@@ -18,7 +18,7 @@ from harnessed.core.loop import Agent as LiveSession
 from harnessed.core.loop import AgentFactory
 from harnessed.core.model import Model
 from harnessed.core.outputs import ToolOutputLimit
-from harnessed.core.runtime import AgentLoop
+from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.session import Session as SessionLog
 from harnessed.core.session import SessionPersistence
 from harnessed.core.store import MemorySessions, SessionStore

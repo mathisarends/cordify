@@ -19,15 +19,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   Use indexed boundaries/current state and retain immutable snapshot semantics.
 - Verify long-session behavior and invalid-transition/write-failure atomicity.
 
-### P0-4 — Tracing seam and remaining diagnostics
-
-- Add the Tracer protocol and NoopTracer default slot, with spans for turn, step,
-  model, tool, compaction and approval wait. Tool execution timing must exclude
-  approval waiting.
-- Log ineffective compaction and apply backoff. Library logging, NullHandler,
-  explicit registration ownership and immediate PluginFailed events already exist.
-- OTel and MCP integrations remain deferred, as specified in the targets.
-
 ### P0-6 — Complete neutral model/message contracts
 
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
@@ -177,7 +168,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Unify compaction into Compaction(trigger, summarizer, focus, retention). Provide
   at_ratio/every_turns triggers, model summarization, pre-request side-effect
-  boundaries, ineffective-summary backoff and one reactive context-error retry.
+  boundaries and one reactive context-error retry.
 - Spill is session-owned, bounded by retention, with ranged reads and cleanup.
 - CacheBreakpoints must use actual native provider cache controls or be removed;
   do not export an inert feature. Usage events already carry cache metrics.

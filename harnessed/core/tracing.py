@@ -16,6 +16,11 @@ class Tracer(Protocol):
     def span(self, name: str, **attributes: Any) -> AbstractContextManager[Span]: ...
 
 
+def span(ctx: Context, name: str, **attributes: Any) -> AbstractContextManager[Span]:
+    """Open a configured span, including for independently assembled runtimes."""
+    return ctx[Tracer].span(name, **attributes) if Tracer in ctx else nullcontext(_NoopSpan())
+
+
 class _NoopSpan:
     def set_attribute(self, name: str, value: Any) -> None:
         pass

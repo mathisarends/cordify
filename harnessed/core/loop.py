@@ -16,14 +16,12 @@ from harnessed.core.messages import (
     ToolResult,
 )
 from harnessed.core.model import Model, ModelRequest, ModelUsage
-from harnessed.core.tokens import TokenCounter
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 
 from .approvals import validate_approval_timeout
 from .attachments import Attachment, prepare_input
-from .budget import ContextBudget
 from .context import DynamicContext
 from .events import (
     AgentControlChanged,
@@ -32,24 +30,14 @@ from .events import (
     ApprovalResolved,
     ApprovalRevoked,
     AssistantMessage,
-    ConfigureRequest,
-    ContextMessage,
     ExecuteTool,
     InboxAdded,
     InboxMode,
     InboxRemoved,
-    ModelRequested,
     ModelUsageRecorded,
-    ObservationRecorded,
-    PrepareRequest,
-    PreStep,
     ReviewToolResult,
     SessionAppended,
     SessionEvent,
-    StepDecision,
-    StepEnd,
-    StepStart,
-    SystemMessage,
     ToolCalled,
     ToolCompleted,
     ToolExecutionStarted,
@@ -59,15 +47,16 @@ from .events import (
     TurnEnd,
     TurnStart,
     TurnStopping,
-    UserMessage,
 )
 from .execution import BoundToolContexts, InboxSender, ToolContexts
 from .outputs import ToolOutputLimit
 from .prompt import SystemPrompt
+from .runtime.stepper import run_step
 from .scheduling import ToolPlan, ToolScheduler, ToolScheduling
 from .session import Session, derive_messages
 from .stream import SessionPublished, TextDelta, TransientEvent
 from .tools import ErrorFormatter, ToolRegistry, format_tool_error
+from .tracing import span
 
 type AgentEvent = SessionEvent | TransientEvent
 _preparing: ContextVar["Agent | None"] = ContextVar("harnessed_preparing", default=None)
@@ -413,6 +402,12 @@ class Agent:
     async def _approval_answer(
         self, request: ApprovalRequested, approver: Approver | None, *, timeout: float | None = None
     ) -> ApprovalAnswer:
+        with span(self.ctx, "approval_wait", session_id=self.id, tool=request.call.name):
+            return await self._wait_for_approval(request, approver, timeout=timeout)
+
+    async def _wait_for_approval(
+        self, request: ApprovalRequested, approver: Approver | None, *, timeout: float | None = None
+    ) -> ApprovalAnswer:
         timeout = self.options.approval_timeout if timeout is None else timeout
         validate_approval_timeout(timeout)
         try:
@@ -648,6 +643,10 @@ class Agent:
             self._publish(None)
 
     async def _turn(self) -> bool:
+        with span(self.ctx, "turn", session_id=self.id):
+            return await self._run_turn()
+
+    async def _run_turn(self) -> bool:
         previous = self._open_turn()
         turn = previous.id if previous is not None else uuid4().hex
         first_step = len(previous.steps) + 1 if previous is not None else 1
@@ -663,75 +662,9 @@ class Agent:
             await self.session.append(TurnEnd(turn))
             return True
         for step in range(first_step, self.options.max_steps + 1):
-            await self._checkpoint()
-            await self.ctx.settle()
-            inbox = self.inbox
-            pending = inbox.for_step(step)
-            incoming = tuple(item.message for item in pending)
-            self._step_push = []
-            token = _preparing.set(self)
-            try:
-                decision = await self.ctx.dispatch(
-                    PreStep(self, incoming, step),
-                    default=lambda incoming=incoming: StepDecision(incoming),
-                )
-            finally:
-                _preparing.reset(token)
-            if not decision.accepted:
-                await self.session.append(TurnEnd(turn, "rejected"))
-                return False
-            pending = (*pending, *self._step_push)
-            accepted = (*decision.messages, *(item.message for item in self._step_push))
-            await self.session.append(StepStart(turn, step))
-            prompt = await self.ctx[SystemPrompt].render()
-            previous_event = self.session.last(SystemMessage)
-            previous = previous_event.content if previous_event is not None else None
-            if prompt != previous:
-                await self.session.append(SystemMessage(prompt))
-            accepted_ids = {message.id for message in accepted}
-            if len(accepted_ids) != len(accepted) or any(
-                message.role not in ("user", "system") for message in accepted
-            ):
-                raise ValueError("PreStep must return unique user or system messages")
-            for item in pending:
-                if item.message.id not in accepted_ids:
-                    await self.session.append(InboxRemoved(item.message.id))
-            for message in accepted:
-                for item in pending:
-                    if item.message.id == message.id:
-                        for contribution in item.context:
-                            await self.session.append(ContextMessage(contribution, "turn", turn))
-                event = UserMessage(message) if message.role == "user" else ContextMessage(message)
-                await self.session.append(event)
-            observations = tuple(self._observations.values())
-            self._observations.clear()
-            for observation in observations:
-                await self.session.append(ObservationRecorded(observation, turn, step))
-            request = ModelRequest(
-                self.options.model,
-                self.session.messages,
-                self.ctx[ToolRegistry].visible_definitions(self.ctx),
-                self.options.max_tokens,
-                settings=settings,
-            )
-            request = await self.ctx.dispatch(
-                PrepareRequest(self, request),
-                default=lambda request=request: request,
-            )
-            request = await self.ctx.dispatch(
-                ConfigureRequest(self, request),
-                default=lambda request=request: request,
-            )
-            if ContextBudget in self.ctx:
-                await self.ctx[ContextBudget].check(
-                    request,
-                    context_window=self.options.context_window,
-                    counter=self.ctx[TokenCounter],
-                )
-            await self.session.append(ModelRequested(request))
-            response = await self._respond(request)
-            await self._run_tools(response.tool_calls)
-            await self.session.append(StepEnd(turn, step))
+            with span(self.ctx, "step", session_id=self.id, turn_id=turn, step=step):
+                if not await run_step(self, turn, step, settings, _preparing):
+                    return False
             await self._checkpoint()
             current = self.session.open_turn
             assert current is not None
@@ -851,6 +784,10 @@ class Agent:
             return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
 
     async def _invoke_tool(self, plan: ToolPlan) -> tuple[ToolResult, bool]:
+        with span(self.ctx, "tool", session_id=self.id, tool=plan.call.name, call_id=plan.call.id):
+            return await self._execute_tool(plan)
+
+    async def _execute_tool(self, plan: ToolPlan) -> tuple[ToolResult, bool]:
         call = plan.call
         execution = self.ctx[ToolContexts].create(call)
         try:
@@ -890,6 +827,10 @@ class Agent:
             return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
 
     async def _respond(self, request: ModelRequest) -> Message:
+        with span(self.ctx, "model", session_id=self.id, model=request.model):
+            return await self._stream_response(request)
+
+    async def _stream_response(self, request: ModelRequest) -> Message:
         message_id, calls = uuid4().hex, []
         text, reasoning = [], []
 

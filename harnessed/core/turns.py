@@ -99,6 +99,10 @@ class TurnProjection:
             self.validate(event)
             self.apply(event)
 
+    @property
+    def closed_count(self) -> int:
+        return len(self._closed)
+
     def validate(self, event: SessionEvent) -> None:
         if isinstance(event, TurnStart):
             if self._turn is not None:

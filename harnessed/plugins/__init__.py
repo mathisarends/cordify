@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from harnessed.core.instruction_plugin import Instructions as Instructions
     from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
     from harnessed.core.outputs import ToolOutputLimit as ToolOutputLimit
-    from harnessed.core.runtime import AgentLoop as AgentLoop
+    from harnessed.core.runtime.agent_loop import AgentLoop as AgentLoop
     from harnessed.core.store import MemorySessions as MemorySessions
     from harnessed.core.tracing import NoopTracer as NoopTracer
     from harnessed.plugins._context.compaction import ContextBudgetGuard as ContextBudgetGuard
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from harnessed.plugins.shell import Shell as Shell
 _EXPORTS = {
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
-    "AgentLoop": ("harnessed.core.runtime", "AgentLoop"),
+    "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
     "MemorySessions": ("harnessed.core.store", "MemorySessions"),
     "ToolOutputLimit": ("harnessed.core.outputs", "ToolOutputLimit"),
     "Instructions": ("harnessed.core.instruction_plugin", "Instructions"),

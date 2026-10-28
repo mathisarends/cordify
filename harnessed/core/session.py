@@ -355,6 +355,14 @@ class Session:
             self._snapshot = tuple(self._events)
         return self._snapshot
 
+    @property
+    def closed_turn_count(self) -> int:
+        return self._turns.closed_count
+
+    def last_offset(self, kind: type[SessionEvent]) -> int | None:
+        record = self._last.get(kind)
+        return record[0] if record is not None else None
+
     def __len__(self) -> int:
         return len(self._events)
 
