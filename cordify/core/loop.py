@@ -16,6 +16,7 @@ from .approvals import validate_approval_timeout
 from .attachments import Attachment, prepare_input
 from .budget import ContextBudget
 from .events import (
+    AgentControlChanged,
     ApprovalRequest,
     ApprovalRequested,
     ApprovalResolved,
@@ -60,6 +61,7 @@ from .tools import ToolRegistry
 
 type AgentEvent = SessionEvent
 _preparing: ContextVar["Agent | None"] = ContextVar("cordify_preparing", default=None)
+_driving: ContextVar["Agent | None"] = ContextVar("cordify_driving", default=None)
 
 
 @dataclass(frozen=True)
@@ -104,13 +106,16 @@ class Agent:
     def __init__(self, ctx: Context, session: Session, options: AgentOptions):
         self.ctx, self.session, self.options = ctx, session, options
         self.id = session.id
-        self.status: Literal["idle", "running", "disposed"] = "idle"
+        self.status: Literal[
+            "idle", "running", "pausing", "paused", "stopping", "stopped", "disposed"
+        ] = "idle"
         self._runner: asyncio.Task | None = None
         self._error: Exception | None = None
         self._subscribers: set[asyncio.Queue] = set()
         self._closing = False
         self._canceling = False
         self._ready = False
+        self._control_changed = asyncio.Event()
         self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
         ctx.on(SessionAppended, self._session_event)
@@ -141,16 +146,39 @@ class Agent:
 
     def start(self):
         self._ready = True
+        self._update_status()
         self._wake()
 
+    def _open_turn(self):
+        turns = self.session.turns
+        return turns[-1] if turns and not turns[-1].closed else None
+
+    def _update_status(self):
+        control = self.session.control
+        if control.state != "active":
+            self.status = control.state
+        else:
+            self.status = "running" if self._runner and not self._runner.done() else "idle"
+
     def _wake(self):
-        if self._ready and self.inbox.has_wakeup and (self._runner is None or self._runner.done()):
+        if (
+            self._ready
+            and not self._closing
+            and not self._canceling
+            and self.session.control.state == "active"
+            and (self.inbox.has_wakeup or self._open_turn() is not None)
+            and (self._runner is None or self._runner.done())
+        ):
             self._error = None
             self.status = "running"
             self._runner = asyncio.create_task(self._drive(), name=f"cordify:{self.id}")
 
     def _session_event(self, event: SessionAppended):
         if event.session is self.session:
+            if isinstance(event.event, AgentControlChanged):
+                self._update_status()
+                self._control_changed.set()
+                self._control_changed = asyncio.Event()
             self._publish(event.event)
 
     def _publish(self, event: AgentEvent | None):
@@ -177,6 +205,8 @@ class Agent:
         if mode == "inject" and _preparing.get() is self:
             self._step_push.append(item)
         if item.wakeup:
+            if self.session.control.state == "stopped":
+                await self.session.append(AgentControlChanged("active"))
             self._wake()
         return message.id
 
@@ -199,6 +229,51 @@ class Agent:
 
     async def inject(self, content: str | Message) -> str:
         return await self._send(content, "inject")
+
+    def _check_control(self):
+        if self._closing or self._canceling:
+            raise RuntimeError("Agent is being cancelled or disposed")
+
+    async def pause(self) -> None:
+        """Request a pause after the current step; use when_paused() to await it."""
+        self._check_control()
+        if self.session.control.paused:
+            return
+        if self.session.control.stopped:
+            raise RuntimeError("Resume the stopped agent before pausing it")
+        state = "pausing" if self._runner and not self._runner.done() else "paused"
+        await self.session.append(AgentControlChanged(state))
+
+    async def when_paused(self) -> None:
+        if _driving.get() is self:
+            raise RuntimeError("A driver hook cannot wait for its own pause boundary")
+        while True:
+            if self.session.control.state == "paused":
+                return
+            if self._error is not None:
+                raise self._error
+            if self.session.control.state != "pausing":
+                raise RuntimeError("The agent has no pending pause request")
+            await self._control_changed.wait()
+
+    async def resume(self) -> None:
+        self._check_control()
+        if self.session.control.state != "active":
+            await self.session.append(AgentControlChanged("active"))
+        self._wake()
+
+    async def _checkpoint(self) -> None:
+        while True:
+            if self._canceling:
+                raise asyncio.CancelledError
+            if self.session.control.state == "active":
+                return
+            if self.session.control.state == "pausing":
+                await self.session.append(AgentControlChanged("paused"))
+                continue
+            if self.session.control.stopped:
+                raise asyncio.CancelledError
+            await self._control_changed.wait()
 
     async def request_approval(
         self,
@@ -323,31 +398,70 @@ class Agent:
             self._subscribers.discard(queue)
 
     async def cancel(self, *, keep_inbox: bool = False) -> None:
-        if self._runner is None or self._runner.done():
-            return
+        if _driving.get() is self:
+            raise RuntimeError("Call cancel() from outside the agent driver")
         self._canceling = True
         try:
-            self._runner.cancel()
-            try:
-                await self._runner
-            except asyncio.CancelledError:
-                # A task cancelled before its first instruction cannot run its finally block.
-                self.status = "idle"
-                self._publish(None)
+            if self.session.control.state != "active":
+                await self.session.append(AgentControlChanged("active"))
+            if self._runner is not None and not self._runner.done():
+                self._runner.cancel()
+                try:
+                    await self._runner
+                except asyncio.CancelledError:
+                    pass
+            await self.session.repair_interrupted()
             if not keep_inbox:
                 for item in self.inbox.pending:
                     await self.session.append(InboxRemoved(item.message.id, "canceled"))
+            self._update_status()
+            self._publish(None)
+        finally:
+            self._canceling = False
+
+    async def stop(self, *, keep_inbox: bool = False) -> None:
+        """Cancel active work and close its turn; optionally retain queued inputs."""
+        self._check_control()
+        if type(keep_inbox) is not bool:
+            raise TypeError("keep_inbox must be a bool")
+        if _driving.get() is self:
+            raise RuntimeError("Call stop() from outside the agent driver")
+        if self.session.control.state == "stopped" and (keep_inbox or not self.inbox.pending):
+            return
+        self._canceling = True
+        try:
+            await self.session.append(AgentControlChanged("stopping", keep_inbox))
+            if self._runner is not None and not self._runner.done():
+                self._runner.cancel()
+                try:
+                    await self._runner
+                except asyncio.CancelledError:
+                    pass
+            await self.session.repair_interrupted()
+            self._update_status()
+            self._publish(None)
         finally:
             self._canceling = False
 
     async def aclose(self) -> None:
         self._closing = True
-        await self.cancel()
+        if self.session.control.paused or self.session.control.stopped:
+            if self._runner is not None and not self._runner.done():
+                self._runner.cancel()
+                try:
+                    await self._runner
+                except asyncio.CancelledError:
+                    pass
+            await self.session.repair_interrupted()
+        else:
+            await self.cancel()
         self.status = "disposed"
 
     async def _drive(self):
+        token = _driving.set(self)
         try:
-            while self.inbox.has_wakeup:
+            while self.inbox.has_wakeup or self._open_turn() is not None:
+                await self._checkpoint()
                 if not await self._turn():
                     break
         except asyncio.CancelledError:
@@ -364,13 +478,30 @@ class Agent:
                     "Driver and session repair failed", [exc, repair_error]
                 )
         finally:
-            self.status = "idle"
+            if self.session.control.state == "pausing":
+                try:
+                    await self.session.append(AgentControlChanged("paused"))
+                except Exception as exc:
+                    self._error = exc
+            _driving.reset(token)
+            self.status = (
+                self.session.control.state if self.session.control.state != "active" else "idle"
+            )
+            self._control_changed.set()
+            self._control_changed = asyncio.Event()
             self._publish(None)
 
     async def _turn(self) -> bool:
-        turn = uuid4().hex
-        await self.session.append(TurnStart(turn))
-        for step in range(1, self.options.max_steps + 1):
+        previous = self._open_turn()
+        turn = previous.id if previous is not None else uuid4().hex
+        first_step = len(previous.steps) + 1 if previous is not None else 1
+        if previous is None:
+            await self.session.append(TurnStart(turn))
+        elif previous.steps and not await self._continue_turn(previous.steps[-1]):
+            await self.session.append(TurnEnd(turn))
+            return True
+        for step in range(first_step, self.options.max_steps + 1):
+            await self._checkpoint()
             await self.ctx.settle()
             inbox = self.inbox
             pending = inbox.for_step(step)
@@ -444,15 +575,28 @@ class Agent:
             response = await self._respond(request)
             await self._run_tools(response.tool_calls)
             await self.session.append(StepEnd(turn, step))
-            if response.tool_calls or self.inbox.has_step_wakeup:
-                continue
-            continuation = await self.ctx.dispatch(TurnStopping(self))
-            if continuation or self.inbox.has_step_wakeup:
+            await self._checkpoint()
+            if await self._continue_turn(self.session.turns[-1].steps[-1]):
                 continue
             await self.session.append(TurnEnd(turn))
             return True
         await self.session.append(TurnEnd(turn, "max_steps"))
         return True
+
+    async def _continue_turn(self, step) -> bool:
+        response = next(
+            (event for event in reversed(step.events) if isinstance(event, AssistantMessage)),
+            None,
+        )
+        if (
+            step.reason == "interrupted"
+            or response is None
+            or response.message.tool_calls
+            or self.inbox.has_step_wakeup
+        ):
+            return True
+        continuation = await self.ctx.dispatch(TurnStopping(self))
+        return bool(continuation or self.inbox.has_step_wakeup)
 
     async def _run_tools(self, calls: tuple[ToolCall, ...]) -> None:
         if not calls:

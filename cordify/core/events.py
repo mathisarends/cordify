@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 type InboxMode = Literal["followup", "steer", "inject"]
 type InboxTarget = Literal["next-turn", "next-step"]
+type ControlState = Literal["active", "pausing", "paused", "stopping", "stopped"]
 _INBOX_ROUTES: dict[InboxMode, tuple[InboxTarget, bool]] = {
     "followup": ("next-turn", True),
     "steer": ("next-step", True),
@@ -96,6 +97,21 @@ class TurnStopping(Bail[bool]):
 
 class SessionEvent(Emit):
     type: ClassVar[str]
+
+
+@dataclass(frozen=True)
+class AgentControlChanged(SessionEvent):
+    type: ClassVar[str] = "agent/control"
+    state: ControlState
+    keep_inbox: bool = False
+
+    def __post_init__(self):
+        if self.state not in ("active", "pausing", "paused", "stopping", "stopped"):
+            raise ValueError("Unknown agent control state")
+        if type(self.keep_inbox) is not bool or (
+            self.keep_inbox and self.state not in ("stopping", "stopped")
+        ):
+            raise ValueError("keep_inbox applies only to stopping or stopped agents")
 
 
 @dataclass(frozen=True)
@@ -443,6 +459,7 @@ class SessionAppended(Emit):
 SESSION_EVENT_TYPES = {
     cls.type: cls
     for cls in (
+        AgentControlChanged,
         ApprovalRequested,
         ApprovalResolved,
         ApprovalRevoked,

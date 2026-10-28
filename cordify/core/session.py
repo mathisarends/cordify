@@ -20,8 +20,10 @@ from ..seams.models import (
     tool_result_from_dict,
 )
 from .approvals import Approvals
+from .control import RunControl
 from .events import (
     SESSION_EVENT_TYPES,
+    AgentControlChanged,
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
@@ -314,6 +316,10 @@ class Session:
     def approvals(self) -> Approvals:
         return Approvals(self._events)
 
+    @property
+    def control(self) -> RunControl:
+        return RunControl(self._events)
+
     async def append(self, event: SessionEvent) -> None:
         _validate_event(event)
         async with self._lock:
@@ -333,6 +339,7 @@ class Session:
 
     async def repair_interrupted(self) -> None:
         """Close unfinished activity and answer tool calls after cancellation or resume."""
+        control = self.control
         for approval in self.approvals.pending:
             await self.append(ApprovalResolved(approval.request_id, status="interrupted"))
         for message in _pending_assistant_messages(self._events).values():
@@ -373,7 +380,15 @@ class Session:
         if turn is not None:
             if step is not None:
                 await self.append(StepEnd(turn, step, "interrupted"))
-            await self.append(TurnEnd(turn, "interrupted"))
+            if not control.paused:
+                await self.append(TurnEnd(turn, "stopped" if control.stopped else "interrupted"))
+        if control.state == "pausing":
+            await self.append(AgentControlChanged("paused"))
+        if control.stopped and not control.keep_inbox:
+            for item in self.inbox.pending:
+                await self.append(InboxRemoved(item.message.id, "stopped"))
+        if control.state == "stopping":
+            await self.append(AgentControlChanged("stopped", control.keep_inbox))
 
     def fork(
         self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False

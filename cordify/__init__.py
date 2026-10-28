@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from cordify.core.attachments import Image as Image
     from cordify.core.budget import ContextBudget as ContextBudget
     from cordify.core.budget import ContextBudgetExceeded as ContextBudgetExceeded
+    from cordify.core.control import RunControl as RunControl
+    from cordify.core.events import AgentControlChanged as AgentControlChanged
     from cordify.core.events import ApprovalRequest as ApprovalRequest
     from cordify.core.events import ExecuteTool as ExecuteTool
     from cordify.core.events import PreStep as PreStep
@@ -92,6 +94,8 @@ if TYPE_CHECKING:
     from cordify.seams.spill import SpillStore as SpillStore
     from cordify.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "RunControl": ("cordify.core.control", "RunControl"),
+    "AgentControlChanged": ("cordify.core.events", "AgentControlChanged"),
     "ApprovalRequest": ("cordify.core.events", "ApprovalRequest"),
     "ApprovalUnavailable": ("cordify.seams.approver", "ApprovalUnavailable"),
     "Approval": ("cordify.core.approvals", "Approval"),
@@ -180,6 +184,8 @@ _EXPORTS = {
     "Key": ("cordify.kernel.keys", "Key"),
 }
 __all__ = [
+    "RunControl",
+    "AgentControlChanged",
     "ApprovalRequest",
     "ApprovalUnavailable",
     "Approval",
