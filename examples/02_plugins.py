@@ -1,4 +1,4 @@
-"""Run with: python -m examples.02_plugins"""
+"""Run with: uv run python -m examples.02_plugins"""
 
 import asyncio
 from dataclasses import dataclass

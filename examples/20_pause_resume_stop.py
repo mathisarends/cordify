@@ -1,4 +1,4 @@
-"""Run with: python -m examples.20_pause_resume_stop"""
+"""Run with: uv run python -m examples.20_pause_resume_stop"""
 
 import asyncio
 from tempfile import TemporaryDirectory

@@ -1,4 +1,4 @@
-"""Run with: python -m examples.03_inbox"""
+"""Run with: uv run python -m examples.03_inbox"""
 
 import asyncio
 

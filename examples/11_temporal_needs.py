@@ -1,4 +1,4 @@
-"""Run with: python -m examples.11_temporal_needs"""
+"""Run with: uv run python -m examples.11_temporal_needs"""
 
 import asyncio
 from dataclasses import dataclass

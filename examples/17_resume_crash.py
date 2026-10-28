@@ -1,4 +1,4 @@
-"""Run with: python -m examples.17_resume_crash"""
+"""Run with: uv run python -m examples.17_resume_crash"""
 
 import asyncio
 import os

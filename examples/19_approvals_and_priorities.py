@@ -1,4 +1,4 @@
-"""Run with: python -m examples.19_approvals_and_priorities"""
+"""Run with: uv run python -m examples.19_approvals_and_priorities"""
 
 import asyncio
 from time import perf_counter

@@ -1,4 +1,4 @@
-"""Run with: python -m examples.07_context"""
+"""Run with: uv run python -m examples.07_context"""
 
 import asyncio
 import base64

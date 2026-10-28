@@ -1,4 +1,4 @@
-"""Run with: python -m examples.15_tool_output_limits"""
+"""Run with: uv run python -m examples.15_tool_output_limits"""
 
 import asyncio
 from pathlib import Path

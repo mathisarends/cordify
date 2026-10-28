@@ -1,4 +1,4 @@
-"""Run with: python -m examples.06_explicit_registration"""
+"""Run with: uv run python -m examples.06_explicit_registration"""
 
 import asyncio
 

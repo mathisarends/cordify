@@ -1,4 +1,4 @@
-"""Set DEEPSEEK_API_KEY, then run: python -m examples.04_deepseek"""
+"""Set DEEPSEEK_API_KEY, then run: uv run python -m examples.04_deepseek"""
 
 import asyncio
 import os

@@ -1,4 +1,4 @@
-"""Run with: python -m examples.01_tool_agent"""
+"""Run with: uv run python -m examples.01_tool_agent"""
 
 import asyncio
 

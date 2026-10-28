@@ -115,35 +115,35 @@ backends, checkpoints, subagents, additional model adapters, and a voice preset
 can be added within these layers later.
 
 ```sh
-python -m pip install -e .
-python -m examples.01_tool_agent
+uv sync --locked --all-extras
+uv run python -m examples.01_tool_agent
 ```
 
 Runnable examples (from the repository root):
 
 | Command | Demonstrates |
 | --- | --- |
-| `python -m examples.01_tool_agent` | Tool loop, token stream, and a follow-up turn |
-| `python -m examples.02_plugins` | Custom services, configuration, middleware, and cleanup |
-| `python -m examples.03_inbox` | Follow-up, steering, and silent injection with explicit turn/step projections |
-| `python -m examples.04_deepseek` | Live DeepSeek adapter, file tools, and JSONL resume |
-| `python -m examples.05_bundles_and_injection` | Reusable modules, classes, DI, approval, progress, and nudges |
-| `python -m examples.06_explicit_registration` | Plugins and hooks without decorators |
-| `python -m examples.07_context` | All five context paths: sections, task context, attachments, push, and pull |
-| `python -m examples.08_observations` | Browser state per step: full current state and compact older states |
-| `python -m examples.09_rules` | TestDiscipline as a class and declarative Rules |
-| `python -m examples.10_context_strategies` | Spill, compaction, observation limits, and cache metadata together |
-| `python -m examples.11_temporal_needs` | Reversible tools, prompt sections, listeners, and custom effects as services change |
-| `python -m examples.12_layered_sdk` | Layered architecture, standalone kernel, and presets |
-| `python -m examples.13_llm_adapters` | Custom LLM adapter with retries and a structural adapter without inheritance |
-| `python -m examples.14_session_log` | Durable chunks, pure log projections, request replay, and an independent fork |
-| `python -m examples.15_tool_output_limits` | Bounding a 2 MB output, ExecuteTool waterfall, and reading with offset/limit |
-| `python -m examples.16_compaction_policies` | Threshold, turn window, periodic compaction, preserved turns, and budget guard |
-| `python -m examples.17_resume_crash` | Process restart with durable approvals, inbox, and archived JSONL tail |
-| `python -m examples.18_parallel_tools` | Parallel calls, stable results, and file conflicts using resource keys |
-| `python -m examples.19_approvals_and_priorities` | Headless approval, response timeout, and explicit waterfall priorities |
-| `python -m examples.20_pause_resume_stop` | Pause a tool batch, resume the same turn, stop work, and reopen a paused session |
-| `python -m examples.21_validated_forms` | Nested Pydantic forms, enums, constraints, validated DeepSeek payloads, and hidden DI parameters |
+| `uv run python -m examples.01_tool_agent` | Tool loop, token stream, and a follow-up turn |
+| `uv run python -m examples.02_plugins` | Custom services, configuration, middleware, and cleanup |
+| `uv run python -m examples.03_inbox` | Follow-up, steering, and silent injection with explicit turn/step projections |
+| `uv run python -m examples.04_deepseek` | Live DeepSeek adapter, file tools, and JSONL resume |
+| `uv run python -m examples.05_bundles_and_injection` | Reusable modules, classes, DI, approval, progress, and nudges |
+| `uv run python -m examples.06_explicit_registration` | Plugins and hooks without decorators |
+| `uv run python -m examples.07_context` | All five context paths: sections, task context, attachments, push, and pull |
+| `uv run python -m examples.08_observations` | Browser state per step: full current state and compact older states |
+| `uv run python -m examples.09_rules` | TestDiscipline as a class and declarative Rules |
+| `uv run python -m examples.10_context_strategies` | Spill, compaction, observation limits, and cache metadata together |
+| `uv run python -m examples.11_temporal_needs` | Reversible tools, prompt sections, listeners, and custom effects as services change |
+| `uv run python -m examples.12_layered_sdk` | Layered architecture, standalone kernel, and presets |
+| `uv run python -m examples.13_llm_adapters` | Custom LLM adapter with retries and a structural adapter without inheritance |
+| `uv run python -m examples.14_session_log` | Durable chunks, pure log projections, request replay, and an independent fork |
+| `uv run python -m examples.15_tool_output_limits` | Bounding a 2 MB output, ExecuteTool waterfall, and reading with offset/limit |
+| `uv run python -m examples.16_compaction_policies` | Threshold, turn window, periodic compaction, preserved turns, and budget guard |
+| `uv run python -m examples.17_resume_crash` | Process restart with durable approvals, inbox, and archived JSONL tail |
+| `uv run python -m examples.18_parallel_tools` | Parallel calls, stable results, and file conflicts using resource keys |
+| `uv run python -m examples.19_approvals_and_priorities` | Headless approval, response timeout, and explicit waterfall priorities |
+| `uv run python -m examples.20_pause_resume_stop` | Pause a tool batch, resume the same turn, stop work, and reopen a paused session |
+| `uv run python -m examples.21_validated_forms` | Nested Pydantic forms, enums, constraints, validated DeepSeek payloads, and hidden DI parameters |
 
 Only example 04 needs an API key and the `deepseek` extra. The other examples
 use deterministic model responses to demonstrate the SDK.
@@ -1259,11 +1259,65 @@ and idle state with a silent inbox entry.
 
 ## Development and limitations
 
+Use [uv](https://docs.astral.sh/uv/guides/projects/) for the development
+environment. `.python-version` selects Python 3.14 locally; `uv.lock` records
+the exact dependency versions for the supported Python and platform matrix.
+The `dev` dependency group contains test and quality tools and is installed by
+default. Only one project environment, `.venv/`, is needed.
+
 ```sh
-python -m pip install -e ".[dev]"
-python -m pytest
-ruff check .
+uv sync --locked --all-extras
+uv run pre-commit install
+uv run pre-commit run --all-files
+uv run pytest
 ```
+
+Individual checks are available as `uv run ruff check .`,
+`uv run ruff format --check .`, and `uv run ty check --error-on-warning`.
+ty checks the library, runnable SDK examples, and build helper against Python
+3.12 and all platforms. Tests intentionally contain invalid inputs, so they run
+through pytest rather than static type checking.
+
+Pre-commit runs the same locked Ruff and ty versions as CI, plus TOML/YAML,
+merge-conflict, whitespace, private-key, and large-file checks. It also rejects
+an outdated lockfile. Run `uv lock` after changing dependencies; use
+`uv lock --upgrade-package <name>` for a targeted update. Commit the resulting
+`uv.lock`. A fresh checkout needs `uv sync --locked --all-extras` before hooks
+run, and each developer installs their own hook with `uv run pre-commit install`.
+
+For a local compatibility run, uv can create isolated environments outside the
+repository without leaving `.venv-312` or `.venv-313` directories:
+
+```sh
+uv run --isolated --locked --all-extras --python 3.12 pytest
+uv run --isolated --locked --all-extras --python 3.13 pytest
+uv run --isolated --locked --all-extras --python 3.14 pytest
+```
+
+The GitHub Actions workflow has a separate quality job and a **3 × 3 test
+matrix**: Ubuntu, Windows, and macOS on Python 3.12, 3.13, and 3.14.
+Every matrix entry runs the tests and offline examples, builds a wheel and
+source distribution, and installs the wheel into a temporary environment
+using hashed runtime dependencies exported from `uv.lock`. The smoke test runs
+outside the checkout with isolated Python imports, so it checks the installed
+package rather than the source tree.
+
+Actions are pinned to commit SHAs and uv is pinned in CI. The workflow uses
+read-only repository permissions, caches dependencies, cancels superseded
+runs, keeps matrix failures independent, and applies job timeouts. Dependabot
+is configured for weekly uv, Actions, and pre-commit updates.
+The [official uv Actions guide](https://docs.astral.sh/uv/guides/integration/github/)
+describes the underlying setup and caching options.
+
+Build and check distributions locally with:
+
+```sh
+uv build --no-sources
+uv run --locked python scripts/check_wheel.py
+```
+
+The wheel helper requires exactly one wheel in `dist/` and leaves `.venv`
+unchanged. Remove older wheel versions before running it after a version bump.
 
 JSONL append is synchronous and flushes each event; `fsync=True` additionally
 flushes to disk. Corrupt or unknown records are rejected.
@@ -1282,9 +1336,9 @@ is also not a sandbox backend.
 For DeepSeek:
 
 ```sh
-python -m pip install -e ".[deepseek]"
+uv sync --locked --extra deepseek
 # Set DEEPSEEK_API_KEY in the environment.
-python -m examples.04_deepseek
+uv run python -m examples.04_deepseek
 ```
 
 Configure the model ID through `deepseek(model=...)`, `Harness(model=...)`,

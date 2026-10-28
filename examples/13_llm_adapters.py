@@ -1,4 +1,4 @@
-"""Run with: python -m examples.13_llm_adapters"""
+"""Run with: uv run python -m examples.13_llm_adapters"""
 
 import asyncio
 from collections.abc import AsyncIterator

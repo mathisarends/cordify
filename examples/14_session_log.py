@@ -1,4 +1,4 @@
-"""Run with: python -m examples.14_session_log"""
+"""Run with: uv run python -m examples.14_session_log"""
 
 import asyncio
 import json

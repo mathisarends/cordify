@@ -1,4 +1,4 @@
-"""Run with: python -m examples.18_parallel_tools"""
+"""Run with: uv run python -m examples.18_parallel_tools"""
 
 import asyncio
 import os

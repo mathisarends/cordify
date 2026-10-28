@@ -1,4 +1,4 @@
-"""Run with: python -m examples.10_context_strategies (offline, scripted usage)."""
+"""Run with: uv run python -m examples.10_context_strategies (offline, scripted usage)."""
 
 import asyncio
 from tempfile import TemporaryDirectory

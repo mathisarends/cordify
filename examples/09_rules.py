@@ -1,4 +1,4 @@
-"""Run with: python -m examples.09_rules (commands are simulated)."""
+"""Run with: uv run python -m examples.09_rules (commands are simulated)."""
 
 import asyncio
 

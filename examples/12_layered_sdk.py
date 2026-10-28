@@ -1,4 +1,4 @@
-"""Run with: python -m examples.12_layered_sdk"""
+"""Run with: uv run python -m examples.12_layered_sdk"""
 
 import asyncio
 

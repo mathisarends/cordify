@@ -1,4 +1,4 @@
-"""Run with: python -m examples.08_observations (uses an in-memory browser)."""
+"""Run with: uv run python -m examples.08_observations (uses an in-memory browser)."""
 
 import asyncio
 from dataclasses import dataclass
