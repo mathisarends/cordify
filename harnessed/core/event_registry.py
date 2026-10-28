@@ -69,7 +69,9 @@ class EventRegistry:
                 raise ValueError("Event discriminator default must match its Literal tag")
             if tag in proposed:
                 raise ValueError(f"Duplicate event tag: {tag}")
-            validators[kind] = TypeAdapter(kind)
+            adapter = TypeAdapter(kind)
+            adapter.json_schema()
+            validators[kind] = adapter
             proposed[tag] = kind
         self._types, self._custom = proposed, validators
         self._adapter = None

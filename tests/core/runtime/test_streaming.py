@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel, field_validator
 
 from harnessed import Agent, ApprovalAnswer, Plugin, StopReason, ToolCall, ToolContext, tool
-from harnessed.core.errors import ApprovalUnavailable, OutputUnavailable
+from harnessed.core.errors import ApprovalUnavailable, OutputUnavailable, SessionClosed
 from harnessed.core.model import ModelChunk
 from harnessed.events import (
     ApprovalNeeded,
@@ -33,6 +33,20 @@ class Work(Plugin):
         await call.progress("Publishing")
         self.effects.append("published")
         return "done"
+
+
+async def test_answering_through_a_closed_session_fails_even_for_an_acknowledged_id():
+    async with Agent(
+        model=ScriptedModel([work(), "done"]), plugins=[Work([])]
+    ).session() as session:
+        request_id = None
+        async for event in session.stream("Publish"):
+            if isinstance(event, ApprovalNeeded):
+                request_id = event.request_id
+                await session.approvals.answer(request_id, ApprovalAnswer.ALLOW)
+    assert request_id is not None
+    with pytest.raises(SessionClosed):
+        await session.approvals.answer(request_id, ApprovalAnswer.ALLOW)
 
 
 def work():

@@ -75,6 +75,7 @@ class SessionApprovals:
         return self._session.log.approvals.grant_for(tool, scope=scope)
 
     async def answer(self, request_id: str, decision: ApprovalAnswer) -> None:
+        self._session.control.check_open()
         if not isinstance(decision, ApprovalAnswer):
             raise TypeError("Approval answers must be ALLOW, DENY or ALWAYS")
         pending = self._live.get(request_id)

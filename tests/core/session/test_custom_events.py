@@ -1,9 +1,11 @@
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
 import pytest
 from pydantic import Field, TypeAdapter, ValidationError
+from pydantic.errors import PydanticInvalidForJsonSchema
 
 from harnessed import Agent, Plugin, ToolContext, events, tool
 from harnessed.core.runtime.result import RunResult
@@ -140,3 +142,16 @@ def test_mutable_untagged_and_builtin_subclass_events_are_not_extension_points()
     for kind in (Mutable, Untagged, Unsafe):
         with pytest.raises(TypeError):
             events.EventRegistry([kind])
+
+
+def test_non_json_event_schemas_fail_before_registration_is_committed():
+    @dataclass(frozen=True)
+    class CallbackEvent(events.DurableEvent):
+        callback: Callable[[], None]
+        type: Literal["project.callback"] = field(default="project.callback", kw_only=True)
+
+    registry = events.EventRegistry()
+    with pytest.raises(PydanticInvalidForJsonSchema):
+        registry.register([IndexProgress, CallbackEvent])
+    with pytest.raises(TypeError, match="registered"):
+        registry.validate(IndexProgress("not registered"))
