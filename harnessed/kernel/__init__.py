@@ -1,4 +1,4 @@
-from .context import Context, ContextClosed, Key, MissingService
+from .context import Context, ContextClosed, Key, MissingService, RegistrationState
 from .declarations import Bundle, PluginBase, Registration
 from .di import Inject, InjectMarker
 from .effects import Disposer, effect, run_sync
@@ -41,6 +41,7 @@ __all__ = [
     "PluginStatus",
     "Priority",
     "Registration",
+    "RegistrationState",
     "Waterfall",
     "effect",
     "hook",

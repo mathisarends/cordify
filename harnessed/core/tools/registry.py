@@ -15,8 +15,13 @@ from harnessed.core.tools.arguments import ToolArguments, tool_result_content
 from harnessed.core.tools.context import ToolContext, ToolContexts
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting, validate_output_limit
 from harnessed.core.tools.references import ToolReference, ToolSelector, tool_selector
-from harnessed.core.tools.scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
-from harnessed.kernel.context import Context
+from harnessed.core.tools.scheduling import (
+    PreparedToolCall,
+    ResourceSpec,
+    ToolScheduling,
+    resource_spec,
+)
+from harnessed.kernel import Context, RegistrationState
 from harnessed.kernel.di import BindingPlan, Dependency, binding_plan
 from harnessed.kernel.effects import Disposer, run_sync
 
@@ -41,7 +46,7 @@ class ToolError(Exception):
 
 @dataclass(frozen=True)
 class ToolSpec:
-    """One declaration shared by method, bundle and functional registration."""
+    """A tool method declaration installed for one plugin lifetime."""
 
     name: str | None = None
     timeout: float | None = None
@@ -81,6 +86,7 @@ class _Tool:
     definition: ToolDefinition
     callback: Callable
     owner: Context
+    registration: RegistrationState
     plan: BindingPlan
     spec: ToolSpec
     arguments: ToolArguments
@@ -89,7 +95,7 @@ class _Tool:
 @dataclass(eq=False)
 class _Converter:
     callback: Callable[[Any], ToolResult]
-    owner: Context
+    registration: RegistrationState
 
 
 class ToolRegistry:
@@ -103,8 +109,12 @@ class ToolRegistry:
     def reference(self, selector: ToolSelector, *, owner: Context) -> str | ToolReference:
         selected = tool_selector(selector)
         if isinstance(selected, ToolReference):
-            self._references.append(selected)
-            owner.effect(lambda: self._references.remove(selected))
+
+            def install(registration: RegistrationState):
+                self._references.append(selected)
+                return lambda: self._references.remove(selected)
+
+            owner.register(install)
         return selected
 
     def validate_references(self) -> None:
@@ -127,24 +137,27 @@ class ToolRegistry:
     ) -> Disposer:
         """Own a converter for a feature's result value for the plugin lifetime."""
         owner = owner if owner is not None else Context.current() or self._ctx
-        owner._check_open()
-        entries = self._converters.setdefault(kind, [])
-        entry = _Converter(callback, owner)
-        entries.append(entry)
 
-        def remove():
-            entries.remove(entry)
-            if not entries:
-                self._converters.pop(kind, None)
+        def install(registration: RegistrationState):
+            entries = self._converters.setdefault(kind, [])
+            entry = _Converter(callback, registration)
+            entries.append(entry)
 
-        return owner.effect(remove)
+            def remove() -> None:
+                entries.remove(entry)
+                if not entries:
+                    self._converters.pop(kind, None)
+
+            return remove
+
+        return owner.register(install)
 
     def _result(self, value: Any) -> ToolResult:
         if isinstance(value, ToolResult):
             return value
         for kind in type(value).__mro__:
             for entry in reversed(self._converters.get(kind, ())):
-                if entry.owner._registrations_active():
+                if entry.registration.active:
                     return entry.callback(value)
         return ToolResult(tool_result_content(value))
 
@@ -215,7 +228,6 @@ class ToolRegistry:
         name, timeout, parallel = spec.name, spec.timeout, spec.parallel
         resources, readonly, override = spec.resources, spec.readonly, spec.override
         owner = owner if owner is not None else Context.current() or self._ctx
-        owner._check_open()
         ToolScheduling(parallel)
         resources = resource_spec(resources)
         timeout = _TIMEOUT.validate_python(timeout)
@@ -245,28 +257,25 @@ class ToolRegistry:
             inspect.getdoc(callback) or "",
             arguments.schema,
         )
-        entry = _Tool(
-            definition,
-            callback,
-            owner,
-            plan,
-            spec,
-            arguments,
-        )
-        entries = self._tools.setdefault(definition.name, [])
-        entries.append(entry)
-        logger.debug("Registered tool %s with owner %s", tool_name, self._owner_name(owner))
 
-        def remove():
-            entries.remove(entry)
-            if not entries:
-                del self._tools[definition.name]
+        def install(registration: RegistrationState):
+            entry = _Tool(definition, callback, owner, registration, plan, spec, arguments)
+            entries = self._tools.setdefault(definition.name, [])
+            entries.append(entry)
+            logger.debug("Registered tool %s with owner %s", tool_name, owner.owner_name)
 
-        return owner.effect(remove)
+            def remove() -> None:
+                entries.remove(entry)
+                if not entries:
+                    del self._tools[definition.name]
+
+            return remove
+
+        return owner.register(install)
 
     @staticmethod
     def _owner_name(owner: Context) -> str:
-        return owner._handle.name if owner._handle is not None else f"Context@{id(owner):x}"
+        return owner.owner_name
 
     def is_readonly(self, name: str) -> bool:
         tool = self._visible(self._tools.get(name, []))
@@ -292,27 +301,25 @@ class ToolRegistry:
         )
 
     def _visible(self, entries: list[_Tool]) -> _Tool | None:
-        return next(
-            (tool for tool in reversed(entries) if tool.owner._registrations_active()), None
-        )
+        return next((tool for tool in reversed(entries) if tool.registration.active), None)
 
-    def plan(self, call: ToolCall) -> ToolPlan:
+    def plan(self, call: ToolCall) -> PreparedToolCall:
         if call.malformed is not None:
-            return ToolPlan(
+            return PreparedToolCall(
                 call,
                 ToolScheduling(),
                 ToolResult.error("Tool arguments must be a valid JSON object"),
             )
         tool = self._visible(self._tools.get(call.name, []))
         if tool is None:
-            return ToolPlan(call, ToolScheduling())
+            return PreparedToolCall(call, ToolScheduling())
         resources = tool.spec.resources
         keys = resources(call) if callable(resources) else resources
         if inspect.isawaitable(keys):
             if inspect.iscoroutine(keys):
                 keys.close()
             raise TypeError("Resource resolvers must return resource names, not an awaitable")
-        return ToolPlan(
+        return PreparedToolCall(
             call,
             ToolScheduling(tool.spec.parallel, tuple(cast(Iterable[str], keys))),
             binding=tool,

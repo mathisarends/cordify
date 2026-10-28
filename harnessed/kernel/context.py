@@ -37,6 +37,18 @@ class _Scope:
     runtime: _Runtime = field(default_factory=_Runtime)
 
 
+class RegistrationState:
+    """Visibility of an owned registration throughout plugin startup and disposal."""
+
+    def __init__(self, owner: Context) -> None:
+        self._owner = owner
+        self._disposed = False
+
+    @property
+    def active(self) -> bool:
+        return not self._disposed and self._owner._registrations_active()
+
+
 class Context:
     """A service/event scope with an AsyncExitStack for every owner.
 
@@ -117,6 +129,28 @@ class Context:
         dispose = effect(cleanup)
         self._stack.push_async_callback(dispose)
         return dispose
+
+    def register(self, install: Callable[[RegistrationState], Callable[[], Any]]) -> Disposer:
+        """Install synchronously while open, then own cleanup and visibility together.
+
+        The installer must return cleanup; it must unwind its own changes if it raises.
+        The returned disposer is idempotent, including when the context later closes.
+        """
+        self._check_open()
+        registration = RegistrationState(self)
+        cleanup = install(registration)
+        dispose = effect(cleanup)
+
+        async def remove() -> None:
+            registration._disposed = True
+            await dispose()
+
+        return self.effect(remove)
+
+    @property
+    def owner_name(self) -> str:
+        """A diagnostic name for registrations owned by this context."""
+        return self._handle.name if self._handle is not None else f"Context@{id(self):x}"
 
     def provide[T](self, key: ServiceKey[T], implementation: T) -> Disposer:
         self._check_open()

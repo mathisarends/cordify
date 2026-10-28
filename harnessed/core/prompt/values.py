@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
-from harnessed.kernel import Context
+from harnessed.kernel import Context, PluginLike
+from harnessed.kernel.plugin import as_plugin_spec
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,14 @@ class Section:
         """Render session-scoped guidance once through its ordinary plugin context."""
         return cls(name, _factory=factory, description=description)
 
+    @property
+    def literal_text(self) -> str | None:
+        return self.text if self._file is None and self._factory is None else None
+
+    @property
+    def preview(self) -> str:
+        return self.description or (str(self._file) if self._file else self.text[:80])
+
     async def render(self, ctx: Context | None = None) -> str:
         if self._factory is not None:
             if ctx is None:
@@ -55,26 +64,51 @@ class PromptEntry:
     origin: str
 
 
-class PromptPlan:
+@dataclass(frozen=True, slots=True)
+class PromptContribution:
+    name: str
+    guidance: str | Section | None = None
+    context_description: tuple[str, str] | None = None
+
+    @classmethod
+    def from_plugin(cls, plugin: PluginLike) -> Self:
+        """Normalize the extensible kernel metadata once at the agent boundary."""
+        spec = as_plugin_spec(plugin)
+        guidance = spec.guidance
+        if guidance is not None and not isinstance(guidance, str | Section):
+            raise TypeError("Plugin guidance must be a string, Section or None")
+        description = getattr(plugin, "context_description", None)
+        if description is not None and (
+            not isinstance(description, tuple)
+            or len(description) != 2
+            or not all(isinstance(value, str) for value in description)
+        ):
+            raise TypeError("Context descriptions must contain a name and text")
+        return cls(spec.name, guidance, description)
+
+
+class PromptComposition:
     """InstructionValues first, then guidance in plugin order; no implicit headings."""
 
-    def __init__(self, instructions: InstructionValues = (), plugins: Iterable = ()) -> None:
-        plugins = tuple(plugins)
+    def __init__(
+        self, instructions: InstructionValues = (), contributions: Iterable[PromptContribution] = ()
+    ) -> None:
+        contributions = tuple(contributions)
         self.context_entries = tuple(
             description
-            for plugin in plugins
-            if (description := getattr(plugin, "context_description", None)) is not None
+            for contribution in contributions
+            if (description := contribution.context_description) is not None
         )
         values = (instructions,) if isinstance(instructions, str) else tuple(instructions)
         entries: dict[str, PromptEntry] = {}
         literal_values = {value for value in values if isinstance(value, str)}
         literal_values.update(
-            value.text
+            value.literal_text
             for value in values
-            if isinstance(value, Section) and value._file is None and value._factory is None
+            if isinstance(value, Section) and value.literal_text is not None
         )
 
-        def add(value: str | Section, origin: str):
+        def add(value: str | Section, origin: str) -> None:
             section = value if isinstance(value, Section) else Section(origin, value)
             if section.name in entries and not section.override:
                 raise ValueError(
@@ -87,22 +121,14 @@ class PromptPlan:
             if not isinstance(value, str | Section):
                 raise TypeError("InstructionValues must contain strings or Section values")
             add(value, f"instructions[{index}]")
-        for index, spec in enumerate(plugins):
-            guidance = getattr(spec, "guidance", None)
+        for index, contribution in enumerate(contributions):
+            guidance = contribution.guidance
             if guidance is None:
                 continue
-            if not isinstance(guidance, str | Section):
-                raise TypeError("Plugin guidance must be a string, Section or None")
-            literal = (
-                guidance
-                if isinstance(guidance, str)
-                else (
-                    guidance.text if guidance._file is None and guidance._factory is None else None
-                )
-            )
+            literal = guidance if isinstance(guidance, str) else guidance.literal_text
             if literal is not None and literal in literal_values:
                 continue
-            label = getattr(spec, "name", type(spec).__name__)
+            label = contribution.name
             add(guidance, f"{label}.guidance (plugins[{index}])")
         self.entries = tuple(entries.values())
 
@@ -114,11 +140,7 @@ class PromptPlan:
     def __str__(self) -> str:
         lines = [f"System prompt ({len(self.entries)} sections)"]
         for index, entry in enumerate(self.entries, 1):
-            preview = (
-                entry.section.description or str(entry.section._file)
-                if entry.section._file
-                else entry.section.description or entry.section.text[:80]
-            )
+            preview = entry.section.preview
             lines.append(f"  {index}. {entry.section.name}: {preview!r} - {entry.origin}")
         if self.context_entries:
             lines.append("Context (dynamic, outside the system prompt)")

@@ -29,7 +29,7 @@ from harnessed.core.tools.context import ToolContexts
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.core.tools.registry import ToolRegistry, format_tool_error
-from harnessed.core.tools.scheduling import ToolPlan, ToolScheduler, ToolScheduling
+from harnessed.core.tools.scheduling import PreparedToolCall, ToolScheduler, ToolScheduling
 from harnessed.core.tracing import span
 
 if TYPE_CHECKING:
@@ -46,13 +46,13 @@ async def run_tools(
     for call in calls:
         await self.log.append(ToolCalled(call))
         if results is not None and call.id in results:
-            plans.append(ToolPlan(call, ToolScheduling(), results[call.id]))
+            plans.append(PreparedToolCall(call, ToolScheduling(), results[call.id]))
             continue
         try:
             plans.append(registry.plan(call))
         except Exception as exc:
             plans.append(
-                ToolPlan(
+                PreparedToolCall(
                     call,
                     ToolScheduling(),
                     ToolResult.error(format_tool_error(call, exc, self.options.error_formatter)),
@@ -64,7 +64,7 @@ async def run_tools(
 
 
 async def run_tool_group(
-    self: Session, plans: tuple[ToolPlan, ...], scheduler: ToolScheduler
+    self: Session, plans: tuple[PreparedToolCall, ...], scheduler: ToolScheduler
 ) -> None:
     authorizations = [
         plan.error if plan.error is not None else await authorize_tool(self, plan.call)
@@ -72,7 +72,7 @@ async def run_tool_group(
     ]
     reviewed = [asyncio.Event() for _ in plans]
 
-    async def worker(index: int, plan: ToolPlan) -> ToolResult:
+    async def worker(index: int, plan: PreparedToolCall) -> ToolResult:
         try:
             result = authorizations[index]
             reviewable = result is None
@@ -138,12 +138,12 @@ async def authorize_tool(self: Session, call: ToolCall) -> ToolResult | None:
         return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
 
 
-async def invoke_tool(self: Session, plan: ToolPlan) -> tuple[ToolResult, bool]:
+async def invoke_tool(self: Session, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
     with span(self.ctx, "tool", session_id=self.id, tool=plan.call.name, call_id=plan.call.id):
         return await execute_tool(self, plan)
 
 
-async def execute_tool(self: Session, plan: ToolPlan) -> tuple[ToolResult, bool]:
+async def execute_tool(self: Session, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
     call = plan.call
     execution = self.ctx[ToolContexts].create(call)
     try:

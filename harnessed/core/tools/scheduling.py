@@ -34,7 +34,7 @@ def resource_spec(resources: ResourceSpec) -> ResourceSpec:
 
 
 @dataclass(frozen=True)
-class ToolPlan:
+class PreparedToolCall:
     call: ToolCall
     scheduling: ToolScheduling
     error: ToolResult | None = None
@@ -47,7 +47,7 @@ class ToolScheduler:
         self.max_parallel = max_parallel
         self.slots = asyncio.Semaphore(max_parallel)
 
-    def groups(self, plans: Iterable[ToolPlan]) -> Iterator[tuple[ToolPlan, ...]]:
+    def groups(self, plans: Iterable[PreparedToolCall]) -> Iterator[tuple[PreparedToolCall, ...]]:
         pending = []
         for plan in plans:
             if self.max_parallel > 1 and plan.scheduling.parallel:
@@ -62,8 +62,8 @@ class ToolScheduler:
 
     async def run(
         self,
-        plans: tuple[ToolPlan, ...],
-        worker: Callable[[int, ToolPlan], Awaitable[ToolResult]],
+        plans: tuple[PreparedToolCall, ...],
+        worker: Callable[[int, PreparedToolCall], Awaitable[ToolResult]],
         commit: Callable[[ToolCall, ToolResult], Awaitable[None]],
     ) -> None:
         if len(plans) == 1:

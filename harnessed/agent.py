@@ -13,7 +13,7 @@ from harnessed.core.outputs import OutputTypes
 from harnessed.core.plugin import PluginContext, Service
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.instructions import Instructions
-from harnessed.core.prompt.values import InstructionValues, PromptPlan
+from harnessed.core.prompt.values import InstructionValues, PromptComposition, PromptContribution
 from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
 from harnessed.core.runtime.options import RunOptions
 from harnessed.core.runtime.result import RunResult
@@ -63,20 +63,23 @@ class Agent:
                 value = Service(Model, implementation)
             normalized.append(value)
         declared = next((value for value in normalized if isinstance(value, Instructions)), None)
-        self.prompt = PromptPlan(declared.values if declared is not None else (), normalized)
+        self.prompt = PromptComposition(
+            declared.values if declared is not None else (),
+            (PromptContribution.from_plugin(value) for value in normalized),
+        )
         defaults: list[PluginLike] = [
             AgentLoop(),
             MemorySessions(),
             ToolOutputLimit(),
             Approvals(),
             NoopTracer(),
-            Instructions(plan=self.prompt),
+            Instructions(composition=self.prompt),
         ]
         occupied = {as_plugin_spec(value).slot: index for index, value in enumerate(defaults)}
         explicit: set[str] = set()
         for value in normalized:
             if isinstance(value, Instructions):
-                value = Instructions(value.values, plan=self.prompt)
+                value = Instructions(value.values, composition=self.prompt)
             spec = as_plugin_spec(value)
             if spec.slot is not None:
                 if spec.slot in explicit:

@@ -9,7 +9,7 @@ from harnessed import Context, Plugin, PolicyDecision, ToolCall, hook, plugin, t
 from harnessed import Session as Agent
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.kernel import Emit, Inject
+from harnessed.kernel import ContextClosed, Emit, Inject
 from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import AgentLoop, Approvals
 from harnessed.testing import ScriptedModel
@@ -294,3 +294,23 @@ async def test_agent_registration_facade_uses_the_active_plugin_owner():
         assert agent.ctx[ToolRegistry].definitions == ()
         await agent.ctx.dispatch(Ping())
         assert seen == ["explicit", "decorated"]
+
+
+async def test_registration_installation_rejects_closed_owners_and_tracks_early_disposal():
+    async with Context() as ctx:
+        states = []
+        cleanups = []
+
+        def install(state):
+            states.append(state)
+            return lambda: cleanups.append("removed")
+
+        remove = ctx.register(install)
+        assert states[0].active
+        await remove()
+        assert not states[0].active
+        await remove()
+    assert cleanups == ["removed"]
+    with pytest.raises(ContextClosed):
+        ctx.register(install)
+    assert len(states) == 1
