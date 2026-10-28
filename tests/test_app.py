@@ -1,7 +1,14 @@
 import pytest
 
-from harnessed import Agent, Plugin, PluginConflict, Section, ToolCall, tool
-from harnessed.core.events import CompactionApplied, ContextValueChanged, TurnEnd, TurnStart
+from harnessed import Agent, ApprovalAnswer, Plugin, PluginConflict, Section, ToolCall, tool
+from harnessed.core.events import (
+    CompactionApplied,
+    ContextValueChanged,
+    ToolPolicyApplied,
+    TurnEnd,
+    TurnStart,
+)
+from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
 from harnessed.core.session import Session
 from harnessed.models import Model
@@ -109,6 +116,31 @@ async def test_default_approvals_allow_reads_and_reject_side_effects_without_a_r
 def test_explicit_duplicate_slots_raise_instead_of_silently_overriding():
     with pytest.raises(PluginConflict, match="approvals"):
         Agent(plugins=[Approvals(), Approvals(trust="all")])
+
+
+@pytest.mark.parametrize("user_answer", [False, True])
+async def test_denials_distinguish_policy_from_the_user_in_log_and_result(user_answer):
+    class Write(Plugin):
+        @tool
+        async def write(self) -> str:
+            pytest.fail("Denied tool executed")
+
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("write"))], "blocked"])
+    policy = (
+        Approvals(approver=lambda request: ApprovalAnswer.DENY)
+        if user_answer
+        else Approvals(deny=["write"])
+    )
+    async with Agent(model=model, plugins=[Write(), policy]).session() as session:
+        result = await session.run("Write")
+        denied = result.tool_calls[0][1]
+        assert denied.denied_by == ("user" if user_answer else "policy")
+        assert denied.content == (
+            "User declined this action" if user_answer else "Denied by policy"
+        )
+        applied = session.last(ToolPolicyApplied)
+        assert applied.decision is PolicyDecision.DENY
+        assert applied.source == ("approval" if user_answer else "policy")
 
 
 async def test_latest_dynamic_context_survives_compaction_and_replay():

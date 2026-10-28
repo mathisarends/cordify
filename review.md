@@ -28,20 +28,13 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   explicit registration ownership and immediate PluginFailed events already exist.
 - OTel and MCP integrations remain deferred, as specified in the targets.
 
-### P0-5 — Shell containment and accurate denials
-
-- Distinguish policy denials from user denials in values, log and model text.
-- Preserve the safe default: read-only tools ALLOW; side effects ASK; absent
-  responders unavailable. Keep full unexpected exceptions out of model output.
-
 ### P0-6 — Complete neutral model/message contracts
 
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
   all stream-only LLM compatibility paths. Wire the model's context window into
   budgets; do not silently assume 128k for unknown models.
-- Use neutral reasoning/cache/token names, and separate PolicyDecision from
-  ApprovalAnswer. Stop reasons must be typed throughout; configure max-token
-  behavior with accept/continue/fail.
+- Use neutral reasoning/cache/token names. Stop reasons must be typed throughout;
+  verify accept/continue/fail max-token behavior through the public result API.
 - Support multimodal tool results and model history, including the output-limit,
   spill and token-counting paths. Preserve native provider response state.
 - Finish moving the remaining feature contracts to their consumers; FS is now

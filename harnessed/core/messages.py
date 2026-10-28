@@ -88,14 +88,15 @@ class ToolResult:
     exit_code: int | None = None
     spill: SpillRef | None = None
     truncation: OutputTruncation | None = None
+    denied_by: Literal["policy", "user"] | None = None
 
     @classmethod
     def error(cls, content: str) -> "ToolResult":
         return cls(content, "error")
 
     @classmethod
-    def denied(cls, content: str) -> "ToolResult":
-        return cls(content, "denied")
+    def denied(cls, content: str, *, source: Literal["policy", "user"] = "policy") -> "ToolResult":
+        return cls(content, "denied", denied_by=source)
 
     @classmethod
     def unavailable(cls, content: str) -> "ToolResult":
@@ -109,11 +110,16 @@ class ToolResult:
         return replace(self, content=f"{self.content}\n\n{text}")
 
 
-class Decision(StrEnum):
+class PolicyDecision(StrEnum):
+    ALLOW = "allow"
+    DENY = "deny"
+    ASK = "ask"
+
+
+class ApprovalAnswer(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     ALWAYS = "always"
-    ASK = "ask"
 
 
 @dataclass(frozen=True)

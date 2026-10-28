@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -6,7 +7,14 @@ from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from harnessed.core.approvals import ApprovalUnavailable, Approver
-from harnessed.core.messages import Decision, Message, Observation, ToolCall, ToolResult
+from harnessed.core.messages import (
+    ApprovalAnswer,
+    Message,
+    Observation,
+    PolicyDecision,
+    ToolCall,
+    ToolResult,
+)
 from harnessed.core.model import Model, ModelRequest, ModelUsage
 from harnessed.core.tokens import TokenCounter
 from harnessed.kernel.context import Context
@@ -64,6 +72,7 @@ from .tools import ErrorFormatter, ToolRegistry, format_tool_error
 type AgentEvent = SessionEvent | TransientEvent
 _preparing: ContextVar["Agent | None"] = ContextVar("harnessed_preparing", default=None)
 _driving: ContextVar["Agent | None"] = ContextVar("harnessed_driving", default=None)
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -371,7 +380,8 @@ class Agent:
         *,
         scope: str = "tool-policy",
         approver: Approver | None = None,
-    ) -> Decision:
+        timeout: float | None = None,
+    ) -> ApprovalAnswer:
         if self._closing or self._canceling:
             raise RuntimeError("Agent is being cancelled or disposed")
         grant = self.session.approval_grant(call.name, scope=scope)
@@ -381,9 +391,9 @@ class Agent:
         await self.session.append(request)
         try:
             if grant is not None:
-                decision = Decision.ALWAYS
+                decision = ApprovalAnswer.ALWAYS
             else:
-                decision = await self._approval_answer(request, approver)
+                decision = await self._approval_answer(request, approver, timeout=timeout)
             await self.session.append(ApprovalResolved(request.request_id, decision))
             return decision
         except BaseException as exc:
@@ -401,10 +411,12 @@ class Agent:
             raise
 
     async def _approval_answer(
-        self, request: ApprovalRequested, approver: Approver | None
-    ) -> Decision:
+        self, request: ApprovalRequested, approver: Approver | None, *, timeout: float | None = None
+    ) -> ApprovalAnswer:
+        timeout = self.options.approval_timeout if timeout is None else timeout
+        validate_approval_timeout(timeout)
         try:
-            async with asyncio.timeout(self.options.approval_timeout):
+            async with asyncio.timeout(timeout):
                 selected = (
                     approver
                     if approver is not None
@@ -416,19 +428,18 @@ class Agent:
                     decision = await self.ctx.dispatch(ApprovalRequest(request, self))
             if decision is None:
                 raise ApprovalUnavailable("No approval responder answered the request")
-            if not isinstance(decision, Decision) or decision is Decision.ASK:
+            if not isinstance(decision, ApprovalAnswer):
                 raise TypeError("Approvers must return ALLOW, DENY or ALWAYS")
             return decision
         except ApprovalUnavailable:
             raise
         except TimeoutError as exc:
             raise ApprovalUnavailable(
-                f"Approval response timed out after {self.options.approval_timeout:g} seconds"
+                f"Approval response timed out after {timeout:g} seconds"
             ) from exc
         except Exception as exc:
-            raise ApprovalUnavailable(
-                f"Approval responder failed: {type(exc).__name__}: {exc}"
-            ) from exc
+            log.exception("Approval responder failed for %s", request.call.name)
+            raise ApprovalUnavailable(f"Approval responder failed: {type(exc).__name__}") from exc
 
     async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
         if self._closing or self._canceling:
@@ -805,20 +816,36 @@ class Agent:
 
     async def _authorize_tool(self, call: ToolCall) -> ToolResult | None:
         try:
+            previous = self.session.latest_approval(call.id)
             decision = await self.ctx.dispatch(
                 ToolPolicy(call, self),
-                default=lambda: Decision.ALLOW,
+                default=lambda: PolicyDecision.ALLOW,
             )
-            if decision is Decision.ASK:
-                decision = await self.request_approval(call, "Tool policy requested approval")
-            if decision not in (Decision.ALLOW, Decision.ALWAYS):
-                decision = Decision.DENY
-            await self.session.append(ToolPolicyApplied(call.id, decision))
-            if decision not in (Decision.ALLOW, Decision.ALWAYS):
-                return ToolResult.denied("User declined this action")
+            if not isinstance(decision, PolicyDecision):
+                raise TypeError("ToolPolicy hooks must return PolicyDecision")
+            if decision is PolicyDecision.ASK:
+                answer = await self.request_approval(call, "Tool policy requested approval")
+                decision = (
+                    PolicyDecision.DENY if answer is ApprovalAnswer.DENY else PolicyDecision.ALLOW
+                )
+            record = self.session.latest_approval(call.id)
+            answered = record is not None and record is not previous
+            source = (
+                "approval"
+                if answered
+                and (decision is PolicyDecision.ALLOW or record.decision is ApprovalAnswer.DENY)
+                else "policy"
+            )
+            await self.session.append(ToolPolicyApplied(call.id, decision, source))
+            if decision is PolicyDecision.DENY:
+                if answered and record.decision is ApprovalAnswer.DENY:
+                    return ToolResult.denied("User declined this action", source="user")
+                return ToolResult.denied("Denied by policy", source="policy")
             return None
         except ApprovalUnavailable as exc:
-            await self.session.append(ToolPolicyApplied(call.id, Decision.DENY))
+            await self.session.append(
+                ToolPolicyApplied(call.id, PolicyDecision.DENY, "unavailable")
+            )
             return ToolResult.unavailable(str(exc))
         except Exception as exc:
             return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))

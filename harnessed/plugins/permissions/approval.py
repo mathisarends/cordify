@@ -2,7 +2,7 @@ from collections.abc import Callable, Iterable
 
 from harnessed.core.approvals import Approver
 from harnessed.core.events import ToolPolicy
-from harnessed.core.messages import Decision
+from harnessed.core.messages import ApprovalAnswer, PolicyDecision
 from harnessed.kernel import Context, Priority, plugin
 
 
@@ -31,8 +31,8 @@ def approval_gate(
                 scope=scope,
                 approver=CallbackApprover(ask) if ask is not None else None,
             )
-            if decision not in (Decision.ALLOW, Decision.ALWAYS):
-                return Decision.DENY
+            if decision not in (ApprovalAnswer.ALLOW, ApprovalAnswer.ALWAYS):
+                return PolicyDecision.DENY
             return await next_()
 
         yield
@@ -44,18 +44,18 @@ class CallbackApprover:
     def __init__(self, ask: Callable):
         self.callback = ask
 
-    async def ask(self, call, reason: str) -> Decision | None:
+    async def ask(self, call, reason: str) -> ApprovalAnswer | None:
         import inspect
 
         value = self.callback(call)
         value = await value if inspect.isawaitable(value) else value
         if value is None:
             return None
-        if isinstance(value, Decision):
+        if isinstance(value, ApprovalAnswer):
             return value
         if type(value) is bool:
-            return Decision.ALLOW if value else Decision.DENY
-        raise TypeError("Approvers must return Decision or bool")
+            return ApprovalAnswer.ALLOW if value else ApprovalAnswer.DENY
+        raise TypeError("Approvers must return ApprovalAnswer or bool")
 
 
 @plugin

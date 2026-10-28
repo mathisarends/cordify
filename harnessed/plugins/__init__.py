@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from harnessed.core.approvals import Approvals as Approvals
     from harnessed.core.features import Service as Service
     from harnessed.core.instruction_plugin import Instructions as Instructions
+    from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
     from harnessed.core.outputs import ToolOutputLimit as ToolOutputLimit
     from harnessed.core.runtime import AgentLoop as AgentLoop
     from harnessed.core.store import MemorySessions as MemorySessions
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from harnessed.plugins.services import llm as llm
     from harnessed.plugins.shell import Shell as Shell
 _EXPORTS = {
+    "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "AgentLoop": ("harnessed.core.runtime", "AgentLoop"),
     "MemorySessions": ("harnessed.core.store", "MemorySessions"),
     "ToolOutputLimit": ("harnessed.core.outputs", "ToolOutputLimit"),
@@ -56,6 +58,7 @@ _EXPORTS = {
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
 }
 __all__ = [
+    "ApprovalAnswer",
     "AgentLoop",
     "MemorySessions",
     "ToolOutputLimit",

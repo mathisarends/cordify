@@ -4,10 +4,10 @@ import asyncio
 from time import perf_counter
 
 from harnessed import (
+    ApprovalAnswer,
     ApprovalRequest,
     ApprovalUnavailable,
     Bundle,
-    Decision,
     ModelChunk,
     ToolCall,
     ToolPolicy,
@@ -69,7 +69,7 @@ async def listener_and_priorities():
         start = perf_counter()
         await asyncio.sleep(0.025)  # Stand-in for an asynchronous UI or SDK response.
         print(f"Approval response time: {(perf_counter() - start) * 1000:.1f} ms")
-        return Decision.ALLOW
+        return ApprovalAnswer.ALLOW
 
     async with harness.session("answered") as agent:
         await agent.run("Publish the artifact.")

@@ -37,11 +37,12 @@ if TYPE_CHECKING:
     from harnessed.core.loop import AgentHandle as AgentHandle
     from harnessed.core.loop import AgentOptions as AgentOptions
     from harnessed.core.loop import RunResult as RunResult
-    from harnessed.core.messages import Decision as Decision
+    from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
     from harnessed.core.messages import ImagePart as ImagePart
     from harnessed.core.messages import Message as Message
     from harnessed.core.messages import Observation as Observation
     from harnessed.core.messages import OutputTruncation as OutputTruncation
+    from harnessed.core.messages import PolicyDecision as PolicyDecision
     from harnessed.core.messages import SpillRef as SpillRef
     from harnessed.core.messages import TextPart as TextPart
     from harnessed.core.messages import ToolCall as ToolCall
@@ -157,7 +158,8 @@ _EXPORTS = {
     "Harness": ("harnessed.presets", "Harness"),
     "LLM": ("harnessed.seams.llm", "LLM"),
     "Approver": ("harnessed.core.approvals", "Approver"),
-    "Decision": ("harnessed.core.messages", "Decision"),
+    "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
+    "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
     "ImagePart": ("harnessed.core.messages", "ImagePart"),
     "Message": ("harnessed.core.messages", "Message"),
     "ModelChunk": ("harnessed.core.model", "ModelChunk"),
@@ -251,7 +253,8 @@ __all__ = [
     "Harness",
     "LLM",
     "Approver",
-    "Decision",
+    "ApprovalAnswer",
+    "PolicyDecision",
     "ImagePart",
     "Message",
     "ModelChunk",

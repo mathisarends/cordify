@@ -1,6 +1,6 @@
 """Transitional imports; canonical values now live in core.messages and core.model."""
 
-from harnessed.core.messages import Decision as Decision
+from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
 from harnessed.core.messages import ImagePart as ImagePart
 from harnessed.core.messages import Message as Message
 from harnessed.core.messages import Observation as Observation

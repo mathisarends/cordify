@@ -4,16 +4,17 @@ import pytest
 
 from harnessed import (
     AgentOptions,
+    ApprovalAnswer,
     ApprovalRequest,
     ApprovalUnavailable,
     Approver,
     Bundle,
-    Decision,
     ModelChunk,
     Session,
     ToolCall,
 )
 from harnessed.core.events import ApprovalResolved, ToolExecutionStarted, ToolPolicy, ToolReturned
+from harnessed.core.messages import PolicyDecision
 from harnessed.core.session import decode_event, encode_event
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.persistence import session_jsonl
@@ -75,15 +76,15 @@ async def test_explicit_approver_then_service_take_precedence_over_request_liste
             return self.decision
 
     async with minimal(ScriptedLLM([])).session("precedence") as agent:
-        agent.ctx.provide(Approver, Answer(Decision.DENY))
+        agent.ctx.provide(Approver, Answer(ApprovalAnswer.DENY))
         agent.on(ApprovalRequest, lambda ev: pytest.fail("Explicit approver was bypassed"))
         assert (
             await agent.request_approval(
-                ToolCall("work"), "permission", approver=Answer(Decision.ALLOW)
+                ToolCall("work"), "permission", approver=Answer(ApprovalAnswer.ALLOW)
             )
-            is Decision.ALLOW
+            is ApprovalAnswer.ALLOW
         )
-        assert await agent.request_approval(ToolCall("work"), "permission") is Decision.DENY
+        assert await agent.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.DENY
 
 
 async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or_deny():
@@ -97,11 +98,11 @@ async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or
                 item.request_id for item in event.agent.session.approvals.pending
             }
             asked.append("deny")
-            return Decision.DENY
+            return ApprovalAnswer.DENY
 
         remove_answer = agent.add_hook(ApprovalRequest, answer, priority=0)
         agent.on(ApprovalRequest, lambda ev: asked.append("abstain"), priority=-100)
-        assert await agent.request_approval(ToolCall("work"), "permission") is Decision.DENY
+        assert await agent.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.DENY
         assert asked == ["abstain", "deny"]
         await remove_answer()
         asked.clear()
@@ -137,7 +138,7 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
         assert agent.session.approvals.records[-1].resolution.status == "unavailable"
 
 
-@pytest.mark.parametrize("answer", [None, Decision.ASK, "allow", ValueError("disconnected")])
+@pytest.mark.parametrize("answer", [None, PolicyDecision.ASK, "allow", ValueError("disconnected")])
 async def test_responder_abstention_invalid_answers_and_failures_are_unavailable(answer):
     async def respond(event):
         if isinstance(answer, Exception):
@@ -164,7 +165,7 @@ async def test_gate_stays_active_after_approver_service_is_removed():
 
     class AllowOnce:
         async def ask(self, call, reason):
-            return Decision.ALLOW
+            return ApprovalAnswer.ALLOW
 
     model = ScriptedLLM(
         [
@@ -196,16 +197,20 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
         prefix = agent.session.events
     async with minimal(
         ScriptedLLM([]),
-        plugins=[session_jsonl(tmp_path), callback_approver(lambda call: Decision.ALWAYS)],
+        plugins=[session_jsonl(tmp_path), callback_approver(lambda call: ApprovalAnswer.ALWAYS)],
     ).session("resume") as resumed:
         assert resumed.session.events == prefix and not resumed.session.approvals.pending
-        assert await resumed.request_approval(ToolCall("work"), "permission") is Decision.ALWAYS
+        assert (
+            await resumed.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
+        )
         assert len(resumed.session.approvals.records) == 2
         grant = resumed.session.approvals.grants[0]
     async with minimal(ScriptedLLM([]), plugins=[session_jsonl(tmp_path)]).session(
         "resume"
     ) as resumed:
-        assert await resumed.request_approval(ToolCall("work"), "permission") is Decision.ALWAYS
+        assert (
+            await resumed.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
+        )
         assert resumed.session.approvals.records[-1].request.grant_id == grant.request_id
 
 
@@ -235,7 +240,7 @@ async def test_approval_priority_places_wait_outside_downstream_policy_timing(ga
     async def answer(call):
         order.append("approval")
         clock[0] += 100
-        return Decision.ALLOW
+        return ApprovalAnswer.ALLOW
 
     gate = approval_gate(risky={"work"}, ask=answer)
     plugins = [gate, tools] if gate_first else [tools, gate]
@@ -256,6 +261,6 @@ def test_approval_timeout_must_be_finite_and_positive(timeout):
 
 def test_unavailable_resolution_is_not_an_answer_or_a_persistent_permission():
     with pytest.raises(ValueError):
-        ApprovalResolved("request", Decision.ALLOW, status="unavailable")
+        ApprovalResolved("request", ApprovalAnswer.ALLOW, status="unavailable")
     with pytest.raises(TypeError):
-        ApprovalResolved("request", Decision.ALLOW, reason=123)
+        ApprovalResolved("request", ApprovalAnswer.ALLOW, reason=123)

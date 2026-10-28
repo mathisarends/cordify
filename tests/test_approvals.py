@@ -7,8 +7,8 @@ from harnessed import (
     AgentHandle as Agent,
 )
 from harnessed import (
+    ApprovalAnswer,
     Bundle,
-    Decision,
     Inject,
     ModelChunk,
     Session,
@@ -26,6 +26,7 @@ from harnessed.core.events import (
     ToolPolicyApplied,
     ToolReturned,
 )
+from harnessed.core.messages import PolicyDecision
 from harnessed.core.session import decode_event, encode_event
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.persistence import session_jsonl
@@ -44,13 +45,13 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
     @tools.tool
     async def work(agent: Inject[Agent]) -> str:
         assert isinstance(agent.session.events[-1], ToolExecutionStarted)
-        assert agent.session.approvals.records[-1].decision is Decision.ALWAYS
+        assert agent.session.approvals.records[-1].decision is ApprovalAnswer.ALWAYS
         executed.append(True)
         return "ok"
 
     def answer(call):
         asked.append(call.id)
-        return Decision.ALWAYS
+        return ApprovalAnswer.ALWAYS
 
     def harness():
         return minimal(
@@ -84,7 +85,7 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
         assert ApprovalState(events) == resumed.session.approvals
 
 
-@pytest.mark.parametrize("decision", [Decision.ALLOW, Decision.DENY])
+@pytest.mark.parametrize("decision", [ApprovalAnswer.ALLOW, ApprovalAnswer.DENY])
 async def test_single_call_answers_are_logged_without_becoming_persistent_grants(
     tmp_path, decision
 ):
@@ -112,9 +113,9 @@ async def test_single_call_answers_are_logged_without_becoming_persistent_grants
             policy = next(
                 e for e in reversed(agent.session.events) if isinstance(e, ToolPolicyApplied)
             )
-            assert policy.decision is decision
+        assert policy.decision is PolicyDecision(decision.value)
     assert len(asked) == 2
-    assert len(executed) == (2 if decision is Decision.ALLOW else 0)
+    assert len(executed) == (2 if decision is ApprovalAnswer.ALLOW else 0)
 
 
 async def test_gate_scopes_do_not_share_persistent_permissions(tmp_path):
@@ -127,7 +128,7 @@ async def test_gate_scopes_do_not_share_persistent_permissions(tmp_path):
 
     def answer(call):
         asked.append(call.id)
-        return Decision.ALWAYS
+        return ApprovalAnswer.ALWAYS
 
     for scope in ("first-policy", "second-policy"):
         async with minimal(
@@ -152,11 +153,11 @@ async def test_tool_policy_ask_uses_the_same_durable_approval_path(tmp_path):
 
     @tools.on(ToolPolicy)
     async def ask_policy(event, next_):
-        return Decision.ASK
+        return PolicyDecision.ASK
 
     def answer(call):
         asked.append(call.id)
-        return Decision.ALWAYS
+        return ApprovalAnswer.ALWAYS
 
     for _ in range(2):
         async with minimal(
@@ -220,7 +221,7 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
         plugins=[
             tools,
             persistence(),
-            approval_gate(risky={"work"}, ask=lambda call: Decision.ALWAYS),
+            approval_gate(risky={"work"}, ask=lambda call: ApprovalAnswer.ALWAYS),
         ],
     ).session("failed-answer") as agent:
         await agent.run("task")
@@ -231,12 +232,12 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
 @pytest.mark.parametrize(
     "events",
     [
-        (ApprovalResolved("unknown", Decision.ALLOW),),
+        (ApprovalResolved("unknown", ApprovalAnswer.ALLOW),),
         (ApprovalRevoked("unknown"),),
         (ApprovalRequested("id", ToolCall("work"), "reason", "scope", grant_id="missing"),),
         (
             ApprovalRequested("id", ToolCall("work"), "reason", "scope"),
-            ApprovalResolved("id", Decision.DENY),
+            ApprovalResolved("id", ApprovalAnswer.DENY),
             ApprovalRevoked("id"),
         ),
     ],

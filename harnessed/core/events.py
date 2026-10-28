@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from uuid import uuid4
 
 from harnessed.core.messages import (
-    Decision,
+    ApprovalAnswer,
     Message,
     Observation,
+    PolicyDecision,
     SpillRef,
     ToolCall,
     ToolResult,
@@ -66,7 +67,7 @@ class ExecuteTool(Waterfall[ToolResult]):
 
 
 @dataclass(frozen=True)
-class ToolPolicy(Waterfall[Decision]):
+class ToolPolicy(Waterfall[PolicyDecision]):
     call: ToolCall
     agent: "Agent"
 
@@ -139,19 +140,19 @@ class ApprovalRequested(SessionEvent):
 class ApprovalResolved(SessionEvent):
     type: ClassVar[str] = "approvals/resolved"
     request_id: str
-    decision: Decision | None = None
+    decision: ApprovalAnswer | None = None
     status: Literal["answered", "interrupted", "unavailable"] = "answered"
     reason: str | None = None
 
     def __post_init__(self):
         if self.decision is not None:
-            object.__setattr__(self, "decision", Decision(self.decision))
+            object.__setattr__(self, "decision", ApprovalAnswer(self.decision))
         if self.reason is not None and not isinstance(self.reason, str):
             raise TypeError("Approval resolution reason must be a string")
         if self.status == "answered" and self.decision in (
-            Decision.ALLOW,
-            Decision.DENY,
-            Decision.ALWAYS,
+            ApprovalAnswer.ALLOW,
+            ApprovalAnswer.DENY,
+            ApprovalAnswer.ALWAYS,
         ):
             return
         if self.status in ("interrupted", "unavailable") and self.decision is None:
@@ -160,7 +161,7 @@ class ApprovalResolved(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ApprovalRequest(Bail[Decision]):
+class ApprovalRequest(Bail[ApprovalAnswer]):
     request: ApprovalRequested
     agent: "Agent"
 
@@ -184,12 +185,16 @@ class ApprovalRevoked(SessionEvent):
 class ToolPolicyApplied(SessionEvent):
     type: ClassVar[str] = "tools/policy"
     call_id: str
-    decision: Decision
+    decision: PolicyDecision
+    source: Literal["policy", "approval", "unavailable"] = "policy"
 
     def __post_init__(self):
-        object.__setattr__(self, "decision", Decision(self.decision))
-        if self.decision is Decision.ASK:
+        value = "allow" if self.decision == "always" else self.decision
+        object.__setattr__(self, "decision", PolicyDecision(value))
+        if self.decision is PolicyDecision.ASK:
             raise ValueError("ToolPolicyApplied requires a final decision")
+        if self.source not in ("policy", "approval", "unavailable"):
+            raise ValueError("Unknown tool policy source")
 
 
 @dataclass(frozen=True)

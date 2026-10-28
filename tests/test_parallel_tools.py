@@ -6,10 +6,10 @@ import pytest
 from harnessed import (
     FS,
     Bundle,
-    Decision,
     Inject,
     Message,
     ModelChunk,
+    PolicyDecision,
     Session,
     ToolCall,
     ToolContext,
@@ -239,7 +239,7 @@ async def test_tool_errors_and_denials_do_not_cancel_independent_calls():
 
     @tools.on(ToolPolicy)
     async def policy(event, next_):
-        return Decision.DENY if event.call.arguments["index"] == 1 else await next_()
+        return PolicyDecision.DENY if event.call.arguments["index"] == 1 else await next_()
 
     @tools.on(ReviewToolResult)
     async def review(event, next_):

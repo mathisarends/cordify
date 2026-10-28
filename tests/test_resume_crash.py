@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from harnessed import Bundle, Decision, ModelChunk, Session, ToolCall, user
+from harnessed import ApprovalAnswer, Bundle, ModelChunk, Session, ToolCall, user
 from harnessed.adapters.persistence import JsonlPersistence
 from harnessed.core.events import (
     ApprovalRequested,
@@ -30,7 +30,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from harnessed import Bundle, Decision, ModelChunk, ToolCall, system
+from harnessed import Bundle, ApprovalAnswer, ModelChunk, ToolCall, system
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal
@@ -59,7 +59,7 @@ async def answer(call):
     if phase == "approval":
         started.set()
         await asyncio.Event().wait()
-    return Decision.ALWAYS
+    return ApprovalAnswer.ALWAYS
 
 async def main():
     model = ScriptedLLM([
@@ -134,7 +134,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
 
     def answer(call):
         called.append(call.id)
-        return Decision.ALWAYS
+        return ApprovalAnswer.ALWAYS
 
     async def resume():
         model = ScriptedLLM(
@@ -280,7 +280,11 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
 
 async def test_recovery_rejects_invalid_approval_prefix_without_modifying_the_file(tmp_path):
     path = tmp_path / "invalid.jsonl"
-    invalid = {"version": 1, "seq": 0, **encode_event(ApprovalResolved("unknown", Decision.ALLOW))}
+    invalid = {
+        "version": 1,
+        "seq": 0,
+        **encode_event(ApprovalResolved("unknown", ApprovalAnswer.ALLOW)),
+    }
     content = json.dumps(invalid).encode() + b"\n" + b'{"version":1,'
     await asyncio.to_thread(path.write_bytes, content)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
@@ -298,7 +302,11 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     await writer.aclose()
     path = tmp_path / "answer.jsonl"
     prefix = await asyncio.to_thread(path.read_bytes)
-    answer = {"version": 1, "seq": 1, **encode_event(ApprovalResolved("approval", Decision.ALWAYS))}
+    answer = {
+        "version": 1,
+        "seq": 1,
+        **encode_event(ApprovalResolved("approval", ApprovalAnswer.ALWAYS)),
+    }
     tail = json.dumps(answer).encode()
     await asyncio.to_thread(path.write_bytes, prefix + tail)
     async with minimal(

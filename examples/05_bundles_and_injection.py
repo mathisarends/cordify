@@ -3,7 +3,7 @@
 import asyncio
 
 from examples.features.workspace import FailureNudge, workspace_tools
-from harnessed import Decision, Harness, ModelChunk, ToolCall
+from harnessed import ApprovalAnswer, Harness, ModelChunk, ToolCall
 from harnessed.core.events import ModelRequested, ToolProgress, ToolReturned
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local
@@ -15,7 +15,7 @@ from harnessed.testing import ScriptedLLM
 async def main():
     async def approve(call):
         print(f"Approval: allow {call.name} for the rest of this session")
-        return Decision.ALWAYS
+        return ApprovalAnswer.ALWAYS
 
     model = ScriptedLLM(
         [

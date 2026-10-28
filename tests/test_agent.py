@@ -6,8 +6,8 @@ from harnessed import (
     AgentHandle as Agent,
 )
 from harnessed import (
+    ApprovalAnswer,
     Bundle,
-    Decision,
     ExecuteTool,
     Harness,
     Inject,
@@ -32,6 +32,7 @@ from harnessed.core.events import (
     TurnEnd,
     TurnStart,
 )
+from harnessed.core.messages import PolicyDecision
 from harnessed.core.stream import TextDelta
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
@@ -161,7 +162,7 @@ async def test_approval_always_is_session_local_and_review_can_inject_nudges():
 
     def approve(call):
         asked.append(call.name)
-        return Decision.ALWAYS
+        return ApprovalAnswer.ALWAYS
 
     model = ScriptedLLM(
         [
@@ -377,7 +378,7 @@ async def test_policy_ask_routes_to_approver_seam():
 
     @features.on(ToolPolicy)
     async def policy(event, next_):
-        return Decision.ASK
+        return PolicyDecision.ASK
 
     @features.tool
     async def approved() -> str:
@@ -385,7 +386,7 @@ async def test_policy_ask_routes_to_approver_seam():
 
     def approve(call):
         asked.append(call.name)
-        return Decision.ALLOW
+        return ApprovalAnswer.ALLOW
 
     model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("approved"))], "done"])
     harness = Harness([agent_loop(), llm(model), features, callback_approver(approve)])

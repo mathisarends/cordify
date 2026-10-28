@@ -20,7 +20,7 @@ from harnessed.core.events import (
     UserMessage,
 )
 from harnessed.core.inbox import Inbox
-from harnessed.core.messages import Decision, Message, ToolCall
+from harnessed.core.messages import ApprovalAnswer, Message, ToolCall
 from harnessed.core.model import ModelRequest
 from harnessed.core.session import Session, derive_messages, derive_requests
 from harnessed.core.turns import derive_turns
@@ -57,10 +57,10 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
             call = ToolCall(f"tool-{rng.randrange(3)}", id=f"call-{turn}-{step}")
             request = ApprovalRequested(f"approval-{turn}-{step}", call, "test", "generated")
             await append(request)
-            answer = rng.choice([Decision.ALLOW, Decision.DENY, Decision.ALWAYS])
+            answer = rng.choice([ApprovalAnswer.ALLOW, ApprovalAnswer.DENY, ApprovalAnswer.ALWAYS])
             await append(ApprovalResolved(request.request_id, answer))
             assert session.latest_approval(call.id).decision == answer
-            if answer is Decision.ALWAYS and rng.choice([True, False]):
+            if answer is ApprovalAnswer.ALWAYS and rng.choice([True, False]):
                 await append(ApprovalRevoked(request.request_id))
             await append(AssistantMessage(Message("assistant", "reply")))
             await append(StepEnd(str(turn), step))

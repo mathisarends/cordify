@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Bundle, Decision, ModelChunk, ToolCall, system
+from harnessed import ApprovalAnswer, Bundle, ModelChunk, ToolCall, system
 from harnessed.core.events import LogTailRecovered, ToolReturned
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.persistence import session_jsonl
@@ -43,7 +43,7 @@ def torn_append(root: Path):
 async def crash_worker(root: Path):
     def answer(call):
         print("First process: granting ALWAYS for work.", flush=True)
-        return Decision.ALWAYS
+        return ApprovalAnswer.ALWAYS
 
     model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("work"))], "first task finished"])
     async with compose(root, model, answer).session("resumable") as agent:
@@ -61,7 +61,7 @@ async def resume(root: Path):
 
     def answer(call):
         asked.append(call.id)
-        return Decision.DENY
+        return ApprovalAnswer.DENY
 
     model = ScriptedLLM(
         ["Queued task resumed.", [ModelChunk(tool_call=ToolCall("work"))], "Fresh task finished."]

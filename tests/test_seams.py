@@ -6,6 +6,7 @@ import pytest
 from harnessed import Harness, ModelChunk, ToolCall, plugin
 from harnessed.core.events import ToolPolicy, ToolReturned
 from harnessed.core.loop import AgentFactory
+from harnessed.core.messages import PolicyDecision
 from harnessed.core.session import SessionPersistence
 from harnessed.kernel import Context
 from harnessed.plugins.agents.loop import agent_loop
@@ -15,9 +16,9 @@ from harnessed.plugins.shell import shell_tools
 from harnessed.seams import (
     FS,
     LLM,
+    ApprovalAnswer,
     Approver,
     Compactor,
-    Decision,
     ProcResult,
     Shell,
     SpillStore,
@@ -116,7 +117,7 @@ class ForeignApprover:
 
 async def test_foreign_shell_and_approver_are_accepted_structurally(tmp_path):
     shell = ForeignShell(ProcResult(7, "failed test", ""))
-    approver = ForeignApprover(Decision.ALLOW)
+    approver = ForeignApprover(ApprovalAnswer.ALLOW)
     call = ToolCall("run_command", {"argv": ["python", "-m", "pytest"]})
     model = ForeignModel([[ModelChunk(tool_call=call)], [ModelChunk(text="reviewed")]])
 
@@ -130,7 +131,7 @@ async def test_foreign_shell_and_approver_are_accepted_structurally(tmp_path):
     async def policy(ctx: Context):
         @ctx.on(ToolPolicy)
         async def ask(event, next_):
-            return Decision.ASK
+            return PolicyDecision.ASK
 
         yield
 

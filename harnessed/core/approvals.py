@@ -2,13 +2,15 @@ import inspect
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from math import isfinite
-from typing import Protocol
+from typing import Annotated, Protocol
 
-from harnessed.core.messages import Decision
+from pydantic import Field
+
+from harnessed.core.messages import ApprovalAnswer, PolicyDecision
 from harnessed.kernel import Inject, Priority, hook
 
 from .events import ApprovalRequested, ApprovalResolved, ApprovalRevoked, SessionEvent, ToolPolicy
-from .features import Plugin
+from .features import Plugin, PluginConfig
 from .messages import ToolCall
 from .tools import ToolRegistry
 
@@ -18,7 +20,7 @@ class ApprovalUnavailable(RuntimeError):
 
 
 class Approver(Protocol):
-    async def ask(self, call: ToolCall, reason: str) -> Decision | None: ...
+    async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer | None: ...
 
 
 def validate_approval_timeout(value: float) -> None:
@@ -41,13 +43,15 @@ class Approval:
         return self.resolution is None
 
     @property
-    def decision(self) -> Decision | None:
+    def decision(self) -> ApprovalAnswer | None:
         return self.resolution.decision if self.resolution is not None else None
 
     @property
     def is_grant(self) -> bool:
         return (
-            not self.revoked and self.decision is Decision.ALWAYS and self.request.grant_id is None
+            not self.revoked
+            and self.decision is ApprovalAnswer.ALWAYS
+            and self.request.grant_id is None
         )
 
 
@@ -110,7 +114,7 @@ def approval_transition(records, event: SessionEvent) -> Approval | None:
             raise ValueError("Approval resolution requires a pending request")
         if record.request.grant_id is not None and event.status == "answered":
             grant = records[record.request.grant_id]
-            if not grant.is_grant or event.decision is not Decision.ALWAYS:
+            if not grant.is_grant or event.decision is not ApprovalAnswer.ALWAYS:
                 raise ValueError("Cached approval grant is no longer active")
         return replace(record, resolution=event)
     elif isinstance(event, ApprovalRevoked):
@@ -125,7 +129,7 @@ class _Callback:
     def __init__(self, callback: Callable, agent):
         self.callback, self.agent = callback, agent
 
-    async def ask(self, call: ToolCall, reason: str) -> Decision:
+    async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer:
         record = self.agent.session.latest_approval(call.id)
         assert record is not None
         value = self.callback(record.request)
@@ -135,15 +139,21 @@ class _Callback:
 class Approvals(Plugin, slot="approvals"):
     """Opt out explicitly with trust='all'; missing responders fail as unavailable."""
 
+    class Config(PluginConfig):
+        timeout: Annotated[float, Field(gt=0)] = 300.0
+
+    config: Config
+
     def __init__(
         self,
         *,
         approver: Approver | Callable | None = None,
         trust: Iterable[str] = (),
         deny: Iterable[str] = (),
-        policy: Callable[[ToolCall], Decision | None] | None = None,
+        policy: Callable[[ToolCall], PolicyDecision | None] | None = None,
+        timeout: float = 300.0,
     ):
-        super().__init__()
+        super().__init__(timeout=timeout)
         self.approver = approver
         self.trust_all = trust == "all"
         self.trust = frozenset((trust,) if isinstance(trust, str) else trust)
@@ -154,23 +164,31 @@ class Approvals(Plugin, slot="approvals"):
     async def authorize(self, event, next_, tools: Inject[ToolRegistry]):
         agent = event.agent
         if event.call.name in self.deny:
-            return Decision.DENY
+            return PolicyDecision.DENY
         decision = self.policy(event.call) if self.policy is not None else None
         if decision is None:
             decision = (
-                Decision.ALLOW
+                PolicyDecision.ALLOW
                 if self.trust_all
                 or event.call.name in self.trust
                 or tools.is_readonly(event.call.name)
-                else Decision.ASK
+                else PolicyDecision.ASK
             )
-        if decision is Decision.ASK:
+        if decision is not None and not isinstance(decision, PolicyDecision):
+            raise TypeError("Approval policies must return PolicyDecision or None")
+        if decision is PolicyDecision.ASK:
             selected = self.approver
             if selected is not None and callable(selected):
                 selected = _Callback(selected, agent)
-            decision = await agent.request_approval(
-                event.call, "Tool may have side effects", approver=selected
+            answer = await agent.request_approval(
+                event.call,
+                "Tool may have side effects",
+                approver=selected,
+                timeout=self.config.timeout,
             )
-        if decision in (Decision.ALLOW, Decision.ALWAYS):
+            decision = (
+                PolicyDecision.DENY if answer is ApprovalAnswer.DENY else PolicyDecision.ALLOW
+            )
+        if decision is PolicyDecision.ALLOW:
             return await next_()
-        return Decision.DENY
+        return PolicyDecision.DENY
