@@ -262,6 +262,12 @@ class ToolRegistry:
         )
 
     def plan(self, call: ToolCall) -> ToolPlan:
+        if call.malformed is not None:
+            return ToolPlan(
+                call,
+                ToolScheduling(),
+                ToolResult.error("Tool arguments must be a valid JSON object"),
+            )
         tool = self._visible(self._tools.get(call.name, []))
         if tool is None:
             return ToolPlan(call, ToolScheduling())
@@ -284,6 +290,8 @@ class ToolRegistry:
         _expected: object = _UNSPECIFIED,
         error_formatter: ErrorFormatter | None = None,
     ) -> ToolResult:
+        if call.malformed is not None:
+            return ToolResult.error("Tool arguments must be a valid JSON object")
         tool = self._visible(self._tools.get(call.name, []))
         if _expected is not _UNSPECIFIED and tool is not _expected:
             return ToolResult.error(

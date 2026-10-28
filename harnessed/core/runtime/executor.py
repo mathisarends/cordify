@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from harnessed.core.approvals import ApprovalUnavailable
@@ -31,13 +32,18 @@ if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session
 
 
-async def run_tools(self: Session, calls: tuple[ToolCall, ...]) -> None:
+async def run_tools(
+    self: Session, calls: tuple[ToolCall, ...], *, results: Mapping[str, ToolResult] | None = None
+) -> None:
     if not calls:
         return
     plans = []
     registry = self.ctx[ToolRegistry]
     for call in calls:
         await self.log.append(ToolCalled(call))
+        if results is not None and call.id in results:
+            plans.append(ToolPlan(call, ToolScheduling(), results[call.id]))
+            continue
         try:
             plans.append(registry.plan(call))
         except Exception as exc:

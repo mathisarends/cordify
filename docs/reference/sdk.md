@@ -15,7 +15,7 @@ examples live in the topic guides. Optional features are imported from
 | plugins | Explicit configured plugins, merged with default slots |
 | agent.plugins | Tuple of resolved plugins |
 | agent.prompt | Inspectable instruction/guidance plan |
-| agent.session(id=None) | Async context manager opening/resuming a Session |
+| agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types |
 | agent.run(prompt, **options) | One run in a fresh session |
 | agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
 
@@ -23,7 +23,7 @@ examples live in the topic guides. Optional features are imported from
 
 | Member | Behavior |
 | --- | --- |
-| run(prompt, attachments=(), context=None, settings=None) | Queue and await this turn's RunResult |
+| run(prompt, output=None, attachments=(), context=None, settings=None) | Queue and await this turn's RunResult[T] |
 | stream(prompt, ...) | Stream this turn; raw audit events remain separately subscribable |
 | steer(content) | Send a next-step correction and return its InboxItem |
 | context.set(name, value) / remove(name) | Await a durable changed fact/removal |
@@ -53,6 +53,9 @@ policy slots explicitly.
 
 A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,
 `turn_id`, typed `stop_reason` and `(ToolCall, ToolResult)` pairs in `tool_calls`.
+Passing `output=T` adds a validated `output` of type `T`; an unstructured result's
+output is None. See [structured answers](../guides/structured-output.md) for retry
+limits, incomplete turns and restoration after a process restart.
 StopReason includes END, MAX_TOKENS, MAX_STEPS, STOPPED, ABORTED and DISCARDED.
 
 `ModelUsage` keeps input/output, cache-read/write, optional reasoning tokens and

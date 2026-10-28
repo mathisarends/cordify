@@ -1,13 +1,23 @@
 """Validated options consumed by a single session's loop."""
 
+from collections.abc import Iterable, Mapping
 from dataclasses import field
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass
 
+from harnessed.core.attachments import Attachment
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ErrorFormatter
+
+
+class RunOptions(TypedDict, total=False):
+    """Per-turn inputs shared by Agent.run and Session.run/stream."""
+
+    attachments: Iterable[Attachment]
+    context: Mapping[str, Any] | None
+    settings: Mapping[str, Any] | None
 
 
 @dataclass(
@@ -30,3 +40,4 @@ class AgentOptions:
     approval_timeout: Annotated[float, Field(gt=0)] = 300.0
     error_formatter: ErrorFormatter | None = None
     on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
+    output_retries: Annotated[int, Field(ge=0)] = 2

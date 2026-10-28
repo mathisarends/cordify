@@ -39,15 +39,27 @@ def to_dict(value: Any) -> Any:
 
 
 @dataclass(frozen=True)
+class MalformedArguments:
+    """Lossless provider input that could not be parsed as a JSON object."""
+
+    text: str
+
+
+@dataclass(frozen=True)
 class ToolCall:
     __hash__ = None
     name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
+    malformed: MalformedArguments | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
         if not isinstance(self.arguments, Mapping):
             raise TypeError("Tool arguments must be a JSON object")
+        if self.malformed is not None and (
+            not isinstance(self.malformed, MalformedArguments) or self.arguments
+        ):
+            raise ValueError("Malformed calls retain raw arguments instead of a parsed object")
         object.__setattr__(self, "arguments", freeze(self.arguments))
 
     @property
@@ -341,7 +353,13 @@ def message_from_dict(data: dict) -> Message:
         kinds = {"text": TextPart, "image_url": ImagePart}
         payload["content"] = tuple(kinds[part["type"]](**part) for part in content)
     if "tool_calls" in payload:
-        payload["tool_calls"] = tuple(ToolCall(**call) for call in payload["tool_calls"])
+        calls = []
+        for call in payload["tool_calls"]:
+            arguments: dict[str, Any] = dict(call)
+            if arguments.get("malformed") is not None:
+                arguments["malformed"] = MalformedArguments(**arguments["malformed"])
+            calls.append(ToolCall(**arguments))
+        payload["tool_calls"] = tuple(calls)
     kinds = {"system": System, "user": User, "assistant": Assistant, "tool": ToolReply}
     return kinds[payload["role"]](**payload)
 

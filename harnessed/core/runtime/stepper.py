@@ -7,12 +7,13 @@ from typing import TYPE_CHECKING
 
 from harnessed.core.budget import ContextBudget
 from harnessed.core.compaction import CompactionPolicy
-from harnessed.core.errors import ContextLengthExceeded
+from harnessed.core.errors import ContextLengthExceeded, OutputValidationError
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
 from harnessed.core.messages import User
 from harnessed.core.model import ModelRequest
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.executor import run_tools
+from harnessed.core.runtime.output import prepare_output, validate_output
 from harnessed.core.session.events import (
     AssistantMessage,
     ContextMessage,
@@ -23,6 +24,7 @@ from harnessed.core.session.events import (
     StepStart,
     SystemMessage,
     TurnEnd,
+    TurnStart,
     UserMessage,
 )
 from harnessed.core.tokens import TokenCounter
@@ -92,6 +94,11 @@ async def run_step(self: Agent, turn: str, step: int, settings, preparing: Conte
         ConfigureRequest(self, request),
         default=lambda request=request: request,
     )
+    current = self.log.open_turn
+    assert current is not None
+    starter = current.events[0]
+    assert isinstance(starter, TurnStart)
+    request = prepare_output(self, request, starter.output_schema)
     request = await self._compaction.prepare(request)
     if ContextBudget in self.ctx:
         await self.ctx[ContextBudget].check(
@@ -119,6 +126,9 @@ async def run_step(self: Agent, turn: str, step: int, settings, preparing: Conte
         # are never replayed by retrying an in-progress step.
         await self.log.append(StepEnd(turn, step, "context_limit"))
         return True
-    await run_tools(self, response.tool_calls)
+    results, failure = await validate_output(self, response, request.output_schema)
+    await run_tools(self, response.tool_calls, results=results)
     await self.log.append(StepEnd(turn, step))
+    if failure is not None:
+        raise OutputValidationError(f"Structured output retry limit reached: {failure}")
     return True

@@ -26,6 +26,42 @@ from harnessed.core.tools.decorator import tool
 from harnessed.models import PydanticAIModel
 
 
+@pytest.mark.parametrize("native_output", [True, False])
+async def test_response_contracts_use_native_schema_or_output_tools_and_repair_invalid_json(
+    native_output,
+):
+    from pydantic import BaseModel
+    from pydantic_ai.profiles import ModelProfile
+
+    class Triage(BaseModel):
+        severity: int
+
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(info.model_request_parameters)
+        text = '{"severity":' if len(seen) == 1 else '{"severity":2}'
+        if native_output:
+            yield text
+        else:
+            yield {0: DeltaToolCall("final_answer", text, tool_call_id=f"answer-{len(seen)}")}
+
+    provider = FunctionModel(
+        stream_function=stream, profile=ModelProfile(supports_json_schema_output=native_output)
+    )
+    result = await Agent(model=provider).run("Triage", output=Triage)
+    assert result.output.severity == 2 and len(seen) == 2 and result.tool_calls == ()
+    parameters = seen[0]
+    assert parameters.output_mode == ("native" if native_output else "tool")
+    if native_output:
+        assert parameters.output_object.json_schema["properties"]["severity"]["type"] == "integer"
+        assert parameters.output_tools == []
+    else:
+        assert parameters.allow_text_output is False
+        assert [tool.name for tool in parameters.output_tools] == ["final_answer"]
+        assert parameters.function_tools == []
+
+
 class Calculator(Plugin):
     @tool(readonly=True)
     async def add(self, a: int, b: int) -> int:

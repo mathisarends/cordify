@@ -34,9 +34,12 @@ class ApproximateTokenCounter:
         return math.ceil(len(text.encode("utf-8")) / 4)
 
     def count_request(self, request: ModelRequest) -> int:
-        return self.count_messages(request.messages) + self.count_text(
+        total = self.count_messages(request.messages) + self.count_text(
             json.dumps(to_dict(request.tools), ensure_ascii=False)
         )
+        if request.output_schema is not None and request.output_schema.mode != "tool":
+            total += self.count_text(json.dumps(to_dict(request.output_schema.json_schema)))
+        return total
 
     def count_messages(self, messages: Iterable[Message]) -> int:
         total = 0

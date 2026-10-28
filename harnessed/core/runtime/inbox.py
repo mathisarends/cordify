@@ -9,6 +9,7 @@ from typing import Any
 
 from harnessed.core.attachments import Attachment, prepare_input
 from harnessed.core.messages import Message
+from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.session.events import InboxAdded, InboxMode, InboxRemoved
 from harnessed.core.session.session import SessionLog
@@ -85,6 +86,7 @@ class SessionInbox:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
+        output_schema: OutputSchema | None = None,
         prepared: Callable[[InboxAdded], None] | None = None,
     ) -> InboxItem:
         async with self._sending():
@@ -93,7 +95,9 @@ class SessionInbox:
                 content, attachments=attachments, context=context
             )
             self.control.check_open()
-            event = InboxAdded.create(message, mode, context=contributions, settings=settings)
+            event = InboxAdded.create(
+                message, mode, context=contributions, settings=settings, output_schema=output_schema
+            )
             try:
                 await self.log.append(event)
             finally:

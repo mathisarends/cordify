@@ -20,3 +20,11 @@ requires its provider extra and credentials.
 Application examples compose `Agent` with explicit plugins. Kernel examples use a
 standalone `Context` to show service lifetimes and temporal composition. Start with
 the listed examples when building a new application.
+
+## Structured output
+
+`uv run python -m examples.25_structured_output` runs a complete typed triage task
+offline, including one invalid answer and its correction. The final output is a
+Pydantic model; the control tool is excluded from application tool-call results.
+See [the source](https://github.com/mathisarends/cordify/blob/main/examples/25_structured_output.py)
+and [the response-contract guide](structured-output.md).

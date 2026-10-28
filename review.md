@@ -10,9 +10,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-2 — Structured results and a small UI stream
 
-- Keep turn-scoped run/stream completion, usage, stop reason, IDs and tool pairs.
-- Add generic typed output with the approved PydanticAI-backed response format /
-  final-answer tool fallback and a bounded validation retry.
 - Add the stable typed StreamEvent union and terminal TurnFinished result;
   expose raw durable/transient subscriptions separately.
 

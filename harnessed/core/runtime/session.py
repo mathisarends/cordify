@@ -3,7 +3,7 @@ import logging
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextvars import ContextVar
 from dataclasses import replace
-from typing import Any, overload
+from typing import Any, Unpack, overload
 from uuid import uuid4
 
 from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
@@ -22,14 +22,15 @@ from harnessed.core.messages import (
     Observation,
     ToolCall,
 )
-from harnessed.core.model import Model, ModelRequest, ModelUsage
+from harnessed.core.model import Model, ModelRequest, ModelUsage, OutputSchema
+from harnessed.core.outputs import OutputTypes
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.inbox import InboxItem, SessionInbox
-from harnessed.core.runtime.options import AgentOptions
-from harnessed.core.runtime.result import RunResult, result_from_events
+from harnessed.core.runtime.options import AgentOptions, RunOptions
+from harnessed.core.runtime.result import _NO_OUTPUT, RunResult, result_from_events
 from harnessed.core.runtime.stepper import run_step
 from harnessed.core.session.events import (
     AgentControlChanged,
@@ -42,6 +43,8 @@ from harnessed.core.session.events import (
     InboxMode,
     InboxRemoved,
     ModelUsageRecorded,
+    OutputValidated,
+    OutputValidationFailed,
     SessionEvent,
     TurnEnd,
     TurnStart,
@@ -79,6 +82,9 @@ class Session:
         self._subscribers: set[asyncio.Queue] = set()
         self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
+        self._output_values: dict[str, Any] = {}
+        if OutputTypes not in ctx:
+            ctx.provide(OutputTypes, OutputTypes())
         ctx.on(SessionAppended, self._session_event)
         ctx.on(SessionPublished, self._stream_event)
         ctx.on(PluginActivated, self._plugin_activated)
@@ -381,6 +387,16 @@ class Session:
         if self.control.error is not None:
             raise self.control.error
 
+    @overload
+    async def run[T](
+        self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
+    ) -> RunResult[T]: ...
+
+    @overload
+    async def run(
+        self, content: str | Message, *, output: None = None, **options: Unpack[RunOptions]
+    ) -> RunResult[None]: ...
+
     async def run(
         self,
         content: str | Message,
@@ -388,17 +404,47 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
-    ) -> RunResult:
+        output: type[Any] | None = None,
+    ) -> RunResult[Any]:
+        compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         events = tuple(
             [
                 event
-                async for event in self.stream(
-                    content, attachments=attachments, context=context, settings=settings
+                async for event in self._stream_turn(
+                    content,
+                    attachments=attachments,
+                    context=context,
+                    settings=settings,
+                    output_schema=compiled.definition if compiled is not None else None,
                 )
                 if isinstance(event, SessionEvent)
             ]
         )
-        return result_from_events(events)
+        return self._result(events, schema=compiled.definition if compiled is not None else None)
+
+    def _result(
+        self, events: tuple[SessionEvent, ...], *, schema: OutputSchema | None = None
+    ) -> RunResult[Any]:
+        start = next((e for e in events if isinstance(e, TurnStart)), None)
+        schema = start.output_schema if start is not None else schema
+        value = _NO_OUTPUT if schema is not None else None
+        final = next((e for e in reversed(events) if isinstance(e, AssistantMessage)), None)
+        proof = next(
+            (
+                e
+                for e in reversed(events)
+                if isinstance(e, OutputValidated)
+                and final is not None
+                and e.message_id == final.message.id
+            ),
+            None,
+        )
+        if proof is not None and schema is not None:
+            if proof.id in self._output_values:
+                value = self._output_values.pop(proof.id)
+            else:
+                value, _ = self.ctx[OutputTypes].resolve(schema).parse(dict(proof.data))
+        return result_from_events(events, output=value)
 
     async def stream(
         self,
@@ -408,12 +454,32 @@ class Session:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
     ) -> AsyncIterator[AgentEvent]:
+        async for event in self._stream_turn(
+            content, attachments=attachments, context=context, settings=settings
+        ):
+            yield event
+
+    async def _stream_turn(
+        self,
+        content: str | Message,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+        settings: Mapping[str, Any] | None = None,
+        output_schema: OutputSchema | None = None,
+    ) -> AsyncIterator[AgentEvent]:
         queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._subscribers.add(queue)
         try:
-            input_id = await self.followup(
-                content, attachments=attachments, context=context, settings=settings
+            item = await self.inbox._send(
+                content,
+                "followup",
+                attachments=attachments,
+                context=context,
+                settings=settings,
+                output_schema=output_schema,
             )
+            input_id = item.id
             turn_id = None
             while True:
                 event = await queue.get()
@@ -505,7 +571,12 @@ class Session:
             candidates = self.log.inbox.next_turn or self.log.inbox.next_step
             settings = candidates[0].settings if candidates else {}
             await self.log.append(
-                TurnStart(turn, candidates[0].message.id if candidates else None, settings)
+                TurnStart(
+                    turn,
+                    candidates[0].message.id if candidates else None,
+                    settings,
+                    output_schema=candidates[0].output_schema if candidates else None,
+                )
             )
         elif previous.steps and not await self._continue_turn(previous.steps[-1]):
             await self.log.append(TurnEnd(turn))
@@ -536,10 +607,16 @@ class Session:
                 raise RuntimeError("The model reached its output token limit")
             if self.options.on_max_tokens == "continue":
                 return True
+        verdicts = [
+            e for e in step.events if isinstance(e, OutputValidated | OutputValidationFailed)
+        ]
+        output_calls = {e.call_id for e in verdicts}
+        invalid = any(isinstance(e, OutputValidationFailed) for e in verdicts)
         if (
             step.reason == "interrupted"
             or response is None
-            or response.message.tool_calls
+            or invalid
+            or any(call.id not in output_calls for call in response.message.tool_calls)
             or self.log.has_step_wakeup
         ):
             return True

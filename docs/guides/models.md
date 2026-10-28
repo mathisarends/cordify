@@ -53,7 +53,8 @@ signatures needed on later tool rounds and replay.
 Provider-specific built-in tools, audio/video output, native file handles and
 resumable hosted operations are not currently exposed by the Harnessed request
 contract. Unknown response parts fail explicitly rather than being silently
-removed. Structured final output is tracked in the open review work.
+removed. [Structured answers](structured-output.md) use the native JSON-schema
+channel or a final-answer tool according to the model profile.
 See [multimodal tool results](tools.md#multimodal-results) for text/image policies.
 
 Authentication, rate limiting, context overflow, invalid requests and provider

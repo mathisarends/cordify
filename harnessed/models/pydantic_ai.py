@@ -16,7 +16,14 @@ from harnessed.core.errors import (
     ProviderUnavailable,
     RateLimited,
 )
-from harnessed.core.messages import Assistant, ContentPart, TextPart, ToolCall, to_dict
+from harnessed.core.messages import (
+    Assistant,
+    ContentPart,
+    MalformedArguments,
+    TextPart,
+    ToolCall,
+    to_dict,
+)
 from harnessed.core.model import (
     ModelChunk,
     ModelInfo,
@@ -84,6 +91,7 @@ class PydanticAIModel:
             name=self._native.model_name,
             context_window=context_window or profile.get("context_window"),
             supports_images=bool(profile.get("supports_image_input")),
+            supports_structured_output=bool(profile.get("supports_json_schema_output")),
         )
 
     @property
@@ -115,7 +123,9 @@ class PydanticAIModel:
                     self._native,
                     _history(request),
                     model_settings=self._settings(request),
-                    model_request_parameters=_parameters(request),
+                    model_request_parameters=_parameters(
+                        request, native_output=self.info.supports_structured_output
+                    ),
                     instrument=False,
                 )
                 return _response(native)
@@ -136,7 +146,9 @@ class PydanticAIModel:
                     self._native,
                     _history(request),
                     model_settings=self._settings(request),
-                    model_request_parameters=_parameters(request),
+                    model_request_parameters=_parameters(
+                        request, native_output=self.info.supports_structured_output
+                    ),
                     instrument=False,
                 ) as native,
             ):
@@ -169,7 +181,11 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
             if message.text:
                 parts.append(native.TextPart(message.text))
             parts.extend(
-                native.ToolCallPart(call.name, to_dict(call.arguments), call.id)
+                native.ToolCallPart(
+                    call.name,
+                    call.malformed.text if call.malformed is not None else to_dict(call.arguments),
+                    call.id,
+                )
                 for call in message.tool_calls
             )
             history.append(native.ModelResponse(parts))
@@ -212,11 +228,20 @@ def _content(content: str | tuple[ContentPart, ...]):
     ]
 
 
-def _parameters(request: ModelRequest) -> ModelRequestParameters:
+def _parameters(request: ModelRequest, *, native_output: bool = False) -> ModelRequestParameters:
     from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.output import OutputObjectDefinition
     from pydantic_ai.tools import ToolDefinition
 
-    return ModelRequestParameters(
+    schema = request.output_schema
+    mode = (
+        ("native" if native_output else "tool")
+        if schema is not None and schema.mode == "auto"
+        else schema.mode
+        if schema is not None
+        else "text"
+    )
+    parameters = ModelRequestParameters(
         function_tools=[
             ToolDefinition(
                 name=tool.name,
@@ -224,8 +249,37 @@ def _parameters(request: ModelRequest) -> ModelRequestParameters:
                 parameters_json_schema=to_dict(tool.parameters),
             )
             for tool in request.tools
+            if schema is None or tool.name != "final_answer"
         ]
     )
+    if schema is not None:
+        parameters.output_mode = mode
+        if mode == "native":
+            parameters.output_object = OutputObjectDefinition(
+                json_schema=to_dict(schema.json_schema), name=schema.name
+            )
+        else:
+            parameters.output_tools = [
+                ToolDefinition(
+                    name="final_answer",
+                    parameters_json_schema=to_dict(schema.json_schema),
+                    kind="output",
+                )
+            ]
+            parameters.allow_text_output = False
+    return parameters
+
+
+def _tool_call(part) -> ToolCall:
+    try:
+        return ToolCall(part.tool_name, part.args_as_dict(), part.tool_call_id)
+    except (ValueError, AssertionError):
+        return ToolCall(
+            part.tool_name,
+            {},
+            part.tool_call_id,
+            malformed=MalformedArguments(part.args_as_json_str()),
+        )
 
 
 def _response(response: NativeResponse) -> ModelResponse:
@@ -238,7 +292,7 @@ def _response(response: NativeResponse) -> ModelResponse:
         elif isinstance(part, native.ThinkingPart):
             thinking.append(part.content)
         elif isinstance(part, native.ToolCallPart):
-            calls.append(ToolCall(part.tool_name, part.args_as_dict(), part.tool_call_id))
+            calls.append(_tool_call(part))
         else:
             raise ProviderError(f"Unsupported response part: {type(part).__name__}")
     raw = native.ModelMessagesTypeAdapter.dump_python([response], mode="json")[0]
@@ -264,6 +318,7 @@ def _response(response: NativeResponse) -> ModelResponse:
             usage.cache_read_tokens,
             usage.cache_write_tokens,
             usage.details.get("reasoning_tokens"),
+            float(usage.cost) if usage.cost is not None else None,
         ),
         cast(StopReason, reason),
     )

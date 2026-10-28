@@ -18,7 +18,7 @@ from harnessed.core.messages import (
     User,
     freeze,
 )
-from harnessed.core.model import ModelRequest, ModelUsage, StopReason
+from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema, StopReason
 from harnessed.kernel.events import Emit
 
 if TYPE_CHECKING:
@@ -195,6 +195,7 @@ class InboxAdded(SessionEvent):
     context: tuple[Message, ...] = ()
     settings: Mapping[str, Any] = field(default_factory=dict)
     created_at: Annotated[float, Field(ge=0)] = field(default=0.0, kw_only=True)
+    output_schema: OutputSchema | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
         if self.mode not in _INBOX_ROUTES:
@@ -204,6 +205,8 @@ class InboxAdded(SessionEvent):
         allowed = ("user", "system") if self.mode == "inject" else ("user",)
         if self.message.role not in allowed:
             raise ValueError(f"{self.mode} requires one of these roles: {allowed}")
+        if self.output_schema is not None and self.mode != "followup":
+            raise ValueError("Only a new turn can declare an output contract")
         object.__setattr__(self, "context", tuple(self.context))
         object.__setattr__(self, "settings", freeze(self.settings))
 
@@ -215,11 +218,21 @@ class InboxAdded(SessionEvent):
         *,
         context: tuple[Message, ...] = (),
         settings: Mapping[str, Any] | None = None,
+        output_schema: OutputSchema | None = None,
     ) -> "InboxAdded":
         if mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {mode!r}")
         target, wakeup = _INBOX_ROUTES[mode]
-        return cls(message, target, wakeup, mode, context, settings or {}, created_at=time())
+        return cls(
+            message,
+            target,
+            wakeup,
+            mode,
+            context,
+            settings or {},
+            created_at=time(),
+            output_schema=output_schema,
+        )
 
 
 @dataclass(frozen=True)
@@ -239,6 +252,7 @@ class TurnStart(SessionEvent):
     turn_id: Identifier
     input_id: str | None = None
     settings: Mapping[str, Any] = field(default_factory=dict)
+    output_schema: OutputSchema | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
         object.__setattr__(self, "settings", freeze(self.settings))
@@ -508,6 +522,37 @@ class TurnEnd(SessionEvent):
             raise ValueError("Unknown turn outcome")
 
 
+@dataclass(frozen=True)
+class OutputValidated(SessionEvent):
+    """An accepted JSON answer, tied to the exact assistant message it validates."""
+
+    __hash__ = None
+    type: Literal["OutputValidated"] = field(default="OutputValidated", kw_only=True)
+    turn_id: Identifier
+    schema_id: Identifier
+    message_id: Identifier
+    data: Any
+    call_id: str | None = None
+    id: Identifier = field(default_factory=lambda: uuid4().hex)
+
+    def __post_init__(self):
+        object.__setattr__(self, "data", freeze(self.data))
+
+
+@dataclass(frozen=True)
+class OutputValidationFailed(SessionEvent):
+    """A bounded repair attempt; rejected input values are never echoed here."""
+
+    __hash__ = None
+    type: Literal["OutputValidationFailed"] = field(default="OutputValidationFailed", kw_only=True)
+    turn_id: Identifier
+    schema_id: Identifier
+    message_id: Identifier
+    attempt: StepNumber
+    message: str
+    call_id: str | None = None
+
+
 # A closed tagged union is the persistence boundary, separate from in-memory hooks.
 type LogEvent = Annotated[
     (
@@ -544,6 +589,8 @@ type LogEvent = Annotated[
         | ToolProgress
         | StepEnd
         | TurnEnd
+        | OutputValidated
+        | OutputValidationFailed
     ),
     Field(discriminator="type"),
 ]

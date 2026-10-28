@@ -42,6 +42,7 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.22_builtin_tool_lifetimes",
         "examples.23_plugin_lifecycle",
         "examples.24_session_spill",
+        "examples.25_structured_output",
     ],
 )
 def test_offline_sdk_example_runs(module):

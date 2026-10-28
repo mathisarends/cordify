@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Annotated, Any, Protocol, runtime_checkable
+from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass as validated_dataclass
@@ -43,6 +43,21 @@ class ToolDefinition:
 
 
 @validated_dataclass(frozen=True, config=_VALUE_CONFIG)
+class OutputSchema:
+    """A serializable response contract; Python output types stay in the host."""
+
+    __hash__ = None
+    id: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1)]
+    json_schema: Mapping[str, Any]
+    wrapped: bool = False
+    mode: Literal["auto", "native", "tool"] = "auto"
+
+    def __post_init__(self):
+        object.__setattr__(self, "json_schema", freeze(self.json_schema))
+
+
+@validated_dataclass(frozen=True, config=_VALUE_CONFIG)
 class ModelRequest:
     __hash__ = None
     model: Annotated[str, Field(min_length=1)]
@@ -50,6 +65,7 @@ class ModelRequest:
     tools: tuple[ToolDefinition, ...] = ()
     max_tokens: Annotated[int, Field(ge=1)] | None = None
     settings: Mapping[str, Any] = field(default_factory=dict)
+    output_schema: OutputSchema | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "messages", tuple(self.messages))
@@ -135,6 +151,7 @@ class ModelInfo:
     context_window: Annotated[int, Field(ge=1)] | None = None
     max_output: Annotated[int, Field(ge=1)] | None = None
     supports_images: bool = False
+    supports_structured_output: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,4 +189,5 @@ def request_from_dict(data: dict) -> ModelRequest:
         tools=tuple(ToolDefinition(**t) for t in data["tools"]),
         max_tokens=data["max_tokens"],
         settings=data.get("settings", {}),
+        output_schema=OutputSchema(**data["output_schema"]) if data.get("output_schema") else None,
     )

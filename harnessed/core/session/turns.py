@@ -3,7 +3,10 @@ from dataclasses import dataclass
 
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
+    AssistantMessage,
     ModelRequested,
+    OutputValidated,
+    OutputValidationFailed,
     SessionEvent,
     StepEnd,
     StepOutcome,
@@ -114,6 +117,24 @@ class TurnProjection:
         return len(self._closed)
 
     def validate(self, event: SessionEvent) -> None:
+        if isinstance(event, OutputValidated | OutputValidationFailed):
+            start = self._events[0] if self._events else None
+            answer = next(
+                (e for e in reversed(self._step or ()) if isinstance(e, AssistantMessage)), None
+            )
+            if (
+                not isinstance(start, TurnStart)
+                or start.output_schema is None
+                or event.turn_id != self._turn
+                or event.schema_id != start.output_schema.id
+                or answer is None
+                or event.message_id != answer.message.id
+                or (
+                    event.call_id is not None
+                    and not any(call.id == event.call_id for call in answer.message.tool_calls)
+                )
+            ):
+                raise ValueError("An output verdict must match the current structured answer")
         if isinstance(event, TurnStart):
             if self._turn is not None:
                 raise ValueError("A turn cannot start inside an open turn")

@@ -21,7 +21,7 @@ def test_canonical_tags_and_legacy_records_decode_to_the_same_frozen_value():
     assert encode_event(event) == {
         "version": 3,
         "type": "TurnStart",
-        "data": {"turn_id": "one", "input_id": None, "settings": {}},
+        "data": {"turn_id": "one", "input_id": None, "settings": {}, "output_schema": None},
     }
     assert decode_event({"version": 1, "type": "turn/start", "data": {"turn_id": "one"}}) == event
     assert decode_event(encode_event(event)) == event

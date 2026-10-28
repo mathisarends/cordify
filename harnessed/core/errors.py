@@ -21,6 +21,14 @@ class SessionClosed(HarnessedError, RuntimeError):
     """An operation requires an open live session."""
 
 
+class OutputValidationError(HarnessedError, ValueError):
+    """The model exhausted its correction budget without producing the declared type."""
+
+
+class OutputUnavailable(HarnessedError, RuntimeError):
+    """A stopped or aborted structured run has no validated output to read."""
+
+
 class ProviderError(HarnessedError, RuntimeError):
     def __init__(
         self,

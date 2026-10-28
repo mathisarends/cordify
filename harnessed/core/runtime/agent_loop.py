@@ -48,6 +48,7 @@ class AgentLoop(Plugin, slot="loop"):
         max_tokens: Annotated[int, Field(ge=1)] | None = None
         context_window: Annotated[int, Field(ge=1)] | None = None
         on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
+        output_retries: Annotated[int, Field(ge=0)] = 2
 
     config: Config
 
@@ -80,5 +81,6 @@ class _Factory(ReactLoopFactory):
                 max_parallel_tools=self.config.max_parallel_tools,
                 approval_timeout=self.config.approval_timeout,
                 on_max_tokens=self.config.on_max_tokens,
+                output_retries=self.config.output_retries,
             )
         return super().create(ctx, session, options)

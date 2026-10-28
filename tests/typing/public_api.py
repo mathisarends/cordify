@@ -3,6 +3,8 @@
 from collections.abc import AsyncGenerator
 from typing import assert_type
 
+from pydantic import BaseModel
+
 from harnessed import Agent as AppAgent
 from harnessed import Context as PluginContext
 from harnessed import ToolContext, tool
@@ -29,7 +31,20 @@ async def count(value: int, *, injected: Inject[str]) -> int:
 
 async def consumer(agent: Agent) -> None:
     assert_type(await count(1, injected="service"), int)
-    assert_type(await agent.run("hello"), RunResult)
+    assert_type(await agent.run("hello"), RunResult[None])
+
+
+class Triage(BaseModel):
+    severity: int
+
+
+async def structured_consumer(agent: AppAgent, session: Agent) -> None:
+    result = await session.run("Triage", output=Triage)
+    assert_type(result, RunResult[Triage])
+    assert_type(result.output.severity, int)
+    assert_type(await agent.run("Triage", output=Triage), RunResult[Triage])
+    _ = result.output.missing  # ty: ignore[unresolved-attribute]
+    await session.run("Triage", output="wrong type")  # ty: ignore[no-matching-overload]
 
 
 async def functional_scope(ctx: Context) -> None:

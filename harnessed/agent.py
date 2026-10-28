@@ -4,18 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Unpack, overload
 from uuid import uuid4
 
 from harnessed.core.approvals import Approvals
 from harnessed.core.errors import ConfigError, PluginConflict
 from harnessed.core.model import Model
+from harnessed.core.outputs import OutputTypes
 from harnessed.core.plugin import PluginContext, Service
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.instructions import Instructions
 from harnessed.core.prompt.values import InstructionValues, PromptPlan
 from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
+from harnessed.core.runtime.options import RunOptions
+from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session as LiveSession
+from harnessed.core.session.events import TurnStart
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.repository import SessionRepository
 from harnessed.core.session.session import SessionLog
@@ -84,11 +88,17 @@ class Agent:
             defaults.append(value)
         self.plugins = tuple(defaults)
         self.sessions = SessionRepository(self.plugins)
+        self._outputs = OutputTypes()
 
     @asynccontextmanager
-    async def session(self, session_id: str | SessionLog | None = None):
+    async def session(
+        self, session_id: str | SessionLog | None = None, *, restore_outputs: Iterable[type] = ()
+    ):
         """Open or resume a conversation; omit its ID to create a new one."""
         async with PluginContext() as ctx:
+            for output in restore_outputs:
+                self._outputs.register(output)
+            ctx.provide(OutputTypes, self._outputs)
             await ctx.install(self.plugins, settle=True)
             branch = session_id if isinstance(session_id, SessionLog) else None
             if branch is not None:
@@ -115,6 +125,14 @@ class Agent:
             log = SessionLog(selected_id, ctx=ctx, seed=seed, persistence=persistence)
             ctx.effect(log.finish_subscriptions)
             await log.repair_interrupted()
+            schemas = [item.output_schema for item in log.inbox.pending]
+            if log.open_turn is not None:
+                start = log.open_turn.events[0]
+                assert isinstance(start, TurnStart)
+                schemas.append(start.output_schema)
+            for schema in schemas:
+                if schema is not None:
+                    self._outputs.resolve(schema)
             runtime = ctx[AgentFactory].create(ctx, log)
             try:
                 await ctx.install(
@@ -132,7 +150,19 @@ class Agent:
             runtime.start()
             yield runtime
 
-    async def run(self, prompt: str, **options):
+    @overload
+    async def run[T](
+        self, prompt: str, *, output: type[T], **options: Unpack[RunOptions]
+    ) -> RunResult[T]: ...
+
+    @overload
+    async def run(
+        self, prompt: str, *, output: None = None, **options: Unpack[RunOptions]
+    ) -> RunResult[None]: ...
+
+    async def run(
+        self, prompt: str, *, output: type[Any] | None = None, **options: Unpack[RunOptions]
+    ) -> RunResult[Any]:
         """Run one task in a new session."""
         async with self.session() as session:
-            return await session.run(prompt, **options)
+            return await session.run(prompt, output=output, **options)

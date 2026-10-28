@@ -31,6 +31,7 @@ nav:
   - Overview: index.md
   - Guides:
       - Models: guides/models.md
+      - Structured answers: guides/structured-output.md
       - Tools and hooks: guides/tools.md
       - Plugins: guides/plugins.md
       - Context: guides/context.md
