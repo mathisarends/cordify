@@ -32,7 +32,7 @@ class MessageProjection:
     drop their chunk buffers, so one old stream never enables a permanent fold.
     """
 
-    def __init__(self, events: list[SessionEvent], fold: HistoryFold):
+    def __init__(self, events: list[SessionEvent], fold: HistoryFold) -> None:
         self._fold = fold
         self._entries = dict(fold(events))
         self._snapshot: tuple[Message, ...] | None = None

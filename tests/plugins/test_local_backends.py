@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from harnessed.plugins.filesystem import LocalFS
+from harnessed.plugins.filesystem import LocalFileSystem
 from harnessed.plugins.shell import LocalShell
 
 
 async def test_local_fs_reads_writes_and_rejects_parent_paths(tmp_path):
-    fs = LocalFS(tmp_path)
+    fs = LocalFileSystem(tmp_path)
     await fs.write(Path("nested/test.txt"), "hello")
     assert await fs.read(Path("nested/test.txt")) == "hello"
     with pytest.raises(ValueError, match="outside"):

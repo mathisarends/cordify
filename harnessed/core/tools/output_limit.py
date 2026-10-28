@@ -19,14 +19,14 @@ class ToolOutputLimit(Plugin, slot="output_limit"):
 
     config: ToolOutputLimitConfig
 
-    def __init__(self, max_chars: int = 32_000):
+    def __init__(self, max_chars: int = 32_000) -> None:
         super().__init__(max_chars=max_chars)
 
     @property
     def max_chars(self) -> int:
         return self.config.max_chars
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         ctx.provide(ToolOutputLimit, self)
 
     def apply(self, result: ToolResult) -> ToolResult:

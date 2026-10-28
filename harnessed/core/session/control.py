@@ -18,7 +18,7 @@ class RunControl:
     state: ControlState
     keep_inbox: bool
 
-    def __init__(self, events: Iterable[SessionEvent]):
+    def __init__(self, events: Iterable[SessionEvent]) -> None:
         state, keep_inbox = "active", False
         for event in events:
             if isinstance(event, AgentControlChanged):

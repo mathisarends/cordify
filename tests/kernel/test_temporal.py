@@ -17,6 +17,27 @@ class Backend:
     name: str
 
 
+async def test_class_keyword_dependencies_suspend_and_restart_the_plugin():
+    seen = []
+
+    class Feature(Plugin, needs=(Backend,)):
+        async def setup(self, backend: Inject[Backend]) -> None:
+            seen.append(backend.name)
+
+    async with Context() as ctx:
+        handle = await ctx.plugin(Feature())
+        assert handle.status == "waiting"
+        remove = ctx.provide(Backend, Backend("first"))
+        await ctx.settle()
+        assert seen == ["first"]
+        await remove()
+        await ctx.settle()
+        assert handle.status == "waiting"
+        ctx.provide(Backend, Backend("second"))
+        await ctx.settle()
+        assert seen == ["first", "second"]
+
+
 class Feature:
     pass
 

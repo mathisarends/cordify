@@ -48,7 +48,7 @@ class Agent:
         model: Model | str | NativeModel | None = None,
         instructions: InstructionValues | None = None,
         plugins: Iterable[PluginLike] = (),
-    ):
+    ) -> None:
         supplied: list[PluginLike] = list(plugins)
         if instructions is not None:
             supplied.insert(0, Instructions(instructions))

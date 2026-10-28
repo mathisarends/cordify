@@ -99,7 +99,7 @@ def derive_turns(events: Iterable[SessionEvent]) -> tuple[Turn, ...]:
 class TurnProjection:
     """Incremental builder; immutable snapshots never reference its mutable buffers."""
 
-    def __init__(self, events: Iterable[SessionEvent] = ()):
+    def __init__(self, events: Iterable[SessionEvent] = ()) -> None:
         self._closed: list[Turn] = []
         self._turn: str | None = None
         self._events: list[SessionEvent] = []

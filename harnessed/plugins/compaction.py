@@ -87,7 +87,7 @@ class Compaction(Plugin, slot="compaction"):
         preserve_turns: Iterable[str] = (),
         summary_tokens: int = 2048,
         focus: str = "",
-    ):
+    ) -> None:
         super().__init__(
             needs=[Model, TokenCounter],
             trigger=trigger,
@@ -99,7 +99,7 @@ class Compaction(Plugin, slot="compaction"):
         )
         self.summarizer = summarizer
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         selected = self.summarizer
         if selected is not None and not isinstance(selected, Summarizer):
             backend = selected if isinstance(selected, Model) else PydanticAIModel(selected)

@@ -41,7 +41,7 @@ def _signature(definition: OutputSchema) -> str:
 class OutputTypes:
     """An application-owned registry; logs contain schemas, never importable class paths."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._types: dict[object, CompiledOutput[Any]] = {}
         self._ids: dict[str, CompiledOutput[Any]] = {}
 
@@ -95,7 +95,7 @@ class OutputTypes:
 class OutputValues:
     """Keep validated values until active callers consume them; bound abandoned results."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._values: dict[str, tuple[str, Any]] = {}
         self._active: Counter[str] = Counter()
 

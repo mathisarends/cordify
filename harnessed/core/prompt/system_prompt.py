@@ -15,7 +15,7 @@ class _Snapshot:
 
 
 class SystemPrompt:
-    def __init__(self, ctx: Context):
+    def __init__(self, ctx: Context) -> None:
         self._ctx = ctx
         self._snapshots: list[_Snapshot] = []
 

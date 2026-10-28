@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from bisect import bisect_right
 from collections.abc import AsyncIterator, Iterable
@@ -76,7 +78,7 @@ class SessionLog:
         persistence: SessionPersistence | None = None,
         files: SessionFiles | None = None,
         registry: EventRegistry | None = None,
-    ):
+    ) -> None:
         self.registry = registry or (
             ctx[EventRegistry] if ctx is not None and EventRegistry in ctx else EventRegistry()
         )
@@ -427,7 +429,7 @@ class SessionLog:
 
     def fork(
         self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
-    ) -> "SessionLog":
+    ) -> SessionLog:
         """Copy an event prefix ending at a closed turn; ``at`` is an exclusive offset."""
         if session_id == self.id:
             raise ValueError("A fork requires a distinct session ID")

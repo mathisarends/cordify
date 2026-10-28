@@ -10,7 +10,7 @@ from harnessed.core.session.events import ToolReturned
 from harnessed.kernel import Inject
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals, Filesystem, Instructions
-from harnessed.plugins.filesystem import FS
+from harnessed.plugins.filesystem import FileSystemBackend
 from harnessed.testing import ScriptedModel
 
 
@@ -59,10 +59,10 @@ async def writes_with_resource_keys(root: Path):
         return (f"file:{os.path.normcase(str(path))}",)
 
     class DocumentsTools(Plugin):
-        needs = (FS,)
+        needs = (FileSystemBackend,)
 
         @tool(parallel=True, resources=resources)
-        async def save_document(self, path: str, text: str, fs: Inject[FS]) -> str:
+        async def save_document(self, path: str, text: str, fs: Inject[FileSystemBackend]) -> str:
             """Save one document in the workspace."""
             writes.append(text)
             await fs.write(Path(path), text)
@@ -89,7 +89,7 @@ async def writes_with_resource_keys(root: Path):
         returned = [event for event in result.events if isinstance(event, ToolReturned)]
         assert all(not event.result.is_error for event in returned)
         assert writes.index("first version") < writes.index("second version")
-        assert await session.ctx[FS].read(Path("a.txt")) == "second version"
+        assert await session.ctx[FileSystemBackend].read(Path("a.txt")) == "second version"
         print("Same-file writes kept their order; a.txt contains the second version.")
         print("b.txt may run concurrently. Built-in write_file remains a full barrier.")
 

@@ -19,13 +19,13 @@ class LatestObservationOnly(Plugin):
 
     config: LatestObservationOnlyConfig
 
-    def __init__(self, *, max_summaries: int = 8):
+    def __init__(self, *, max_summaries: int = 8) -> None:
         super().__init__(max_summaries=max_summaries)
 
-    async def setup(self, session: Inject[SessionLog]):
+    async def setup(self, session: Inject[SessionLog]) -> None:
         previous = session.last(ObservationPolicyApplied)
         self._previous = previous.max_summaries if previous is not None else None
         await session.append(ObservationPolicyApplied(self.config.max_summaries))
 
-    async def teardown(self, session: Inject[SessionLog]):
+    async def teardown(self, session: Inject[SessionLog]) -> None:
         await session.append(ObservationPolicyApplied(self._previous))

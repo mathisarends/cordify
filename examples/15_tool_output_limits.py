@@ -10,17 +10,17 @@ from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.hooks import ExecuteTool
 from harnessed.kernel import Inject, hook
 from harnessed.plugins import Approvals, Service
-from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
+from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools, LocalFileSystem
 from harnessed.testing import ScriptedModel, call
 
 budget = ToolOutputLimit(max_chars=1024)
 
 
 class LargeResultsTools(Plugin):
-    needs = (FS,)
+    needs = (FileSystemBackend,)
 
     @tool
-    async def cat_log(self, fs: Inject[FS]) -> ToolResult:
+    async def cat_log(self, fs: Inject[FileSystemBackend]) -> ToolResult:
         """Return a deliberately unbounded log, like cat without a range."""
         return ToolResult(await fs.read(Path("large.log")), "error", exit_code=3)
 
@@ -54,7 +54,7 @@ async def main():
             plugins=[
                 Approvals(default=PolicyDecision.ALLOW),
                 budget,
-                Service(FS, LocalFS(directory)),
+                Service(FileSystemBackend, LocalFileSystem(directory)),
                 FilesystemTools(),
                 tools,
                 early_limit,

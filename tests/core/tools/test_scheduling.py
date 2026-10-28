@@ -23,7 +23,7 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import hook
 from harnessed.plugins import AgentLoop, Approvals
-from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
+from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools, LocalFileSystem
 from harnessed.testing import ScriptedModel
 
 
@@ -142,7 +142,7 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
     writes = []
     writer_active = False
 
-    class ObservedFS(LocalFS):
+    class ObservedFS(LocalFileSystem):
         async def read(self, path, **ranges):
             if path.name in ("a.txt", "b.txt"):
                 reading.add(path.name)
@@ -174,7 +174,7 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
 
     @plugin
     async def filesystem(ctx):
-        ctx.provide(FS, ObservedFS(tmp_path))
+        ctx.provide(FileSystemBackend, ObservedFS(tmp_path))
         yield
 
     calls = (

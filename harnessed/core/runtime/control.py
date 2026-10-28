@@ -33,9 +33,10 @@ class SessionControl:
         log: SessionLog,
         drive: Callable[[], Coroutine[None, None, None]],
         inside_driver: Callable[[], bool],
-    ):
+    ) -> None:
         self.log = log
-        self._drive, self._inside_driver = drive, inside_driver
+        self._drive = drive
+        self._inside_driver = inside_driver
         self.status = SessionStatus.IDLE
         self.task: asyncio.Task[None] | None = None
         self.error: Exception | None = None

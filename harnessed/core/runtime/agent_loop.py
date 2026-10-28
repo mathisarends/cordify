@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import replace
 from typing import Annotated, Literal, Protocol
 
@@ -19,11 +21,11 @@ from harnessed.kernel import Context
 class AgentFactory(Protocol):
     def create(
         self, ctx: Context, session: Session, options: AgentOptions | None = None
-    ) -> "Agent": ...
+    ) -> Agent: ...
 
 
 class ReactLoopFactory:
-    def __init__(self, *, error_formatter: ErrorFormatter | None = None):
+    def __init__(self, *, error_formatter: ErrorFormatter | None = None) -> None:
         self.error_formatter = error_formatter
 
     def create(self, ctx: Context, session: Session, options: AgentOptions | None = None) -> Agent:
@@ -65,7 +67,7 @@ class AgentLoop(Plugin, slot="loop"):
         on_max_tokens: Literal["accept", "continue", "fail"] = "accept",
         output_retries: int = 2,
         error_formatter: ErrorFormatter | None = None,
-    ):
+    ) -> None:
         super().__init__(
             max_steps=max_steps,
             tool_timeout=tool_timeout,
@@ -78,7 +80,7 @@ class AgentLoop(Plugin, slot="loop"):
         )
         self.error_formatter = error_formatter
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         ctx.provide(ToolRegistry, ToolRegistry(ctx, default_timeout=self.config.tool_timeout))
         ctx.provide(SystemPrompt, SystemPrompt(ctx))
         ctx.provide(TokenCounter, ApproximateTokenCounter())
@@ -87,7 +89,7 @@ class AgentLoop(Plugin, slot="loop"):
 
 
 class _Factory(ReactLoopFactory):
-    def __init__(self, config: AgentLoopConfig, error_formatter: ErrorFormatter | None):
+    def __init__(self, config: AgentLoopConfig, error_formatter: ErrorFormatter | None) -> None:
         super().__init__(error_formatter=error_formatter)
         self.config = config
 

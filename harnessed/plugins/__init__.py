@@ -56,6 +56,12 @@ _EXPORTS = {
     "every_turns": ("harnessed.plugins.compaction", "every_turns"),
     "when": ("harnessed.plugins.rules", "when"),
 }
+
+
+def __getattr__(name):
+    return exported(name, _EXPORTS, globals())
+
+
 __all__ = [
     "AgentLoop",
     "ApprovalAnswer",
@@ -83,7 +89,3 @@ __all__ = [
     "every_turns",
     "when",
 ]
-
-
-def __getattr__(name):
-    return exported(name, _EXPORTS, globals())

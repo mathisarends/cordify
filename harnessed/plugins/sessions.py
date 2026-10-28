@@ -48,7 +48,7 @@ class JsonlPersistence:
         fsync: bool = False,
         recover_tail: bool = False,
         durability: Literal["buffered", "flush", "fsync"] = "flush",
-    ):
+    ) -> None:
         self.registry = registry or EventRegistry()
         self.root = Path(root)
         self._root_ready = False
@@ -315,16 +315,17 @@ class JsonlSessions(Plugin, slot="sessions"):
         *,
         durability: Literal["buffered", "flush", "fsync"] = "flush",
         recover_tail: bool = False,
-    ):
+    ) -> None:
         super().__init__(root=Path(root), durability=durability, recover_tail=recover_tail)
 
-    async def setup(self, ctx: Context, registry: Inject[EventRegistry | None]):
+    async def setup(self, ctx: Context, registry: Inject[EventRegistry | None]) -> None:
         ctx.provide(SessionStore, _JsonlStore(self.config, registry or EventRegistry()))
 
 
 class _JsonlStore:
-    def __init__(self, config: JsonlSessionsConfig, registry: EventRegistry):
-        self.config, self.registry = config, registry
+    def __init__(self, config: JsonlSessionsConfig, registry: EventRegistry) -> None:
+        self.config = config
+        self.registry = registry
 
     def files(self, session_id: str) -> SessionFiles:
         session_id = validate_session_id(session_id)
@@ -362,7 +363,7 @@ class _JsonlStore:
 class DirectoryFiles:
     """Atomic, cancellation-drained text artifacts in one session directory."""
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
         self._operation = asyncio.Lock()
 

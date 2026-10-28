@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 class StreamApprovals:
     """Only the stream owning this inbox item can answer its turn's approvals."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session) -> None:
         self.session = session
         self.input_id: str | None = None
         self.pending: dict[str, _PendingApproval] = {}

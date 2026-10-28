@@ -34,7 +34,7 @@ type ApprovalCallback = Callable[
 class CallbackApprover:
     """Adapt a request callback to the narrow Approver service."""
 
-    def __init__(self, callback: ApprovalCallback):
+    def __init__(self, callback: ApprovalCallback) -> None:
         self.callback = callback
 
     async def ask(self, request: ApprovalRequested) -> ApprovalAnswer | None:
@@ -71,12 +71,12 @@ class ApprovalGate(Plugin):
         ask: ApprovalCallback | None = None,
         scope: str = "approval-gate",
         priority: int = Priority.GUARD,
-    ):
+    ) -> None:
         super().__init__(risky=risky, ask=ask, scope=scope, priority=priority)
         self.risky = tuple(tool_selector(item) for item in self.config.risky)
         self.ask = self.config.ask
 
-    async def setup(self, ctx: Context, tools: Inject[ToolRegistry]):
+    async def setup(self, ctx: Context, tools: Inject[ToolRegistry]) -> None:
         self.risky = tuple(tools.reference(item, owner=ctx) for item in self.risky)
         ctx.on(ToolPolicy, self._gate, priority=self.config.priority)
 
@@ -145,7 +145,7 @@ class ApprovalState:
         object.__setattr__(snapshot, "records", tuple(records))
         return snapshot
 
-    def __init__(self, events: Iterable[SessionEvent]):
+    def __init__(self, events: Iterable[SessionEvent]) -> None:
         records: dict[str, Approval] = {}
         for event in events:
             record = approval_transition(records, event)
@@ -226,7 +226,7 @@ class Approvals(Plugin, slot="approvals"):
         deny: Iterable[ToolSelector] = (),
         policy: Callable[[ToolCall], PolicyDecision | None] | None = None,
         timeout: float = 300.0,
-    ):
+    ) -> None:
         super().__init__(timeout=timeout)
         self.approver = approver
         if not isinstance(default, PolicyDecision):
@@ -241,7 +241,7 @@ class Approvals(Plugin, slot="approvals"):
         self.deny = tuple(tool_selector(item) for item in deny)
         self.policy = policy
 
-    async def setup(self, ctx: Context, tools: Inject[ToolRegistry]):
+    async def setup(self, ctx: Context, tools: Inject[ToolRegistry]) -> None:
         for rule in ("trust", "require", "deny"):
             setattr(
                 self, rule, tuple(tools.reference(item, owner=ctx) for item in getattr(self, rule))

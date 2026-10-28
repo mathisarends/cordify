@@ -273,7 +273,7 @@ def _read_resource(root: Path, path: str) -> str:
 class Skills(Plugin, slot="skills"):
     """Discover explicit sources once per session, then load instructions and files on demand."""
 
-    def __init__(self, *sources: str | Path | Skill | _DirectorySkill):
+    def __init__(self, *sources: str | Path | Skill | _DirectorySkill) -> None:
         super().__init__()
         if any(not isinstance(source, str | Path | Skill | _DirectorySkill) for source in sources):
             raise ConfigError(
@@ -327,11 +327,12 @@ class Skills(Plugin, slot="skills"):
 
     async def setup(
         self, ctx: Context, session: Inject[SessionLog], context: Inject[DynamicContext]
-    ):
+    ) -> None:
         catalog = await self._catalog(ctx)
         ctx.provide(SkillCatalog, catalog)
         self._entries = {entry.info.name: entry for entry in catalog.entries}
-        self._log, self._context = session, context
+        self._log = session
+        self._context = context
         self._calls: set[str] = set()
         self._loaded: dict[str, str] = {}
         for event in session.events:

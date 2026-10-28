@@ -57,7 +57,7 @@ class Plugin(KernelPlugin):
         registrations: Iterable[tuple[Registration, Callable]] = (),
         guidance: str | Section | None | _DefaultGuidance = _DEFAULT_GUIDANCE,
         **configuration: Any,
-    ):
+    ) -> None:
         super().__init__(name=name, hooks=hooks, needs=needs, registrations=registrations)
         if not isinstance(guidance, _DefaultGuidance):
             self.guidance = guidance
@@ -68,12 +68,13 @@ class Plugin(KernelPlugin):
 class Service[T](Plugin):
     """Provide a typed instance as a normal, reversible plugin."""
 
-    def __init__(self, key: type[T] | Key[T], value: T):
+    def __init__(self, key: type[T] | Key[T], value: T) -> None:
         super().__init__()
-        self.key, self.value = key, value
+        self.key = key
+        self.value = value
         self.slot = "model" if key is Model else None
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         value = self.value
         if self.key is Model and isinstance(value, AbstractAsyncContextManager):
             await value.__aenter__()
@@ -81,4 +82,11 @@ class Service[T](Plugin):
         ctx.provide(self.key, self.value)
 
 
-__all__ = ["Bundle", "Plugin", "PluginConfig", "PluginLike", "Service", "hook"]
+__all__ = [
+    "Bundle",
+    "Plugin",
+    "PluginConfig",
+    "PluginLike",
+    "Service",
+    "hook",
+]

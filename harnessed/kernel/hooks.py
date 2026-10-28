@@ -28,9 +28,11 @@ class HookFactory[H](Protocol):
 class _Declaration:
     def __init__(
         self, event: type[Event[Any]], owner: Context | None, prepend: bool, priority: int
-    ):
-        self.event, self.owner = event, owner
-        self.prepend, self.priority = prepend, priority
+    ) -> None:
+        self.event = event
+        self.owner = owner
+        self.prepend = prepend
+        self.priority = priority
 
     def _register(self, callback):
         if self.owner is None:

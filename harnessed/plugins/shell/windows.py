@@ -89,7 +89,7 @@ def _checked(value):
 class WindowsJob:
     """Assign a suspended child to a kill-on-close job, then resume its thread."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.handle = _checked(_create_job(None, None))
         try:
             limits = _ExtendedLimits()

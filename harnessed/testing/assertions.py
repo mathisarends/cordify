@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from harnessed.core.messages import ToolCall, ToolResult, freeze
@@ -6,9 +8,7 @@ if TYPE_CHECKING:
     from harnessed.core.runtime.result import RunResult
 
 
-def assert_tool_called(
-    result: "RunResult", name: str, /, **arguments
-) -> tuple[ToolCall, ToolResult]:
+def assert_tool_called(result: RunResult, name: str, /, **arguments) -> tuple[ToolCall, ToolResult]:
     """Return a matching call/result pair or report the observed calls."""
     arguments = freeze(arguments)
     for tool_call, tool_result in result.tool_calls:

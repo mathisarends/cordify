@@ -4,12 +4,14 @@ from collections.abc import Mapping
 from copy import copy
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Annotated, Any, get_args, get_origin
+from typing import Annotated, Any, Self, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
 from pydantic.fields import FieldInfo
+from pydantic.json_schema import JsonSchemaValue
 
 from harnessed.core.messages import result_content, to_dict
+from harnessed.kernel.di import Dependency
 
 _CONFIG = ConfigDict(
     strict=True,
@@ -27,8 +29,16 @@ class ToolArguments:
     names: dict[str, str]
 
     @classmethod
-    def from_signature(cls, name: str, signature: inspect.Signature, hints, injected):
-        fields, names = {}, {}
+    def from_signature(
+        cls,
+        name: str,
+        signature: inspect.Signature,
+        hints: Mapping[str, Any],
+        injected: Mapping[str, Dependency],
+    ) -> Self:
+        # Pydantic accepts runtime type expressions as field definitions.
+        fields: dict[str, Any] = {}
+        names: dict[str, str] = {}
         for parameter in signature.parameters.values():
             if parameter.kind not in (
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -64,10 +74,10 @@ class ToolArguments:
         return cls(model, names)
 
     @cached_property
-    def schema(self) -> dict:
+    def schema(self) -> JsonSchemaValue:
         return self.model.model_json_schema(by_alias=True)
 
-    def parse(self, arguments: Mapping) -> dict:
+    def parse(self, arguments: Mapping[str, object]) -> dict[str, object]:
         parsed = self.model.model_validate_json(
             json.dumps(to_dict(arguments), allow_nan=False),
             strict=True,

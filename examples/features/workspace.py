@@ -6,14 +6,16 @@ from harnessed import Plugin, PluginConfig, ToolContext, tool
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.hooks import ReviewToolResult
 from harnessed.kernel import Inject, hook
-from harnessed.plugins.filesystem import FS
+from harnessed.plugins.filesystem import FileSystemBackend
 
 
 class WorkspaceTools(Plugin):
-    needs = (FS,)
+    needs = (FileSystemBackend,)
 
     @tool(name="count_lines", timeout=5)
-    async def count_lines(self, path: str, fs: Inject[FS], call: Inject[ToolContext]) -> int:
+    async def count_lines(
+        self, path: str, fs: Inject[FileSystemBackend], call: Inject[ToolContext]
+    ) -> int:
         """Count the lines in a workspace file."""
         await call.progress(f"Reading {path}")
         return len((await fs.read(Path(path))).splitlines())

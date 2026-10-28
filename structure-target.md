@@ -51,7 +51,7 @@
 ## 2. Prinzipien
 
 1. **Colocation:** Protokoll, Standard-Implementierung und Plugin eines Features liegen zusammen. Solange es klein ist, ist das *ein* Modul (`plugins/shell.py`). Erst wenn es wächst, wird es ein Paket.
-2. **Protokolle liegen beim Verbraucher:** Ruft der Loop ein Protokoll auf (`Model`, `SessionStore`, `Approver`, `Summarizer`, `TokenCounter`), gehört es nach `core/`. Nutzt es nur ein Feature (`FS`, `Shell`, `SpillStore`), gehört es zum Feature.
+2. **Protokolle liegen beim Verbraucher:** Ruft der Loop ein Protokoll auf (`Model`, `SessionStore`, `Approver`, `Summarizer`, `TokenCounter`), gehört es nach `core/`. Nutzt es nur ein Feature (`FileSystemBackend`, `Shell`, `SpillStore`), gehört es zum Feature.
 3. **`core/` = was `Agent()` per Default installiert.** Das sind die Default-Slots aus `api-target.md` (`AgentLoop`, `MemorySessions`, `ToolOutputLimit`, `Approvals`, `NoopTracer`) und ihr Unterbau. Alles Opt-in liegt in `plugins/` oder `models/`.
 4. **Features kennen sich nicht.** Ein Modul in `plugins/` importiert nie ein anderes Modul aus `plugins/`. Gemeinsames läuft über Protokolle in `core/`.
 5. **Ein Name, ein Ort.** Jede öffentliche Klasse ist genau einmal definiert. Fassaden re-exportieren nur.
@@ -115,7 +115,7 @@ harnessed/
 
   plugins/                 # opt-in features, one module each, independent of each other
     __init__.py            # facade: every built-in plugin (Filesystem, Shell, Spill, ...)
-    filesystem.py          # FS protocol, LocalFS, Filesystem plugin (read_file, edit, ...)
+    filesystem.py          # FileSystemBackend protocol, LocalFileSystem, Filesystem plugin (read_file, edit, ...)
     shell.py               # Shell protocol, LocalShell, Shell plugin (run_command)
     spill.py               # SpillStore protocol, local store, Spill plugin (read_spill)
     compaction.py          # Compaction plugin, at_ratio, every_turns, model summarizer

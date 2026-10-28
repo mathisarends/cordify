@@ -17,6 +17,12 @@ if TYPE_CHECKING:
     from .pydantic_ai import PydanticAIModel as PydanticAIModel
 
 _EXPORTS = {"PydanticAIModel": ("harnessed.models.pydantic_ai", "PydanticAIModel")}
+
+
+def __getattr__(name):
+    return exported(name, _EXPORTS, globals())
+
+
 __all__ = [
     "Model",
     "ModelChunk",
@@ -29,7 +35,3 @@ __all__ = [
     "StopReason",
     "ToolDefinition",
 ]
-
-
-def __getattr__(name):
-    return exported(name, _EXPORTS, globals())

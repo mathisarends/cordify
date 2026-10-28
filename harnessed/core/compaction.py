@@ -19,7 +19,7 @@ from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.core.tracing import span
 from harnessed.kernel import Context
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 _TRIGGER_RESULT = TypeAdapter(bool, config=ConfigDict(strict=True, hide_input_in_errors=True))
 _SUMMARY_RESULT = TypeAdapter(str, config=ConfigDict(strict=True, hide_input_in_errors=True))
 
@@ -32,7 +32,7 @@ class Summarizer(Protocol):
 class ModelSummarizer:
     """Summarize through the neutral model contract, without exposing tools."""
 
-    def __init__(self, model: Model, *, model_name: str | None = None, focus: str = ""):
+    def __init__(self, model: Model, *, model_name: str | None = None, focus: str = "") -> None:
         self.model = model
         self.model_name = model_name or model.info.name
         self.focus = focus
@@ -106,8 +106,10 @@ class CompactionPolicy:
 class CompactionManager:
     """Serialize summaries and commit only smaller, replayable projections."""
 
-    def __init__(self, ctx: Context, session: Session, *, context_window: int | None):
-        self.ctx, self.log, self.context_window = ctx, session, context_window
+    def __init__(self, ctx: Context, session: Session, *, context_window: int | None) -> None:
+        self.ctx = ctx
+        self.log = session
+        self.context_window = context_window
         self._lock = asyncio.Lock()
         self._retry_after_turns = 0
 
@@ -185,7 +187,7 @@ class CompactionManager:
             after = await count_request(counter, compacted)
             if after >= before:
                 self._retry_after_turns = self.log.closed_turn_count + 2
-                log.warning(
+                logger.warning(
                     "Compaction did not reduce context (%s -> %s tokens); "
                     "retry after two more turns",
                     before,

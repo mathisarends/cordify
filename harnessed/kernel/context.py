@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Callable, Iterable
 from contextlib import AsyncExitStack, contextmanager
@@ -12,7 +14,7 @@ from .keys import Key as Key
 from .keys import MissingService, ServiceKey
 from .plugin import PluginHandle, PluginLike, _Runtime, as_plugin_spec
 
-_current: ContextVar["Context | None"] = ContextVar("harnessed_context", default=None)
+_current: ContextVar[Context | None] = ContextVar("harnessed_context", default=None)
 
 
 class ContextClosed(RuntimeError):
@@ -22,12 +24,12 @@ class ContextClosed(RuntimeError):
 @dataclass(eq=False)
 class _Binding:
     value: Any
-    owner: "Context"
+    owner: Context
 
 
 @dataclass
 class _Scope:
-    parent: "_Scope | None" = None
+    parent: _Scope | None = None
     services: dict[ServiceKey[Any], list[_Binding]] = field(default_factory=dict)
     event_bus: EventBus = field(default_factory=EventBus)
     runtime: _Runtime = field(default_factory=_Runtime)
@@ -40,7 +42,7 @@ class Context:
     child which inherits parent services and listeners, with local overrides.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._scope = _Scope()
         self._stack = AsyncExitStack()
         self._closed = False
@@ -53,7 +55,7 @@ class Context:
         return child
 
     @classmethod
-    def current(cls) -> "Context | None":
+    def current(cls) -> Context | None:
         """The owner of registrations in the current asynchronous call chain."""
         return _current.get()
 
@@ -74,7 +76,7 @@ class Context:
             self._handle is None or self._handle.status == "active" or Context.current() is self
         )
 
-    def _binding[T](self, key: ServiceKey[T], *, exclude: "PluginHandle | None" = None) -> _Binding:
+    def _binding[T](self, key: ServiceKey[T], *, exclude: PluginHandle | None = None) -> _Binding:
         scope: _Scope | None = self._scope
         while scope is not None:
             for binding in reversed(scope.services.get(key, ())):
@@ -193,7 +195,7 @@ class Context:
     async def dispatch[R](self, event: Event[R], *, default: Callable[[], Any] | None = None) -> R:
         return await self._scope.event_bus.dispatch(self, event, default=default)
 
-    async def plugin(self, spec: "PluginLike") -> "PluginHandle":
+    async def plugin(self, spec: PluginLike) -> PluginHandle:
         """Retain a plugin recipe; activate it while its declared needs are available."""
         self._check_open()
         spec = as_plugin_spec(spec)
@@ -210,11 +212,11 @@ class Context:
 
     async def install(
         self,
-        plugins: Iterable["PluginLike"],
+        plugins: Iterable[PluginLike],
         *,
         strict: bool = False,
         settle: bool = False,
-    ) -> tuple["PluginHandle", ...]:
+    ) -> tuple[PluginHandle, ...]:
         """Retain each recipe once, optionally waiting for composition to settle.
 
         Missing dependencies remain waiting unless ``strict`` is true.

@@ -29,5 +29,5 @@ class NoopTracer(Plugin, slot="tracer"):
     def span(self, name: str, **attributes: Any) -> AbstractContextManager[Span]:
         return nullcontext(_NoopSpan())
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         ctx.provide(Tracer, self)

@@ -15,7 +15,7 @@ from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import hook
 from harnessed.plugins import Approvals, JsonlSessions, Service
-from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
+from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools, LocalFileSystem
 from harnessed.plugins.shell import LocalShell, ShellBackend, ShellTools
 from harnessed.plugins.spill import Spill
 from harnessed.testing import ScriptedModel
@@ -165,7 +165,7 @@ async def test_read_file_supports_bounded_unicode_character_ranges_and_continuat
         model=ScriptedModel([]),
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
-            Service(FS, LocalFS(tmp_path)),
+            Service(FileSystemBackend, LocalFileSystem(tmp_path)),
             FilesystemTools(),
         ],
     ).session("ranges") as agent:

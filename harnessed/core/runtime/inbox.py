@@ -39,8 +39,9 @@ def _item(event: InboxAdded) -> InboxItem:
 class SessionInbox:
     """Expose queued input snapshots and durable removal without owning a loop."""
 
-    def __init__(self, log: SessionLog, control: SessionControl):
-        self.log, self.control = log, control
+    def __init__(self, log: SessionLog, control: SessionControl) -> None:
+        self.log = log
+        self.control = control
         self._send_lock = asyncio.Lock()
         self._sender: asyncio.Task | None = None
 

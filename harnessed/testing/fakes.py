@@ -34,7 +34,7 @@ def _matches(path: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
 
 
 class _MemoryFiles:
-    def __init__(self, files: dict[str, str]):
+    def __init__(self, files: dict[str, str]) -> None:
         self.files = files
 
     def _entries(self) -> dict[str, FileStat]:
@@ -110,7 +110,7 @@ class _MemoryFiles:
 class InMemoryFS(Filesystem):
     """Replace Filesystem's slot and tools with an observable virtual workspace."""
 
-    def __init__(self, files: Mapping[str, str] | None = None, **options):
+    def __init__(self, files: Mapping[str, str] | None = None, **options) -> None:
         self.files = {_path(path): text for path, text in (files or {}).items()}
         super().__init__(implementation=_MemoryFiles(self.files), **options)
 
@@ -123,8 +123,9 @@ class CommandCall:
 
 
 class _FakeCommands:
-    def __init__(self, responses, calls):
-        self.responses, self.calls = responses, calls
+    def __init__(self, responses, calls) -> None:
+        self.responses = responses
+        self.calls = calls
 
     async def run(self, argv: list[str], *, cwd: Path, timeout: float) -> ProcResult:
         self.calls.append(CommandCall(tuple(argv), cwd, timeout))
@@ -138,7 +139,7 @@ class _FakeCommands:
 class FakeShell(Shell):
     """Replace Shell's slot; unexpected commands fail without launching a process."""
 
-    def __init__(self, responses: Mapping[str, str | ProcResult] | None = None, **options):
+    def __init__(self, responses: Mapping[str, str | ProcResult] | None = None, **options) -> None:
         self.responses = dict(responses or {})
         self.calls: list[CommandCall] = []
         super().__init__(implementation=_FakeCommands(self.responses, self.calls), **options)
@@ -152,10 +153,12 @@ class InMemoryPersistence(MemoryPersistence):
         seed: Mapping[str, Iterable[SessionEvent]] | None = None,
         *,
         fail_after: int | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.records = {key: list(events) for key, events in (seed or {}).items()}
-        self.fail_after, self.writes, self.flushes = fail_after, 0, 0
+        self.fail_after = fail_after
+        self.writes = 0
+        self.flushes = 0
         self.closed = False
 
     def _check_open(self):

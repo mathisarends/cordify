@@ -6,7 +6,7 @@ import pytest
 from harnessed import Context, ToolCall, plugin
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop
-from harnessed.plugins.filesystem import FS, FilesystemTools
+from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools
 from harnessed.plugins.shell import ProcResult, ShellTools
 from harnessed.plugins.shell import ShellBackend as Shell
 
@@ -31,13 +31,13 @@ class MemoryShell:
 
 
 FEATURES = [
-    (FilesystemTools, FS, MemoryFS, {"read_file", "write_file"}),
+    (FilesystemTools, FileSystemBackend, MemoryFS, {"read_file", "write_file"}),
     (ShellTools, Shell, MemoryShell, {"run_command"}),
 ]
 
 
 async def invoke(registry, key):
-    if key is FS:
+    if key is FileSystemBackend:
         return (await registry.execute(ToolCall("read_file", {"path": "example.txt"}))).content
     result = await registry.execute(ToolCall("run_command", {"argv": ["example"]}))
     assert not result.is_error

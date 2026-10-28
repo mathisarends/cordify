@@ -65,7 +65,7 @@ class PydanticAIModel:
         *,
         settings: ModelSettings | None = None,
         context_window: int | None = None,
-    ):
+    ) -> None:
         try:
             from pydantic_ai.models import infer_model
         except ImportError as exc:
@@ -323,7 +323,7 @@ def _response(response: NativeResponse) -> ModelResponse:
 
 
 class _Stream:
-    def __init__(self, stream: StreamedResponse):
+    def __init__(self, stream: StreamedResponse) -> None:
         self._native = stream
         self._response: ModelResponse | None = None
         self._iterator = self._chunks()

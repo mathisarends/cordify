@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 import json
 from collections import Counter
@@ -55,17 +57,17 @@ class Rule:
     predicate: ResultCondition | None = None
     actions: tuple[tuple[ActionKind, RuleText], ...] = ()
 
-    def _action(self, kind: ActionKind, text: str) -> "Rule":
+    def _action(self, kind: ActionKind, text: str) -> Rule:
         return replace(self, actions=(*self.actions, (kind, text)))
 
-    def note(self, text: str) -> "Rule":
+    def note(self, text: str) -> Rule:
         return self._action("note", text)
 
-    def context(self, text: str) -> "Rule":
+    def context(self, text: str) -> Rule:
         """Keep a named context fact while the rule condition remains active."""
         return self._action("context", text)
 
-    def steer(self, text: str) -> "Rule":
+    def steer(self, text: str) -> Rule:
         return self._action("steer", text)
 
     def matches(self, call: ToolCall, result: ToolResult, counter: TokenCounter) -> bool:
@@ -101,7 +103,7 @@ def when(
 
 
 class Rules(Plugin):
-    def __init__(self, rules: Iterable[Rule], *, name: str = "rules"):
+    def __init__(self, rules: Iterable[Rule], *, name: str = "rules") -> None:
         super().__init__(name=name)
         self.rules = tuple(rules)
         if any(not isinstance(rule, Rule) or not rule.actions for rule in self.rules):
@@ -132,7 +134,7 @@ class Rules(Plugin):
         session: Inject[SessionLog],
         context: Inject[DynamicContext],
         counter: Inject[TokenCounter],
-    ):
+    ) -> None:
         self._counts: Counter = Counter()
         self._last_counts = {}
         # Legacy per-evaluation records are read only during migration. New logs
@@ -215,7 +217,7 @@ class Rules(Plugin):
                     await inbox.steer(user(text))
         return replace(result, rule_matches=tuple(matches))
 
-    async def teardown(self, context: Inject[DynamicContext]):
+    async def teardown(self, context: Inject[DynamicContext]) -> None:
         for index, rule in enumerate(self.rules):
             if any(kind == "context" for kind, _ in rule.actions):
                 await context.remove(f"rule:{self.name}:{index}")

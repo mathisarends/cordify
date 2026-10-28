@@ -20,7 +20,7 @@ from harnessed.kernel.context import Context
 from harnessed.kernel.di import BindingPlan, Dependency, binding_plan
 from harnessed.kernel.effects import Disposer, run_sync
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _UNSPECIFIED = object()
 _TIMEOUT = TypeAdapter(
@@ -66,7 +66,7 @@ type ErrorFormatter = Callable[[ToolCall, Exception], str]
 
 
 def format_tool_error(call: ToolCall, error: Exception, formatter: ErrorFormatter | None = None):
-    log.error("Tool %s failed", call.name, exc_info=error)
+    logger.error("Tool %s failed", call.name, exc_info=error)
     if formatter is not None:
         return formatter(call, error)
     if isinstance(error, ToolError):
@@ -93,7 +93,7 @@ class _Converter:
 
 
 class ToolRegistry:
-    def __init__(self, ctx: Context, *, default_timeout: float | None = None):
+    def __init__(self, ctx: Context, *, default_timeout: float | None = None) -> None:
         self._ctx = ctx
         self._default_timeout = _TIMEOUT.validate_python(default_timeout)
         self._tools: dict[str, list[_Tool]] = {}
@@ -255,7 +255,7 @@ class ToolRegistry:
         )
         entries = self._tools.setdefault(definition.name, [])
         entries.append(entry)
-        log.debug("Registered tool %s with owner %s", tool_name, self._owner_name(owner))
+        logger.debug("Registered tool %s with owner %s", tool_name, self._owner_name(owner))
 
         def remove():
             entries.remove(entry)

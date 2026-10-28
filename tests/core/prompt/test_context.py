@@ -13,7 +13,7 @@ from harnessed.core.session.events import ContextMessage, ModelRequested, Observ
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.kernel import hook
 from harnessed.plugins import Approvals, Service
-from harnessed.plugins.filesystem import FS, LocalFS
+from harnessed.plugins.filesystem import FileSystemBackend, LocalFileSystem
 from harnessed.testing import ScriptedModel
 
 
@@ -112,7 +112,9 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
 
     class Project(Plugin):
         @hook(PreStep)
-        async def refresh(self, event, next_, context: Inject[DynamicContext], fs: Inject[FS]):
+        async def refresh(
+            self, event, next_, context: Inject[DynamicContext], fs: Inject[FileSystemBackend]
+        ):
             await context.set("project", await fs.read(Path("AGENTS.md")))
             return await next_()
 
@@ -121,7 +123,7 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
         model=model,
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
-            Service(FS, LocalFS(tmp_path)),
+            Service(FileSystemBackend, LocalFileSystem(tmp_path)),
             Project(),
         ],
     ).session("project") as agent:

@@ -25,7 +25,7 @@ class FileStat:
     modified: float
 
 
-class FS(Protocol):
+class FileSystemBackend(Protocol):
     """Structural filesystem seam; offsets and limits count Unicode characters."""
 
     async def read(self, path: PurePath, *, offset: int = 0, limit: int | None = None) -> str: ...
@@ -38,10 +38,10 @@ class FS(Protocol):
     async def replace(self, path: PurePath, old: str, new: str) -> None: ...
 
 
-class LocalFS:
+class LocalFileSystem:
     """Threaded UTF-8 filesystem with workspace containment and atomic writes."""
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path) -> None:
         self.root = Path(root).resolve()
 
     def _path(self, path: PurePath) -> Path:
@@ -152,9 +152,9 @@ class SearchResult:
 
 
 class FilesystemTools(Plugin):
-    """Expose bounded reads and writes through a separately owned FS service."""
+    """Expose bounded reads and writes through a separately owned FileSystemBackend service."""
 
-    needs = (FS, ToolRegistry)
+    needs = (FileSystemBackend, ToolRegistry)
 
     @tool(readonly=True, parallel=True)
     async def read_file(
@@ -165,7 +165,7 @@ class FilesystemTools(Plugin):
             int, Field(ge=1, le=16_000, description="Maximum Unicode characters to read")
         ] = 8000,
         *,
-        fs: Inject[FS],
+        fs: Inject[FileSystemBackend],
     ) -> str:
         """Read a UTF-8 character range; use offset/limit for large files."""
         text = await fs.read(Path(path), offset=offset, limit=limit + 1)
@@ -177,7 +177,7 @@ class FilesystemTools(Plugin):
         return content
 
     @tool
-    async def write_file(self, path: str, text: str, *, fs: Inject[FS]) -> str:
+    async def write_file(self, path: str, text: str, *, fs: Inject[FileSystemBackend]) -> str:
         """Atomically replace a UTF-8 file, creating parent directories if needed."""
         await fs.write(Path(path), text)
         return f"Wrote {path}"
@@ -201,18 +201,22 @@ class Filesystem(FilesystemTools, slot="filesystem"):
         "Use glob and grep to discover relevant files."
     )
 
-    def __init__(self, root: str | Path = ".", *, implementation: FS | None = None):
+    def __init__(
+        self, root: str | Path = ".", *, implementation: FileSystemBackend | None = None
+    ) -> None:
         super().__init__(root=Path(root))
         self.implementation = implementation
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         implementation = self.implementation
         if implementation is None:
-            implementation = await run_sync(partial(LocalFS, self.config.root))
-        ctx.provide(FS, implementation)
+            implementation = await run_sync(partial(LocalFileSystem, self.config.root))
+        ctx.provide(FileSystemBackend, implementation)
 
     @tool(readonly=True, parallel=True)
-    async def list_dir(self, path: str = ".", *, fs: Inject[FS]) -> Sequence[FileStat]:
+    async def list_dir(
+        self, path: str = ".", *, fs: Inject[FileSystemBackend]
+    ) -> Sequence[FileStat]:
         """List direct children with file sizes and kinds."""
         return await fs.list(Path(path))
 
@@ -222,7 +226,7 @@ class Filesystem(FilesystemTools, slot="filesystem"):
         pattern: str,
         limit: Annotated[int, Field(ge=1, le=1000)] = 200,
         *,
-        fs: Inject[FS],
+        fs: Inject[FileSystemBackend],
     ) -> PathMatches:
         """Find workspace paths using a glob pattern; results are bounded by limit."""
         paths = await fs.glob(pattern, limit=limit + 1)
@@ -235,7 +239,7 @@ class Filesystem(FilesystemTools, slot="filesystem"):
         pattern: str = "**/*",
         limit: Annotated[int, Field(ge=1, le=500)] = 100,
         *,
-        fs: Inject[FS],
+        fs: Inject[FileSystemBackend],
     ) -> SearchResult:
         """Find literal text in bounded UTF-8 previews; narrow patterns for large trees."""
         hits, notes, scanned = [], [], 0
@@ -263,14 +267,19 @@ class Filesystem(FilesystemTools, slot="filesystem"):
 
     @tool
     async def edit(
-        self, path: str, old: Annotated[str, Field(min_length=1)], new: str, *, fs: Inject[FS]
+        self,
+        path: str,
+        old: Annotated[str, Field(min_length=1)],
+        new: str,
+        *,
+        fs: Inject[FileSystemBackend],
     ) -> str:
         """Replace exactly one matching text fragment; ambiguous edits fail."""
         await fs.replace(Path(path), old, new)
         return f"Edited {path}"
 
     @tool
-    async def delete_file(self, path: str, *, fs: Inject[FS]) -> str:
+    async def delete_file(self, path: str, *, fs: Inject[FileSystemBackend]) -> str:
         """Delete one workspace file."""
         await fs.delete(Path(path))
         return f"Deleted {path}"

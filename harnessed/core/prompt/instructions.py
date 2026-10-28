@@ -9,11 +9,11 @@ class Instructions(Plugin, slot="instructions"):
 
     needs = (SystemPrompt,)
 
-    def __init__(self, values: InstructionValues = (), *, plan: PromptPlan | None = None):
+    def __init__(self, values: InstructionValues = (), *, plan: PromptPlan | None = None) -> None:
         super().__init__()
         self.values = (values,) if isinstance(values, str) else tuple(values)
         self.plan = plan
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         plan = self.plan if self.plan is not None else PromptPlan(self.values)
         ctx[SystemPrompt].fixed(await plan.render(ctx), owner=ctx)

@@ -23,7 +23,7 @@ class ScriptedModel:
         responses: Iterable[str | ModelResponse | Iterable[ModelChunk]],
         *,
         info: ModelInfo | None = None,
-    ):
+    ) -> None:
         self.info = info or ModelInfo("scripted", context_window=128_000)
         self.responses = deque(responses)
         self.requests: list[ModelRequest] = []
@@ -56,7 +56,7 @@ class CallbackModel:
         callback: Callable[[ModelRequest], AsyncIterator[ModelChunk]],
         *,
         info: ModelInfo | None = None,
-    ):
+    ) -> None:
         self.callback = callback
         self.info = info or ModelInfo("callback", context_window=128_000)
         self.requests: list[ModelRequest] = []
@@ -78,7 +78,9 @@ class CallbackModel:
 
 
 class _Stream:
-    def __init__(self, chunks: ModelResponse | Iterable[ModelChunk] | AsyncIterator[ModelChunk]):
+    def __init__(
+        self, chunks: ModelResponse | Iterable[ModelChunk] | AsyncIterator[ModelChunk]
+    ) -> None:
         self._provided = chunks if isinstance(chunks, ModelResponse) else None
         if isinstance(chunks, ModelResponse):
             message = chunks.message

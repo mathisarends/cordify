@@ -16,7 +16,7 @@ from harnessed.core.session.store import SessionPersistence
 from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Context
 from harnessed.plugins import Approvals
-from harnessed.plugins.filesystem import FS, FilesystemTools
+from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools
 from harnessed.plugins.shell import ProcResult, ShellTools
 from harnessed.plugins.shell import ShellBackend as Shell
 from harnessed.plugins.spill import SpillStore
@@ -26,7 +26,7 @@ from harnessed.testing import ScriptedModel
 @pytest.mark.parametrize(
     "contract",
     [
-        FS,
+        FileSystemBackend,
         Model,
         Shell,
         Approver,
@@ -77,7 +77,7 @@ async def test_foreign_fs_and_model_work_through_di_without_framework_inheritanc
 
     @plugin
     async def foreign_files(ctx: Context):
-        ctx.provide(FS, files)
+        ctx.provide(FileSystemBackend, files)
         yield
 
     assert ForeignFiles.__bases__ == (object,)

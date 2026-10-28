@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import copy
 import inspect
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from .di import bind_injected, injections
 from .effects import resolve
@@ -27,11 +29,11 @@ class Registration(Protocol):
     @property
     def needs(self) -> tuple[Any, ...]: ...
 
-    def mount(self, ctx: "Context", callback: Callable) -> Any: ...
+    def mount(self, ctx: Context, callback: Callable) -> Any: ...
 
 
 class Bundle:
-    def __init__(self, name: str, *, needs: Iterable = ()):
+    def __init__(self, name: str, *, needs: Iterable = ()) -> None:
         self.name, self.needs = name, tuple(needs)
         self._hooks: list[tuple] = []
         self._registrations: list[tuple[Registration, Callable]] = []
@@ -54,7 +56,7 @@ class Bundle:
         self._registrations.append((registration, callback))
         return callback
 
-    def _as_plugin_spec(self) -> "PluginSpec":
+    def _as_plugin_spec(self) -> PluginSpec:
 
         hooks, registrations = tuple(self._hooks), tuple(self._registrations)
         needs = [
@@ -81,13 +83,17 @@ class PluginBase:
     """Agent-independent lifecycle with extensible registration recipes."""
 
     needs: tuple[Any, ...] = ()
-    _recipe: "PluginBase"
+    _recipe: Self
     slot: str | None = None
 
-    def __init_subclass__(cls, *, slot: str | None = None, **kwargs):
+    def __init_subclass__(
+        cls, *, slot: str | None = None, needs: Iterable | None = None, **kwargs
+    ) -> None:
         super().__init_subclass__(**kwargs)
         if slot is not None:
             cls.slot = slot
+        if needs is not None:
+            cls.needs = tuple(needs)
 
     def __init__(
         self,
@@ -96,22 +102,22 @@ class PluginBase:
         hooks: Iterable[HookEntry] = (),
         needs: Iterable | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
-    ):
+    ) -> None:
         self.name = name or type(self).__name__
         self.hooks = tuple(hooks)
         self.needs = tuple(self.needs if needs is None else needs)
         self.registrations = tuple(registrations)
 
-    async def setup(self, *args: Any, **kwargs: Any):
+    async def setup(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    async def teardown(self, *args: Any, **kwargs: Any):
+    async def teardown(self, *args: Any, **kwargs: Any) -> None:
         pass
 
     def _registration_entries(self):
         return tuple(getattr(self, "registrations", ()))
 
-    def _as_plugin_spec(self) -> "PluginSpec":
+    def _as_plugin_spec(self) -> PluginSpec:
 
         members = {}
         for base in reversed(type(self).__mro__):

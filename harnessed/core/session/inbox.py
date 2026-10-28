@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Self
 
 from harnessed.core.session.events import (
     ContextMessage,
@@ -15,12 +16,12 @@ class Inbox:
     pending: tuple[InboxAdded, ...]
 
     @classmethod
-    def from_pending(cls, pending: Iterable[InboxAdded]) -> "Inbox":
+    def from_pending(cls, pending: Iterable[InboxAdded]) -> Self:
         snapshot = object.__new__(cls)
         object.__setattr__(snapshot, "pending", tuple(pending))
         return snapshot
 
-    def __init__(self, events: Iterable[SessionEvent]):
+    def __init__(self, events: Iterable[SessionEvent]) -> None:
         pending: dict[str, InboxAdded] = {}
         for event in events:
             if isinstance(event, InboxAdded):

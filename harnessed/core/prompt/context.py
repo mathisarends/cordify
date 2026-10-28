@@ -2,17 +2,17 @@ import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
 
-from harnessed.core.hooks import PreStep
+from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import ContextValueChanged
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.kernel import Inject, hook
+from harnessed.kernel import Inject, Next, hook
 
 
 class DynamicContext:
     """Append changed values once; hosts await writes before the next step."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session) -> None:
         self.log = session
         self._values: dict[str, str] = {}
         self._lock = asyncio.Lock()
@@ -57,18 +57,21 @@ class ContextValue(Plugin):
         self,
         key: str,
         value: str | None | Callable[[], str | None | Awaitable[str | None]],
-    ):
+    ) -> None:
         super().__init__()
         if not isinstance(key, str) or not key:
             raise ValueError("Context names must be non-empty strings")
-        self.key, self.value = key, value
+        self.key = key
+        self.value = value
 
     @property
     def context_description(self) -> tuple[str, str]:
         return self.key, "<evaluated per step>" if callable(self.value) else repr(self.value)
 
     @hook(PreStep)
-    async def refresh(self, event, next_, context: Inject[DynamicContext]):
+    async def refresh(
+        self, event: PreStep, next_: Next[StepDecision], context: Inject[DynamicContext]
+    ) -> StepDecision:
         value = self.value() if callable(self.value) else self.value
         if inspect.isawaitable(value):
             value = await value
@@ -77,5 +80,5 @@ class ContextValue(Plugin):
         await context.set(self.key, value)
         return await next_()
 
-    async def teardown(self, context: Inject[DynamicContext]):
+    async def teardown(self, context: Inject[DynamicContext]) -> None:
         await context.remove(self.key)

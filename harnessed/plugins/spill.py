@@ -20,7 +20,7 @@ from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError
 from harnessed.kernel import Context, Inject, Priority, hook
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class SpillStore(Protocol):
@@ -33,8 +33,10 @@ class SpillCapacityExceeded(ValueError):
 
 
 class _SessionSpills:
-    def __init__(self, files: SessionFiles, session: SessionLog, config: Spill.Config):
-        self.files, self.session, self.config = files, session, config
+    def __init__(self, files: SessionFiles, session: SessionLog, config: Spill.Config) -> None:
+        self.files = files
+        self.session = session
+        self.config = config
         self._operation = asyncio.Lock()
         self._active: dict[str, SpillRef] = {}
         self._expired: set[str] = set()
@@ -163,7 +165,7 @@ class Spill(Plugin, slot="spill"):
         preview_tokens: int = 256,
         max_files: int = 128,
         max_bytes: int = 32 * 1024 * 1024,
-    ):
+    ) -> None:
         super().__init__(
             threshold_tokens=threshold_tokens,
             preview_tokens=preview_tokens,
@@ -171,7 +173,9 @@ class Spill(Plugin, slot="spill"):
             max_bytes=max_bytes,
         )
 
-    async def setup(self, ctx: Context, session: Inject[SessionLog], files: Inject[SessionFiles]):
+    async def setup(
+        self, ctx: Context, session: Inject[SessionLog], files: Inject[SessionFiles]
+    ) -> None:
         self.store = _SessionSpills(files, session, self.config)
         await self.store.recover()
         ctx.provide(SpillStore, self.store)
@@ -204,7 +208,7 @@ class Spill(Plugin, slot="spill"):
         except SpillCapacityExceeded:
             return result.with_note("Spill budget exceeded.")
         except OSError:
-            log.exception("Session spill write failed")
+            logger.exception("Session spill write failed")
             return result.with_note("Spill storage unavailable.")
         await session.append(SpillCreated(event.call.id, ref, tokens))
         preview = truncate(

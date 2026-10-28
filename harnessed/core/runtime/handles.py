@@ -12,7 +12,7 @@ from .result import RunResult
 class RunHandle[T]:
     """One acknowledged queued run; cancelling a waiter never cancels its execution."""
 
-    def __init__(self, input_id: str):
+    def __init__(self, input_id: str) -> None:
         self.id = input_id
         self._completion: asyncio.Future[RunResult[T] | Exception] = (
             asyncio.get_running_loop().create_future()

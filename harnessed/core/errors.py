@@ -38,9 +38,11 @@ class ProviderError(HarnessedError, RuntimeError):
         status_code: int | None = None,
         body: str | None = None,
         retry_after: float | None = None,
-    ):
+    ) -> None:
         super().__init__(message)
-        self.status_code, self.body, self.retry_after = status_code, body, retry_after
+        self.status_code = status_code
+        self.body = body
+        self.retry_after = retry_after
 
 
 class AuthError(ProviderError):

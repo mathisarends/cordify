@@ -10,7 +10,7 @@ from .di import BindingPlan, binding_plan
 from .effects import Disposer, resolve
 from .hooks import HookFactory, ObserverCallback, ObserverHook, WaterfallCallback, WaterfallHook
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .context import Context
@@ -111,7 +111,7 @@ class _Listener:
 
 
 class EventBus:
-    def __init__(self, parent: EventBus | None = None):
+    def __init__(self, parent: EventBus | None = None) -> None:
         self.parent = parent
         self.listeners: list[_Listener] = []
 
@@ -122,7 +122,7 @@ class EventBus:
         if not isinstance(priority, int) or isinstance(priority, bool):
             raise TypeError("Listener priority must be an integer")
         listener = _Listener(event, callback, owner, binding_plan(callback), priority)
-        log.debug(
+        logger.debug(
             "Registered %s listener with owner %r at priority %d", event.__name__, owner, priority
         )
         if prepend:

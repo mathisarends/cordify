@@ -56,7 +56,7 @@ class LocalShell:
         max_timeout: float = 600.0,
         max_output_bytes: int = 1_048_576,
         env: Mapping[str, str] | None = None,
-    ):
+    ) -> None:
         self.options = _Options(
             max_timeout=max_timeout,
             max_output_bytes=max_output_bytes,
@@ -137,7 +137,7 @@ class LocalShell:
 
 
 class _ProcessProtocol(asyncio.SubprocessProtocol):
-    def __init__(self, max_output_bytes: int):
+    def __init__(self, max_output_bytes: int) -> None:
         self.stdout = _Capture(max_output_bytes // 2, "stdout")
         self.stderr = _Capture(max_output_bytes // 2, "stderr")
         self.exited = asyncio.Event()
@@ -154,8 +154,9 @@ class _ProcessProtocol(asyncio.SubprocessProtocol):
 
 
 class _Capture:
-    def __init__(self, limit: int, name: str):
-        self.limit, self.name = limit, name
+    def __init__(self, limit: int, name: str) -> None:
+        self.limit = limit
+        self.name = name
         self.data = bytearray()
         self.total = 0
 
@@ -210,7 +211,7 @@ class ShellTools(Plugin):
         max_timeout: float = 600.0,
         max_output_bytes: int = 1_048_576,
         env: dict[str, str] | None = None,
-    ):
+    ) -> None:
         super().__init__(
             cwd=Path(cwd),
             timeout=timeout,
@@ -219,7 +220,7 @@ class ShellTools(Plugin):
             env=env,
         )
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         self.cwd = await run_sync(self.config.cwd.resolve)
         ctx[ToolRegistry].result_converter(ProcResult, proc_result, owner=ctx)
 
@@ -252,7 +253,7 @@ class Shell(ShellTools, slot="shell"):
         max_timeout: float = 600.0,
         max_output_bytes: int = 1_048_576,
         env: dict[str, str] | None = None,
-    ):
+    ) -> None:
         super().__init__(
             cwd=cwd,
             timeout=timeout,
@@ -262,7 +263,7 @@ class Shell(ShellTools, slot="shell"):
         )
         self.implementation = implementation
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         await super().setup(ctx)
         backend = self.implementation
         if backend is None:

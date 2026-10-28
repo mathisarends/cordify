@@ -20,7 +20,7 @@ class EventRegistry:
     readable after plugin disposal. Different classes may never share a tag.
     """
 
-    def __init__(self, kinds: Iterable[type[SessionEvent | TransientEvent]] = ()):
+    def __init__(self, kinds: Iterable[type[SessionEvent | TransientEvent]] = ()) -> None:
         live = tuple(
             get_origin(kind) or kind for kind in get_args(get_args(StreamEvent.__value__)[0])
         )
@@ -73,7 +73,8 @@ class EventRegistry:
             adapter.json_schema()
             validators[kind] = adapter
             proposed[tag] = kind
-        self._types, self._custom = proposed, validators
+        self._types = proposed
+        self._custom = validators
         self._adapter = None
 
     def validate(self, event: SessionEvent | TransientEvent) -> None:

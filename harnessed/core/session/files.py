@@ -55,7 +55,7 @@ class SessionFiles(Protocol):
 class MemoryFiles:
     """Artifacts retained alongside the in-memory log across live session leases."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._values: dict[str, tuple[str, int]] = {}
 
     async def put(self, key: str, text: str) -> None:

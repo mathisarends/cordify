@@ -63,6 +63,12 @@ _EXPORTS = {
     "plugin": ("harnessed.kernel", "plugin"),
     "tool": ("harnessed.core.tools.decorator", "tool"),
 }
+
+
+def __getattr__(name):
+    return exported(name, _EXPORTS, globals())
+
+
 __all__ = [
     "Agent",
     "ApprovalAnswer",
@@ -92,7 +98,3 @@ __all__ = [
     "plugin",
     "tool",
 ]
-
-
-def __getattr__(name):
-    return exported(name, _EXPORTS, globals())

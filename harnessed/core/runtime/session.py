@@ -62,8 +62,10 @@ _driving: ContextVar["Session | None"] = ContextVar("harnessed_driving", default
 class Session:
     """A live conversation with durable inputs, turn-scoped results and controls."""
 
-    def __init__(self, ctx: Context, session: SessionLog, options: AgentOptions):
-        self.ctx, self.log, self.options = ctx, session, options
+    def __init__(self, ctx: Context, session: SessionLog, options: AgentOptions) -> None:
+        self.ctx = ctx
+        self.log = session
+        self.options = options
         self.id = session.id
         self.context = DynamicContext(session)
         self.approvals = SessionApprovals(self)

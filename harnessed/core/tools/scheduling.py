@@ -43,7 +43,7 @@ class ToolPlan:
 
 
 class ToolScheduler:
-    def __init__(self, max_parallel: int):
+    def __init__(self, max_parallel: int) -> None:
         self.max_parallel = max_parallel
         self.slots = asyncio.Semaphore(max_parallel)
 

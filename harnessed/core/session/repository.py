@@ -13,7 +13,9 @@ from harnessed.kernel.plugin import as_plugin_spec
 class SessionRepository:
     """Mount the sessions slot and explicit service dependencies for each operation."""
 
-    def __init__(self, plugins: Iterable[PluginLike], *, registry: EventRegistry | None = None):
+    def __init__(
+        self, plugins: Iterable[PluginLike], *, registry: EventRegistry | None = None
+    ) -> None:
         self._registry = registry or EventRegistry()
         self._plugins = tuple(
             plugin

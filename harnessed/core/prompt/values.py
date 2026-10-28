@@ -58,7 +58,7 @@ class PromptEntry:
 class PromptPlan:
     """InstructionValues first, then guidance in plugin order; no implicit headings."""
 
-    def __init__(self, instructions: InstructionValues = (), plugins: Iterable = ()):
+    def __init__(self, instructions: InstructionValues = (), plugins: Iterable = ()) -> None:
         plugins = tuple(plugins)
         self.context_entries = tuple(
             description

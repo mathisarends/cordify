@@ -20,8 +20,10 @@ def truncate(text: str, max_tokens: int, counter: TokenCounter) -> str:
 
 
 class ContextBudgetExceeded(RuntimeError):
-    def __init__(self, input_tokens: int, reserve_tokens: int, limit: int):
-        self.input_tokens, self.reserve_tokens, self.limit = input_tokens, reserve_tokens, limit
+    def __init__(self, input_tokens: int, reserve_tokens: int, limit: int) -> None:
+        self.input_tokens = input_tokens
+        self.reserve_tokens = reserve_tokens
+        self.limit = limit
         super().__init__(
             f"Context budget exceeded: {input_tokens} input + {reserve_tokens} reserved tokens "
             f"> {limit}. Reduce current input/tool schemas, retain fewer turns, or compact earlier."

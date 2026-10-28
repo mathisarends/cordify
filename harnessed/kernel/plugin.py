@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import inspect
 import logging
@@ -13,25 +15,15 @@ from .events import on as hook
 from .keys import MissingService, ServiceKey
 from .spec import PluginSpec
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-__all__ = [
-    "Bundle",
-    "PluginBase",
-    "PluginSpec",
-    "PluginLike",
-    "PluginHandle",
-    "plugin",
-    "hook",
-    "as_plugin_spec",
-]
 
 if TYPE_CHECKING:
     from .context import Context
 
 
 class _Runtime:
-    def __init__(self):
+    def __init__(self) -> None:
         self.handles: list[PluginHandle] = []
         self.task: asyncio.Task | None = None
         self.dirty = False
@@ -87,7 +79,7 @@ class _Runtime:
 class PluginHandle:
     """An owned recipe. Dependency loss suspends it; aclose permanently removes it."""
 
-    def __init__(self, spec: "PluginSpec", mount: "Context"):
+    def __init__(self, spec: PluginSpec, mount: Context) -> None:
         self.name, self.spec, self._mount = spec.name, spec, mount
         self.ctx = mount._child(mount._scope)
         self.ctx._closed = True
@@ -193,7 +185,7 @@ class PluginHandle:
                     except StopAsyncIteration as exc:
                         raise RuntimeError(f"Plugin {spec.name} did not yield") from exc
 
-                async def teardown():
+                async def teardown() -> None:
                     with child.activate():
                         try:
                             await anext(generator)
@@ -216,11 +208,11 @@ class PluginHandle:
                 self._failed_signature = None if cancelled else signature
                 self.error = exc if isinstance(exc, Exception) else None
                 if self.error is not None:
-                    log.error("Plugin %s setup failed", self.name, exc_info=exc)
+                    logger.error("Plugin %s setup failed", self.name, exc_info=exc)
                     try:
                         await self._mount.dispatch(PluginFailed(self.name, self.error))
                     except Exception:
-                        log.exception("PluginFailed observer failed for %s", self.name)
+                        logger.exception("PluginFailed observer failed for %s", self.name)
                 await child.aclose()
                 raise
 
@@ -320,3 +312,15 @@ def as_plugin_spec(value: PluginLike) -> PluginSpec:
     if callable(value) and getattr(value, "_harnessed_plugin", False):
         return value()
     raise TypeError(f"Expected a configured plugin, Bundle or Plugin, got {type(value).__name__}")
+
+
+__all__ = [
+    "Bundle",
+    "PluginBase",
+    "PluginHandle",
+    "PluginLike",
+    "PluginSpec",
+    "as_plugin_spec",
+    "hook",
+    "plugin",
+]

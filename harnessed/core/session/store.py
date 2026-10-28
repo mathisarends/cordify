@@ -40,7 +40,7 @@ class SessionStore(Protocol):
 class MemoryPersistence:
     """Shared in-process log storage; closing a lease preserves its records."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.records: dict[str, list[SessionEvent]] = {}
 
     async def load(self, session_id: str) -> tuple[SessionEvent, ...]:
@@ -60,7 +60,7 @@ class MemoryPersistence:
 
 
 class _MemoryStore:
-    def __init__(self):
+    def __init__(self) -> None:
         self.persistence = MemoryPersistence()
         self._active: set[str] = set()
         self._files: dict[str, MemoryFiles] = {}
@@ -97,9 +97,9 @@ class _MemoryStore:
 class MemorySessions(Plugin, slot="sessions"):
     """Keep conversations by ID for the lifetime of this configured plugin."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.store = _MemoryStore()
 
-    async def setup(self, ctx: Context):
+    async def setup(self, ctx: Context) -> None:
         ctx.provide(SessionStore, self.store)

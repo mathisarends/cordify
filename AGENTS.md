@@ -49,3 +49,37 @@ exceptions are `models/pydantic_ai.py` (optional SDK) and `plugins/skills.py`
 imports used for optional integration and import-failure tests are also exempt.
 Do not add local imports to work around dependency cycles; move shared types or
 change the dependency direction instead.
+
+## Python style and boundaries
+
+Keep public and cross-module signatures fully annotated, including return values
+and collection element types. Contain `Any` and reflection at genuinely dynamic
+boundaries such as schema construction and heterogeneous registries. Do not use
+`Any`, `getattr`, or casts to hide a missing domain contract.
+
+Prefer `StrEnum` for closed domain choices, states, outcomes and policies. Event
+and message discriminators retain a concrete `Literal[Enum.MEMBER]` so unions
+remain discriminated. Custom plugins may define their own discriminator enums.
+Use stable dot-separated event tags, such as `assistant.message`, `tool.progress`
+and `step.end`. JSON-schema keys remain ordinary strings.
+
+Plugins inherit the small `Plugin` base and declare tools only as `@tool` methods.
+Use module-level configuration models. Class-level `needs=` and `slot=` metadata
+are supported; do not introduce a second decorator-based plugin class system.
+The filesystem backend protocol is `FileSystemBackend`, its local implementation
+is `LocalFileSystem`, and the application plugin remains `Filesystem`.
+
+Use `logger = logging.getLogger(__name__)` in modules that log. Write independent
+attribute assignments on separate lines. Put `__all__` at the bottom of modules
+that define it. Single-dot sibling imports remain preferred within a package;
+cross-package imports stay absolute.
+
+Keep lifecycle ownership behind public kernel operations. Higher layers must not
+call private Context lifecycle checks or inspect private registration state.
+Stateful turn and step orchestration belongs to typed runtime components, not
+free functions receiving a Session as a pseudo-`self` argument.
+
+There is no released storage/API compatibility contract yet. Keep one canonical
+current format; remove legacy migrations and transitional aliases rather than
+adding compatibility layers for unreleased formats. Retain an explicit format
+version for future released changes.

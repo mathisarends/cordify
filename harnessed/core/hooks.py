@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 from harnessed.core.messages import ApprovalAnswer, Message, PolicyDecision, ToolCall, ToolResult
 from harnessed.core.model import ModelRequest
@@ -21,7 +21,7 @@ class StepDecision:
     accepted: bool = True
 
     @classmethod
-    def reject(cls) -> StepDecision:
+    def reject(cls) -> Self:
         return cls(accepted=False)
 
 

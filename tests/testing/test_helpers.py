@@ -6,7 +6,7 @@ from harnessed import Agent, PolicyDecision
 from harnessed.core.session.events import TurnEnd, TurnStart
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, Filesystem, Shell
-from harnessed.plugins.filesystem import FS, LocalFS
+from harnessed.plugins.filesystem import FileSystemBackend, LocalFileSystem
 from harnessed.testing import (
     FakeShell,
     InMemoryFS,
@@ -39,7 +39,7 @@ async def test_virtual_and_local_filesystems_share_ranges_newlines_and_edit_sema
     tmp_path, memory
 ):
     async with Agent(model=ScriptedModel([]), plugins=[InMemoryFS()]).session() as session:
-        files = session.ctx[FS] if memory else LocalFS(tmp_path)
+        files = session.ctx[FileSystemBackend] if memory else LocalFileSystem(tmp_path)
         text = "ä😀\r\nlast\rline\n"
         await files.write(Path("nested/test.txt"), text)
         assert await files.read(Path("nested/test.txt")) == text

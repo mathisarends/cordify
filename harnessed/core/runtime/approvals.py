@@ -19,13 +19,13 @@ from harnessed.core.tracing import span
 if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class _PendingApproval:
     """A live approval handle; answer() waits for its decision's durable acknowledgement."""
 
-    def __init__(self, request: ApprovalRequested):
+    def __init__(self, request: ApprovalRequested) -> None:
         self.request_id, self.call, self.reason = request.request_id, request.call, request.reason
         loop = asyncio.get_running_loop()
         self._decision: asyncio.Future[ApprovalAnswer | None] = loop.create_future()
@@ -55,7 +55,7 @@ class _PendingApproval:
 class SessionApprovals:
     """Approval snapshots and acknowledged responses addressed by durable request ID."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session) -> None:
         self._session = session
         self._live: dict[str, _PendingApproval] = {}
 
@@ -183,7 +183,7 @@ async def _wait_for_approval(
     except TimeoutError as exc:
         raise ApprovalUnavailable(f"Approval response timed out after {timeout:g} seconds") from exc
     except Exception as exc:
-        log.exception("Approval responder failed for %s", request.call.name)
+        logger.exception("Approval responder failed for %s", request.call.name)
         raise ApprovalUnavailable(f"Approval responder failed: {type(exc).__name__}") from exc
 
 

@@ -6,7 +6,7 @@ import pytest
 from harnessed import Agent, ToolCall
 from harnessed.core.model import ModelChunk
 from harnessed.core.tools.registry import ToolError, ToolRegistry
-from harnessed.plugins.filesystem import Filesystem, LocalFS
+from harnessed.plugins.filesystem import Filesystem, LocalFileSystem
 from harnessed.testing import ScriptedModel
 
 
@@ -37,7 +37,7 @@ async def test_ranged_reads_never_read_the_entire_file(tmp_path, monkeypatch):
         return BoundedReader(original_open(self, *args, **kwargs))
 
     monkeypatch.setattr(Path, "open", bounded_open)
-    result = await LocalFS(tmp_path).read(Path("large.txt"), offset=100_001, limit=11)
+    result = await LocalFileSystem(tmp_path).read(Path("large.txt"), offset=100_001, limit=11)
     assert result == content[100_001:100_012]
     assert reads == [65_536, 34_465, 11]
 
@@ -45,7 +45,7 @@ async def test_ranged_reads_never_read_the_entire_file(tmp_path, monkeypatch):
 async def test_edits_are_unambiguous_and_failed_atomic_replace_preserves_original(
     tmp_path, monkeypatch
 ):
-    fs = LocalFS(tmp_path)
+    fs = LocalFileSystem(tmp_path)
     path = Path("example.txt")
     await fs.write(path, "one one")
     with pytest.raises(ToolError, match="found 2"):
