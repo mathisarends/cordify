@@ -41,8 +41,8 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-8 — Boundary validation
 
-- Replace remaining duplicated hand-written option validators with declarative
-  constraints. Put FS/range limits in the tool's JSON schema.
+- Replace the remaining legacy compaction, spill and rule option validators with
+  declarative constraints as those feature plugins migrate.
 
 ### P1-10 — Finish the PydanticAI migration
 

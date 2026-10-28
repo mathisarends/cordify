@@ -5,9 +5,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from functools import partial
 from types import MappingProxyType
-from typing import Any, cast, overload
+from typing import Annotated, Any, cast, overload
 
-from pydantic import ValidationError
+from pydantic import ConfigDict, Field, TypeAdapter, ValidationError
 
 from harnessed.core.messages import ToolCall, ToolResult
 from harnessed.core.model import ToolDefinition
@@ -21,6 +21,12 @@ from harnessed.kernel.effects import Disposer, run_sync
 log = logging.getLogger(__name__)
 
 _UNSPECIFIED = object()
+_TIMEOUT = TypeAdapter(
+    Annotated[float, Field(gt=0)] | None,
+    config=ConfigDict(
+        title="tool timeout", strict=True, allow_inf_nan=False, hide_input_in_errors=True
+    ),
+)
 
 
 class ToolNameConflict(ValueError):
@@ -83,7 +89,7 @@ class _Converter:
 class ToolRegistry:
     def __init__(self, ctx: Context, *, default_timeout: float | None = None):
         self._ctx = ctx
-        self._default_timeout = default_timeout
+        self._default_timeout = _TIMEOUT.validate_python(default_timeout)
         self._tools: dict[str, list[_Tool]] = {}
         self._converters: dict[type, list[_Converter]] = {}
 
@@ -177,8 +183,8 @@ class ToolRegistry:
         owner._check_open()
         ToolScheduling(parallel)
         resources = resource_spec(resources)
-        if timeout is not None and timeout <= 0:
-            raise ValueError("Tool timeout must be positive")
+        timeout = _TIMEOUT.validate_python(timeout)
+        spec = replace(spec, timeout=timeout)
         plan = binding_plan(callback)
         implicit = {}
         for parameter, annotation in plan.hints.items():

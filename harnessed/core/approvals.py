@@ -1,10 +1,9 @@
 import inspect
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
-from math import isfinite
 from typing import Annotated, Protocol
 
-from pydantic import Field
+from pydantic import ConfigDict, Field, TypeAdapter
 
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import ApprovalAnswer, PolicyDecision
@@ -29,9 +28,16 @@ class Approver(Protocol):
     async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer | None: ...
 
 
+_APPROVAL_TIMEOUT = TypeAdapter(
+    Annotated[float, Field(gt=0)],
+    config=ConfigDict(
+        title="approval_timeout", strict=True, allow_inf_nan=False, hide_input_in_errors=True
+    ),
+)
+
+
 def validate_approval_timeout(value: float) -> None:
-    if type(value) not in (int, float) or not isfinite(value) or value <= 0:
-        raise ValueError("approval_timeout must be a finite positive number of seconds")
+    _APPROVAL_TIMEOUT.validate_python(value)
 
 
 @dataclass(frozen=True)

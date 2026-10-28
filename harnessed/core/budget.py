@@ -1,5 +1,8 @@
 import inspect
-from dataclasses import dataclass
+from typing import Annotated
+
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass
 
 from harnessed.core.model import ModelRequest
 from harnessed.core.tokens import TokenCounter
@@ -25,16 +28,13 @@ class ContextBudgetExceeded(RuntimeError):
         )
 
 
-@dataclass(frozen=True)
+@dataclass(
+    frozen=True,
+    config=ConfigDict(strict=True, extra="forbid", allow_inf_nan=False, hide_input_in_errors=True),
+)
 class ContextBudget:
-    limit: int | None = None
-    reserve_tokens: int = 0
-
-    def __post_init__(self):
-        if self.limit is not None and (type(self.limit) is not int or self.limit < 1):
-            raise ValueError("limit must be a positive integer or None")
-        if type(self.reserve_tokens) is not int or self.reserve_tokens < 0:
-            raise ValueError("reserve_tokens must be a non-negative integer")
+    limit: Annotated[int, Field(ge=1)] | None = None
+    reserve_tokens: Annotated[int, Field(ge=0)] = 0
 
     def window_limit(self, context_window: int | None) -> int | None:
         if context_window is None:

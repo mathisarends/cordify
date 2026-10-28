@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Annotated, Any, Protocol, runtime_checkable
+
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass as validated_dataclass
 
 from .messages import Assistant, Message, ToolCall, freeze, message_from_dict
+
+_VALUE_CONFIG = ConfigDict(
+    strict=True, extra="forbid", allow_inf_nan=False, hide_input_in_errors=True
+)
 
 
 class StopReason(StrEnum):
@@ -25,10 +31,10 @@ class StopReason(StrEnum):
     REJECTED = "rejected"
 
 
-@dataclass(frozen=True)
+@validated_dataclass(frozen=True, config=_VALUE_CONFIG)
 class ToolDefinition:
     __hash__ = None
-    name: str
+    name: Annotated[str, Field(min_length=1)]
     description: str
     parameters: Mapping[str, Any]
 
@@ -36,13 +42,13 @@ class ToolDefinition:
         object.__setattr__(self, "parameters", freeze(self.parameters))
 
 
-@dataclass(frozen=True)
+@validated_dataclass(frozen=True, config=_VALUE_CONFIG)
 class ModelRequest:
     __hash__ = None
-    model: str
+    model: Annotated[str, Field(min_length=1)]
     messages: tuple[Message, ...]
     tools: tuple[ToolDefinition, ...] = ()
-    max_tokens: int | None = None
+    max_tokens: Annotated[int, Field(ge=1)] | None = None
     settings: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -51,31 +57,16 @@ class ModelRequest:
         object.__setattr__(self, "settings", freeze(self.settings))
 
 
-@dataclass(frozen=True)
+@validated_dataclass(frozen=True, config=_VALUE_CONFIG)
 class ModelUsage:
     """Provider-neutral counters; cache writes are distinct from uncached input."""
 
-    input_tokens: int
-    output_tokens: int = 0
-    cache_read_tokens: int | None = None
-    cache_write_tokens: int | None = None
-    reasoning_tokens: int | None = None
-    cost: float | None = None
-
-    def __post_init__(self):
-        values = (
-            self.input_tokens,
-            self.output_tokens,
-            self.cache_read_tokens,
-            self.cache_write_tokens,
-            self.reasoning_tokens,
-        )
-        if any(value is not None and (type(value) is not int or value < 0) for value in values):
-            raise ValueError("Token usage must contain non-negative integers")
-        if self.cost is not None and (
-            type(self.cost) not in (int, float) or not math.isfinite(self.cost) or self.cost < 0
-        ):
-            raise ValueError("Usage cost must be finite and non-negative")
+    input_tokens: Annotated[int, Field(ge=0)]
+    output_tokens: Annotated[int, Field(ge=0)] = 0
+    cache_read_tokens: Annotated[int, Field(ge=0)] | None = None
+    cache_write_tokens: Annotated[int, Field(ge=0)] | None = None
+    reasoning_tokens: Annotated[int, Field(ge=0)] | None = None
+    cost: Annotated[float, Field(ge=0)] | None = None
 
     @property
     def cache_hit_rate(self) -> float | None:
@@ -138,11 +129,11 @@ class ModelChunk:
             object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
 
 
-@dataclass(frozen=True, slots=True)
+@validated_dataclass(frozen=True, slots=True, config=_VALUE_CONFIG)
 class ModelInfo:
-    name: str
-    context_window: int | None = None
-    max_output: int | None = None
+    name: Annotated[str, Field(min_length=1)]
+    context_window: Annotated[int, Field(ge=1)] | None = None
+    max_output: Annotated[int, Field(ge=1)] | None = None
     supports_images: bool = False
 
 
