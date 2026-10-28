@@ -125,6 +125,8 @@ class CompactionManager:
             return request
         state = await self.state(request)
         policy = self.ctx[CompactionPolicy]
+        if not set(policy.settings.preserve_turns) <= self.log._known_turns:
+            raise ValueError("preserve_turns must refer to existing turns in the session log")
         decision = policy.trigger(state)
         if inspect.isawaitable(decision):
             if inspect.iscoroutine(decision):

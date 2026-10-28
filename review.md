@@ -32,11 +32,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   consumers. AgentLoop now provides its registry/prompt/runtime services, and the
   application path no longer installs implicit compaction or spill stores.
 
-### P1-8 — Boundary validation
-
-- Replace the remaining legacy compaction option validators with
-  declarative constraints as those feature plugins migrate.
-
 ### P1-10 — Finish the PydanticAI migration
 
 - Use upstream context-window metadata when available and explicit overrides;
@@ -49,11 +44,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Remove legacy persona/agents_md and order/stable prompt APIs from defaults.
 
 ## P2 — Structure, typing, docs and testing
-
-### P2-6 — Testing package
-
-- Move the extractive fake compactor into testing; production compaction must
-  use the session model after the remaining legacy consumers migrate.
 
 ### P2-7 — Complete structure-target.md
 
@@ -69,7 +59,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## Target features and policies
 
-- Finish migrating legacy compaction policies to Compaction.
 - Add the approved Subagent child-session/log mechanism and inherited approvals.
 - Add Skill/Skills with lazy discovery/load/read, safe path handling and optional
   YAML as specified in api-target.md. MCP, OTel, UI, RAG and eval systems remain

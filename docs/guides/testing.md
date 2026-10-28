@@ -50,6 +50,10 @@ async def chunks(request):
 model = CallbackModel(chunks)
 ```
 
+`ExtractiveSummarizer` is an explicitly selected offline fake for compaction tests.
+Pass it as `Compaction(summarizer=ExtractiveSummarizer(), ...)`. Production defaults
+summarize through the session model; installing the testing package changes no policy.
+
 ## Replace feature backends
 
 `InMemoryFS` and `FakeShell` are real plugins in the `filesystem` and `shell` slots.

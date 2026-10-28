@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "harnessed"
 LAYERS = {"kernel": 0, "core": 1, "plugins": 2, "models": 2, "integrations": 2}
 # Transitional packages are removed as their features move to the target structure.
-LEGACY_LAYERS = {"seams": 1, "adapters": 2}
+LEGACY_LAYERS = {"seams": 1}
 
 
 def test_imports_follow_layer_direction_and_public_boundaries():
@@ -127,6 +127,7 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
         "presets.py",
     }
     assert not (PACKAGE / "std").exists()
+    assert not (PACKAGE / "adapters").exists()
 
 
 async def test_typed_keys_have_identity_and_work_with_temporal_needs():

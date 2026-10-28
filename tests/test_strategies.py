@@ -16,7 +16,6 @@ from harnessed import (
     Plugin,
     PreStep,
     SpillLargeResults,
-    ThresholdCompaction,
     ToolCall,
     ToolResult,
     hook,
@@ -37,12 +36,12 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins._context.providers import compactor
+from harnessed.plugins import Compaction, at_ratio
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.plugins.spill import spill_store
-from harnessed.testing import ScriptedModel
+from harnessed.testing import ExtractiveSummarizer, ScriptedModel
 
 
 async def test_large_results_spill_to_persistent_file_and_keep_structured_metadata(tmp_path):
@@ -101,6 +100,7 @@ async def test_spill_reads_unicode_character_ranges_reject_escape_and_reuse_cont
 async def test_spill_reuses_verified_concurrent_winner_on_windows_replace_race(
     tmp_path, monkeypatch
 ):
+
     def racing_replace(source, destination):
         destination.write_bytes(source.read_bytes())
         raise PermissionError("target opened by concurrent writer")
@@ -112,6 +112,7 @@ async def test_spill_reuses_verified_concurrent_winner_on_windows_replace_race(
 
 
 async def test_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatch):
+
     def denied(source, destination):
         raise PermissionError("write denied")
 
@@ -149,7 +150,12 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
             agent_loop(),
             llm(model),
             tools,
-            ThresholdCompaction(at=0.5, keep_turns=0, summary_tokens=24),
+            Compaction(
+                trigger=at_ratio(0.5),
+                summarizer=ExtractiveSummarizer(),
+                keep_turns=0,
+                summary_tokens=24,
+            ),
             session_jsonl(tmp_path),
         ],
         context_window=400,
@@ -215,8 +221,7 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
         [
             agent_loop(),
             llm(model),
-            compactor(BlockingCompactor()),
-            ThresholdCompaction(at=0.5, keep_turns=0),
+            Compaction(trigger=at_ratio(0.5), summarizer=BlockingCompactor(), keep_turns=0),
         ],
         context_window=100,
     )
@@ -230,13 +235,18 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
 
 
 async def test_compactor_error_is_reported_and_history_is_intact():
+
     class Broken:
         async def summarize(self, messages, *, max_tokens):
             raise ValueError("summary failed")
 
     model = ScriptedModel(["reply"])
     harness = Harness(
-        [agent_loop(), llm(model), compactor(Broken()), ThresholdCompaction(0.5, keep_turns=0)],
+        [
+            agent_loop(),
+            llm(model),
+            Compaction(trigger=at_ratio(0.5), summarizer=Broken(), keep_turns=0),
+        ],
         context_window=100,
     )
     async with harness.session("failed-summary") as agent:
@@ -253,7 +263,12 @@ async def test_keep_turns_retains_recent_work_and_later_compaction_merges_old_su
         [
             agent_loop(),
             llm(model),
-            ThresholdCompaction(at=0.5, keep_turns=1, summary_tokens=16),
+            Compaction(
+                trigger=at_ratio(0.5),
+                summarizer=ExtractiveSummarizer(),
+                keep_turns=1,
+                summary_tokens=16,
+            ),
         ],
         context_window=300,
     )
@@ -270,6 +285,7 @@ async def test_keep_turns_retains_recent_work_and_later_compaction_merges_old_su
 
 
 async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
+
     class Verbose:
         async def summarize(self, messages, *, max_tokens):
             return "z" * 2000
@@ -279,8 +295,9 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
         [
             agent_loop(),
             llm(model),
-            compactor(Verbose()),
-            ThresholdCompaction(at=0.5, keep_turns=0, summary_tokens=2000),
+            Compaction(
+                trigger=at_ratio(0.5), summarizer=Verbose(), keep_turns=0, summary_tokens=2000
+            ),
         ],
         context_window=100,
     )
@@ -299,6 +316,7 @@ async def test_empty_or_non_advancing_compaction_is_rejected_on_replay():
 
 
 async def test_latest_observation_policy_limits_old_summaries_per_source_and_unwinds():
+
     class Observer(Plugin):
         def __init__(self):
             self.index = 0
@@ -316,7 +334,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
         for text in ("one", "two", "three"):
             await agent.run(text)
         texts = [m.text for m in model.requests[-1].messages]
-        assert "brief 1" not in texts and "brief 2" in texts and "full 3" in texts
+        assert "brief 1" not in texts and "brief 2" in texts and ("full 3" in texts)
         assert "full 1" not in texts
         assert Session("replay", seed=agent.log.events).messages == agent.log.messages
     assert isinstance(agent.log.events[-1], ObservationPolicyApplied)
@@ -356,9 +374,9 @@ async def test_model_summarizer_keeps_tool_names_and_arguments_in_summary_input(
 @pytest.mark.parametrize(
     "create",
     [
-        lambda: ThresholdCompaction(at=0),
-        lambda: ThresholdCompaction(at=1.1),
-        lambda: ThresholdCompaction(keep_turns=-1),
+        lambda: Compaction(trigger=at_ratio(0), summarizer=ExtractiveSummarizer()),
+        lambda: Compaction(trigger=at_ratio(1.1), summarizer=ExtractiveSummarizer()),
+        lambda: Compaction(trigger=at_ratio(0.8), summarizer=ExtractiveSummarizer(), keep_turns=-1),
         lambda: SpillLargeResults(0),
         lambda: LatestObservationOnly(max_summaries=-1),
         lambda: ModelUsage(-1),

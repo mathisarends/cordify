@@ -6,7 +6,6 @@ from ._exports import exported
 logging.getLogger("harnessed").addHandler(logging.NullHandler())
 
 if TYPE_CHECKING:
-    from harnessed.adapters.compaction import ExtractiveCompactor as ExtractiveCompactor
     from harnessed.agent import Agent as Agent
     from harnessed.agent import PluginConflict as PluginConflict
     from harnessed.core.approvals import Approval as Approval
@@ -81,12 +80,6 @@ if TYPE_CHECKING:
     from harnessed.kernel.plugin import PluginSpec as PluginSpec
     from harnessed.kernel.plugin import hook as hook
     from harnessed.kernel.plugin import plugin as plugin
-    from harnessed.plugins._context.compaction import ContextBudgetGuard as ContextBudgetGuard
-    from harnessed.plugins._context.compaction import PeriodicCompaction as PeriodicCompaction
-    from harnessed.plugins._context.compaction import (
-        SlidingWindowCompaction as SlidingWindowCompaction,
-    )
-    from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
     from harnessed.plugins.filesystem import FS as FS
     from harnessed.plugins.observations import (
         LatestObservationOnly as LatestObservationOnly,
@@ -116,9 +109,6 @@ _EXPORTS = {
     "Approvals": ("harnessed.core.approvals", "Approvals"),
     "ContextBudget": ("harnessed.core.budget", "ContextBudget"),
     "ContextBudgetExceeded": ("harnessed.core.budget", "ContextBudgetExceeded"),
-    "ContextBudgetGuard": ("harnessed.plugins._context.compaction", "ContextBudgetGuard"),
-    "PeriodicCompaction": ("harnessed.plugins._context.compaction", "PeriodicCompaction"),
-    "SlidingWindowCompaction": ("harnessed.plugins._context.compaction", "SlidingWindowCompaction"),
     "ToolOutputLimit": ("harnessed.core.tools.output_limit", "ToolOutputLimit"),
     "OutputTruncation": ("harnessed.core.messages", "OutputTruncation"),
     "Step": ("harnessed.core.session.turns", "Step"),
@@ -130,7 +120,6 @@ _EXPORTS = {
     "RunResult": ("harnessed.core.runtime.result", "RunResult"),
     "ApproximateTokenCounter": ("harnessed.core.tokens", "ApproximateTokenCounter"),
     "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
-    "ExtractiveCompactor": ("harnessed.adapters.compaction", "ExtractiveCompactor"),
     "File": ("harnessed.core.attachments", "File"),
     "Image": ("harnessed.core.attachments", "Image"),
     "Bail": ("harnessed.kernel.events", "Bail"),
@@ -188,7 +177,6 @@ _EXPORTS = {
     "SpillStore": ("harnessed.plugins.spill", "SpillStore"),
     "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
     "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
-    "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
     "ToolRegistry": ("harnessed.core.tools.registry", "ToolRegistry"),
     "Key": ("harnessed.kernel.keys", "Key"),
 }
@@ -205,9 +193,6 @@ __all__ = [
     "Approvals",
     "ContextBudget",
     "ContextBudgetExceeded",
-    "ContextBudgetGuard",
-    "PeriodicCompaction",
-    "SlidingWindowCompaction",
     "ToolOutputLimit",
     "OutputTruncation",
     "Step",
@@ -219,7 +204,6 @@ __all__ = [
     "RunResult",
     "ApproximateTokenCounter",
     "TokenCounter",
-    "ExtractiveCompactor",
     "File",
     "Image",
     "Bail",
@@ -277,7 +261,6 @@ __all__ = [
     "SpillStore",
     "LatestObservationOnly",
     "SpillLargeResults",
-    "ThresholdCompaction",
     "ToolRegistry",
     "Key",
 ]

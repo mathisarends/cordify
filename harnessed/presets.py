@@ -14,7 +14,6 @@ from harnessed.core.session.store import SessionPersistence
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.kernel import Context, PluginLike, plugin
 from harnessed.plugins._context.instructions import agents_md
-from harnessed.plugins._context.providers import compactor
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local, fs_tools
 from harnessed.plugins.observe.tokens import token_counter
@@ -96,7 +95,6 @@ class Harness:
                         tools(),
                         system_prompt(),
                         token_counter(),
-                        compactor(),
                         spill_store(),
                         *self.plugins,
                         self._bundle,

@@ -13,12 +13,6 @@ if TYPE_CHECKING:
     from harnessed.core.session.store import MemorySessions as MemorySessions
     from harnessed.core.tools.output_limit import ToolOutputLimit as ToolOutputLimit
     from harnessed.core.tracing import NoopTracer as NoopTracer
-    from harnessed.plugins._context.compaction import ContextBudgetGuard as ContextBudgetGuard
-    from harnessed.plugins._context.compaction import PeriodicCompaction as PeriodicCompaction
-    from harnessed.plugins._context.compaction import (
-        SlidingWindowCompaction as SlidingWindowCompaction,
-    )
-    from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
     from harnessed.plugins._context.prompt import instructions as instructions
     from harnessed.plugins.agents.loop import agent_loop as agent_loop
     from harnessed.plugins.compaction import Compaction as Compaction
@@ -58,14 +52,10 @@ _EXPORTS = {
     "JsonlSessions": ("harnessed.plugins.sessions", "JsonlSessions"),
     "instructions": ("harnessed.plugins._context.prompt", "instructions"),
     "Approvals": ("harnessed.core.approvals", "Approvals"),
-    "ContextBudgetGuard": ("harnessed.plugins._context.compaction", "ContextBudgetGuard"),
-    "PeriodicCompaction": ("harnessed.plugins._context.compaction", "PeriodicCompaction"),
-    "SlidingWindowCompaction": ("harnessed.plugins._context.compaction", "SlidingWindowCompaction"),
     "Rules": ("harnessed.plugins.rules", "Rules"),
     "when": ("harnessed.plugins.rules", "when"),
     "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
     "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
-    "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
 }
 __all__ = [
     "Compaction",
@@ -89,14 +79,10 @@ __all__ = [
     "JsonlSessions",
     "instructions",
     "Approvals",
-    "ContextBudgetGuard",
-    "PeriodicCompaction",
-    "SlidingWindowCompaction",
     "Rules",
     "when",
     "LatestObservationOnly",
     "SpillLargeResults",
-    "ThresholdCompaction",
 ]
 
 

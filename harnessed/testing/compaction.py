@@ -1,3 +1,5 @@
+"""An explicitly selected, deterministic fake for offline compaction tests."""
+
 import json
 
 from harnessed.core.budget import truncate
@@ -5,7 +7,7 @@ from harnessed.core.messages import Message, to_dict
 from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
 
 
-class ExtractiveCompactor:
+class ExtractiveSummarizer:
     """Offline fallback: budgeted message excerpts, without an extra model request."""
 
     def __init__(self, counter: TokenCounter | None = None):
