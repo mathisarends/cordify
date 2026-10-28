@@ -41,7 +41,7 @@ Actions and uv are pinned. Workflow token permissions are read-only; runs on the
 same ref replace obsolete runs. Provider tests use native SDK mocks, not credentials
 or live API calls. Optional integrations have isolated missing-extra tests.
 
-## Maintain the docs
+## Test layout
 
 The test tree mirrors the library: `tests/kernel/`, `tests/core/` (including
 runtime, prompt, session and tools), `tests/plugins/`, `tests/models/` and
@@ -49,6 +49,8 @@ runtime, prompt, session and tools), `tests/plugins/`, `tests/models/` and
 checks stay at the test root; consumer typing contracts live in `tests/typing/`.
 The architecture suite checks layer direction, feature independence (including
 package and relative imports), and the provider-SDK/YAML boundaries.
+
+## Maintain the docs
 
 The README contains the core SDK and links. Put explanations under `docs/guides/`,
 value/runtime contracts under `docs/concepts/`, API summaries under `docs/reference/`

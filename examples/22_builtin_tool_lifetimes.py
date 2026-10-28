@@ -41,15 +41,13 @@ async def main():
         registry = session.ctx[ToolRegistry]
         assert registry.definitions == ()
         print("Before a backend: no shell tools")
-        first = await session.ctx.plugin(shell_backend("local"))
-        await session.ctx.settle()
+        first = await session.use(shell_backend("local"))
         assert [tool.name for tool in registry.definitions] == ["run_command"]
         print((await session.run("Say hello using the shell.")).text)
         await first.aclose()
         assert registry.definitions == ()
         print("Backend removed: no shell tools")
-        await session.ctx.plugin(shell_backend("remote"))
-        await session.ctx.settle()
+        await session.use(shell_backend("remote"))
         assert [tool.name for tool in registry.definitions] == ["run_command"]
         print((await session.run("Run another command.")).text)
         outputs = [

@@ -1,7 +1,3 @@
-"""A small UI loop, including progress, an acknowledged approval and typed output."""
-
-from __future__ import annotations
-
 import asyncio
 from contextlib import aclosing
 

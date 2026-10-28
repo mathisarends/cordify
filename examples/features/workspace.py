@@ -1,32 +1,47 @@
 from pathlib import Path
 
-from harnessed import Inject, Plugin, ToolContext, hook
-from harnessed import Session as Agent
-from harnessed.core.plugin import Bundle
+from pydantic import BaseModel, ConfigDict, Field
+
+from harnessed import Inject, Plugin, ToolContext, hook, tool
+from harnessed.core.prompt.context import DynamicContext
 from harnessed.hooks import ReviewToolResult
 from harnessed.plugins.filesystem import FS
 
-workspace_tools = Bundle("workspace-tools")
+
+class WorkspaceTools(Plugin):
+    needs = (FS,)
+
+    @tool(name="count_lines", timeout=5)
+    async def count_lines(self, path: str, fs: Inject[FS], call: Inject[ToolContext]) -> int:
+        """Count the lines in a workspace file."""
+        await call.progress(f"Reading {path}")
+        return len((await fs.read(Path(path))).splitlines())
 
 
-@workspace_tools.tool(name="count_lines", timeout=5)
-async def count_lines(path: str, fs: Inject[FS], call: Inject[ToolContext]) -> int:
-    """Count the lines in a workspace file."""
-    await call.progress(f"Reading {path}")
-    return len((await fs.read(Path(path))).splitlines())
+workspace_tools = WorkspaceTools()
 
 
 class FailureNudge(Plugin):
+    class Config(BaseModel):
+        model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+        threshold: int = Field(default=2, ge=1)
+
+    config: Config
+
     def __init__(self, threshold: int = 2):
-        self.threshold = threshold
+        super().__init__(threshold=threshold)
+
+    async def setup(self):
         self.failures = 0
 
     @hook(ReviewToolResult)
-    async def review(self, event, next_, agent: Inject[Agent]):
+    async def review(self, event, next_, context: Inject[DynamicContext]):
         result = await next_()
         if result.is_error:
             self.failures += 1
-            if self.failures == self.threshold:
-                await agent.inject("Check the file path before calling the tool again.")
+            if self.failures == self.config.threshold:
+                await context.set(
+                    "workspace-path", "Check the file path before calling the tool again."
+                )
             return result.with_note("Check the file path before trying again.")
         return result

@@ -22,7 +22,7 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.01_tool_agent",
         "examples.02_plugins",
         "examples.03_inbox",
-        "examples.05_bundles_and_injection",
+        "examples.05_tools_and_injection",
         "examples.06_explicit_registration",
         "examples.07_context",
         "examples.08_observations",

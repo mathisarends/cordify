@@ -26,21 +26,23 @@ async def main():
     model = PausingModel()
     agent = Agent(model=model, plugins=[Approvals(trust="all")])
     async with agent.session("inbox") as session:
-        await session.inject("Silent context: This project uses Python 3.12+.")
-        print(f"After inject: {session.status}, {len(model.requests)} requests")
-        await session.followup("Analyze the project.")
+        await session.context.set("project-python", "This project uses Python 3.12+.")
+        print(f"After a quiet context update: {session.status}, {len(model.requests)} requests")
+        first = asyncio.create_task(session.run("Analyze the project."))
         await model.started.wait()
         await session.steer("Focus on the tests.")
-        await session.inject("Additional context: Unit tests already exist.")
-        await session.followup("Write a summary afterward.")
+        await session.context.set("project-tests", "Unit tests already exist.")
+        second = asyncio.create_task(session.run("Write a summary afterward."))
         model.proceed.set()
-        await session.when_idle()
+        results = await asyncio.gather(first, second)
+        await session.wait_until_idle()
+        assert results[0].turn_id != results[1].turn_id
         for index, request in enumerate(model.requests, 1):
             print(f"\nRequest {index}:")
             for message in request.messages:
-                if message.role == "user":
-                    print(f"  {message.content}")
-        turns = session.log.turns
+                if message.role in ("user", "system"):
+                    print(f"  {message.text}")
+        turns = session.turns
         print(f"\n{len(turns)} turns, {len(model.requests)} steps, status: {session.status}")
         for number, turn in enumerate(turns, 1):
             print(f"Turn {number}: {len(turn.steps)} steps, reason: {turn.reason}")

@@ -1,4 +1,4 @@
-"""Run with: uv run python -m examples.05_bundles_and_injection"""
+"""Run with: uv run python -m examples.05_tools_and_injection"""
 
 import asyncio
 
@@ -47,7 +47,7 @@ async def main():
         print(f"Model arguments: {list(schema['properties'])}")
         final_request = model.requests[-1]
         print("\nNudge in next request:")
-        print([m.content for m in final_request.messages if m.role == "user"][-1])
+        print([m.text for m in final_request.messages if "workspace-path" in m.text])
 
 
 if __name__ == "__main__":

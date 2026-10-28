@@ -4,8 +4,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Inject, ToolCall, ToolResult
-from harnessed.core.plugin import Bundle
+from harnessed import Agent, Inject, Plugin, ToolCall, ToolResult, hook, tool
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.hooks import ExecuteTool
@@ -15,19 +14,27 @@ from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
 from harnessed.testing import ScriptedModel
 
 budget = ToolOutputLimit(max_chars=1024)
-tools = Bundle("large-results")
-early_limit = Bundle("early-output-limit")
 
 
-@tools.tool
-async def cat_log(fs: Inject[FS]) -> ToolResult:
-    """Return a deliberately unbounded log, like cat without a range."""
-    return ToolResult(await fs.read(Path("large.log")), "error", exit_code=3)
+class LargeResultsTools(Plugin):
+    needs = (FS,)
+
+    @tool
+    async def cat_log(self, fs: Inject[FS]) -> ToolResult:
+        """Return a deliberately unbounded log, like cat without a range."""
+        return ToolResult(await fs.read(Path("large.log")), "error", exit_code=3)
 
 
-@early_limit.on(ExecuteTool)
-async def truncate(event, next_):
-    return budget.apply(await next_())
+tools = LargeResultsTools()
+
+
+class EarlyOutputLimitTools(Plugin):
+    @hook(ExecuteTool)
+    async def truncate(self, event, next_):
+        return budget.apply(await next_())
+
+
+early_limit = EarlyOutputLimitTools()
 
 
 async def main():

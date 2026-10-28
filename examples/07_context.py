@@ -18,8 +18,8 @@ from harnessed import (
     ToolCall,
     hook,
     plugin,
+    tool,
 )
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import ContextMessage
 from harnessed.hooks import PreStep
 from harnessed.models import ModelChunk
@@ -52,13 +52,16 @@ class RelevantMemories(Plugin):
         return await next_()
 
 
-memory_tools = Bundle("memory")
+class MemoryTools(Plugin):
+    needs = (Memory,)
+
+    @tool(readonly=True)
+    async def recall(self, query: str, memory: Inject[Memory]) -> list[str]:
+        """Search long-term memory for relevant project information."""
+        return await memory.search(query, k=5)
 
 
-@memory_tools.tool(readonly=True)
-async def recall(query: str, memory: Inject[Memory]) -> list[str]:
-    """Search long-term memory for relevant project information."""
-    return await memory.search(query, k=5)
+memory_tools = MemoryTools()
 
 
 async def main():

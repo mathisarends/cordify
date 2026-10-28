@@ -3,10 +3,10 @@
 import asyncio
 from time import perf_counter
 
-from harnessed import Agent, ApprovalAnswer, ToolCall
+from harnessed import Agent, ApprovalAnswer, Context, Plugin, ToolCall, plugin, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import ToolReturned
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.hooks import ApprovalRequest, ToolPolicy
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals
@@ -14,11 +14,12 @@ from harnessed.testing import ScriptedModel
 
 
 async def without_ui():
-    tools = Bundle("headless-tools")
+    class HeadlessTools(Plugin):
+        @tool
+        async def publish(self) -> str:
+            raise AssertionError("Publishing requires approval")
 
-    @tools.tool
-    async def publish() -> str:
-        raise AssertionError("Publishing requires approval")
+    tools = HeadlessTools()
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Approval unavailable."])
     async with Agent(
@@ -32,47 +33,48 @@ async def without_ui():
 
 
 async def listener_and_priorities():
-    extensions = Bundle("configured")
-    tools = Bundle("approved-tools")
     order = []
 
-    @tools.tool
-    async def publish() -> str:
-        order.append("execute")
-        return "Artifact published by the offline example."
+    @plugin(needs=(ToolRegistry,))
+    async def approved_tools(ctx: Context):
+        @ctx.tool
+        async def publish() -> str:
+            order.append("execute")
+            return "Artifact published by the offline example."
 
-    @tools.on(ToolPolicy, priority=0)
-    async def timing(event, next_):
-        order.append("timer")
-        start = perf_counter()
-        result = await next_()
-        print(f"Downstream policy time: {(perf_counter() - start) * 1000:.1f} ms")
-        return result
+        @ctx.hook(ToolPolicy, priority=0)
+        async def timing(event, next_):
+            order.append("timer")
+            start = perf_counter()
+            result = await next_()
+            print(f"Downstream policy time: {(perf_counter() - start) * 1000:.1f} ms")
+            return result
 
-    @tools.on(ToolPolicy, priority=100)
-    async def check(event, next_):
-        order.append("policy")
-        await asyncio.sleep(0.005)
-        return await next_()
+        @ctx.hook(ToolPolicy, priority=100)
+        async def check(event, next_):
+            order.append("policy")
+            await asyncio.sleep(0.005)
+            return await next_()
+
+        @ctx.on(ApprovalRequest)
+        async def answer(event):
+            order.append("approval")
+            start = perf_counter()
+            await asyncio.sleep(0.025)
+            print(f"Approval response time: {(perf_counter() - start) * 1000:.1f} ms")
+            return ApprovalAnswer.ALLOW
+
+        yield
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Published."])
     agent = Agent(
         model=model,
         plugins=[
             Approvals(trust="all"),
-            tools,
+            approved_tools(),
             ApprovalGate(risky={"publish"}, priority=-100),
-            extensions,
         ],
     )
-
-    @extensions.on(ApprovalRequest)
-    async def answer(event):
-        order.append("approval")
-        start = perf_counter()
-        await asyncio.sleep(0.025)
-        print(f"Approval response time: {(perf_counter() - start) * 1000:.1f} ms")
-        return ApprovalAnswer.ALLOW
 
     async with agent.session("answered") as session:
         await session.run("Publish the artifact.")

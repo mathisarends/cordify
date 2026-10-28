@@ -6,8 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from harnessed import Agent, Inject, ToolCall, ToolContext
-from harnessed.core.plugin import Bundle
+from harnessed import Agent, Inject, Plugin, ToolCall, ToolContext, tool
 from harnessed.core.session.events import ToolReturned
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals
@@ -40,21 +39,23 @@ class IssueReceipt(BaseModel):
 
 
 async def validated_tool():
-    tools = Bundle("issues")
     created = []
 
-    @tools.tool
-    async def create_issue(form: IssueForm, call: Inject[ToolContext]) -> IssueReceipt:
-        """Create an issue after validating its title, assignee and priority."""
-        assert isinstance(form.assignee, Assignee) and isinstance(form.priority, Priority)
-        await call.progress(f"Creating issue for {form.assignee.handle}")
-        created.append(form)
-        return IssueReceipt(
-            issue_id=len(created),
-            title=form.title,
-            assigned_to=form.assignee.handle,
-            priority=form.priority,
-        )
+    class IssuesTools(Plugin):
+        @tool
+        async def create_issue(self, form: IssueForm, call: Inject[ToolContext]) -> IssueReceipt:
+            """Create an issue after validating its title, assignee and priority."""
+            assert isinstance(form.assignee, Assignee) and isinstance(form.priority, Priority)
+            await call.progress(f"Creating issue for {form.assignee.handle}")
+            created.append(form)
+            return IssueReceipt(
+                issue_id=len(created),
+                title=form.title,
+                assigned_to=form.assignee.handle,
+                priority=form.priority,
+            )
+
+    tools = IssuesTools()
 
     invalid = {"title": "x", "assignee": {"handle": "a"}, "priority": "urgent"}
     valid = {"title": "Fix authentication", "assignee": {"handle": "alice"}, "priority": "high"}

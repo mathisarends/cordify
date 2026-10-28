@@ -2,15 +2,13 @@
 
 import asyncio
 
-from harnessed import Agent, Inject, Plugin, Session, ToolCall, hook
+from harnessed import Agent, Inject, Plugin, Session, ToolCall, ToolResult, hook, tool
 from harnessed.core.messages import user
-from harnessed.core.plugin import Bundle
 from harnessed.events import InboxAdded, ToolFinished
 from harnessed.hooks import ReviewToolResult
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.plugins.rules import Rules, when
-from harnessed.plugins.shell import ProcResult
 from harnessed.testing import ScriptedModel
 
 
@@ -42,13 +40,14 @@ class TestDiscipline(Plugin):
         return result
 
 
-commands = Bundle("simulated-commands")
+class SimulatedCommandsTools(Plugin):
+    @tool
+    async def run_command(self, argv: list[str]) -> ToolResult:
+        """Run the simulated test command."""
+        return ToolResult("FAILED tests/test_auth.py::test_login", "error", exit_code=1)
 
 
-@commands.tool
-async def run_command(argv: list[str]) -> ProcResult:
-    """Run the simulated test command."""
-    return ProcResult(1, "FAILED tests/test_auth.py::test_login", "")
+commands = SimulatedCommandsTools()
 
 
 async def demo(name, policy):
@@ -77,6 +76,10 @@ async def demo(name, policy):
         async for event in session.stream("Run the tests and investigate failures."):
             if isinstance(event, ToolFinished):
                 print(f"exit_code={event.result.exit_code}: {event.result.content}")
+        assert session.context.values
+        assert any(
+            isinstance(event, InboxAdded) and event.mode == "steer" for event in session.events
+        )
 
 
 async def main():

@@ -7,21 +7,21 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, ApprovalAnswer, ToolCall
+from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate
-from harnessed.core.messages import system
-from harnessed.core.plugin import Bundle
-from harnessed.core.session.events import LogTailRecovered, ToolReturned
+from harnessed.core.session.events import InboxAdded, LogTailRecovered, ToolReturned
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.testing import ScriptedModel
 
-tools = Bundle("work")
+
+class WorkTools(Plugin):
+    @tool
+    async def work(self) -> str:
+        return "Offline operation finished."
 
 
-@tools.tool
-async def work() -> str:
-    return "Offline operation finished."
+tools = WorkTools()
 
 
 def compose(root: Path, model, answer):
@@ -52,8 +52,17 @@ async def crash_worker(root: Path):
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))], "first task finished"])
     async with compose(root, model, answer).session("resumable") as session:
         await session.run("First task.")
-        await session.inject(system("External state changed before the crash."))
-        await session.followup("Queued task from the first process.")
+        await session.pause()
+        await session.context.set("external-state", "External state changed before the crash.")
+        enqueued = asyncio.Event()
+
+        @session.on(InboxAdded)
+        def submitted(event):
+            enqueued.set()
+
+        queued = asyncio.create_task(session.run("Queued task from the first process."))
+        await enqueued.wait()
+        assert not queued.done()
         torn_append(root)
         print("First process: exiting without Context or writer teardown.", flush=True)
         os._exit(0)
@@ -70,14 +79,14 @@ async def resume(root: Path):
         ["Queued task resumed.", [ModelChunk(tool_call=ToolCall("work"))], "Fresh task finished."]
     )
     async with compose(root, model, answer).session("resumable") as session:
-        await session.when_idle()
+        await session.resume()
+        await session.wait_until_idle()
         assert any(
             message.text == "Queued task from the first process."
             for message in model.requests[0].messages
         )
         assert any(
-            message.role == "system" and "External state changed" in message.text
-            for message in model.requests[0].messages
+            "External state changed" in message.text for message in model.requests[0].messages
         )
         print("Second process: queued followup and silent context restored.")
         recovered = next(e for e in session.log.events if isinstance(e, LogTailRecovered))

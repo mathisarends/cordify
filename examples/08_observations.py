@@ -4,8 +4,18 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from harnessed import Agent, Context, Inject, Observation, Plugin, Session, ToolCall, hook, plugin
-from harnessed.core.plugin import Bundle
+from harnessed import (
+    Agent,
+    Context,
+    Inject,
+    Observation,
+    Plugin,
+    Session,
+    ToolCall,
+    hook,
+    plugin,
+    tool,
+)
 from harnessed.hooks import PreStep
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
@@ -65,22 +75,24 @@ class BrowserObserver(Plugin):
         return await next_()
 
 
-browser_tools = Bundle("browser")
+class BrowserTools(Plugin):
+    needs = (Browser,)
+
+    @tool
+    async def click(self, ref: str, browser: Inject[Browser]) -> str:
+        """Click an element by its ref from the current page state."""
+        before = browser.current_url
+        await browser.click(ref)
+        after = browser.current_url
+        return f"Clicked {ref}." + (f" Navigated to {after}." if after != before else "")
+
+    @tool
+    async def snapshot(self, browser: Inject[Browser]) -> str:
+        """Get the full current page state if the page may have changed."""
+        return (await browser.snapshot()).render()
 
 
-@browser_tools.tool
-async def click(ref: str, browser: Inject[Browser]) -> str:
-    """Click an element by its ref from the current page state."""
-    before = browser.current_url
-    await browser.click(ref)
-    after = browser.current_url
-    return f"Clicked {ref}." + (f" Navigated to {after}." if after != before else "")
-
-
-@browser_tools.tool
-async def snapshot(browser: Inject[Browser]) -> str:
-    """Get the full current page state if the page may have changed."""
-    return (await browser.snapshot()).render()
+browser_tools = BrowserTools()
 
 
 async def main():

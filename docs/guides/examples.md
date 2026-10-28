@@ -8,6 +8,8 @@ requires its provider extra and credentials.
 | --- | --- | --- |
 | Tool agent | `uv run python -m examples.01_tool_agent` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/01_tool_agent.py) |
 | Plugin composition | `uv run python -m examples.02_plugins` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/02_plugins.py) |
+| Queued turns and quiet context | `uv run python -m examples.03_inbox` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/03_inbox.py) |
+| Tools and injection | `uv run python -m examples.05_tools_and_injection` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/05_tools_and_injection.py) |
 | DeepSeek integration | `uv run python -m examples.04_deepseek` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/04_deepseek.py) |
 | Function plugin ownership | `uv run python -m examples.06_explicit_registration` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/06_explicit_registration.py) |
 | Combined context policies | `uv run python -m examples.10_context_strategies` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/10_context_strategies.py) |

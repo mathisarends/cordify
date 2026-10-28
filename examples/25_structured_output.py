@@ -1,7 +1,3 @@
-"""Typed answers use native JSON output or a validated final-answer tool."""
-
-from __future__ import annotations
-
 import asyncio
 from typing import Literal
 

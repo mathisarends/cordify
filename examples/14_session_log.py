@@ -3,24 +3,24 @@
 import asyncio
 import json
 
-from harnessed import Agent, ToolCall
+from harnessed import Agent, Plugin, ToolCall, tool
 from harnessed.core.messages import User
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import AssistantMessage, UserMessage
-from harnessed.core.session.session import SessionLog as Session
-from harnessed.core.session.session import derive_messages, derive_requests
+from harnessed.core.session.session import SessionLog, derive_messages, derive_requests
 from harnessed.core.stream import TextDelta
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
-math = Bundle("math")
+
+class MathTools(Plugin):
+    @tool
+    async def add(self, a: int, b: int) -> int:
+        return a + b
 
 
-@math.tool
-async def add(a: int, b: int) -> int:
-    return a + b
+math = MathTools()
 
 
 async def main():
@@ -40,7 +40,7 @@ async def main():
         log = session.log.events
     encoded = json.dumps([encode_event(event) for event in log])
     restored = tuple(decode_event(record) for record in json.loads(encoded))
-    replay = Session("replayed", seed=restored)
+    replay = SessionLog("replayed", seed=restored)
     assert replay.messages == derive_messages(log)
     assert replay.requests == derive_requests(log) == tuple(model.requests)
     print("Recorded requests:", len(replay.requests))

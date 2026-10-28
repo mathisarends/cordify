@@ -5,8 +5,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Inject, Section, ToolCall
-from harnessed.core.plugin import Bundle
+from harnessed import Agent, Inject, Plugin, Section, ToolCall, tool
 from harnessed.core.session.events import ToolReturned
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals, Filesystem, Instructions
@@ -15,20 +14,24 @@ from harnessed.testing import ScriptedModel
 
 
 async def independent_calls():
-    tools = Bundle("lookups")
-    together = asyncio.Barrier(3)
-    finished = [asyncio.Event() for _ in range(3)]
     completion_order = []
 
-    @tools.tool(parallel=True)
-    async def lookup(index: int) -> str:
-        """Look up one record from an independent source."""
-        await together.wait()
-        if index < 2:
-            await finished[index + 1].wait()
-        completion_order.append(index)
-        finished[index].set()
-        return f"record {index}"
+    class LookupsTools(Plugin):
+        async def setup(self):
+            self.together = asyncio.Barrier(3)
+            self.finished = [asyncio.Event() for _ in range(3)]
+
+        @tool(parallel=True)
+        async def lookup(self, index: int) -> str:
+            """Look up one record from an independent source."""
+            await self.together.wait()
+            if index < 2:
+                await self.finished[index + 1].wait()
+            completion_order.append(index)
+            self.finished[index].set()
+            return f"record {index}"
+
+    tools = LookupsTools()
 
     calls = [ToolCall("lookup", {"index": index}) for index in range(3)]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Lookups finished."])
@@ -47,19 +50,23 @@ async def independent_calls():
 
 
 async def writes_with_resource_keys(root: Path):
-    tools = Bundle("documents")
     writes = []
 
     def resources(call: ToolCall) -> tuple[str, ...]:
         path = (root / call.arguments["path"]).resolve()
         return (f"file:{os.path.normcase(str(path))}",)
 
-    @tools.tool(parallel=True, resources=resources)
-    async def save_document(path: str, text: str, fs: Inject[FS]) -> str:
-        """Save one document in the workspace."""
-        writes.append(text)
-        await fs.write(Path(path), text)
-        return f"Saved {path}"
+    class DocumentsTools(Plugin):
+        needs = (FS,)
+
+        @tool(parallel=True, resources=resources)
+        async def save_document(self, path: str, text: str, fs: Inject[FS]) -> str:
+            """Save one document in the workspace."""
+            writes.append(text)
+            await fs.write(Path(path), text)
+            return f"Saved {path}"
+
+    tools = DocumentsTools()
 
     calls = [
         ToolCall("save_document", {"path": "a.txt", "text": "first version"}),
