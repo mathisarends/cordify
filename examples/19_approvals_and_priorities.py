@@ -4,13 +4,12 @@ import asyncio
 from time import perf_counter
 
 from harnessed import Agent, ApprovalAnswer, ToolCall
-from harnessed.core.approvals import ApprovalUnavailable
+from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import ToolReturned
 from harnessed.hooks import ApprovalRequest, ToolPolicy
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals
-from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.testing import ScriptedModel
 
 
@@ -23,7 +22,7 @@ async def without_ui():
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Approval unavailable."])
     async with Agent(
-        model=model, plugins=[Approvals(trust="all"), tools, approval_gate(risky={"publish"})]
+        model=model, plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"publish"})]
     ).session("no-ui") as session:
         result = await session.run("Publish the artifact.")
         returned = next(event for event in result.events if isinstance(event, ToolReturned))
@@ -62,7 +61,7 @@ async def listener_and_priorities():
         plugins=[
             Approvals(trust="all"),
             tools,
-            approval_gate(risky={"publish"}, priority=-100),
+            ApprovalGate(risky={"publish"}, priority=-100),
             extensions,
         ],
     )

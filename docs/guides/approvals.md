@@ -38,3 +38,11 @@ Hook priorities are explicit: lower values run first and equal values preserve
 registration order. Guard policies run at `Priority.GUARD`. Timing attached to
 ExecuteTool measures execution after the approval wait; the runtime also records
 a distinct approval-wait trace span.
+
+For a separate scoped guard, `ApprovalGate(risky={"publish"}, scope="deploy",
+priority=Priority.GUARD)` uses the same durable approval mechanism. Its optional
+approver can disappear while the guard remains active: requests then fail as
+unavailable. `Service(Approver, CallbackApprover(callback))` from
+`harnessed.core.approvals` adapts a ToolCall callback; it accepts explicit
+ApprovalAnswer values, booleans or abstention. Configure the main `Approvals`
+policy to trust that named tool when the separate gate owns its question.

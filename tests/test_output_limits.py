@@ -15,10 +15,10 @@ from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolError, ToolRegistry
-from harnessed.plugins import Approvals, JsonlSessions
-from harnessed.plugins.filesystem import fs_local, fs_tools
-from harnessed.plugins.shell import shell_local, shell_tools
-from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, spill_store
+from harnessed.plugins import Approvals, JsonlSessions, Service
+from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
+from harnessed.plugins.shell import LocalShell, ShellBackend, ShellTools
+from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, SpillStore
 from harnessed.testing import ScriptedModel
 
 
@@ -133,7 +133,7 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
             Approvals(trust="all"),
             ToolOutputLimit(4096),
             features,
-            spill_store(store),
+            Service(SpillStore, store),
             SpillLargeResults(max_tokens=100),
         ],
     ).session("spill-budget") as agent:
@@ -150,7 +150,8 @@ async def test_read_file_supports_bounded_unicode_character_ranges_and_continuat
     original = "ä😀abc" * 3000
     (tmp_path / "large.txt").write_text(original, encoding="utf-8")
     async with Application(
-        model=ScriptedModel([]), plugins=[Approvals(trust="all"), fs_local(tmp_path), fs_tools()]
+        model=ScriptedModel([]),
+        plugins=[Approvals(trust="all"), Service(FS, LocalFS(tmp_path)), FilesystemTools()],
     ).session("ranges") as agent:
         registry = agent.ctx[ToolRegistry]
         result = await registry.execute(ToolCall("read_file", {"path": "large.txt"}))
@@ -197,8 +198,8 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
         plugins=[
             Approvals(trust="all"),
             ToolOutputLimit(1024),
-            shell_local(),
-            shell_tools(tmp_path),
+            Service(ShellBackend, LocalShell()),
+            ShellTools(tmp_path),
         ],
     ).session("shell-budget") as agent:
         await agent.run("go")

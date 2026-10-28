@@ -1,5 +1,5 @@
 import inspect
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Annotated, Protocol
 
@@ -15,7 +15,7 @@ from harnessed.core.session.events import (
     SessionEvent,
 )
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.kernel import Inject, Priority, hook
+from harnessed.kernel import Context, Inject, Next, Priority, hook
 
 from .messages import ToolCall
 
@@ -26,6 +26,65 @@ class ApprovalUnavailable(RuntimeError):
 
 class Approver(Protocol):
     async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer | None: ...
+
+
+type ApprovalCallback = Callable[
+    [ToolCall], ApprovalAnswer | bool | None | Awaitable[ApprovalAnswer | bool | None]
+]
+
+
+class CallbackApprover:
+    """Adapt an explicit ToolCall callback to the narrow Approver service."""
+
+    def __init__(self, callback: ApprovalCallback):
+        self.callback = callback
+
+    async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer | None:
+        value = self.callback(call)
+        value = await value if inspect.isawaitable(value) else value
+        if value is None or isinstance(value, ApprovalAnswer):
+            return value
+        if type(value) is bool:
+            return ApprovalAnswer.ALLOW if value else ApprovalAnswer.DENY
+        raise TypeError("Approvers must return ApprovalAnswer or bool")
+
+
+class ApprovalGate(Plugin):
+    """Keep a scoped guard active even when its optional approver is unavailable."""
+
+    class Config(PluginConfig):
+        risky: Annotated[frozenset[Annotated[str, Field(min_length=1)]], Field(strict=False)]
+        ask: ApprovalCallback | None = None
+        scope: Annotated[str, Field(min_length=1)] = "approval-gate"
+        priority: int = Priority.GUARD
+
+    config: Config
+
+    def __init__(
+        self,
+        *,
+        risky: Iterable[str],
+        ask: ApprovalCallback | None = None,
+        scope: str = "approval-gate",
+        priority: int = Priority.GUARD,
+    ):
+        super().__init__(risky=risky, ask=ask, scope=scope, priority=priority)
+
+    async def setup(self, ctx: Context):
+        ctx.on(ToolPolicy, self._gate, priority=self.config.priority)
+
+    async def _gate(self, event: ToolPolicy, next_: Next[PolicyDecision]) -> PolicyDecision:
+        if event.call.name not in self.config.risky:
+            return await next_()
+        answer = await event.agent.request_approval(
+            event.call,
+            f"{event.call.name} is marked risky",
+            scope=self.config.scope,
+            approver=CallbackApprover(self.config.ask) if self.config.ask is not None else None,
+        )
+        if answer not in (ApprovalAnswer.ALLOW, ApprovalAnswer.ALWAYS):
+            return PolicyDecision.DENY
+        return await next_()
 
 
 _APPROVAL_TIMEOUT = TypeAdapter(

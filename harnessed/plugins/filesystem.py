@@ -14,7 +14,7 @@ from pydantic import Field
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError, ToolRegistry
-from harnessed.kernel import Context, Inject, plugin, run_sync
+from harnessed.kernel import Context, Inject, run_sync
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,8 +153,40 @@ class SearchResult:
     notes: tuple[str, ...] = ()
 
 
-class Filesystem(Plugin, slot="filesystem"):
+class FilesystemTools(Plugin):
+    """Expose bounded reads and writes through a separately owned FS service."""
+
+    needs = (FS, ToolRegistry)
+
+    @tool(readonly=True, parallel=True)
+    async def read_file(
+        self,
+        path: str,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        limit: Annotated[int, Field(ge=1, le=16_000)] = 8000,
+        *,
+        fs: Inject[FS],
+    ) -> str:
+        """Read a UTF-8 character range; use offset/limit for large files."""
+        text = await fs.read(Path(path), offset=offset, limit=limit + 1)
+        content = text[:limit]
+        if len(text) > limit:
+            content += (
+                f"\n\n[File read truncated. Continue with offset={offset + limit}, limit={limit}.]"
+            )
+        return content
+
+    @tool
+    async def write_file(self, path: str, text: str, *, fs: Inject[FS]) -> str:
+        """Atomically replace a UTF-8 file, creating parent directories if needed."""
+        await fs.write(Path(path), text)
+        return f"Wrote {path}"
+
+
+class Filesystem(FilesystemTools, slot="filesystem"):
     """Expose bounded reads, discovery and explicit writes within one workspace."""
+
+    needs = (ToolRegistry,)
 
     class Config(PluginConfig):
         root: Path = Path(".")
@@ -175,24 +207,6 @@ class Filesystem(Plugin, slot="filesystem"):
         if implementation is None:
             implementation = await run_sync(partial(LocalFS, self.config.root))
         ctx.provide(FS, implementation)
-
-    @tool(readonly=True, parallel=True)
-    async def read_file(
-        self,
-        path: str,
-        offset: Annotated[int, Field(ge=0)] = 0,
-        limit: Annotated[int, Field(ge=1, le=16_000)] = 8000,
-        *,
-        fs: Inject[FS],
-    ) -> str:
-        """Read a UTF-8 character range; use offset/limit for large files."""
-        text = await fs.read(Path(path), offset=offset, limit=limit + 1)
-        content = text[:limit]
-        if len(text) > limit:
-            content += (
-                f"\n\n[File read truncated. Continue with offset={offset + limit}, limit={limit}.]"
-            )
-        return content
 
     @tool(readonly=True, parallel=True)
     async def list_dir(self, path: str = ".", *, fs: Inject[FS]) -> Sequence[FileStat]:
@@ -245,12 +259,6 @@ class Filesystem(Plugin, slot="filesystem"):
         return SearchResult(tuple(hits), scanned, tuple(notes))
 
     @tool
-    async def write_file(self, path: str, text: str, *, fs: Inject[FS]) -> str:
-        """Atomically replace a UTF-8 file, creating parent directories if needed."""
-        await fs.write(Path(path), text)
-        return f"Wrote {path}"
-
-    @tool
     async def edit(
         self, path: str, old: Annotated[str, Field(min_length=1)], new: str, *, fs: Inject[FS]
     ) -> str:
@@ -263,37 +271,3 @@ class Filesystem(Plugin, slot="filesystem"):
         """Delete one workspace file."""
         await fs.delete(Path(path))
         return f"Deleted {path}"
-
-
-@plugin()
-async def fs_local(ctx: Context, root: str | Path = "."):
-    ctx.provide(FS, LocalFS(root))
-    yield
-
-
-@plugin(needs=[FS, ToolRegistry])
-async def fs_tools(ctx: Context):
-    registry = ctx[ToolRegistry]
-
-    @registry.tool(parallel=True, readonly=True)
-    async def read_file(path: str, limit: int = 8000, offset: int = 0, *, fs: Inject[FS]) -> str:
-        """Read a UTF-8 character range: offset >= 0, limit 1-16000 (default 8000)."""
-        if offset < 0 or not 1 <= limit <= 16_000:
-            raise ValueError("File reads require offset >= 0 and 1 <= limit <= 16000 characters")
-        text = await fs.read(Path(path), offset=offset, limit=limit + 1)
-        end = offset + limit
-        content = text[:limit]
-        if len(text) > limit:
-            content += (
-                f"\n\n[File read truncated at character {end}. "
-                f"Continue with offset={end}, limit={limit}.]"
-            )
-        return content
-
-    @registry.tool
-    async def write_file(path: str, text: str, *, fs: Inject[FS]) -> str:
-        """Write a UTF-8 file in the workspace, creating parent directories as needed."""
-        await fs.write(Path(path), text)
-        return f"Wrote {path}"
-
-    yield

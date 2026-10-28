@@ -81,3 +81,20 @@ contract; third-party implementations need no Harnessed base class.
 `await session.use(plugin)` mounts a capability at runtime. Its guidance becomes
 named context because the system instructions are fixed. Closing its handle
 removes the capability and guidance; temporal restarts refresh both.
+
+## Separate a backend from its tools
+
+`Filesystem` and `Shell` own their backend and tools together. Use
+`FilesystemTools` or `ShellTools` when a separate service owns the backend:
+
+```python
+from harnessed.plugins import Service, ShellTools
+from harnessed.plugins.shell import LocalShell, ShellBackend
+
+plugins = [Service(ShellBackend, LocalShell()), ShellTools(".")]
+```
+
+The tool plugin explicitly needs the backend. Removing its provider suspends the
+tools, and a replacement provider restarts them. Injection resolves the current
+backend for every call. `FilesystemTools` exposes bounded `read_file` and
+`write_file`; `Filesystem` also provides discovery, editing and deletion tools.

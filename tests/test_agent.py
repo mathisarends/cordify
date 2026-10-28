@@ -5,6 +5,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, ToolContext, hook, plugin
 from harnessed import Session as Agent
+from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
 from harnessed.core.hooks import ExecuteTool, PreStep, ReviewToolResult, StepDecision, ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk, ModelInfo
@@ -20,8 +21,7 @@ from harnessed.core.session.events import (
 from harnessed.core.stream import TextDelta
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.plugins import AgentLoop, Approvals
-from harnessed.plugins.permissions.approval import approval_gate, callback_approver
+from harnessed.plugins import AgentLoop, Approvals, Service
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
@@ -115,7 +115,7 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
         plugins=[
             Approvals(trust="all"),
             features,
-            approval_gate(risky={"remove"}, ask=lambda call: False),
+            ApprovalGate(risky={"remove"}, ask=lambda call: False),
         ],
     )
     async with harness.session("deny") as agent:
@@ -157,8 +157,8 @@ async def test_approval_always_is_session_local_and_review_can_inject_nudges():
         plugins=[
             Approvals(trust="all"),
             features,
-            callback_approver(approve),
-            approval_gate(risky={"work"}),
+            Service(Approver, CallbackApprover(approve)),
+            ApprovalGate(risky={"work"}),
         ],
     )
     async with harness.session("approve") as agent:
@@ -394,7 +394,8 @@ async def test_policy_ask_routes_to_approver_seam():
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("approved"))], "done"])
     harness = Application(
-        model=model, plugins=[Approvals(trust="all"), features, callback_approver(approve)]
+        model=model,
+        plugins=[Approvals(trust="all"), features, Service(Approver, CallbackApprover(approve))],
     )
     async with harness.session("ask") as agent:
         await agent.run("ask")

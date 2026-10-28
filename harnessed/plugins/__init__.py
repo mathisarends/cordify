@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from harnessed._exports import exported
 
 if TYPE_CHECKING:
+    from harnessed.core.approvals import ApprovalGate as ApprovalGate
     from harnessed.core.approvals import Approvals as Approvals
     from harnessed.core.compaction import ContextState as ContextState
     from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
@@ -19,22 +20,26 @@ if TYPE_CHECKING:
     from harnessed.plugins.compaction import at_ratio as at_ratio
     from harnessed.plugins.compaction import every_turns as every_turns
     from harnessed.plugins.filesystem import Filesystem as Filesystem
+    from harnessed.plugins.filesystem import FilesystemTools as FilesystemTools
     from harnessed.plugins.observations import LatestObservationOnly as LatestObservationOnly
     from harnessed.plugins.rules import Rules as Rules
     from harnessed.plugins.rules import when as when
     from harnessed.plugins.sessions import JsonlSessions as JsonlSessions
     from harnessed.plugins.shell import Shell as Shell
+    from harnessed.plugins.shell import ShellTools as ShellTools
     from harnessed.plugins.spill import Spill as Spill
     from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
 
 _EXPORTS = {
     "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
+    "ApprovalGate": ("harnessed.core.approvals", "ApprovalGate"),
     "Approvals": ("harnessed.core.approvals", "Approvals"),
     "Compaction": ("harnessed.plugins.compaction", "Compaction"),
     "ContextState": ("harnessed.core.compaction", "ContextState"),
     "ContextValue": ("harnessed.core.prompt.context", "ContextValue"),
     "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
+    "FilesystemTools": ("harnessed.plugins.filesystem", "FilesystemTools"),
     "Instructions": ("harnessed.core.prompt.instructions", "Instructions"),
     "JsonlSessions": ("harnessed.plugins.sessions", "JsonlSessions"),
     "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
@@ -43,6 +48,7 @@ _EXPORTS = {
     "Rules": ("harnessed.plugins.rules", "Rules"),
     "Service": ("harnessed.core.plugin", "Service"),
     "Shell": ("harnessed.plugins.shell", "Shell"),
+    "ShellTools": ("harnessed.plugins.shell", "ShellTools"),
     "Spill": ("harnessed.plugins.spill", "Spill"),
     "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
     "ToolOutputLimit": ("harnessed.core.tools.output_limit", "ToolOutputLimit"),
@@ -53,11 +59,13 @@ _EXPORTS = {
 __all__ = [
     "AgentLoop",
     "ApprovalAnswer",
+    "ApprovalGate",
     "Approvals",
     "Compaction",
     "ContextState",
     "ContextValue",
     "Filesystem",
+    "FilesystemTools",
     "Instructions",
     "JsonlSessions",
     "LatestObservationOnly",
@@ -66,6 +74,7 @@ __all__ = [
     "Rules",
     "Service",
     "Shell",
+    "ShellTools",
     "Spill",
     "SpillLargeResults",
     "ToolOutputLimit",

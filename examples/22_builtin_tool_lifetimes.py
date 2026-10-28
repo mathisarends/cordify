@@ -8,7 +8,7 @@ from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
-from harnessed.plugins.shell import ProcResult, shell_tools
+from harnessed.plugins.shell import ProcResult, ShellTools
 from harnessed.plugins.shell import ShellBackend as Shell
 from harnessed.testing import ScriptedModel
 
@@ -36,7 +36,7 @@ async def main():
             "The replacement backend handled the command.",
         ]
     )
-    agent = Agent(model=model, plugins=[Approvals(trust="all"), shell_tools()])
+    agent = Agent(model=model, plugins=[Approvals(trust="all"), ShellTools()])
     async with agent.session("tool-lifetimes") as session:
         registry = session.ctx[ToolRegistry]
         assert registry.definitions == ()

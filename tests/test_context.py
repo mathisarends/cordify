@@ -12,8 +12,8 @@ from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins import Approvals
-from harnessed.plugins.filesystem import FS, fs_local
+from harnessed.plugins import Approvals, Service
+from harnessed.plugins.filesystem import FS, LocalFS
 from harnessed.testing import ScriptedModel
 
 
@@ -114,7 +114,7 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
 
     model = ScriptedModel(["one", "two"])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), fs_local(tmp_path), Project()]
+        model=model, plugins=[Approvals(trust="all"), Service(FS, LocalFS(tmp_path)), Project()]
     ).session("project") as agent:
         await agent.run("one")
         instructions.write_text("second rules", encoding="utf-8")

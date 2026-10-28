@@ -116,6 +116,9 @@ def test_application_facade_stays_small_and_has_no_transitional_names():
     import harnessed
 
     assert len(harnessed.__all__) <= 30
+    assert {"Agent", "Session", "Plugin", "tool", "RunResult", "ToolContext"} <= set(
+        harnessed.__all__
+    )
     assert not {"Harness", "LLM", "Bundle", "FS", "Shell", "SystemPrompt"} & set(harnessed.__all__)
 
 
@@ -130,7 +133,7 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
     assert not (PACKAGE / "std").exists()
     assert not (PACKAGE / "adapters").exists()
     assert not (PACKAGE / "seams").exists()
-    for name in ("_context", "agents", "observe"):
+    for name in ("_context", "agents", "observe", "permissions"):
         assert not (PACKAGE / "plugins" / name).exists()
 
 

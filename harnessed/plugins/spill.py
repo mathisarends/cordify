@@ -24,7 +24,7 @@ from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError
-from harnessed.kernel import Context, Inject, Priority, hook, plugin
+from harnessed.kernel import Context, Inject, Priority, hook
 
 log = logging.getLogger(__name__)
 
@@ -318,10 +318,3 @@ class SpillLargeResults(Plugin):
     ) -> str:
         """Read a spilled tool output by character range (limit: 1-16000 characters)."""
         return await files.read(path, offset=offset, limit=limit)
-
-
-@plugin
-async def spill_store(ctx: Context, implementation: SpillStore | None = None):
-    """Legacy explicit backend registration; new applications use Spill()."""
-    ctx.provide(SpillStore, implementation or LocalSpillStore())
-    yield

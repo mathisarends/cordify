@@ -7,7 +7,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Inject, ToolCall, plugin
 from harnessed import Session as Agent
-from harnessed.core.approvals import ApprovalState
+from harnessed.core.approvals import ApprovalGate, ApprovalState, Approver, CallbackApprover
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
@@ -24,8 +24,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.files import MemoryFiles
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionStore
-from harnessed.plugins import Approvals, JsonlSessions
-from harnessed.plugins.permissions.approval import approval_gate, callback_approver
+from harnessed.plugins import Approvals, JsonlSessions, Service
 from harnessed.testing import ScriptedModel
 
 
@@ -54,7 +53,7 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
             plugins=[
                 Approvals(trust="all"),
                 tools,
-                approval_gate(risky={"work"}, ask=answer),
+                ApprovalGate(risky={"work"}, ask=answer),
                 JsonlSessions(tmp_path),
             ],
         )
@@ -107,7 +106,7 @@ async def test_single_call_answers_are_logged_without_becoming_persistent_grants
             plugins=[
                 Approvals(trust="all"),
                 tools,
-                approval_gate(risky={"work"}, ask=answer),
+                ApprovalGate(risky={"work"}, ask=answer),
                 JsonlSessions(tmp_path),
             ],
         )
@@ -139,7 +138,7 @@ async def test_gate_scopes_do_not_share_persistent_permissions(tmp_path):
             plugins=[
                 Approvals(trust="all"),
                 tools,
-                approval_gate(risky={"work"}, ask=answer, scope=scope),
+                ApprovalGate(risky={"work"}, ask=answer, scope=scope),
                 JsonlSessions(tmp_path),
             ],
         ).session("scopes") as agent:
@@ -169,7 +168,7 @@ async def test_tool_policy_ask_uses_the_same_durable_approval_path(tmp_path):
             plugins=[
                 Approvals(trust="all"),
                 tools,
-                callback_approver(answer),
+                Service(Approver, CallbackApprover(answer)),
                 JsonlSessions(tmp_path),
             ],
         ).session("policy-ask") as agent:
@@ -192,7 +191,7 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
 
     async with Application(
         model=tool_model(),
-        plugins=[Approvals(trust="all"), tools, approval_gate(risky={"work"}, ask=wait)],
+        plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"work"}, ask=wait)],
     ).session("cancel-approval") as agent:
         await agent.followup("task")
         await asked.wait()
@@ -248,7 +247,7 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
             Approvals(trust="all"),
             tools,
             persistence(),
-            approval_gate(risky={"work"}, ask=lambda call: ApprovalAnswer.ALWAYS),
+            ApprovalGate(risky={"work"}, ask=lambda call: ApprovalAnswer.ALWAYS),
         ],
     ).session("failed-answer") as agent:
         await agent.run("task")

@@ -23,7 +23,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop, Approvals
-from harnessed.plugins.filesystem import FS, LocalFS, fs_tools
+from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
 from harnessed.testing import ScriptedModel
 
 
@@ -180,7 +180,7 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
     )
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), filesystem(), fs_tools()]
+        model=model, plugins=[Approvals(trust="all"), filesystem(), FilesystemTools()]
     ).session("files") as agent:
         running = asyncio.create_task(agent.run("go"))
         try:

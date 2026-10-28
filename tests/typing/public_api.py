@@ -5,12 +5,11 @@ from typing import assert_type
 
 from harnessed import Agent as AppAgent
 from harnessed import Context as PluginContext
-from harnessed import ToolContext
+from harnessed import ToolContext, tool
 from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session as Agent
-from harnessed.core.tools.decorator import tool
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
 
 

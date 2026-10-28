@@ -8,12 +8,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, ApprovalAnswer, ToolCall
+from harnessed.core.approvals import ApprovalGate
 from harnessed.core.messages import system
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import LogTailRecovered, ToolReturned
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals, JsonlSessions
-from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.testing import ScriptedModel
 
 tools = Bundle("work")
@@ -30,7 +30,7 @@ def compose(root: Path, model, answer):
         plugins=[
             Approvals(trust="all"),
             tools,
-            approval_gate(risky={"work"}, ask=answer, scope="demo-work"),
+            ApprovalGate(risky={"work"}, ask=answer, scope="demo-work"),
             JsonlSessions(root, recover_tail=True, durability="fsync"),
         ],
     )

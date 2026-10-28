@@ -16,8 +16,8 @@ from harnessed.core.session.store import SessionPersistence
 from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Context
 from harnessed.plugins import Approvals
-from harnessed.plugins.filesystem import FS, fs_tools
-from harnessed.plugins.shell import ProcResult, shell_tools
+from harnessed.plugins.filesystem import FS, FilesystemTools
+from harnessed.plugins.shell import ProcResult, ShellTools
 from harnessed.plugins.shell import ShellBackend as Shell
 from harnessed.plugins.spill import SpillStore
 from harnessed.testing import ScriptedModel
@@ -83,7 +83,7 @@ async def test_foreign_fs_and_model_work_through_di_without_framework_inheritanc
     assert ForeignFiles.__bases__ == (object,)
     assert ForeignModel.__bases__ == (object,)
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), foreign_files(), fs_tools()]
+        model=model, plugins=[Approvals(trust="all"), foreign_files(), FilesystemTools()]
     ).session("foreign") as agent:
         result = await agent.run("Write and read the note.")
         assert result.text == "done"
@@ -139,7 +139,7 @@ async def test_foreign_shell_and_approver_are_accepted_structurally(tmp_path):
     assert ForeignApprover.__bases__ == (object,)
     harness = Application(
         model=model,
-        plugins=[Approvals(trust="all"), foreign_services(), shell_tools(tmp_path), policy()],
+        plugins=[Approvals(trust="all"), foreign_services(), ShellTools(tmp_path), policy()],
     )
     async with harness.session("foreign-shell") as agent:
         result = await agent.run("Run the tests.")

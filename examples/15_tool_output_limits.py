@@ -10,8 +10,8 @@ from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.hooks import ExecuteTool
 from harnessed.models import ModelChunk
-from harnessed.plugins import Approvals
-from harnessed.plugins.filesystem import FS, fs_local, fs_tools
+from harnessed.plugins import Approvals, Service
+from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
 from harnessed.testing import ScriptedModel
 
 budget = ToolOutputLimit(max_chars=1024)
@@ -59,8 +59,8 @@ async def main():
             plugins=[
                 Approvals(trust="all"),
                 budget,
-                fs_local(directory),
-                fs_tools(),
+                Service(FS, LocalFS(directory)),
+                FilesystemTools(),
                 tools,
                 early_limit,
             ],

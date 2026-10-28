@@ -4,10 +4,9 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from harnessed import Agent, ApprovalAnswer, Context, Inject, Plugin, ToolCall, plugin
+from harnessed import Agent, ApprovalAnswer, Context, Inject, Plugin, ToolCall, plugin, tool
 from harnessed.core.hooks import ExecuteTool, SessionAppended
 from harnessed.core.session.events import TurnEnd
-from harnessed.core.tools.decorator import tool
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel

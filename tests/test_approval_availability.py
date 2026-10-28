@@ -4,7 +4,7 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, ToolCall
-from harnessed.core.approvals import ApprovalUnavailable, Approver
+from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable, Approver, CallbackApprover
 from harnessed.core.hooks import ApprovalRequest, ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
@@ -13,9 +13,40 @@ from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ApprovalResolved, ToolExecutionStarted, ToolReturned
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins import AgentLoop, Approvals, JsonlSessions
-from harnessed.plugins.permissions.approval import approval_gate, callback_approver
+from harnessed.plugins import AgentLoop, Approvals, JsonlSessions, Service
 from harnessed.testing import ScriptedModel
+
+
+async def test_removing_an_approver_never_removes_the_scoped_guard():
+    from harnessed import Plugin, tool
+    from harnessed.core.approvals import ApprovalGate, CallbackApprover
+    from harnessed.plugins import Service
+    from harnessed.testing import call
+
+    effects = []
+
+    class Publish(Plugin):
+        @tool
+        async def publish(self) -> str:
+            effects.append("published")
+            return "ready"
+
+    model = ScriptedModel(
+        [call("publish"), "first", call("publish"), "blocked", call("publish"), "third"]
+    )
+    async with Application(
+        model=model, plugins=[Approvals(trust="all"), Publish()]
+    ).session() as session:
+        guard = await session.use(ApprovalGate(risky={"publish"}))
+        provider = await session.use(Service(Approver, CallbackApprover(lambda call: True)))
+        assert (await session.run("publish")).tool_calls[0][1].status == "ok"
+        await provider.aclose()
+        await session.ctx.settle()
+        assert guard.status == "active"
+        assert (await session.run("publish")).tool_calls[0][1].status == "unavailable"
+        await session.use(Service(Approver, CallbackApprover(lambda call: True)))
+        assert (await session.run("publish")).tool_calls[0][1].status == "ok"
+        assert effects == ["published", "published"]
 
 
 async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_calls():
@@ -34,7 +65,7 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
     calls = [ToolCall("risky"), ToolCall("safe")]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), tools, approval_gate(risky={"risky"})]
+        model=model, plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"risky"})]
     ).session("no-ui") as agent:
         await asyncio.wait_for(agent.run("go"), 2)
         results = [event.result for event in agent.log.events if isinstance(event, ToolReturned)]
@@ -124,7 +155,7 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
     class WaitingApprover:
         ask = staticmethod(wait)
 
-    plugins = [callback_approver(wait)] if transport == "callback" else []
+    plugins = [Service(Approver, CallbackApprover(wait))] if transport == "callback" else []
     harness = Application(
         model=ScriptedModel([]),
         plugins=[AgentLoop(approval_timeout=0.02), Approvals(trust="all", timeout=0.02), *plugins],
@@ -182,7 +213,7 @@ async def test_gate_stays_active_after_approver_service_is_removed():
         ]
     )
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), tools, approval_gate(risky={"work"})]
+        model=model, plugins=[Approvals(trust="all"), tools, ApprovalGate(risky={"work"})]
     ).session("disconnect") as agent:
         remove = agent.ctx.provide(Approver, AllowOnce())
         await agent.run("first")
@@ -206,7 +237,7 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
         plugins=[
             Approvals(trust="all"),
             JsonlSessions(tmp_path),
-            callback_approver(lambda call: ApprovalAnswer.ALWAYS),
+            Service(Approver, CallbackApprover(lambda call: ApprovalAnswer.ALWAYS)),
         ],
     ).session("resume") as resumed:
         assert resumed.log.events == prefix and (not resumed.log.approvals.pending)
@@ -252,7 +283,7 @@ async def test_approval_priority_places_wait_outside_downstream_policy_timing(ga
         clock[0] += 100
         return ApprovalAnswer.ALLOW
 
-    gate = approval_gate(risky={"work"}, ask=answer)
+    gate = ApprovalGate(risky={"work"}, ask=answer)
     plugins = [gate, tools] if gate_first else [tools, gate]
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))], "done"])
     async with Application(model=model, plugins=[Approvals(trust="all"), *plugins]).session(

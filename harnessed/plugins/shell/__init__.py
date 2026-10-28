@@ -5,7 +5,6 @@ import os
 import signal
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from typing import Annotated, Protocol, Self
 
@@ -15,7 +14,7 @@ from harnessed.core.messages import ToolResult, result_content, to_dict
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.kernel import Context, Inject, plugin, run_sync
+from harnessed.kernel import Context, Inject, run_sync
 
 if os.name == "nt":
     from .windows import WindowsJob
@@ -185,8 +184,10 @@ def proc_result(value: ProcResult) -> ToolResult:
     )
 
 
-class Shell(Plugin, slot="shell"):
-    """Expose argv-based commands with safe approval defaults and bounded output."""
+class ShellTools(Plugin):
+    """Expose commands through a separately owned, replaceable ShellBackend."""
+
+    needs = (ShellBackend, ToolRegistry)
 
     class Config(_Options):
         cwd: Path = Path(".")
@@ -199,22 +200,12 @@ class Shell(Plugin, slot="shell"):
             return self
 
     config: Config
-    guidance = (
-        "Run executables with argv. Filter large output and check exit codes before continuing."
-    )
 
-    def __init__(
-        self, cwd: str | Path = ".", *, implementation: ShellBackend | None = None, **options
-    ):
+    def __init__(self, cwd: str | Path = ".", **options):
         super().__init__(cwd=Path(cwd), **options)
-        self.implementation = implementation
 
     async def setup(self, ctx: Context):
         self.cwd = await run_sync(self.config.cwd.resolve)
-        backend = self.implementation
-        if backend is None:
-            backend = LocalShell(**self.config.model_dump(exclude={"cwd", "timeout"}))
-        ctx.provide(ShellBackend, backend)
         ctx[ToolRegistry].result_converter(ProcResult, proc_result, owner=ctx)
 
     @tool
@@ -229,26 +220,23 @@ class Shell(Plugin, slot="shell"):
         return await shell.run(argv, cwd=self.cwd, timeout=timeout or self.config.timeout)
 
 
-@plugin()
-async def shell_local(ctx: Context):
-    ctx.provide(ShellBackend, LocalShell())
-    yield
+class Shell(ShellTools, slot="shell"):
+    """Expose argv-based commands with safe approval defaults and bounded output."""
 
+    needs = (ToolRegistry,)
+    guidance = (
+        "Run executables with argv. Filter large output and check exit codes before continuing."
+    )
 
-@plugin(needs=[ShellBackend, ToolRegistry])
-async def shell_tools(ctx: Context, cwd: str | Path = "."):
-    registry = ctx[ToolRegistry]
-    registry.result_converter(ProcResult, proc_result, owner=ctx)
-    cwd = await run_sync(partial(Path(cwd).resolve))
+    def __init__(
+        self, cwd: str | Path = ".", *, implementation: ShellBackend | None = None, **options
+    ):
+        super().__init__(cwd=cwd, **options)
+        self.implementation = implementation
 
-    @registry.tool
-    async def run_command(
-        argv: Annotated[list[str], Field(min_length=1)],
-        timeout: Annotated[float, Field(gt=0, le=600)] = 30.0,
-        *,
-        shell: Inject[ShellBackend],
-    ) -> ProcResult:
-        """Run an executable with arguments in the workspace, without shell expansion."""
-        return await shell.run(argv, cwd=cwd, timeout=timeout)
-
-    yield
+    async def setup(self, ctx: Context):
+        await super().setup(ctx)
+        backend = self.implementation
+        if backend is None:
+            backend = LocalShell(**self.config.model_dump(exclude={"cwd", "timeout"}))
+        ctx.provide(ShellBackend, backend)

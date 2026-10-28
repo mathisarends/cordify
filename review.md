@@ -6,12 +6,6 @@ superseded provider designs have been removed; their details remain in Git histo
 Do not add more native provider clients, retry policies, or presets. PydanticAI is
 an optional Direct API integration; the Harnessed kernel, loop and log remain independent.
 
-## P0 — Runtime and public contracts
-
-### P0-7 — Finish the public facade and remove duplicate paths
-
-- Finish converting optional built-ins to CapWords classes using public APIs.
-
 ## P1 — Runtime design and ergonomics
 
 ### P1-2 — Structured results and a small UI stream

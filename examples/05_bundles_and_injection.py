@@ -4,11 +4,11 @@ import asyncio
 
 from examples.features.workspace import FailureNudge, workspace_tools
 from harnessed import Agent, ApprovalAnswer, ToolCall
+from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
 from harnessed.core.session.events import ModelRequested, ToolProgress, ToolReturned
 from harnessed.models import ModelChunk
-from harnessed.plugins import Approvals
-from harnessed.plugins.filesystem import fs_local
-from harnessed.plugins.permissions.approval import approval_gate, callback_approver
+from harnessed.plugins import Approvals, Service
+from harnessed.plugins.filesystem import FS, LocalFS
 from harnessed.testing import ScriptedModel
 
 
@@ -29,11 +29,11 @@ async def main():
         model=model,
         plugins=[
             Approvals(trust="all"),
-            fs_local("."),
+            Service(FS, LocalFS(".")),
             workspace_tools,
             FailureNudge(threshold=2),
-            callback_approver(approve),
-            approval_gate(risky={"count_lines"}),
+            Service(Approver, CallbackApprover(approve)),
+            ApprovalGate(risky={"count_lines"}),
         ],
     )
     async with agent.session("bundles") as session:

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session as Session
     from harnessed.core.stream import TextDelta as TextDelta
     from harnessed.core.tools.context import ToolContext as ToolContext
+    from harnessed.core.tools.decorator import tool as tool
     from harnessed.core.tools.registry import ToolError as ToolError
     from harnessed.kernel import Inject as Inject
     from harnessed.kernel import hook as hook
@@ -54,6 +55,7 @@ _EXPORTS = {
     "ToolResult": ("harnessed.core.messages", "ToolResult"),
     "hook": ("harnessed.kernel", "hook"),
     "plugin": ("harnessed.kernel", "plugin"),
+    "tool": ("harnessed.core.tools.decorator", "tool"),
 }
 __all__ = [
     "Agent",
@@ -78,6 +80,7 @@ __all__ = [
     "ToolResult",
     "hook",
     "plugin",
+    "tool",
 ]
 
 

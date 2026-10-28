@@ -11,6 +11,7 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, ToolCall
+from harnessed.core.approvals import ApprovalGate
 from harnessed.core.messages import user
 from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
@@ -24,12 +25,13 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, JsonlSessions
-from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = r"""
+from harnessed.core.approvals import ApprovalGate
+
 from harnessed import Agent as Application
 from harnessed.plugins import Approvals
 from harnessed.plugins import JsonlSessions
@@ -41,7 +43,7 @@ from harnessed.core.plugin import Bundle
 from harnessed import ApprovalAnswer, ToolCall
 from harnessed.core.model import ModelChunk
 from harnessed.core.messages import system
-from harnessed.plugins.permissions.approval import approval_gate
+
 from harnessed.testing import ScriptedModel
 root, phase = (Path(sys.argv[1]), sys.argv[2])
 started = asyncio.Event()
@@ -74,7 +76,7 @@ async def main():
         [ModelChunk(tool_call=ToolCall('work'))],
     ])
     harness = Application(model=model, plugins=[
-        Approvals(trust='all'), tools, approval_gate(risky={'work'}, ask=answer),
+        Approvals(trust='all'), tools, ApprovalGate(risky={'work'}, ask=answer),
         JsonlSessions(root, durability='fsync'),
     ])
     async with harness.session('crash') as agent:
@@ -150,7 +152,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
             plugins=[
                 Approvals(trust="all"),
                 tools,
-                approval_gate(risky={"work"}, ask=answer),
+                ApprovalGate(risky={"work"}, ask=answer),
                 JsonlSessions(tmp_path, durability="fsync"),
             ],
         )

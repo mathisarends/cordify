@@ -3,11 +3,27 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from harnessed.core.approvals import ApprovalGate
 from harnessed.core.budget import ContextBudget
 from harnessed.core.model import ModelInfo, ModelRequest, ModelUsage
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"risky": "publish"},
+        {"risky": {""}},
+        {"risky": {"publish"}, "scope": ""},
+        {"risky": {"publish"}, "priority": True},
+        {"risky": {"publish"}, "ask": "allow"},
+    ],
+)
+def test_scoped_guard_configuration_is_strict(options):
+    with pytest.raises(ValidationError):
+        ApprovalGate(**options)
 
 
 @pytest.mark.parametrize(

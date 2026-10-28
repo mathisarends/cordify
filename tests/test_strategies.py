@@ -25,9 +25,17 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins import AgentLoop, Approvals, Compaction, JsonlSessions, at_ratio, every_turns
+from harnessed.plugins import (
+    AgentLoop,
+    Approvals,
+    Compaction,
+    JsonlSessions,
+    Service,
+    at_ratio,
+    every_turns,
+)
 from harnessed.plugins.observations import LatestObservationOnly
-from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, spill_store
+from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, SpillStore
 from harnessed.testing import ExtractiveSummarizer, ScriptedModel
 
 
@@ -46,7 +54,7 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
         plugins=[
             Approvals(trust="all"),
             tools,
-            spill_store(store),
+            Service(SpillStore, store),
             SpillLargeResults(100, preview_tokens=8),
         ],
     )
@@ -116,7 +124,8 @@ async def test_read_spill_tool_returns_bounded_ranges_without_respilling(tmp_pat
         [[ModelChunk(tool_call=ToolCall("read_spill", {"path": ref.path, "limit": 40}))], "done"]
     )
     async with Application(
-        model=model, plugins=[Approvals(trust="all"), spill_store(store), SpillLargeResults(1)]
+        model=model,
+        plugins=[Approvals(trust="all"), Service(SpillStore, store), SpillLargeResults(1)],
     ).session("read-spill") as agent:
         await agent.run("read")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))

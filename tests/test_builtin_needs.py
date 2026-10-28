@@ -6,8 +6,8 @@ import pytest
 from harnessed import Context, ToolCall, plugin
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop
-from harnessed.plugins.filesystem import FS, fs_tools
-from harnessed.plugins.shell import ProcResult, shell_tools
+from harnessed.plugins.filesystem import FS, FilesystemTools
+from harnessed.plugins.shell import ProcResult, ShellTools
 from harnessed.plugins.shell import ShellBackend as Shell
 
 
@@ -31,8 +31,8 @@ class MemoryShell:
 
 
 FEATURES = [
-    (fs_tools, FS, MemoryFS, {"read_file", "write_file"}),
-    (shell_tools, Shell, MemoryShell, {"run_command"}),
+    (FilesystemTools, FS, MemoryFS, {"read_file", "write_file"}),
+    (ShellTools, Shell, MemoryShell, {"run_command"}),
 ]
 
 
