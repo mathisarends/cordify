@@ -29,6 +29,7 @@ import pytest
         "examples.19_approvals_and_priorities",
         "examples.20_pause_resume_stop",
         "examples.21_validated_forms",
+        "examples.22_builtin_tool_lifetimes",
     ],
 )
 def test_offline_sdk_example_runs(module):

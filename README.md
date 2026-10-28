@@ -144,6 +144,7 @@ Runnable examples (from the repository root):
 | `uv run python -m examples.19_approvals_and_priorities` | Headless approval, response timeout, and explicit waterfall priorities |
 | `uv run python -m examples.20_pause_resume_stop` | Pause a tool batch, resume the same turn, stop work, and reopen a paused session |
 | `uv run python -m examples.21_validated_forms` | Nested Pydantic forms, enums, constraints, validated DeepSeek payloads, and hidden DI parameters |
+| `uv run python -m examples.22_builtin_tool_lifetimes` | Built-in shell tools waiting, unloading, and rebuilding as their backend changes |
 
 Only example 04 needs an API key and the `deepseek` extra. The other examples
 use deterministic model responses to demonstrate the SDK.
@@ -770,6 +771,34 @@ shorthand. Unmarked service types do not trigger automatic injection.
 Tool injection alone hides a tool when a service is missing; declare `needs`
 explicitly to control the lifetime of the whole feature.
 
+The built-in tool plugins declare these lifetimes explicitly too:
+`shell_tools` needs `Shell` and `ToolRegistry`; `fs_tools` needs `FS` and
+`ToolRegistry`. Their setup obtains the registry through `ctx[ToolRegistry]`.
+The tool signatures keep `Inject[Shell]` or `Inject[FS]` so each call resolves
+the current backend. This makes composition and argument injection visible
+at their respective boundaries:
+
+```python
+from pathlib import Path
+
+from cordify import Context, Inject, Shell, ToolRegistry, plugin
+from cordify.seams.shell import ProcResult
+
+
+@plugin(needs=[Shell, ToolRegistry])
+async def shell_feature(ctx: Context):
+    @ctx[ToolRegistry].tool
+    async def run_command(argv: list[str], shell: Inject[Shell]) -> ProcResult:
+        """Run an executable with the current backend."""
+        return await shell.run(argv, cwd=Path.cwd(), timeout=30)
+
+    yield
+```
+
+Replacing either service tears down the old registrations and runs fresh
+setup. [`22_builtin_tool_lifetimes.py`](examples/22_builtin_tool_lifetimes.py)
+demonstrates this through a harness session with two offline shell backends.
+
 ```python
 from cordify import Context, Inject, SystemPrompt, ToolRegistry, plugin
 
@@ -1296,8 +1325,9 @@ uv run --isolated --locked --all-extras --python 3.14 pytest
 
 The GitHub Actions workflow has a separate quality job and a **3 × 3 test
 matrix**: Ubuntu, Windows, and macOS on Python 3.12, 3.13, and 3.14.
-Every matrix entry runs the tests and offline examples, builds a wheel and
-source distribution, and installs the wheel into a temporary environment
+Every matrix entry runs ty for its Python version and target platform, runs
+the tests and offline examples, builds a wheel and source distribution, and
+installs the wheel into a temporary environment
 using hashed runtime dependencies exported from `uv.lock`. The smoke test runs
 outside the checkout with isolated Python imports, so it checks the installed
 package rather than the source tree.
