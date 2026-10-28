@@ -5,7 +5,7 @@ import asyncio
 from examples.features.workspace import FailureNudge, workspace_tools
 from harnessed import Agent, ApprovalAnswer, ToolCall
 from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
-from harnessed.core.session.events import ModelRequested, ToolProgress, ToolReturned
+from harnessed.events import ToolFinished, ToolProgress
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals, Service
 from harnessed.plugins.filesystem import FS, LocalFS
@@ -41,11 +41,10 @@ async def main():
             match event:
                 case ToolProgress(text=text):
                     print(f"Progress: {text}")
-                case ToolReturned(result=result):
+                case ToolFinished(result=result):
                     print(f"Result ({result.status}): {result.content}")
-                case ModelRequested(request=request):
-                    schema = request.tools[0].parameters
-                    print(f"Model arguments: {list(schema['properties'])}")
+        schema = model.requests[0].tools[0].parameters
+        print(f"Model arguments: {list(schema['properties'])}")
         final_request = model.requests[-1]
         print("\nNudge in next request:")
         print([m.content for m in final_request.messages if m.role == "user"][-1])

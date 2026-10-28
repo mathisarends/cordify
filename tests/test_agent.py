@@ -18,7 +18,7 @@ from harnessed.core.session.events import (
     TurnEnd,
     TurnStart,
 )
-from harnessed.core.stream import TextDelta
+from harnessed.core.stream import TextDelta, ToolFinished
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop, Approvals, Service
@@ -45,7 +45,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
         events = [event async for event in agent.stream("Add 1 and 2")]
         assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "The result is 3."
         assert [e.text for e in events if isinstance(e, ToolProgress)] == ["adding"]
-        assert any(isinstance(e, ToolReturned) and e.result.content == "3" for e in events)
+        assert any(isinstance(e, ToolFinished) and e.result.content == "3" for e in events)
         recorded = [e.request for e in agent.log.events if isinstance(e, ModelRequested)]
         assert recorded == model.requests
         assert model.requests[0].model == "test-model"

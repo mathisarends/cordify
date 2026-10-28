@@ -43,6 +43,7 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.23_plugin_lifecycle",
         "examples.24_session_spill",
         "examples.25_structured_output",
+        "examples.26_ui_stream",
     ],
 )
 def test_offline_sdk_example_runs(module):

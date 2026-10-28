@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from typing import Any, cast
 from uuid import uuid4
@@ -92,6 +94,44 @@ class OutputTypes:
             f"Restore the output type {definition.name!r} before resuming: "
             "agent.session(id, restore_outputs=[YourOutputType])"
         )
+
+
+class OutputValues:
+    """Keep validated values until active callers consume them; bound abandoned results."""
+
+    def __init__(self):
+        self._values: dict[str, tuple[str, Any]] = {}
+        self._active: Counter[str] = Counter()
+
+    @contextmanager
+    def expect(self, schema: OutputSchema | None):
+        if schema is not None:
+            self._active[schema.id] += 1
+        try:
+            yield
+        finally:
+            if schema is not None:
+                self._active[schema.id] -= 1
+                if not self._active[schema.id]:
+                    del self._active[schema.id]
+            self._prune()
+
+    def put(self, event_id: str, schema_id: str, value: Any) -> None:
+        self._values[event_id] = (schema_id, value)
+        self._prune()
+
+    def __contains__(self, event_id: str) -> bool:
+        return event_id in self._values
+
+    def pop(self, event_id: str) -> Any:
+        return self._values.pop(event_id)[1]
+
+    def _prune(self):
+        for event_id, (schema_id, _) in tuple(self._values.items()):
+            if len(self._values) <= 128:
+                break
+            if schema_id not in self._active:
+                del self._values[event_id]
 
 
 def validation_note(error: Exception) -> str:

@@ -5,6 +5,7 @@ from typing import Annotated, Protocol
 
 from pydantic import ConfigDict, Field, TypeAdapter
 
+from harnessed.core.errors import ApprovalUnavailable as ApprovalUnavailable
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import ApprovalAnswer, PolicyDecision
 from harnessed.core.plugin import Plugin, PluginConfig
@@ -18,10 +19,6 @@ from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context, Inject, Next, Priority, hook
 
 from .messages import ToolCall
-
-
-class ApprovalUnavailable(RuntimeError):
-    """No responder could produce a usable approval answer."""
 
 
 class Approver(Protocol):

@@ -4,6 +4,10 @@ The default `Approvals` plugin allows read-only tools and asks before side effec
 A missing responder produces an unavailable tool result immediately; it never
 waits indefinitely for a UI. A configured response timeout is finite and positive.
 
+An active [UI stream](streaming.md) exposes `ApprovalNeeded` with an acknowledged
+`request.answer(...)` method. `run()` and raw subscriptions remain headless unless
+the application installs a responder explicitly.
+
 ```python
 from harnessed import Agent, Plugin, tool
 from harnessed.plugins import Approvals, ApprovalAnswer

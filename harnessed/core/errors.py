@@ -29,6 +29,10 @@ class OutputUnavailable(HarnessedError, RuntimeError):
     """A stopped or aborted structured run has no validated output to read."""
 
 
+class ApprovalUnavailable(HarnessedError, RuntimeError):
+    """No responder could produce a usable, acknowledged approval decision."""
+
+
 class ProviderError(HarnessedError, RuntimeError):
     def __init__(
         self,

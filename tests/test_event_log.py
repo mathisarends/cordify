@@ -28,7 +28,7 @@ from harnessed.core.session.files import MemoryFiles
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.session import derive_messages, derive_requests
 from harnessed.core.session.store import SessionStore
-from harnessed.core.stream import TextDelta
+from harnessed.core.stream import ReasoningDelta, TextDelta
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.testing import ScriptedModel
 
@@ -47,6 +47,7 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
     observed = []
     async with harness.session("durable-chunks") as agent:
 
+        @agent.on(ReasoningDelta)
         @agent.on(TextDelta)
         def observe(event):
             assert event not in agent.log.events
@@ -59,7 +60,9 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
         assert not any(isinstance(event, AssistantChunk) for event in log)
         chunks = tuple(observed)
         assert len(chunks) == 3
-        assert chunks == tuple(event for event in live if isinstance(event, TextDelta))
+        assert chunks == tuple(
+            event for event in live if isinstance(event, TextDelta | ReasoningDelta)
+        )
         final = next(event for event in log if isinstance(event, AssistantMessage))
         assert {chunk.message_id for chunk in chunks} == {final.message.id}
         assert final.message.text == "hello world" and final.message.reasoning == "think"

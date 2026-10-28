@@ -102,7 +102,5 @@ async def validate_output(
     finally:
         # Persistence acknowledges before listener delivery, even if the caller is cancelled.
         if self.log.last(OutputValidated) is proof:
-            self._output_values[proof.id] = value
-            while len(self._output_values) > 128:
-                self._output_values.pop(next(iter(self._output_values)))
+            self._output_values.put(proof.id, schema.id, value)
     return {call.id: ToolResult("Structured answer accepted.") for call in outputs}, None

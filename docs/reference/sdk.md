@@ -24,7 +24,7 @@ examples live in the topic guides. Optional features are imported from
 | Member | Behavior |
 | --- | --- |
 | run(prompt, output=None, attachments=(), context=None, settings=None) | Queue and await this turn's RunResult[T] |
-| stream(prompt, ...) | Stream this turn; raw audit events remain separately subscribable |
+| stream(prompt, output=None, ...) | Eight UI event kinds, ending with TurnFinished(result) |
 | steer(content) | Send a next-step correction and return its InboxItem |
 | context.set(name, value) / remove(name) | Await a durable changed fact/removal |
 | inbox.pending / remove(id) | Frozen queued input snapshot / durable removal |
@@ -56,6 +56,8 @@ A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,
 Passing `output=T` adds a validated `output` of type `T`; an unstructured result's
 output is None. See [structured answers](../guides/structured-output.md) for retry
 limits, incomplete turns and restoration after a process restart.
+The [UI stream](../guides/streaming.md) carries text/reasoning deltas, tool lifecycle,
+approval requests, status and one terminal result; raw log subscriptions are separate.
 StopReason includes END, MAX_TOKENS, MAX_STEPS, STOPPED, ABORTED and DISCARDED.
 
 `ModelUsage` keeps input/output, cache-read/write, optional reasoning tokens and

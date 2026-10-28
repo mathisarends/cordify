@@ -2,8 +2,8 @@ import asyncio
 
 from harnessed import Agent as Application
 from harnessed.core.model import ModelChunk, ModelUsage
-from harnessed.core.session.events import InboxAdded, TurnEnd
-from harnessed.core.stream import TextDelta
+from harnessed.core.session.events import InboxAdded
+from harnessed.core.stream import TextDelta, TurnFinished
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel
 
@@ -75,7 +75,8 @@ async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
             assert (
                 "".join(event.text for event in events if isinstance(event, TextDelta)) == "reply 1"
             )
-            assert isinstance(events[-1], TurnEnd)
+            assert isinstance(events[-1], TurnFinished)
+            assert events[-1].result.text == "reply 1"
         finally:
             model.release[1].set()
         await session.when_idle()

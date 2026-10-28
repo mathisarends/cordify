@@ -8,11 +8,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## P1 — Runtime design and ergonomics
 
-### P1-2 — Structured results and a small UI stream
-
-- Add the stable typed StreamEvent union and terminal TurnFinished result;
-  expose raw durable/transient subscriptions separately.
-
 ### P1-10 — Finish the PydanticAI migration
 
 - Use upstream context-window metadata when available and explicit overrides;

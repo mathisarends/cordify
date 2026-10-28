@@ -5,7 +5,7 @@ import asyncio
 from harnessed import Agent, Inject, Plugin, Session, ToolCall, hook
 from harnessed.core.messages import user
 from harnessed.core.plugin import Bundle
-from harnessed.core.session.events import InboxAdded, ToolReturned
+from harnessed.events import InboxAdded, ToolFinished
 from harnessed.hooks import ReviewToolResult
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
@@ -68,11 +68,15 @@ async def demo(name, policy):
     agent = Agent(model=model, plugins=[Approvals(trust="all"), commands, policy])
     print(f"\n{name}")
     async with agent.session(name) as session:
-        async for event in session.stream("Run the tests and investigate failures."):
-            if isinstance(event, ToolReturned):
-                print(f"exit_code={event.result.exit_code}: {event.result.content}")
-            elif isinstance(event, InboxAdded) and event.mode != "followup":
+
+        @session.on(InboxAdded)
+        def inbox_changed(event):
+            if event.mode != "followup":
                 print(f"{event.mode}: {event.message.text}")
+
+        async for event in session.stream("Run the tests and investigate failures."):
+            if isinstance(event, ToolFinished):
+                print(f"exit_code={event.result.exit_code}: {event.result.content}")
 
 
 async def main():

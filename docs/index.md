@@ -9,6 +9,8 @@ need service composition without an agent.
 | Understand the application API | [SDK reference](reference/sdk.md) |
 | Connect DeepSeek or another provider | [Models](guides/models.md) |
 | Register tools and validate arguments | [Tools](guides/tools.md) |
+| Receive typed answers | [Structured output](guides/structured-output.md) |
+| Build a live consumer with approvals | [Streaming](guides/streaming.md) |
 | Replace defaults or share services | [Plugins](guides/plugins.md) |
 | Provide instructions, facts or memories | [Context](guides/context.md) |
 | Bound or spill large tool results | [Output](guides/output.md) |

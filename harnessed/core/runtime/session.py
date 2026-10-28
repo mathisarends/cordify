@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from contextvars import ContextVar
 from dataclasses import replace
 from typing import Any, Unpack, overload
@@ -23,7 +23,7 @@ from harnessed.core.messages import (
     ToolCall,
 )
 from harnessed.core.model import Model, ModelRequest, ModelUsage, OutputSchema
-from harnessed.core.outputs import OutputTypes
+from harnessed.core.outputs import OutputTypes, OutputValues
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
@@ -32,6 +32,7 @@ from harnessed.core.runtime.inbox import InboxItem, SessionInbox
 from harnessed.core.runtime.options import AgentOptions, RunOptions
 from harnessed.core.runtime.result import _NO_OUTPUT, RunResult, result_from_events
 from harnessed.core.runtime.stepper import run_step
+from harnessed.core.runtime.streaming import StreamApprovals, ui_events
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalRequested,
@@ -50,7 +51,13 @@ from harnessed.core.session.events import (
     TurnStart,
 )
 from harnessed.core.session.session import SessionLog
-from harnessed.core.stream import SessionPublished, TextDelta, TransientEvent
+from harnessed.core.stream import (
+    ReasoningDelta,
+    SessionPublished,
+    StreamEvent,
+    TextDelta,
+    TransientEvent,
+)
 from harnessed.core.tools.context import BoundToolContexts, ToolContexts
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.core.tracing import span
@@ -82,7 +89,7 @@ class Session:
         self._subscribers: set[asyncio.Queue] = set()
         self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
-        self._output_values: dict[str, Any] = {}
+        self._output_values = OutputValues()
         if OutputTypes not in ctx:
             ctx.provide(OutputTypes, OutputTypes())
         ctx.on(SessionAppended, self._session_event)
@@ -407,20 +414,22 @@ class Session:
         output: type[Any] | None = None,
     ) -> RunResult[Any]:
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
-        events = tuple(
-            [
-                event
-                async for event in self._stream_turn(
-                    content,
-                    attachments=attachments,
-                    context=context,
-                    settings=settings,
-                    output_schema=compiled.definition if compiled is not None else None,
-                )
-                if isinstance(event, SessionEvent)
-            ]
-        )
-        return self._result(events, schema=compiled.definition if compiled is not None else None)
+        schema = compiled.definition if compiled is not None else None
+        with self._output_values.expect(schema):
+            events = tuple(
+                [
+                    event
+                    async for event in self._stream_turn(
+                        content,
+                        attachments=attachments,
+                        context=context,
+                        settings=settings,
+                        output_schema=schema,
+                    )
+                    if isinstance(event, SessionEvent)
+                ]
+            )
+            return self._result(events, schema=schema)
 
     def _result(
         self, events: tuple[SessionEvent, ...], *, schema: OutputSchema | None = None
@@ -446,6 +455,16 @@ class Session:
                 value, _ = self.ctx[OutputTypes].resolve(schema).parse(dict(proof.data))
         return result_from_events(events, output=value)
 
+    @overload
+    def stream[T](
+        self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
+    ) -> AsyncGenerator[StreamEvent[T], None]: ...
+
+    @overload
+    def stream(
+        self, content: str | Message, *, output: None = None, **options: Unpack[RunOptions]
+    ) -> AsyncGenerator[StreamEvent[None], None]: ...
+
     async def stream(
         self,
         content: str | Message,
@@ -453,11 +472,26 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
-    ) -> AsyncIterator[AgentEvent]:
-        async for event in self._stream_turn(
-            content, attachments=attachments, context=context, settings=settings
-        ):
-            yield event
+        output: type[Any] | None = None,
+    ) -> AsyncGenerator[StreamEvent[Any], None]:
+        compiled = self.ctx[OutputTypes].register(output) if output is not None else None
+        schema = compiled.definition if compiled is not None else None
+        with self._output_values.expect(schema):
+            async with StreamApprovals(self) as approvals:
+                raw = self._stream_turn(
+                    content,
+                    attachments=attachments,
+                    context=context,
+                    settings=settings,
+                    output_schema=schema,
+                    prepared=approvals.prepared,
+                )
+                ui = ui_events(self, raw, schema=schema)
+                try:
+                    async for event in ui:
+                        yield event
+                finally:
+                    await ui.aclose()
 
     async def _stream_turn(
         self,
@@ -467,7 +501,8 @@ class Session:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
-    ) -> AsyncIterator[AgentEvent]:
+        prepared: Callable[[InboxAdded], None] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
         queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._subscribers.add(queue)
         try:
@@ -478,6 +513,7 @@ class Session:
                 context=context,
                 settings=settings,
                 output_schema=output_schema,
+                prepared=prepared,
             )
             input_id = item.id
             turn_id = None
@@ -648,7 +684,10 @@ class Session:
                     if chunk.text or chunk.reasoning:
                         text.append(chunk.text)
                         reasoning.append(chunk.reasoning)
-                        await self.log.publish(TextDelta(message_id, chunk.text, chunk.reasoning))
+                        if chunk.text:
+                            await self.log.publish(TextDelta(message_id, chunk.text))
+                        if chunk.reasoning:
+                            await self.log.publish(ReasoningDelta(message_id, chunk.reasoning))
                     if chunk.tool_call is not None:
                         calls.append(chunk.tool_call)
                 response = stream.response()

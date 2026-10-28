@@ -1,7 +1,7 @@
 """Static consumer contracts, checked by ty in every CI matrix cell."""
 
 from collections.abc import AsyncGenerator
-from typing import assert_type
+from typing import assert_never, assert_type
 
 from pydantic import BaseModel
 
@@ -12,6 +12,17 @@ from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session as Agent
+from harnessed.events import (
+    ApprovalNeeded,
+    ReasoningDelta,
+    StatusChanged,
+    StreamEvent,
+    TextDelta,
+    ToolFinished,
+    ToolProgress,
+    ToolStarted,
+    TurnFinished,
+)
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
 
 
@@ -45,6 +56,29 @@ async def structured_consumer(agent: AppAgent, session: Agent) -> None:
     assert_type(await agent.run("Triage", output=Triage), RunResult[Triage])
     _ = result.output.missing  # ty: ignore[unresolved-attribute]
     await session.run("Triage", output="wrong type")  # ty: ignore[no-matching-overload]
+
+
+async def typed_stream(session: Agent) -> None:
+    async for event in session.stream("Triage", output=Triage):
+        assert_type(event, StreamEvent[Triage])
+        if event.type == "TurnFinished":
+            assert_type(event, TurnFinished[Triage])
+            assert_type(event.result, RunResult[Triage])
+            assert_type(event.result.output.severity, int)
+        else:
+            match event:
+                case (
+                    TextDelta()
+                    | ReasoningDelta()
+                    | ToolStarted()
+                    | ToolProgress()
+                    | ToolFinished()
+                    | ApprovalNeeded()
+                    | StatusChanged()
+                ):
+                    pass
+                case _:
+                    assert_never(event)
 
 
 async def functional_scope(ctx: Context) -> None:

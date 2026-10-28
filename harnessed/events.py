@@ -26,10 +26,21 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.stream import TextDelta
+from harnessed.core.stream import (
+    ApprovalNeeded,
+    PendingApproval,
+    ReasoningDelta,
+    StatusChanged,
+    StreamEvent,
+    TextDelta,
+    ToolFinished,
+    ToolStarted,
+    TurnFinished,
+)
 
 __all__ = [
     "AgentControlChanged",
+    "ApprovalNeeded",
     "ApprovalRequested",
     "ApprovalResolved",
     "AssistantMessage",
@@ -42,16 +53,23 @@ __all__ = [
     "ObservationRecorded",
     "OutputValidated",
     "OutputValidationFailed",
+    "PendingApproval",
+    "ReasoningDelta",
     "SessionEvent",
     "SpillCreated",
     "SpillExpired",
+    "StatusChanged",
     "StepEnd",
     "StepStart",
+    "StreamEvent",
     "TextDelta",
     "ToolCalled",
+    "ToolFinished",
     "ToolProgress",
     "ToolReturned",
+    "ToolStarted",
     "TurnEnd",
+    "TurnFinished",
     "TurnStart",
     "UserMessage",
 ]

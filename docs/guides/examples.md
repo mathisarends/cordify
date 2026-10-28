@@ -28,3 +28,10 @@ offline, including one invalid answer and its correction. The final output is a
 Pydantic model; the control tool is excluded from application tool-call results.
 See [the source](https://github.com/mathisarends/cordify/blob/main/examples/25_structured_output.py)
 and [the response-contract guide](structured-output.md).
+
+## UI streaming
+
+`uv run python -m examples.26_ui_stream` shows text, reasoning, tool progress,
+an acknowledged approval and a typed terminal report. See
+[the source](https://github.com/mathisarends/cordify/blob/main/examples/26_ui_stream.py)
+and [the stream contract](streaming.md).
