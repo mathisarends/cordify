@@ -1,11 +1,9 @@
 """The public owner of fixed instructions and ordered plugin guidance."""
 
+from harnessed.core.plugin import Plugin
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.values import InstructionValues, PromptPlan
 from harnessed.kernel import Context
-
-from .features import Plugin
-from .instructions import Instructions as InstructionValues
-from .instructions import PromptPlan
-from .prompt import SystemPrompt
 
 
 class Instructions(Plugin, slot="instructions"):

@@ -1,52 +1,37 @@
 import asyncio
-import math
 from bisect import bisect_right
 from collections.abc import Iterable
-from dataclasses import fields, is_dataclass
-from types import MappingProxyType
-from typing import Protocol, cast
+from typing import cast
 from xml.sax.saxutils import escape, quoteattr
 
+from harnessed.core.approvals import Approval, ApprovalState, approval_transition
+from harnessed.core.hooks import SessionAppended
 from harnessed.core.messages import (
     Message,
-    Observation,
-    SpillRef,
     ToolCall,
     ToolResult,
-    message_from_dict,
-    to_dict,
-    tool_result_from_dict,
 )
-from harnessed.core.model import ModelRequest, ModelUsage, request_from_dict
-from harnessed.kernel.context import Context
-
-from .approvals import Approval, ApprovalState, approval_transition
-from .control import RunControl
-from .events import (
-    SESSION_EVENT_TYPES,
+from harnessed.core.model import ModelRequest
+from harnessed.core.session.codec import _validate_event
+from harnessed.core.session.control import RunControl
+from harnessed.core.session.events import (
     AgentControlChanged,
-    ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
     AssistantChunk,
     AssistantMessage,
-    CacheMetrics,
     CompactionApplied,
     ContextMessage,
     ContextValueChanged,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
-    ModelUsageRecorded,
     ObservationPolicyApplied,
     ObservationRecorded,
-    SessionAppended,
     SessionEvent,
-    SpillCreated,
     StepEnd,
     StepStart,
     SystemMessage,
-    ToolCalled,
     ToolCompleted,
     ToolExecutionStarted,
     ToolReturned,
@@ -54,80 +39,12 @@ from .events import (
     TurnStart,
     UserMessage,
 )
-from .history import MessageProjection
-from .inbox import Inbox
-from .stream import SessionPublished, TransientEvent
-from .turns import Turn, TurnProjection
-
-
-class SessionPersistence(Protocol):
-    async def load(self, session_id: str) -> tuple[SessionEvent, ...]: ...
-    async def append(self, session_id: str, seq: int, event: SessionEvent) -> None: ...
-    async def flush(self) -> None: ...
-    async def aclose(self) -> None: ...
-
-
-def _validate_event(event: SessionEvent) -> None:
-    if SESSION_EVENT_TYPES.get(getattr(event, "type", None)) is not type(event):
-        raise TypeError("Only registered frozen SessionEvent instances may be appended")
-
-    def immutable(value):
-        if value is None or isinstance(value, str | bool | int):
-            return
-        if isinstance(value, float) and math.isfinite(value):
-            return
-        if isinstance(value, tuple):
-            for item in value:
-                immutable(item)
-            return
-        if isinstance(value, MappingProxyType):
-            for key, item in value.items():
-                if not isinstance(key, str):
-                    raise TypeError("Session event mapping keys must be strings")
-                immutable(item)
-            return
-        if (
-            is_dataclass(value)
-            and not isinstance(value, type)
-            and value.__dataclass_params__.frozen
-        ):
-            for item in fields(value):
-                immutable(getattr(value, item.name))
-            return
-        raise TypeError("Session events must contain only immutable, finite values")
-
-    immutable(event)
-
-
-def encode_event(event: SessionEvent) -> dict:
-    _validate_event(event)
-    return {"type": event.type, "data": to_dict(event)}
-
-
-def decode_event(record: dict) -> SessionEvent:
-    kind = SESSION_EVENT_TYPES[record["type"]]
-    data = dict(record["data"])
-    if kind in (UserMessage, AssistantMessage, InboxAdded, ContextMessage):
-        data["message"] = message_from_dict(data["message"])
-        if kind is InboxAdded:
-            data["context"] = tuple(
-                message_from_dict(message) for message in data.get("context", ())
-            )
-    elif kind is ObservationRecorded:
-        data["observation"] = Observation(**data["observation"])
-    elif kind is ModelRequested:
-        data["request"] = request_from_dict(data["request"])
-    elif kind in (ModelUsageRecorded, CacheMetrics):
-        data["usage"] = ModelUsage(**data["usage"])
-    elif kind is SpillCreated:
-        data["ref"] = SpillRef(**data["ref"])
-    elif kind in (ToolCalled, ApprovalRequested):
-        data["call"] = ToolCall(**data["call"])
-    elif kind in (ToolReturned, ToolCompleted):
-        data["result"] = tool_result_from_dict(data["result"])
-    event = kind(**data)
-    _validate_event(event)
-    return event
+from harnessed.core.session.history import MessageProjection
+from harnessed.core.session.inbox import Inbox
+from harnessed.core.session.store import SessionPersistence
+from harnessed.core.session.turns import Turn, TurnProjection
+from harnessed.core.stream import SessionPublished, TransientEvent
+from harnessed.kernel.context import Context
 
 
 def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:

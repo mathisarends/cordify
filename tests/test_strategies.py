@@ -28,7 +28,8 @@ from harnessed import (
     ToolResult,
     hook,
 )
-from harnessed.core.events import (
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import (
     CacheMetrics,
     CompactionApplied,
     ModelUsageRecorded,
@@ -40,7 +41,7 @@ from harnessed.core.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.core.session.session import Session
 from harnessed.plugins._context.providers import compactor, spill_store
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.persistence import session_jsonl

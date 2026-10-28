@@ -22,17 +22,16 @@ from harnessed import (
     plugin,
     tool,
 )
-from harnessed.core.events import (
+from harnessed.core.hooks import PreStep, StepDecision
+from harnessed.core.messages import PolicyDecision
+from harnessed.core.session.events import (
     AssistantMessage,
     ModelRequested,
-    PreStep,
-    StepDecision,
     ToolProgress,
     ToolReturned,
     TurnEnd,
     TurnStart,
 )
-from harnessed.core.messages import PolicyDecision
 from harnessed.core.stream import TextDelta
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver

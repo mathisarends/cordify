@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import FS, Bundle, Inject, ModelChunk, ToolCall
-from harnessed.core.events import ToolReturned
+from harnessed.core.session.events import ToolReturned
 from harnessed.presets import coding, minimal
 from harnessed.testing import ScriptedLLM
 

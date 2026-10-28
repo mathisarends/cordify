@@ -11,9 +11,10 @@ from typing import Annotated, Protocol, Self
 
 from pydantic import Field, model_validator
 
-from harnessed.core.features import Plugin, PluginConfig, tool
 from harnessed.core.messages import ToolResult, result_content, to_dict
-from harnessed.core.tools import ToolRegistry
+from harnessed.core.plugin import Plugin, PluginConfig
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context, Inject, plugin, run_sync
 
 if os.name == "nt":

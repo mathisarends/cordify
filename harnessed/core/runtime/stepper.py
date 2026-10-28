@@ -6,25 +6,22 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from harnessed.core.budget import ContextBudget
-from harnessed.core.events import (
-    ConfigureRequest,
+from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
+from harnessed.core.model import ModelRequest
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.session.events import (
     ContextMessage,
     InboxRemoved,
     ModelRequested,
     ObservationRecorded,
-    PrepareRequest,
-    PreStep,
-    StepDecision,
     StepEnd,
     StepStart,
     SystemMessage,
     TurnEnd,
     UserMessage,
 )
-from harnessed.core.model import ModelRequest
-from harnessed.core.prompt import SystemPrompt
 from harnessed.core.tokens import TokenCounter
-from harnessed.core.tools import ToolRegistry
+from harnessed.core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from harnessed.core.loop import Agent

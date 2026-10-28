@@ -1,7 +1,7 @@
 from collections.abc import Callable, Iterable
 
 from harnessed.core.approvals import Approver
-from harnessed.core.events import ToolPolicy
+from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import ApprovalAnswer, PolicyDecision
 from harnessed.kernel import Context, Priority, plugin
 

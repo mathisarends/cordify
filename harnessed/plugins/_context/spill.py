@@ -1,10 +1,12 @@
 from dataclasses import replace
 
 from harnessed.core.budget import truncate
-from harnessed.core.events import ReviewToolResult, SpillCreated
-from harnessed.core.features import Plugin, tool
+from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.loop import Agent
+from harnessed.core.plugin import Plugin
+from harnessed.core.session.events import SpillCreated
 from harnessed.core.tokens import TokenCounter
+from harnessed.core.tools.decorator import tool
 from harnessed.kernel import Inject, hook
 from harnessed.seams.spill import SpillStore
 

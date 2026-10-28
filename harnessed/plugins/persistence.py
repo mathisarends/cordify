@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 
 from harnessed.adapters.persistence import JsonlPersistence
-from harnessed.core.session import SessionPersistence
+from harnessed.core.session.store import SessionPersistence
 from harnessed.kernel import Context, plugin
 
 

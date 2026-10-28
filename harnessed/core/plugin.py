@@ -4,6 +4,9 @@ from typing import Any, overload
 
 from pydantic import BaseModel, ConfigDict
 
+from harnessed.core.prompt.values import Section
+from harnessed.core.tools.registry import ToolSpec
+from harnessed.core.tools.scheduling import ResourceSpec, resource_spec
 from harnessed.kernel import Context, Key
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.kernel.declarations import HookEntry, Registration
@@ -11,10 +14,7 @@ from harnessed.kernel.declarations import PluginBase as KernelPlugin
 from harnessed.kernel.events import on as hook
 from harnessed.kernel.plugin import PluginLike
 
-from .instructions import Section
 from .model import Model
-from .scheduling import ResourceSpec, resource_spec
-from .tools import ToolSpec
 
 
 class _DefaultGuidance:
@@ -22,47 +22,6 @@ class _DefaultGuidance:
 
 
 _DEFAULT_GUIDANCE = _DefaultGuidance()
-
-
-@overload
-def tool[F: Callable[..., Any]](fn: F, /) -> F: ...
-
-
-@overload
-def tool[F: Callable[..., Any]](
-    *,
-    name: str | None = None,
-    timeout: float | None = None,
-    parallel: bool = False,
-    resources: ResourceSpec = (),
-    readonly: bool = False,
-    override: bool = False,
-) -> Callable[[F], F]: ...
-
-
-def tool(
-    fn=None,
-    /,
-    *,
-    name: str | None = None,
-    timeout: float | None = None,
-    parallel: bool = False,
-    resources: ResourceSpec = (),
-    readonly: bool = False,
-    override: bool = False,
-):
-    resources = resource_spec(resources)
-
-    def decorate(callback):
-        spec = ToolSpec(name, timeout, parallel, resources, readonly, override)
-        callback._harnessed_tool = spec
-        callback._harnessed_registrations = [
-            *getattr(callback, "_harnessed_registrations", ()),
-            spec,
-        ]
-        return callback
-
-    return decorate(fn) if fn is not None else decorate
 
 
 class Bundle(KernelBundle):
@@ -182,4 +141,4 @@ class Service[T](Plugin):
         ctx.provide(self.key, self.value)
 
 
-__all__ = ["Bundle", "Plugin", "PluginLike", "hook", "tool"]
+__all__ = ["Bundle", "Plugin", "PluginConfig", "PluginLike", "Service", "hook"]

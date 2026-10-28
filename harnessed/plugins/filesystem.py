@@ -11,8 +11,9 @@ from typing import Annotated, Protocol
 
 from pydantic import Field
 
-from harnessed.core.features import Plugin, PluginConfig, tool
-from harnessed.core.tools import ToolError, ToolRegistry
+from harnessed.core.plugin import Plugin, PluginConfig
+from harnessed.core.tools.decorator import tool
+from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import Context, Inject, plugin, run_sync
 
 

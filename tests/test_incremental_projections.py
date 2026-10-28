@@ -4,8 +4,10 @@ import pytest
 
 from harnessed.core.approvals import ApprovalState
 from harnessed.core.compaction import plan_compaction
-from harnessed.core.control import RunControl
-from harnessed.core.events import (
+from harnessed.core.messages import ApprovalAnswer, Message, Observation, ToolCall
+from harnessed.core.model import ModelRequest
+from harnessed.core.session.control import RunControl
+from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalRequested,
     ApprovalResolved,
@@ -24,11 +26,9 @@ from harnessed.core.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.inbox import Inbox
-from harnessed.core.messages import ApprovalAnswer, Message, Observation, ToolCall
-from harnessed.core.model import ModelRequest
-from harnessed.core.session import Session, derive_messages, derive_requests
-from harnessed.core.turns import derive_turns
+from harnessed.core.session.inbox import Inbox
+from harnessed.core.session.session import Session, derive_messages, derive_requests
+from harnessed.core.session.turns import derive_turns
 
 
 @pytest.mark.parametrize("seed", range(12))

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from harnessed import Context, Harness, ModelChunk, SystemPrompt, ToolCall, ToolRegistry, plugin
-from harnessed.core.events import ExecuteTool, SessionAppended
+from harnessed.core.hooks import ExecuteTool, SessionAppended
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.services import llm

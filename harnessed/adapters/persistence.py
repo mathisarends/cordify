@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from harnessed.core.events import LogTailRecovered, SessionEvent
-from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import LogTailRecovered, SessionEvent
+from harnessed.core.session.session import Session
 from harnessed.kernel.effects import run_sync
 
 

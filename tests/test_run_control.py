@@ -21,20 +21,18 @@ from harnessed import (
     AgentHandle as Agent,
 )
 from harnessed.adapters.persistence import JsonlPersistence
-from harnessed.core.events import (
+from harnessed.core.hooks import PreStep, ReviewToolResult, StepDecision
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import (
     AssistantChunk,
     AssistantMessage,
     InboxAdded,
     ModelRequested,
-    PreStep,
-    ReviewToolResult,
-    StepDecision,
     StepStart,
     ToolReturned,
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session import decode_event, encode_event
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal

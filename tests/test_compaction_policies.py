@@ -17,17 +17,16 @@ from harnessed import (
     ToolCall,
     user,
 )
-from harnessed.core.events import (
+from harnessed.core.hooks import ConfigureRequest, PrepareRequest
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import (
     AssistantMessage,
     CompactionApplied,
-    ConfigureRequest,
-    PrepareRequest,
     SystemMessage,
     TurnEnd,
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session import decode_event, encode_event
 from harnessed.plugins._context.providers import compactor
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM

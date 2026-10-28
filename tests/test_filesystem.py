@@ -7,7 +7,7 @@ import pytest
 
 from harnessed import Agent, ToolCall
 from harnessed.core.model import ModelChunk
-from harnessed.core.tools import ToolError, ToolRegistry
+from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.plugins.filesystem import Filesystem, LocalFS
 from harnessed.testing import ScriptedModel
 

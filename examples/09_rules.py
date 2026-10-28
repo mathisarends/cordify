@@ -20,7 +20,7 @@ from harnessed import (
     user,
     when,
 )
-from harnessed.core.events import InboxAdded, ToolReturned
+from harnessed.core.session.events import InboxAdded, ToolReturned
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.testing import ScriptedLLM

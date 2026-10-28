@@ -5,8 +5,8 @@ import pytest
 
 from harnessed import Inbox, ModelChunk, Session, system, user
 from harnessed.adapters.persistence import JsonlPersistence
-from harnessed.core.events import InboxAdded, InboxRemoved, UserMessage
-from harnessed.core.session import decode_event, encode_event
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import InboxAdded, InboxRemoved, UserMessage
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM

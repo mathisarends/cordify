@@ -3,16 +3,11 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 
-from harnessed.core.events import (
-    ReviewToolResult,
-    RuleEvaluated,
-    RuleTriggered,
-    ToolCalled,
-    ToolReturned,
-)
-from harnessed.core.features import Plugin
+from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.loop import Agent
 from harnessed.core.messages import ToolCall, ToolResult, system, to_dict, user
+from harnessed.core.plugin import Plugin
+from harnessed.core.session.events import RuleEvaluated, RuleTriggered, ToolCalled, ToolReturned
 from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Inject, hook
 

@@ -32,7 +32,7 @@ class Section:
             raise
 
 
-type Instructions = str | Iterable[str | Section]
+type InstructionValues = str | Iterable[str | Section]
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,9 +42,9 @@ class PromptEntry:
 
 
 class PromptPlan:
-    """Instructions first, then guidance in plugin order; no implicit headings."""
+    """InstructionValues first, then guidance in plugin order; no implicit headings."""
 
-    def __init__(self, instructions: Instructions = (), plugins: Iterable = ()):
+    def __init__(self, instructions: InstructionValues = (), plugins: Iterable = ()):
         values = (instructions,) if isinstance(instructions, str) else tuple(instructions)
         entries: dict[str, PromptEntry] = {}
         literal_values = {value for value in values if isinstance(value, str)}
@@ -61,7 +61,7 @@ class PromptPlan:
 
         for index, value in enumerate(values):
             if not isinstance(value, str | Section):
-                raise TypeError("Instructions must contain strings or Section values")
+                raise TypeError("InstructionValues must contain strings or Section values")
             add(value, f"instructions[{index}]")
         for index, spec in enumerate(plugins):
             guidance = getattr(spec, "guidance", None)
@@ -84,5 +84,5 @@ class PromptPlan:
         lines = [f"System prompt ({len(self.entries)} sections)"]
         for index, entry in enumerate(self.entries, 1):
             preview = str(entry.section._file) if entry.section._file else entry.section.text[:80]
-            lines.append(f"  {index}. {entry.section.name}: {preview!r} — {entry.origin}")
+            lines.append(f"  {index}. {entry.section.name}: {preview!r} â€” {entry.origin}")
         return "\n".join(lines)

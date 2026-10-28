@@ -4,8 +4,7 @@ from collections.abc import Callable, Iterable
 from xml.sax.saxutils import escape, quoteattr
 
 from harnessed.core.messages import Message
-
-from .events import (
+from harnessed.core.session.events import (
     AssistantChunk,
     AssistantMessage,
     CompactionApplied,

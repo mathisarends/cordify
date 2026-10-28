@@ -23,7 +23,7 @@ from harnessed import (
     ToolCall,
     hook,
 )
-from harnessed.core.events import CacheMetrics, CompactionApplied, SpillCreated
+from harnessed.core.session.events import CacheMetrics, CompactionApplied, SpillCreated
 from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm

@@ -5,13 +5,13 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from harnessed.core.budget import ContextBudget
-from harnessed.core.features import Plugin, PluginConfig
 from harnessed.core.loop import AgentFactory, AgentOptions, ReactLoopFactory
 from harnessed.core.model import Model
-from harnessed.core.outputs import ToolOutputLimit
-from harnessed.core.prompt import SystemPrompt
+from harnessed.core.plugin import Plugin, PluginConfig
+from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
-from harnessed.core.tools import ErrorFormatter, ToolRegistry
+from harnessed.core.tools.output_limit import ToolOutputLimit
+from harnessed.core.tools.registry import ErrorFormatter, ToolRegistry
 from harnessed.kernel import Context
 
 

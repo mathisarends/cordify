@@ -6,7 +6,7 @@ from pathlib import Path
 
 from harnessed import Harness
 from harnessed.adapters.deepseek import deepseek
-from harnessed.core.events import ToolCalled
+from harnessed.core.session.events import ToolCalled
 from harnessed.core.stream import TextDelta
 from harnessed.plugins._context.instructions import agents_md, persona
 from harnessed.plugins.agents.loop import agent_loop

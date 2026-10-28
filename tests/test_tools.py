@@ -4,9 +4,9 @@ from typing import Annotated, Protocol
 import pytest
 
 from harnessed import Agent, Bundle, Context, Inject, Plugin, ToolCall, ToolRegistry, tool
-from harnessed.core.execution import ToolContext
 from harnessed.core.messages import ToolResult
 from harnessed.core.model import ModelChunk
+from harnessed.core.tools.context import ToolContext
 from harnessed.kernel.di import InjectMarker
 from harnessed.testing import ScriptedModel
 

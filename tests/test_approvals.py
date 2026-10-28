@@ -17,17 +17,17 @@ from harnessed import (
     plugin,
 )
 from harnessed.core.approvals import ApprovalState
-from harnessed.core.events import (
+from harnessed.core.hooks import ToolPolicy
+from harnessed.core.messages import PolicyDecision
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
     ToolExecutionStarted,
-    ToolPolicy,
     ToolPolicyApplied,
     ToolReturned,
 )
-from harnessed.core.messages import PolicyDecision
-from harnessed.core.session import decode_event, encode_event
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal

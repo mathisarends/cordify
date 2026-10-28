@@ -1,6 +1,6 @@
-from harnessed.core.events import ObservationPolicyApplied
-from harnessed.core.features import Plugin
 from harnessed.core.loop import Agent
+from harnessed.core.plugin import Plugin
+from harnessed.core.session.events import ObservationPolicyApplied
 from harnessed.kernel import Inject
 
 

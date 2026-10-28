@@ -8,20 +8,18 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from harnessed.core.approvals import Approvals
-from harnessed.core.context import DynamicContext
 from harnessed.core.errors import PluginConflict
-from harnessed.core.features import Service
-from harnessed.core.instruction_plugin import Instructions
-from harnessed.core.instructions import Instructions as InstructionValues
-from harnessed.core.instructions import PromptPlan
 from harnessed.core.loop import Agent as LiveSession
 from harnessed.core.loop import AgentFactory
 from harnessed.core.model import Model
-from harnessed.core.outputs import ToolOutputLimit
+from harnessed.core.plugin import Service
+from harnessed.core.prompt.context import DynamicContext
+from harnessed.core.prompt.instructions import Instructions
+from harnessed.core.prompt.values import InstructionValues, PromptPlan
 from harnessed.core.runtime.agent_loop import AgentLoop
-from harnessed.core.session import Session as SessionLog
-from harnessed.core.session import SessionPersistence
-from harnessed.core.store import MemorySessions, SessionStore
+from harnessed.core.session.session import Session as SessionLog
+from harnessed.core.session.store import MemorySessions, SessionPersistence, SessionStore
+from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tracing import NoopTracer
 from harnessed.kernel import Context, PluginLike
 from harnessed.kernel.plugin import as_plugin_spec

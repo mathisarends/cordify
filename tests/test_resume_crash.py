@@ -11,14 +11,14 @@ import pytest
 
 from harnessed import ApprovalAnswer, Bundle, ModelChunk, Session, ToolCall, user
 from harnessed.adapters.persistence import JsonlPersistence
-from harnessed.core.events import (
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
     InboxAdded,
     LogTailRecovered,
     ToolReturned,
 )
-from harnessed.core.session import decode_event, encode_event
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal

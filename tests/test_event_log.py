@@ -5,12 +5,13 @@ from typing import ClassVar
 import pytest
 
 from harnessed import Bundle, Message, ModelChunk, Session, ToolCall, ToolResult
-from harnessed.core.events import (
+from harnessed.core.hooks import PrepareRequest
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
     AssistantChunk,
     AssistantMessage,
     ModelRequested,
-    PrepareRequest,
     SessionEvent,
     StepStart,
     SystemMessage,
@@ -19,7 +20,7 @@ from harnessed.core.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session import decode_event, derive_messages, derive_requests, encode_event
+from harnessed.core.session.session import derive_messages, derive_requests
 from harnessed.core.stream import TextDelta
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal

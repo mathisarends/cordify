@@ -4,12 +4,12 @@ from harnessed._exports import exported
 
 if TYPE_CHECKING:
     from harnessed.core.approvals import Approvals as Approvals
-    from harnessed.core.features import Service as Service
-    from harnessed.core.instruction_plugin import Instructions as Instructions
     from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
-    from harnessed.core.outputs import ToolOutputLimit as ToolOutputLimit
+    from harnessed.core.plugin import Service as Service
+    from harnessed.core.prompt.instructions import Instructions as Instructions
     from harnessed.core.runtime.agent_loop import AgentLoop as AgentLoop
-    from harnessed.core.store import MemorySessions as MemorySessions
+    from harnessed.core.session.store import MemorySessions as MemorySessions
+    from harnessed.core.tools.output_limit import ToolOutputLimit as ToolOutputLimit
     from harnessed.core.tracing import NoopTracer as NoopTracer
     from harnessed.plugins._context.compaction import ContextBudgetGuard as ContextBudgetGuard
     from harnessed.plugins._context.compaction import PeriodicCompaction as PeriodicCompaction
@@ -34,13 +34,13 @@ if TYPE_CHECKING:
 _EXPORTS = {
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
-    "MemorySessions": ("harnessed.core.store", "MemorySessions"),
-    "ToolOutputLimit": ("harnessed.core.outputs", "ToolOutputLimit"),
-    "Instructions": ("harnessed.core.instruction_plugin", "Instructions"),
+    "MemorySessions": ("harnessed.core.session.store", "MemorySessions"),
+    "ToolOutputLimit": ("harnessed.core.tools.output_limit", "ToolOutputLimit"),
+    "Instructions": ("harnessed.core.prompt.instructions", "Instructions"),
     "NoopTracer": ("harnessed.core.tracing", "NoopTracer"),
     "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
     "Shell": ("harnessed.plugins.shell", "Shell"),
-    "Service": ("harnessed.core.features", "Service"),
+    "Service": ("harnessed.core.plugin", "Service"),
     "jsonl_sessions": ("harnessed.plugins.persistence", "session_jsonl"),
     "agent_loop": ("harnessed.plugins.agents.loop", "agent_loop"),
     "llm": ("harnessed.plugins.services", "llm"),

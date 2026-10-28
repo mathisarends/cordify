@@ -12,8 +12,8 @@ from harnessed import (
     derive_messages,
     derive_requests,
 )
-from harnessed.core.events import AssistantMessage, UserMessage
-from harnessed.core.session import decode_event, encode_event
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import AssistantMessage, UserMessage
 from harnessed.core.stream import TextDelta
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM

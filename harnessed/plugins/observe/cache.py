@@ -1,8 +1,9 @@
 from dataclasses import replace
 
-from harnessed.core.events import CacheMetrics, ConfigureRequest, ModelUsageRecorded, StepStart
-from harnessed.core.features import Plugin
+from harnessed.core.hooks import ConfigureRequest
 from harnessed.core.loop import Agent
+from harnessed.core.plugin import Plugin
+from harnessed.core.session.events import CacheMetrics, ModelUsageRecorded, StepStart
 from harnessed.kernel import Inject, hook
 
 

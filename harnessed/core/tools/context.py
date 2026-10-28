@@ -4,11 +4,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from harnessed.core.messages import ToolCall
-
-from .events import ToolProgress
+from harnessed.core.session.events import ToolProgress
 
 if TYPE_CHECKING:
-    from .session import Session
+    from harnessed.core.session.session import Session
 
 
 class ToolInbox(Protocol):

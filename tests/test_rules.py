@@ -10,8 +10,9 @@ from harnessed import (
     ToolResult,
     when,
 )
-from harnessed.core.events import InboxAdded, RuleTriggered, ToolReturned
-from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import InboxAdded, RuleTriggered, ToolReturned
+from harnessed.core.session.session import Session
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.plugins.services import llm
@@ -167,6 +168,15 @@ async def test_size_predicate_and_missing_exit_code_and_tool_filters():
 
 
 async def test_process_return_values_are_normalized_with_exit_codes():
+    from harnessed.core.tools.registry import ToolRegistry
+    from harnessed.kernel import plugin
+    from harnessed.plugins.shell import proc_result
+
+    @plugin(needs=[ToolRegistry])
+    async def converters(ctx):
+        ctx[ToolRegistry].result_converter(ProcResult, proc_result)
+        yield
+
     tools = Bundle("process")
 
     @tools.tool
@@ -179,7 +189,7 @@ async def test_process_return_values_are_normalized_with_exit_codes():
             "done",
         ]
     )
-    async with Harness([agent_loop(), llm(model), tools]).session("process") as agent:
+    async with Harness([agent_loop(), llm(model), tools, converters()]).session("process") as agent:
         await agent.run("go")
         event = next(e for e in agent.session.events if isinstance(e, ToolReturned))
         assert event.result.status == "error" and event.result.exit_code == 7

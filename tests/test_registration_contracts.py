@@ -3,8 +3,8 @@ from datetime import timedelta
 import pytest
 
 from harnessed.core.messages import ToolCall
-from harnessed.core.prompt import PromptSectionConflict, SystemPrompt
-from harnessed.core.tools import ToolError, ToolNameConflict, ToolRegistry
+from harnessed.core.prompt.system_prompt import PromptSectionConflict, SystemPrompt
+from harnessed.core.tools.registry import ToolError, ToolNameConflict, ToolRegistry
 from harnessed.kernel import Context
 
 
@@ -59,7 +59,7 @@ async def test_tool_errors_redact_secrets_but_preserve_explicit_safe_messages(ca
 
 
 async def test_prompt_conflicts_invalidation_and_expiry(monkeypatch):
-    import harnessed.core.prompt as prompt_module
+    import harnessed.core.prompt.system_prompt as prompt_module
 
     clock = [1.0]
     monkeypatch.setattr(prompt_module, "monotonic", lambda: clock[0])

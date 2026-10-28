@@ -2,8 +2,8 @@
 
 import asyncio
 
-from .events import ContextValueChanged
-from .session import Session
+from harnessed.core.session.events import ContextValueChanged
+from harnessed.core.session.session import Session
 
 
 class DynamicContext:

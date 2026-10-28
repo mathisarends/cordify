@@ -13,9 +13,10 @@ from harnessed import (
     Session,
     ToolCall,
 )
-from harnessed.core.events import ApprovalResolved, ToolExecutionStarted, ToolPolicy, ToolReturned
+from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
-from harnessed.core.session import decode_event, encode_event
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import ApprovalResolved, ToolExecutionStarted, ToolReturned
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import headless, minimal

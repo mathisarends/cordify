@@ -4,10 +4,11 @@ from typing import Protocol
 import pytest
 
 from harnessed import Harness, ModelChunk, ToolCall, plugin
-from harnessed.core.events import ToolPolicy, ToolReturned
+from harnessed.core.hooks import ToolPolicy
 from harnessed.core.loop import AgentFactory
 from harnessed.core.messages import PolicyDecision
-from harnessed.core.session import SessionPersistence
+from harnessed.core.session.events import ToolReturned
+from harnessed.core.session.store import SessionPersistence
 from harnessed.kernel import Context
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_tools

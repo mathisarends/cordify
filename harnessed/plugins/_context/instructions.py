@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 
-from harnessed.core.prompt import SystemPrompt
+from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.kernel import Context, plugin
 
 

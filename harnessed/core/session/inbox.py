@@ -1,7 +1,13 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .events import ContextMessage, InboxAdded, InboxRemoved, SessionEvent, UserMessage
+from harnessed.core.session.events import (
+    ContextMessage,
+    InboxAdded,
+    InboxRemoved,
+    SessionEvent,
+    UserMessage,
+)
 
 
 @dataclass(frozen=True, init=False)

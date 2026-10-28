@@ -7,9 +7,10 @@ from uuid import uuid4
 from harnessed.core.budget import ContextBudget, truncate
 from harnessed.core.compaction import compact_request, plan_compaction
 from harnessed.core.errors import ConfigError
-from harnessed.core.events import CompactionApplied, PrepareRequest, StepStart
-from harnessed.core.features import Plugin
+from harnessed.core.hooks import PrepareRequest
 from harnessed.core.loop import Agent
+from harnessed.core.plugin import Plugin
+from harnessed.core.session.events import CompactionApplied, StepStart
 from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.core.tracing import span
 from harnessed.kernel import Inject, hook

@@ -12,7 +12,7 @@ from harnessed import (
     SystemPrompt,
     ThresholdCompaction,
 )
-from harnessed.core.events import CompactionApplied
+from harnessed.core.session.events import CompactionApplied
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

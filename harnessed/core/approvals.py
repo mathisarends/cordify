@@ -6,13 +6,19 @@ from typing import Annotated, Protocol
 
 from pydantic import Field
 
+from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import ApprovalAnswer, PolicyDecision
+from harnessed.core.plugin import Plugin, PluginConfig
+from harnessed.core.session.events import (
+    ApprovalRequested,
+    ApprovalResolved,
+    ApprovalRevoked,
+    SessionEvent,
+)
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Inject, Priority, hook
 
-from .events import ApprovalRequested, ApprovalResolved, ApprovalRevoked, SessionEvent, ToolPolicy
-from .features import Plugin, PluginConfig
 from .messages import ToolCall
-from .tools import ToolRegistry
 
 
 class ApprovalUnavailable(RuntimeError):

@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from pydantic import BaseModel, Field, ValidationError
 
-from harnessed.core.features import Plugin
+from harnessed.core.plugin import Plugin
 from harnessed.kernel import Context, Emit, PluginFailed, Priority, hook
 
 

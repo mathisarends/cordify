@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 from harnessed import Context, ModelChunk, Shell, ToolCall, ToolRegistry, plugin
-from harnessed.core.events import ToolReturned
+from harnessed.core.session.events import ToolReturned
 from harnessed.plugins.shell import ProcResult, shell_tools
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM

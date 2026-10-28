@@ -26,7 +26,7 @@ from harnessed import (
 from harnessed import (
     AgentHandle as Agent,
 )
-from harnessed.core.events import ContextMessage
+from harnessed.core.session.events import ContextMessage
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.services import llm

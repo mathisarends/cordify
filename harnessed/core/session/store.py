@@ -4,12 +4,17 @@ from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Protocol
 
+from harnessed.core.errors import SessionLocked
+from harnessed.core.plugin import Plugin
+from harnessed.core.session.events import SessionEvent
 from harnessed.kernel import Context
 
-from .errors import SessionLocked
-from .events import SessionEvent
-from .features import Plugin
-from .session import SessionPersistence
+
+class SessionPersistence(Protocol):
+    async def load(self, session_id: str) -> tuple[SessionEvent, ...]: ...
+    async def append(self, session_id: str, seq: int, event: SessionEvent) -> None: ...
+    async def flush(self) -> None: ...
+    async def aclose(self) -> None: ...
 
 
 class SessionStore(Protocol):

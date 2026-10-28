@@ -3,8 +3,8 @@
 from collections.abc import AsyncGenerator
 from typing import assert_type
 
-from harnessed.core.features import tool
 from harnessed.core.loop import Agent, RunResult
+from harnessed.core.tools.decorator import tool
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
 
 

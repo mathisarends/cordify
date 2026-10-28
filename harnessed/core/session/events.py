@@ -14,11 +14,10 @@ from harnessed.core.messages import (
     freeze,
 )
 from harnessed.core.model import ModelRequest, ModelUsage
-from harnessed.kernel.events import Bail, Emit, Waterfall
+from harnessed.kernel.events import Emit
 
 if TYPE_CHECKING:
-    from .loop import Agent
-    from .session import Session
+    pass
 
 
 type InboxMode = Literal["followup", "steer", "inject"]
@@ -29,71 +28,6 @@ _INBOX_ROUTES: dict[InboxMode, tuple[InboxTarget, bool]] = {
     "steer": ("next-step", True),
     "inject": ("next-step", False),
 }
-
-
-@dataclass(frozen=True)
-class StepDecision:
-    messages: tuple[Message, ...] = ()
-    accepted: bool = True
-
-    @classmethod
-    def reject(cls) -> "StepDecision":
-        return cls(accepted=False)
-
-
-@dataclass(frozen=True)
-class PreStep(Waterfall[StepDecision]):
-    agent: "Agent"
-    messages: tuple[Message, ...]
-    step: int
-
-    @property
-    def is_turn_start(self) -> bool:
-        return self.step == 1
-
-    @property
-    def latest_user_text(self) -> str:
-        for message in reversed(self.messages):
-            if message.role == "user":
-                return message.text
-        event = self.agent.session.last(UserMessage)
-        return event.message.text if event is not None else ""
-
-
-@dataclass(frozen=True)
-class ExecuteTool(Waterfall[ToolResult]):
-    call: ToolCall
-    agent: "Agent"
-
-
-@dataclass(frozen=True)
-class ToolPolicy(Waterfall[PolicyDecision]):
-    call: ToolCall
-    agent: "Agent"
-
-
-@dataclass(frozen=True)
-class ReviewToolResult(Waterfall[ToolResult]):
-    call: ToolCall
-    result: ToolResult
-    agent: "Agent"
-
-
-@dataclass(frozen=True)
-class PrepareRequest(Waterfall[ModelRequest]):
-    agent: "Agent"
-    request: ModelRequest
-
-
-@dataclass(frozen=True)
-class ConfigureRequest(Waterfall[ModelRequest]):
-    agent: "Agent"
-    request: ModelRequest
-
-
-@dataclass(frozen=True)
-class TurnStopping(Bail[bool]):
-    agent: "Agent"
 
 
 class SessionEvent(Emit):
@@ -158,20 +92,6 @@ class ApprovalResolved(SessionEvent):
         if self.status in ("interrupted", "unavailable") and self.decision is None:
             return
         raise ValueError("Approval must be answered, interrupted or unavailable")
-
-
-@dataclass(frozen=True)
-class ApprovalRequest(Bail[ApprovalAnswer]):
-    request: ApprovalRequested
-    agent: "Agent"
-
-    @property
-    def call(self) -> ToolCall:
-        return self.request.call
-
-    @property
-    def reason(self) -> str:
-        return self.request.reason
 
 
 @dataclass(frozen=True)
@@ -473,13 +393,6 @@ class TurnEnd(SessionEvent):
     type: ClassVar[str] = "turn/end"
     turn_id: str
     reason: str = "completed"
-
-
-@dataclass(frozen=True)
-class SessionAppended(Emit):
-    session: "Session"
-    event: SessionEvent
-    seq: int
 
 
 SESSION_EVENT_TYPES = {

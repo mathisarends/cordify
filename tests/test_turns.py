@@ -4,10 +4,10 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Bundle, ModelChunk, ModelRequest, Session, ToolCall, derive_turns
-from harnessed.core.events import (
+from harnessed.core.hooks import PreStep, StepDecision
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import (
     ModelRequested,
-    PreStep,
-    StepDecision,
     StepEnd,
     StepStart,
     ToolCalled,
@@ -16,7 +16,6 @@ from harnessed.core.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session import decode_event, encode_event
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

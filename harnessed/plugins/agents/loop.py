@@ -1,7 +1,7 @@
 from harnessed.core.loop import AgentFactory, ReactLoopFactory
 from harnessed.core.model import Model
-from harnessed.core.prompt import SystemPrompt
-from harnessed.core.tools import ErrorFormatter, ToolRegistry
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.tools.registry import ErrorFormatter, ToolRegistry
 from harnessed.kernel import Context, plugin
 
 

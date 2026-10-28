@@ -1,16 +1,16 @@
 import pytest
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PluginConflict, Section, ToolCall, tool
-from harnessed.core.events import (
+from harnessed.core.messages import PolicyDecision
+from harnessed.core.model import ModelChunk
+from harnessed.core.session.events import (
     CompactionApplied,
     ContextValueChanged,
     ToolPolicyApplied,
     TurnEnd,
     TurnStart,
 )
-from harnessed.core.messages import PolicyDecision
-from harnessed.core.model import ModelChunk
-from harnessed.core.session import Session
+from harnessed.core.session.session import Session
 from harnessed.models import Model
 from harnessed.plugins import Approvals, Instructions, Service, context
 from harnessed.testing import ScriptedModel
@@ -144,7 +144,7 @@ async def test_denials_distinguish_policy_from_the_user_in_log_and_result(user_a
 
 
 async def test_latest_dynamic_context_survives_compaction_and_replay():
-    from harnessed.core.context import DynamicContext
+    from harnessed.core.prompt.context import DynamicContext
 
     session = Session("context-compaction")
     values = DynamicContext(session)

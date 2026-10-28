@@ -7,6 +7,14 @@ from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from harnessed.core.approvals import ApprovalUnavailable, Approver
+from harnessed.core.hooks import (
+    ApprovalRequest,
+    ExecuteTool,
+    ReviewToolResult,
+    SessionAppended,
+    ToolPolicy,
+    TurnStopping,
+)
 from harnessed.core.messages import (
     ApprovalAnswer,
     Message,
@@ -16,46 +24,40 @@ from harnessed.core.messages import (
     ToolResult,
 )
 from harnessed.core.model import Model, ModelRequest, ModelUsage
+from harnessed.core.prompt.context import DynamicContext
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.session.events import (
+    AgentControlChanged,
+    ApprovalRequested,
+    ApprovalResolved,
+    ApprovalRevoked,
+    AssistantMessage,
+    InboxAdded,
+    InboxMode,
+    InboxRemoved,
+    ModelUsageRecorded,
+    SessionEvent,
+    ToolCalled,
+    ToolCompleted,
+    ToolExecutionStarted,
+    ToolPolicyApplied,
+    ToolReturned,
+    TurnEnd,
+    TurnStart,
+)
+from harnessed.core.session.session import Session, derive_messages
+from harnessed.core.tools.context import BoundToolContexts, InboxSender, ToolContexts
+from harnessed.core.tools.output_limit import ToolOutputLimit
+from harnessed.core.tools.registry import ErrorFormatter, ToolRegistry, format_tool_error
+from harnessed.core.tools.scheduling import ToolPlan, ToolScheduler, ToolScheduling
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 
 from .approvals import validate_approval_timeout
 from .attachments import Attachment, prepare_input
-from .context import DynamicContext
-from .events import (
-    AgentControlChanged,
-    ApprovalRequest,
-    ApprovalRequested,
-    ApprovalResolved,
-    ApprovalRevoked,
-    AssistantMessage,
-    ExecuteTool,
-    InboxAdded,
-    InboxMode,
-    InboxRemoved,
-    ModelUsageRecorded,
-    ReviewToolResult,
-    SessionAppended,
-    SessionEvent,
-    ToolCalled,
-    ToolCompleted,
-    ToolExecutionStarted,
-    ToolPolicy,
-    ToolPolicyApplied,
-    ToolReturned,
-    TurnEnd,
-    TurnStart,
-    TurnStopping,
-)
-from .execution import BoundToolContexts, InboxSender, ToolContexts
-from .outputs import ToolOutputLimit
-from .prompt import SystemPrompt
 from .runtime.stepper import run_step
-from .scheduling import ToolPlan, ToolScheduler, ToolScheduling
-from .session import Session, derive_messages
 from .stream import SessionPublished, TextDelta, TransientEvent
-from .tools import ErrorFormatter, ToolRegistry, format_tool_error
 from .tracing import span
 
 type AgentEvent = SessionEvent | TransientEvent
@@ -183,7 +185,7 @@ class Agent:
         return handle
 
     async def _plugin_activated(self, event: PluginActivated):
-        from .instructions import Section
+        from harnessed.core.prompt.values import Section
 
         handle = event.handle
         name = self._runtime_guidance.get(handle)

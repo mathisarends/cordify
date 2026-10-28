@@ -11,7 +11,8 @@ from harnessed import Agent, Plugin, tool
 from harnessed.core.errors import AuthError, ConfigError
 from harnessed.core.messages import Message
 from harnessed.core.model import ModelRequest
-from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.session import Session
 from harnessed.models import PydanticAIModel
 
 

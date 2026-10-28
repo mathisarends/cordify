@@ -1,7 +1,7 @@
 import asyncio
 
-from harnessed.core.events import InboxAdded, TurnEnd
 from harnessed.core.model import ModelChunk, ModelUsage
+from harnessed.core.session.events import InboxAdded, TurnEnd
 from harnessed.core.stream import TextDelta
 from harnessed.presets import minimal
 

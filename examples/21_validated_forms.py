@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from harnessed import Bundle, Inject, ModelChunk, ModelRequest, ToolCall, ToolContext, user
 from harnessed.adapters.deepseek import DeepSeekLLM
 from harnessed.adapters.deepseek_models import ChatCompletionChunk, ChatCompletionRequest
-from harnessed.core.events import ToolReturned
+from harnessed.core.session.events import ToolReturned
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

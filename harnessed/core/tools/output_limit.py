@@ -3,8 +3,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from harnessed.core.features import Plugin, PluginConfig
 from harnessed.core.messages import OutputTruncation, ToolResult
+from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.kernel import Context
 
 

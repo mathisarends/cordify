@@ -2,8 +2,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from harnessed.core.model import ModelRequest
-
-from .events import ModelRequested, SessionEvent, StepEnd, StepStart, TurnEnd, TurnStart
+from harnessed.core.session.events import (
+    ModelRequested,
+    SessionEvent,
+    StepEnd,
+    StepStart,
+    TurnEnd,
+    TurnStart,
+)
 
 
 @dataclass(frozen=True)

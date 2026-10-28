@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 
 from harnessed import AgentHandle as Agent
 from harnessed import Bundle, Inject, ModelChunk, ToolCall
-from harnessed.core.events import ReviewToolResult
+from harnessed.core.hooks import ReviewToolResult
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM

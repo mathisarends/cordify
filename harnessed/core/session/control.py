@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .events import AgentControlChanged, ControlState, SessionEvent
+from harnessed.core.session.events import AgentControlChanged, ControlState, SessionEvent
 
 
 @dataclass(frozen=True, init=False)

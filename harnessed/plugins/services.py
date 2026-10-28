@@ -1,7 +1,7 @@
 from harnessed.core._legacy_model import LegacyModel
 from harnessed.core.model import Model
-from harnessed.core.prompt import SystemPrompt
-from harnessed.core.tools import ToolRegistry
+from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context, plugin
 from harnessed.seams.llm import LLM, ManagedLLM
 

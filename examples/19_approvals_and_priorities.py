@@ -12,7 +12,7 @@ from harnessed import (
     ToolCall,
     ToolPolicy,
 )
-from harnessed.core.events import ToolReturned
+from harnessed.core.session.events import ToolReturned
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.presets import headless, minimal
 from harnessed.testing import ScriptedLLM

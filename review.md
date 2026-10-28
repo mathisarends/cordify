@@ -52,8 +52,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Keep ParamSpec factory signatures, immutable recipe keywords, and validated
   class Config. Mutable mount state belongs in setup; clients/locks stay shared.
-- Convert built-ins to CapWords classes and remove the public clone/deepcopy
-  lifecycle idiom. Rename the kernel base so there is one public Plugin class.
+- Finish converting optional built-ins to CapWords classes.
 
 ### P1-6 — Loop configuration and composition
 
@@ -64,8 +63,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-7 — Events, names and codec
 
-- Separate typed hooks from persistable log events. Add Next and the approved
-  event facade; log events must not hold Context or runtime references.
 - Use consistent class-derived type tags with legacy decoding aliases.
 - Register event kinds once, add version/migration support and a Pydantic union
   codec. Keep frozen immutable values and reject corrupt/unknown records.
@@ -143,7 +140,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Collocate each feature's contract, implementation and plugin. Remove seams/,
   adapters/, _context/, observe/, agents/ and transition re-exports.
-- Split core into tools/, prompt/, session/ and runtime/ and mirror tests.
+- Finish splitting the runtime and mirror the new package structure in tests.
 - Enforce the target layer, feature-independence and SDK/YAML isolation rules.
 
 ### P2-8 — English documentation and examples

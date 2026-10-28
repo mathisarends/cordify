@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from harnessed import Agent, ToolCall
-from harnessed.core.tools import ToolRegistry
+from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins.shell import LocalShell, Shell
 from harnessed.testing import ScriptedModel
 

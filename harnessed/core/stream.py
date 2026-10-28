@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from harnessed.kernel.events import Emit
 
 if TYPE_CHECKING:
-    from .session import Session
+    from harnessed.core.session.session import Session
 
 
 class TransientEvent(Emit):

@@ -3,8 +3,8 @@
 import inspect
 from collections.abc import Awaitable, Callable
 
-from harnessed.core.context import DynamicContext
-from harnessed.core.events import PreStep
+from harnessed.core.hooks import PreStep
+from harnessed.core.prompt.context import DynamicContext
 from harnessed.kernel import Context, plugin
 
 
