@@ -33,6 +33,7 @@ from harnessed.core.session.events import (
     AgentControlChanged,
     AssistantMessage,
     CompactionApplied,
+    ControlState,
     InboxAdded,
     InboxMode,
     InboxRemoved,
@@ -53,6 +54,7 @@ from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 from harnessed.kernel.hooks import HookFactory, ListenerFactory
+from harnessed.kernel.plugin import PluginStatus
 
 type AgentEvent = SessionEvent | TransientEvent
 _preparing: ContextVar["Session | None"] = ContextVar("harnessed_preparing", default=None)
@@ -135,7 +137,7 @@ class Session:
             await handle.aclose()
             raise
         self._runtime_guidance[handle] = f"plugin:{handle.name}:{id(handle):x}"
-        if handle.status == "active":
+        if handle.status == PluginStatus.ACTIVE:
             await self._plugin_activated(PluginActivated(handle))
         return handle
 
@@ -268,7 +270,7 @@ class Session:
         settings: Mapping[str, Any] | None = None,
     ) -> str:
         def prepared(item: InboxAdded):
-            if mode == "inject" and _preparing.get() is self:
+            if mode == InboxMode.INJECT and _preparing.get() is self:
                 self._step_push.append(item)
 
         item = await self.inbox._send(
@@ -291,7 +293,7 @@ class Session:
     ) -> str:
         return await self._send(
             content,
-            "followup",
+            InboxMode.FOLLOWUP,
             attachments=attachments,
             context=context,
             settings=settings,
@@ -301,7 +303,7 @@ class Session:
         return await self.inbox.steer(content)
 
     async def inject(self, content: str | Message) -> str:
-        return await self._send(content, "inject")
+        return await self._send(content, InboxMode.INJECT)
 
     async def pause(self) -> None:
         """Wait until the current model call and all its tools are committed."""
@@ -310,11 +312,11 @@ class Session:
     async def when_paused(self) -> None:
         """Wait for a previously requested pause (legacy observer helper)."""
         self.control._check_external()
-        while self.log.control.state == "pausing":
+        while self.log.control.state == ControlState.PAUSING:
             if self.control.error is not None:
                 raise self.control.error
             await self.control._changed.wait()
-        if self.log.control.state != "paused":
+        if self.log.control.state != ControlState.PAUSED:
             raise RuntimeError("The session has no pending pause request")
 
     async def resume(self) -> None:
@@ -426,7 +428,7 @@ class Session:
         try:
             await self.inbox._send(
                 content,
-                "followup",
+                InboxMode.FOLLOWUP,
                 attachments=attachments,
                 context=context,
                 settings=settings,

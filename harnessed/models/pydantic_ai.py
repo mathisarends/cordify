@@ -18,8 +18,10 @@ from harnessed.core.messages import (
     Assistant,
     ContentPart,
     MalformedArguments,
+    Role,
     TextPart,
     ToolCall,
+    ToolStatus,
     to_dict,
 )
 from harnessed.core.model import (
@@ -29,6 +31,7 @@ from harnessed.core.model import (
     ModelResponse,
     ModelStream,
     ModelUsage,
+    OutputMode,
     StopReason,
 )
 
@@ -164,7 +167,7 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
     history: list[NativeMessage] = []
     calls = {call.id: call.name for message in request.messages for call in message.tool_calls}
     for message in request.messages:
-        if message.role == "assistant":
+        if message.role == Role.ASSISTANT:
             if message.provider_state:
                 restored = native.ModelMessagesTypeAdapter.validate_json(
                     json.dumps([to_dict(message.provider_state)], allow_nan=False)
@@ -187,9 +190,9 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
                 for call in message.tool_calls
             )
             history.append(native.ModelResponse(parts))
-        elif message.role == "system":
+        elif message.role == Role.SYSTEM:
             history.append(native.ModelRequest([native.SystemPromptPart(message.text)]))
-        elif message.role == "tool":
+        elif message.role == Role.TOOL:
             history.append(
                 native.ModelRequest(
                     [
@@ -198,7 +201,7 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
                             _content(message.content),
                             message.tool_call_id or "",
                             outcome="denied"
-                            if message.status == "denied"
+                            if message.status == ToolStatus.DENIED
                             else ("failed" if message.is_error else "success"),
                         )
                     ]
@@ -233,8 +236,8 @@ def _parameters(request: ModelRequest, *, native_output: bool = False) -> ModelR
 
     schema = request.output_schema
     mode = (
-        ("native" if native_output else "tool")
-        if schema is not None and schema.mode == "auto"
+        (OutputMode.NATIVE if native_output else OutputMode.TOOL)
+        if schema is not None and schema.mode == OutputMode.AUTO
         else schema.mode
         if schema is not None
         else "text"
@@ -251,8 +254,10 @@ def _parameters(request: ModelRequest, *, native_output: bool = False) -> ModelR
         ]
     )
     if schema is not None:
-        parameters.output_mode = mode
-        if mode == "native":
+        parameters.output_mode = (
+            "native" if mode == OutputMode.NATIVE else "tool" if mode == OutputMode.TOOL else "text"
+        )
+        if mode == OutputMode.NATIVE:
             parameters.output_object = OutputObjectDefinition(
                 json_schema=to_dict(schema.json_schema), name=schema.name
             )

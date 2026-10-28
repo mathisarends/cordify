@@ -10,11 +10,14 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
     InboxAdded,
+    InboxMode,
+    InboxTarget,
     ModelRequested,
     StepStart,
     ToolCalled,
     ToolReturned,
     TurnEnd,
+    TurnOutcome,
     TurnStart,
     UserMessage,
 )
@@ -43,7 +46,7 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
         ]
     records = [json.loads(line) for line in (tmp_path / "resume.jsonl").read_text().splitlines()]
     assert [record["seq"] for record in records] == list(range(len(records)))
-    assert all(record["version"] == 4 for record in records)
+    assert all(record["version"] == 1 for record in records)
 
 
 async def test_jsonl_excludes_other_writers_and_releases_lock(tmp_path):
@@ -115,7 +118,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     )
     async with harness.session("interrupted") as agent:
         assert isinstance(agent.log.last(TurnEnd), TurnEnd)
-        assert agent.log.last(TurnEnd).reason == "aborted"
+        assert agent.log.last(TurnEnd).reason == TurnOutcome.ABORTED
         results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
         assert len(results) == 1 and results[0].call_id == "call-1"
         assert (await agent.run("continue")).text == "recovered"
@@ -125,7 +128,9 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
     session = Session("pending", persistence=persistence)
-    await session.append(InboxAdded(User("queued"), "next-turn", True, "followup"))
+    await session.append(
+        InboxAdded(User("queued"), InboxTarget.NEXT_TURN, True, InboxMode.FOLLOWUP)
+    )
     await persistence.aclose()
     model = ScriptedModel(["processed"])
     harness = Application(
@@ -140,7 +145,7 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
 async def test_user_message_atomically_claims_its_inbox_identity():
     session = Session("atomic-input")
     message = User("input")
-    await session.append(InboxAdded(message, "next-turn", True, "followup"))
+    await session.append(InboxAdded(message, InboxTarget.NEXT_TURN, True, InboxMode.FOLLOWUP))
     await session.append(UserMessage(message))
     assert not session.inbox.pending
     assert session.messages == (message,)

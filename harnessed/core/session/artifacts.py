@@ -6,6 +6,7 @@ from harnessed.core.messages import SpillRef
 from harnessed.core.session.events import (
     SessionEvent,
     SpillCreated,
+    SpillExpirationReason,
     SpillExpired,
     ToolCompleted,
     ToolReturned,
@@ -52,7 +53,7 @@ async def copy_artifacts(
         for ref in refs:
             entry = entries.get(ref.path)
             if entry is None or source is None:
-                missing.append(SpillExpired(ref, "missing"))
+                missing.append(SpillExpired(ref, SpillExpirationReason.MISSING))
                 continue
             pieces, offset, size = [], 0, 0
             digest = hashlib.sha256()
@@ -66,7 +67,7 @@ async def copy_artifacts(
                     pieces.append(chunk)
                     offset += len(chunk)
             except FileNotFoundError:
-                missing.append(SpillExpired(ref, "missing"))
+                missing.append(SpillExpired(ref, SpillExpirationReason.MISSING))
                 continue
             if size != entry.size_bytes or digest.hexdigest() != ref.sha256:
                 raise ConfigError(f"Fork artifact integrity check failed: {ref.path}")

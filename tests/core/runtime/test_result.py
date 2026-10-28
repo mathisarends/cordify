@@ -2,7 +2,7 @@ import asyncio
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision
-from harnessed.core.model import ModelChunk, ModelUsage
+from harnessed.core.model import ModelChunk, ModelUsage, TokenLimitBehavior
 from harnessed.core.session.events import InboxAdded
 from harnessed.core.stream import TextDelta, TurnFinished
 from harnessed.plugins import Approvals
@@ -93,7 +93,7 @@ async def test_public_max_token_policies_return_typed_stop_reasons_or_fail():
     from harnessed.testing import ScriptedModel
 
     partial = ModelResponse(Assistant("partial"), stop_reason=StopReason.MAX_TOKENS)
-    for policy in ("accept", "continue", "fail"):
+    for policy in TokenLimitBehavior:
         model = ScriptedModel([partial, "complete"])
         async with Agent(
             model=model, plugins=[AgentLoop(on_max_tokens=policy)]
@@ -119,6 +119,7 @@ async def test_step_limit_takes_precedence_over_the_last_model_finish_reason():
 
     partial = ModelResponse(Assistant("partial"), stop_reason=StopReason.MAX_TOKENS)
     result = await Agent(
-        model=ScriptedModel([partial]), plugins=[AgentLoop(max_steps=1, on_max_tokens="continue")]
+        model=ScriptedModel([partial]),
+        plugins=[AgentLoop(max_steps=1, on_max_tokens=TokenLimitBehavior.CONTINUE)],
     ).run("task")
     assert result.stop_reason is StopReason.MAX_STEPS

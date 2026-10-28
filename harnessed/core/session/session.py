@@ -19,20 +19,26 @@ from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalResolved,
     ApprovalRevoked,
+    ApprovalStatus,
     AssistantMessage,
     CompactionApplied,
     ContextMessage,
+    ControlState,
     InboxAdded,
+    InboxRemovalReason,
     InboxRemoved,
+    InboxTarget,
     ModelRequested,
     ModelUsageRecorded,
     SessionEvent,
     StepEnd,
+    StepOutcome,
     StepStart,
     ToolCompleted,
     ToolExecutionStarted,
     ToolReturned,
     TurnEnd,
+    TurnOutcome,
     TurnStart,
     UserMessage,
 )
@@ -40,7 +46,6 @@ from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.history import (
     MessageProjection,
     _derive_message_entries,
-    _pending_assistant_messages,
 )
 from harnessed.core.session.history import derive_messages as derive_messages
 from harnessed.core.session.history import derive_requests as derive_requests
@@ -107,7 +112,9 @@ class SessionLog:
         self._pending = {item.message.id: item for item in self._inbox.pending}
         self._wakeups = {key for key, item in self._pending.items() if item.wakeup}
         self._step_wakeups = {
-            key for key, item in self._pending.items() if item.wakeup and item.target == "next-step"
+            key
+            for key, item in self._pending.items()
+            if item.wakeup and item.target == InboxTarget.NEXT_STEP
         }
         self._approvals: ApprovalState | None = ApprovalState(self._events)
         self._approval_records = {record.request_id: record for record in self._approvals.records}
@@ -301,7 +308,7 @@ class SessionLog:
                 self._pending[event.message.id] = event
                 if event.wakeup:
                     self._wakeups.add(event.message.id)
-                    if event.target == "next-step":
+                    if event.target == InboxTarget.NEXT_STEP:
                         self._step_wakeups.add(event.message.id)
                 self._inbox = None
             elif isinstance(event, InboxRemoved):
@@ -371,9 +378,9 @@ class SessionLog:
     async def _repair_interrupted(self) -> None:
         control = self.control
         for approval in self.approvals.pending:
-            await self.append(ApprovalResolved(approval.request_id, status="interrupted"))
-        for message in _pending_assistant_messages(self._events).values():
-            await self.append(AssistantMessage(message, interrupted=True))
+            await self.append(
+                ApprovalResolved(approval.request_id, status=ApprovalStatus.INTERRUPTED)
+            )
         turn, step = None, None
         unanswered: dict[str, ToolCall] = {}
         completed: dict[str, ToolResult] = {}
@@ -410,22 +417,27 @@ class SessionLog:
         if turn is not None:
             if step is not None:
                 await self.append(
-                    StepEnd(turn, step, "interrupted" if control.paused else "aborted")
+                    StepEnd(
+                        turn,
+                        step,
+                        StepOutcome.INTERRUPTED if control.paused else StepOutcome.ABORTED,
+                    )
                 )
             if not control.paused:
                 reason = (
-                    "stopped"
-                    if control.state in ("stopping", "stopped") and step is None
-                    else "aborted"
+                    TurnOutcome.STOPPED
+                    if control.state in (ControlState.STOPPING, ControlState.STOPPED)
+                    and step is None
+                    else TurnOutcome.ABORTED
                 )
                 await self.append(TurnEnd(turn, reason))
-        if control.state == "pausing":
-            await self.append(AgentControlChanged("paused"))
+        if control.state == ControlState.PAUSING:
+            await self.append(AgentControlChanged(ControlState.PAUSED))
         if control.stopped and not control.keep_inbox:
             for item in self.inbox.pending:
-                await self.append(InboxRemoved(item.message.id, "discarded"))
+                await self.append(InboxRemoved(item.message.id, InboxRemovalReason.DISCARDED))
         if control.stopped:
-            await self.append(AgentControlChanged("active"))
+            await self.append(AgentControlChanged(ControlState.ACTIVE))
 
     def fork(
         self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
@@ -446,7 +458,8 @@ class SessionLog:
             raise ValueError("Fork at a closed turn boundary")
         approvals = ApprovalState(seed)
         seed.extend(
-            ApprovalResolved(item.request_id, status="interrupted") for item in approvals.pending
+            ApprovalResolved(item.request_id, status=ApprovalStatus.INTERRUPTED)
+            for item in approvals.pending
         )
         if not inherit_approvals:
             seed.extend(ApprovalRevoked(item.request_id, "fork") for item in approvals.grants)

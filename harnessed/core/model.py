@@ -2,12 +2,12 @@ from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Annotated, Any, Literal, Protocol, runtime_checkable
+from typing import Annotated, Any, Protocol, runtime_checkable
 
 from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass as validated_dataclass
 
-from .messages import Assistant, Message, ToolCall, freeze, message_from_dict
+from .messages import Assistant, Message, ToolCall, freeze
 
 _VALUE_CONFIG = ConfigDict(
     strict=True, extra="forbid", allow_inf_nan=False, hide_input_in_errors=True
@@ -25,6 +25,18 @@ class StopReason(StrEnum):
     ABORTED = "aborted"
     DISCARDED = "discarded"
     REJECTED = "rejected"
+
+
+class OutputMode(StrEnum):
+    AUTO = "auto"
+    NATIVE = "native"
+    TOOL = "tool"
+
+
+class TokenLimitBehavior(StrEnum):
+    ACCEPT = "accept"
+    CONTINUE = "continue"
+    FAIL = "fail"
 
 
 @validated_dataclass(frozen=True, config=_VALUE_CONFIG)
@@ -47,7 +59,7 @@ class OutputSchema:
     name: Annotated[str, Field(min_length=1)]
     json_schema: Mapping[str, Any]
     wrapped: bool = False
-    mode: Literal["auto", "native", "tool"] = "auto"
+    mode: OutputMode = OutputMode.AUTO
 
     def __post_init__(self):
         object.__setattr__(self, "json_schema", freeze(self.json_schema))
@@ -108,25 +120,6 @@ def sum_usage(usages: Iterable[ModelUsage]) -> ModelUsage:
     )
 
 
-def usage_from_dict(data: dict) -> ModelUsage:
-    """Decode legacy logs without treating their cache misses as cache writes."""
-    if not isinstance(data, dict):
-        raise ValueError("Usage data must be an object")
-    if "prompt_tokens" in data:
-        legacy = dict(data)
-        data = {
-            "input_tokens": legacy.pop("prompt_tokens"),
-            "output_tokens": legacy.pop("completion_tokens", 0),
-            "cache_read_tokens": legacy.pop("prompt_cache_hit_tokens", None),
-        }
-        missed = legacy.pop("prompt_cache_miss_tokens", None)
-        if missed is not None and (type(missed) is not int or missed < 0):
-            raise ValueError("Legacy cache misses must be non-negative integers")
-        if legacy:
-            raise ValueError(f"Unknown legacy usage fields: {', '.join(legacy)}")
-    return ModelUsage(**data)
-
-
 @dataclass(frozen=True)
 class ModelChunk:
     __hash__ = None
@@ -176,14 +169,3 @@ class Model(Protocol):
 
     async def request(self, request: ModelRequest) -> ModelResponse: ...
     def stream(self, request: ModelRequest) -> AbstractAsyncContextManager[ModelStream]: ...
-
-
-def request_from_dict(data: dict) -> ModelRequest:
-    return ModelRequest(
-        model=data["model"],
-        messages=tuple(message_from_dict(m) for m in data["messages"]),
-        tools=tuple(ToolDefinition(**t) for t in data["tools"]),
-        max_tokens=data["max_tokens"],
-        settings=data.get("settings", {}),
-        output_schema=OutputSchema(**data["output_schema"]) if data.get("output_schema") else None,
-    )

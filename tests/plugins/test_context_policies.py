@@ -8,7 +8,7 @@ from harnessed import Inject, Observation, Plugin, PolicyDecision, ToolCall, Too
 from harnessed import Session as Agent
 from harnessed.core.compaction import ModelSummarizer
 from harnessed.core.hooks import PreStep
-from harnessed.core.messages import Assistant, User
+from harnessed.core.messages import Assistant, ToolStatus, User
 from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -44,7 +44,7 @@ async def test_large_results_spill_to_session_files_and_keep_structured_metadata
     class ToolsPlugin(Plugin):
         @tool
         async def large(self) -> ToolResult:
-            return ToolResult(original, "error", exit_code=3)
+            return ToolResult(original, ToolStatus.ERROR, exit_code=3)
 
     tools = ToolsPlugin(name="large")
 
@@ -60,7 +60,7 @@ async def test_large_results_spill_to_session_files_and_keep_structured_metadata
     )
     async with app.session("spill") as agent:
         result = (await agent.run("go")).tool_calls[0][1]
-        assert result.exit_code == 3 and result.status == "error"
+        assert result.exit_code == 3 and result.status == ToolStatus.ERROR
         assert result.spill is not None and result.content != original
         files = agent.ctx[SessionFiles]
         chunks = [

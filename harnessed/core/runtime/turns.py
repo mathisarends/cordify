@@ -5,12 +5,15 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from harnessed.core.hooks import TurnStopping
+from harnessed.core.model import TokenLimitBehavior
 from harnessed.core.runtime.stepper import run_step
 from harnessed.core.session.events import (
     AssistantMessage,
     OutputValidated,
     OutputValidationFailed,
+    StepOutcome,
     TurnEnd,
+    TurnOutcome,
     TurnStart,
 )
 from harnessed.core.session.turns import Step
@@ -56,27 +59,27 @@ async def _run_turn(self: Session, preparing: ContextVar) -> bool:
             continue
         await self.log.append(TurnEnd(turn))
         return True
-    await self.log.append(TurnEnd(turn, "max_steps"))
+    await self.log.append(TurnEnd(turn, TurnOutcome.MAX_STEPS))
     return True
 
 
 async def continue_turn(self: Session, step: Step) -> bool:
-    if step.reason == "context_limit":
+    if step.reason == StepOutcome.CONTEXT_LIMIT:
         return True
     response = next(
         (event for event in reversed(step.events) if isinstance(event, AssistantMessage)),
         None,
     )
     if response is not None and response.stop_reason == "max_tokens":
-        if self.options.on_max_tokens == "fail":
+        if self.options.on_max_tokens == TokenLimitBehavior.FAIL:
             raise RuntimeError("The model reached its output token limit")
-        if self.options.on_max_tokens == "continue":
+        if self.options.on_max_tokens == TokenLimitBehavior.CONTINUE:
             return True
     verdicts = [e for e in step.events if isinstance(e, OutputValidated | OutputValidationFailed)]
     output_calls = {e.call_id for e in verdicts}
     invalid = any(isinstance(e, OutputValidationFailed) for e in verdicts)
     if (
-        step.reason == "interrupted"
+        step.reason == StepOutcome.INTERRUPTED
         or response is None
         or invalid
         or any(call.id not in output_calls for call in response.message.tool_calls)

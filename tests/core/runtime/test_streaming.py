@@ -5,7 +5,9 @@ from pydantic import BaseModel, field_validator
 
 from harnessed import Agent, ApprovalAnswer, Plugin, StopReason, ToolCall, ToolContext, tool
 from harnessed.core.errors import ApprovalUnavailable, OutputUnavailable, SessionClosed
+from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
+from harnessed.core.session.events import ApprovalStatus
 from harnessed.events import (
     ApprovalNeeded,
     ApprovalResolved,
@@ -64,7 +66,7 @@ async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result
                 await session.approvals.answer(event.request_id, ApprovalAnswer.ALLOW)
                 resolution = session.last(ApprovalResolved)
                 assert resolution.request_id == event.request_id
-                assert resolution.status == "answered"
+                assert resolution.status == ApprovalStatus.ANSWERED
                 # Repeating the same acknowledged decision is harmless.
                 await session.approvals.answer(event.request_id, ApprovalAnswer.ALLOW)
                 with pytest.raises(ValueError, match="cannot change"):
@@ -104,7 +106,7 @@ async def test_closing_the_stream_resolves_pending_approval_and_removes_its_resp
             await session.approvals.answer(question.request_id, ApprovalAnswer.ALLOW)
         assert effects == [] and not session.approvals.pending
         result = await asyncio.wait_for(session.run("No UI"), 3)
-        assert result.tool_calls[0][1].status == "unavailable"
+        assert result.tool_calls[0][1].status == ToolStatus.UNAVAILABLE
 
 
 async def test_answer_waits_for_persistence_and_caller_cancellation_does_not_revoke_it(monkeypatch):
@@ -171,7 +173,7 @@ async def test_a_queued_stream_cannot_answer_a_different_turns_approval():
         await asyncio.wait_for(enqueued.wait(), 3)
         await session.resume()
         result, _ = await asyncio.wait_for(asyncio.gather(headless, streaming), 3)
-        assert result.tool_calls[0][1].status == "unavailable"
+        assert result.tool_calls[0][1].status == ToolStatus.UNAVAILABLE
         assert len(asked) == 1 and effects == ["published"]
 
 

@@ -1,11 +1,12 @@
 from collections.abc import Iterable, Mapping
 from dataclasses import field
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass
 
 from harnessed.core.attachments import Attachment
+from harnessed.core.model import TokenLimitBehavior
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ErrorFormatter
 
@@ -37,5 +38,5 @@ class AgentOptions:
     max_parallel_tools: Annotated[int, Field(ge=1)] = 4
     approval_timeout: Annotated[float, Field(gt=0)] = 300.0
     error_formatter: ErrorFormatter | None = None
-    on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
+    on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT
     output_retries: Annotated[int, Field(ge=0)] = 2

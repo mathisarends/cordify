@@ -6,24 +6,9 @@ from harnessed.core.session.session import SessionLog as Session
 from harnessed.testing import ScriptedModel
 
 
-def test_cache_hit_rate_uses_input_tokens_and_legacy_misses_are_not_cache_writes():
+def test_cache_hit_rate_and_optional_totals_use_canonical_counters():
     usage = ModelUsage(100, 10, cache_read_tokens=80, cache_write_tokens=5, reasoning_tokens=4)
     assert usage.cache_hit_rate == 0.8
-    event = decode_event(
-        {
-            "type": "model/usage",
-            "data": {
-                "usage": {
-                    "prompt_tokens": 100,
-                    "completion_tokens": 10,
-                    "prompt_cache_hit_tokens": 80,
-                    "prompt_cache_miss_tokens": 20,
-                }
-            },
-        }
-    )
-    assert event.usage.cache_read_tokens == 80
-    assert event.usage.cache_write_tokens is None
     assert decode_event(encode_event(ModelUsageRecorded(usage))).usage == usage
     combined = sum_usage([usage, ModelUsage(20, 2)])
     assert combined.total_tokens == 132 and combined.cache_read_tokens is None

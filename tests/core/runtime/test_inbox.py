@@ -5,10 +5,16 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision
-from harnessed.core.messages import system, user
+from harnessed.core.messages import Role, system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import InboxAdded, InboxRemoved, UserMessage
+from harnessed.core.session.events import (
+    InboxAdded,
+    InboxMode,
+    InboxRemovalReason,
+    InboxRemoved,
+    UserMessage,
+)
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, JsonlSessions
@@ -43,10 +49,10 @@ def test_inconsistent_inbox_routes_cannot_enter_the_log(mode, target, wakeup):
 
 
 def test_inbox_plans_one_followup_per_turn_and_preserves_pending_input_order():
-    quiet = InboxAdded.create(system("door opened"), "inject")
-    first = InboxAdded.create(user("first task"), "followup")
-    correction = InboxAdded.create(user("focus"), "steer")
-    second = InboxAdded.create(user("second task"), "followup")
+    quiet = InboxAdded.create(system("door opened"), InboxMode.INJECT)
+    first = InboxAdded.create(user("first task"), InboxMode.FOLLOWUP)
+    correction = InboxAdded.create(user("focus"), InboxMode.STEER)
+    second = InboxAdded.create(user("second task"), InboxMode.FOLLOWUP)
     inbox = Inbox((quiet, first, correction, second))
     assert inbox.has_wakeup and inbox.has_step_wakeup
     assert inbox.for_step(1) == (first, quiet, correction)
@@ -54,7 +60,7 @@ def test_inbox_plans_one_followup_per_turn_and_preserves_pending_input_order():
     assert inbox.next_turn == (first, second)
     claimed = Inbox((quiet, first, correction, second, UserMessage(first.message)))
     assert claimed.next_turn == (second,)
-    canceled = Inbox((quiet, first, InboxRemoved(first.message.id, "canceled")))
+    canceled = Inbox((quiet, first, InboxRemoved(first.message.id, InboxRemovalReason.CANCELED)))
     assert canceled.pending == (quiet,) and (not canceled.has_wakeup)
     assert not canceled.has_step_wakeup
     with pytest.raises(FrozenInstanceError):
@@ -65,7 +71,7 @@ def test_inbox_plans_one_followup_per_turn_and_preserves_pending_input_order():
 def test_only_injection_accepts_system_messages(mode):
     with pytest.raises(ValueError, match="requires"):
         InboxAdded.create(system("context"), mode)
-    assert InboxAdded.create(system("context"), "inject").message.role == "system"
+    assert InboxAdded.create(system("context"), InboxMode.INJECT).message.role == Role.SYSTEM
 
 
 class PausingModel(CallbackModel):
@@ -91,13 +97,13 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
         await model.started.wait()
         first_snapshot = model.requests[0]
         await getattr(agent, mode)(
-            system("external context") if mode == "inject" else user("focus")
+            system("external context") if mode == InboxMode.INJECT else user("focus")
         )
         model.release.set()
         await agent.when_idle()
         assert model.requests[0] == first_snapshot
         assert not any(m.text in ("external context", "focus") for m in first_snapshot.messages)
-        if mode == "inject":
+        if mode == InboxMode.INJECT:
             assert len(model.requests) == 1 and len(agent.inbox.pending) == 1
             assert agent.status == "idle" and (not agent.log.inbox.has_wakeup)
             await agent.run("next task")
@@ -131,7 +137,7 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
     session = Session("pending", persistence=persistence)
-    event = InboxAdded.create(system("context") if mode == "inject" else user("task"), mode)
+    event = InboxAdded.create(system("context") if mode == InboxMode.INJECT else user("task"), mode)
     await session.append(event)
     await persistence.aclose()
     model = ScriptedModel(["processed"])
@@ -139,7 +145,7 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
     ).session("pending") as agent:
         await agent.when_idle()
-        if mode == "inject":
+        if mode == InboxMode.INJECT:
             assert model.requests == [] and agent.log.inbox.pending == (event,)
             await agent.run("wake up")
         assert len(model.requests) == 1 and (not agent.inbox.pending)
@@ -197,6 +203,6 @@ async def test_public_steer_returns_the_same_frozen_item_across_restart(tmp_path
 
 
 def test_old_inbox_records_have_a_deterministic_creation_time():
-    record = encode_event(InboxAdded.create(user("old"), "followup"))
+    record = encode_event(InboxAdded.create(user("old"), InboxMode.FOLLOWUP))
     record["data"].pop("created_at")
     assert decode_event(record).created_at == 0.0

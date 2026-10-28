@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal
 from pydantic import PlainSerializer, PlainValidator, ValidationInfo, WithJsonSchema
 
 from harnessed.core.errors import OutputUnavailable
+from harnessed.core.event_kinds import EventKind
 from harnessed.core.messages import (
     Message,
     ToolCall,
@@ -21,13 +22,14 @@ from harnessed.core.session.events import (
     ToolCalled,
     ToolReturned,
     TurnEnd,
+    TurnOutcome,
 )
 from harnessed.core.session.history import derive_messages
 
 
 @dataclass(frozen=True)
 class _NoOutput:
-    type: Literal["output.unavailable"] = "output.unavailable"
+    type: Literal[EventKind.OUTPUT_UNAVAILABLE] = EventKind.OUTPUT_UNAVAILABLE
 
 
 _NO_OUTPUT = _NoOutput()
@@ -101,8 +103,12 @@ def result_from_events(events: tuple[SessionEvent, ...], *, output: Any = None) 
     turn = next((e for e in events if isinstance(e, TurnEnd)), None)
     if turn is None:
         reason = StopReason.DISCARDED
-    elif turn.reason != "completed":
-        reason = StopReason.ABORTED if turn.reason == "interrupted" else StopReason(turn.reason)
+    elif turn.reason != TurnOutcome.COMPLETED:
+        reason = (
+            StopReason.ABORTED
+            if turn.reason == TurnOutcome.INTERRUPTED
+            else StopReason(turn.reason)
+        )
     else:
         reason = final.stop_reason if final and final.stop_reason else StopReason.END
         if reason == StopReason.TOOL_CALLS and any(

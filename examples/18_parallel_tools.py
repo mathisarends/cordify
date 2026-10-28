@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, Plugin, PolicyDecision, Section, ToolCall, tool
+from harnessed.core.messages import Role
 from harnessed.core.session.events import ToolReturned
 from harnessed.kernel import Inject
 from harnessed.models import ModelChunk
@@ -46,7 +47,7 @@ async def independent_calls():
         print("Results in the log:", [event.result.content for event in returned])
         assert completion_order == [2, 1, 0]
         assert [event.call_id for event in returned] == [call.id for call in calls]
-        assert [m.tool_call_id for m in model.requests[-1].messages if m.role == "tool"] == [
+        assert [m.tool_call_id for m in model.requests[-1].messages if m.role == Role.TOOL] == [
             call.id for call in calls
         ]
 

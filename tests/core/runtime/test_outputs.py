@@ -8,7 +8,7 @@ from harnessed import Agent, Plugin, SessionClosed, StopReason, ToolCall, tool
 from harnessed.core.errors import ConfigError, OutputUnavailable, OutputValidationError
 from harnessed.core.hooks import SessionAppended, ToolPolicy
 from harnessed.core.messages import Assistant, PolicyDecision
-from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse
+from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, OutputMode
 from harnessed.core.outputs import OutputTypes
 from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.session.codec import decode_event, encode_event
@@ -17,6 +17,7 @@ from harnessed.core.session.events import (
     OutputValidated,
     OutputValidationFailed,
     TurnEnd,
+    TurnOutcome,
 )
 from harnessed.core.session.store import MemorySessions
 from harnessed.testing import CallbackModel, ScriptedModel
@@ -43,7 +44,7 @@ async def test_fallback_answer_is_validated_without_policies_or_application_tool
         assert result.stop_reason is StopReason.END and result.tool_calls == ()
         assert policies == []
         request = model.requests[0]
-        assert request.output_schema.mode == "tool"
+        assert request.output_schema.mode == OutputMode.TOOL
         assert [tool.name for tool in request.tools] == ["final_answer"]
         assert [decode_event(encode_event(e)) for e in session.events] == list(session.events)
 
@@ -57,7 +58,7 @@ async def test_native_json_retries_once_and_preserves_the_accepted_raw_input():
         result = await session.run("Triage", output=Triage)
         assert result.output.owner == "sdk" and len(model.requests) == 2
         assert model.requests[0].tools == ()
-        assert model.requests[0].output_schema.mode == "native"
+        assert model.requests[0].output_schema.mode == OutputMode.NATIVE
         failures = [e for e in session.events if isinstance(e, OutputValidationFailed)]
         assert len(failures) == 1 and "severity" in failures[0].message
         assert any("Correct these fields" in m.text for m in model.requests[1].messages)
@@ -74,7 +75,7 @@ async def test_fallback_retry_is_bounded_and_never_executes_a_registered_answer_
             await session.run("Triage", output=Triage)
         assert len(model.requests) == 2
         assert len([e for e in session.events if isinstance(e, OutputValidationFailed)]) == 2
-        assert session.last(TurnEnd).reason == "aborted"
+        assert session.last(TurnEnd).reason == TurnOutcome.ABORTED
 
 
 async def test_mixed_answer_and_work_is_rejected_but_the_work_runs_only_once():

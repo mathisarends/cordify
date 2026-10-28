@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PluginConflict, Section, ToolCall, tool
-from harnessed.core.messages import PolicyDecision
+from harnessed.core.messages import PolicyDecision, ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.events import (
     CompactionApplied,
@@ -13,6 +13,7 @@ from harnessed.core.session.events import (
     TurnStart,
 )
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.kernel.plugin import PluginStatus
 from harnessed.models import Model
 from harnessed.plugins import Approvals, ContextValue, Instructions, Service
 from harnessed.testing import ScriptedModel
@@ -112,7 +113,7 @@ async def test_default_approvals_allow_reads_and_reject_side_effects_without_a_r
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("write"))], "blocked"])
     result = await Agent(model=model, plugins=[Mutating()]).run("Write")
-    assert result.tool_calls[0][1].status == "unavailable"
+    assert result.tool_calls[0][1].status == ToolStatus.UNAVAILABLE
 
 
 def test_explicit_duplicate_slots_raise_instead_of_silently_overriding():
@@ -172,7 +173,7 @@ async def test_runtime_guidance_tracks_temporal_dependency_restarts():
 
     async with Agent(model=ScriptedModel([])).session() as session:
         handle = await session.use(Runtime())
-        assert handle.status == "waiting" and session.context.values == {}
+        assert handle.status == PluginStatus.WAITING and session.context.values == {}
         remove = session.ctx.provide(Backend, Backend())
         await session.ctx.settle()
         assert list(session.context.values.values()) == ["Use the active backend."]

@@ -19,7 +19,7 @@ class RunControl:
     keep_inbox: bool
 
     def __init__(self, events: Iterable[SessionEvent]) -> None:
-        state, keep_inbox = "active", False
+        state, keep_inbox = ControlState.ACTIVE, False
         for event in events:
             if isinstance(event, AgentControlChanged):
                 state, keep_inbox = event.state, event.keep_inbox
@@ -28,8 +28,8 @@ class RunControl:
 
     @property
     def paused(self) -> bool:
-        return self.state in ("pausing", "paused")
+        return self.state in (ControlState.PAUSING, ControlState.PAUSED)
 
     @property
     def stopped(self) -> bool:
-        return self.state in ("stopping", "aborting", "stopped")
+        return self.state in (ControlState.STOPPING, ControlState.ABORTING, ControlState.STOPPED)

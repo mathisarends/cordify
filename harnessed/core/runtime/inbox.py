@@ -9,7 +9,7 @@ from harnessed.core.attachments import Attachment, prepare_input
 from harnessed.core.messages import Message
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.control import SessionControl
-from harnessed.core.session.events import InboxAdded, InboxMode, InboxRemoved
+from harnessed.core.session.events import InboxAdded, InboxMode, InboxRemovalReason, InboxRemoved
 from harnessed.core.session.session import SessionLog
 
 
@@ -30,7 +30,7 @@ class InboxItem:
 def _item(event: InboxAdded) -> InboxItem:
     return InboxItem(
         event.message.id,
-        InboxKind.RUN if event.mode == "followup" else InboxKind.STEER,
+        InboxKind.RUN if event.mode == InboxMode.FOLLOWUP else InboxKind.STEER,
         event.message,
         event.created_at,
     )
@@ -67,7 +67,7 @@ class SessionInbox:
         if not any(item.id == item_id for item in self.pending):
             raise KeyError(item_id)
         try:
-            await self.log.append(InboxRemoved(item_id, "discarded"))
+            await self.log.append(InboxRemoved(item_id, InboxRemovalReason.DISCARDED))
         except ValueError:
             # A model step may have claimed the item while persistence was awaited.
             if not any(item.id == item_id for item in self.pending):
@@ -75,7 +75,7 @@ class SessionInbox:
             raise
 
     async def steer(self, content: str | Message) -> InboxItem:
-        return await self._send(content, "steer")
+        return await self._send(content, InboxMode.STEER)
 
     async def _send(
         self,

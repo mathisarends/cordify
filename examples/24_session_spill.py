@@ -4,7 +4,7 @@ import asyncio
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, Plugin, tool
-from harnessed.core.messages import ToolResult
+from harnessed.core.messages import ToolResult, ToolStatus
 from harnessed.plugins import JsonlSessions, Spill
 from harnessed.testing import ScriptedModel, call
 
@@ -15,7 +15,7 @@ class Logs(Plugin):
     @tool(readonly=True)
     async def test_log(self) -> ToolResult:
         """Read the stored test output."""
-        return ToolResult(TEXT, "error", exit_code=3)
+        return ToolResult(TEXT, ToolStatus.ERROR, exit_code=3)
 
 
 async def main():

@@ -6,7 +6,7 @@ import pytest
 from harnessed.core.messages import User
 from harnessed.core.session.events import UserMessage
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins.sessions import JsonlPersistence
+from harnessed.plugins.sessions import Durability, JsonlPersistence
 
 
 async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consistent(
@@ -22,7 +22,7 @@ async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consist
         assert release.wait(5), "test did not release fsync worker"
         actual_fsync(fd)
 
-    writer = JsonlPersistence(tmp_path, durability="fsync")
+    writer = JsonlPersistence(tmp_path, durability=Durability.FSYNC)
     await writer.load("off-thread")
     monkeypatch.setattr(persistence_module.os, "fsync", slow_fsync)
     session = Session("off-thread", persistence=writer)
@@ -50,7 +50,7 @@ async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consist
 
 
 async def test_buffered_mode_has_an_explicit_flush_barrier(tmp_path):
-    writer = JsonlPersistence(tmp_path, durability="buffered")
+    writer = JsonlPersistence(tmp_path, durability=Durability.BUFFERED)
     await writer.load("buffered")
     await writer.append("buffered", 0, UserMessage(User("saved")))
     await writer.flush()

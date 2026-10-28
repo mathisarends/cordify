@@ -14,9 +14,12 @@ from harnessed.core.runtime.control import SessionStatus
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalResolved,
+    ApprovalStatus,
     CompactionApplied,
+    ControlState,
     DurableEvent,
     InboxAdded,
+    InboxMode,
     InboxRemoved,
     OutputValidated,
     OutputValidationFailed,
@@ -97,7 +100,7 @@ class StreamApprovals:
             self.session.approvals._finish(
                 request.request_id,
                 None
-                if record.status == "answered"
+                if record.status == ApprovalStatus.ANSWERED
                 else ApprovalUnavailable(record.reason or "The approval was interrupted"),
             )
 
@@ -146,9 +149,10 @@ async def ui_events(
                     SessionStatus.RUNNING
                     if isinstance(event, TurnStart)
                     else SessionStatus.PAUSED
-                    if event.state == "paused"
+                    if event.state == ControlState.PAUSED
                     else SessionStatus.STOPPING
-                    if event.state in ("stopping", "aborting", "stopped")
+                    if event.state
+                    in (ControlState.STOPPING, ControlState.ABORTING, ControlState.STOPPED)
                     else SessionStatus.RUNNING
                 )
                 if status != previous_status:
@@ -174,7 +178,7 @@ async def stream_turn(
     try:
         item = await self.inbox._send(
             content,
-            "followup",
+            InboxMode.FOLLOWUP,
             attachments=attachments,
             context=context,
             settings=settings,

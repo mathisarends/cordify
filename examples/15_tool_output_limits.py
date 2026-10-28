@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, Plugin, PolicyDecision, ToolResult, tool
+from harnessed.core.messages import Role, ToolStatus
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.hooks import ExecuteTool
@@ -22,7 +23,7 @@ class LargeResultsTools(Plugin):
     @tool
     async def cat_log(self, fs: Inject[FileSystemBackend]) -> ToolResult:
         """Return a deliberately unbounded log, like cat without a range."""
-        return ToolResult(await fs.read(Path("large.log")), "error", exit_code=3)
+        return ToolResult(await fs.read(Path("large.log")), ToolStatus.ERROR, exit_code=3)
 
 
 tools = LargeResultsTools()
@@ -78,7 +79,7 @@ async def main():
                 len(message.text) <= budget.max_chars
                 for request in model.requests
                 for message in request.messages
-                if message.role == "tool"
+                if message.role == Role.TOOL
             )
             print(result.text)
 

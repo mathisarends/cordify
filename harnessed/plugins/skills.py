@@ -18,7 +18,7 @@ from pydantic import (
 
 from harnessed.core.errors import ConfigError
 from harnessed.core.hooks import SessionAppended
-from harnessed.core.messages import freeze, to_dict
+from harnessed.core.messages import ToolStatus, freeze, to_dict
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.values import Section
@@ -347,7 +347,7 @@ class Skills(Plugin, slot="skills"):
             else:
                 self._calls.discard(event.call.id)
         elif isinstance(event, ToolCompleted | ToolReturned) and event.call_id in self._calls:
-            if event.result.status == "ok":
+            if event.result.status == ToolStatus.OK:
                 try:
                     data, _ = json.JSONDecoder().raw_decode(event.result.text.lstrip())
                     loaded = _Loaded.model_validate(data)

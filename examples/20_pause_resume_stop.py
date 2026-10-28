@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 
 from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
 from harnessed.plugins import JsonlSessions
+from harnessed.plugins.sessions import Durability
 from harnessed.testing import ScriptedModel, call
 
 
@@ -61,7 +62,7 @@ async def end_a_turn(*, immediate: bool):
 
 async def reopen_a_paused_session(directory: str):
     work = Work()
-    plugins = [work, JsonlSessions(directory, durability="fsync")]
+    plugins = [work, JsonlSessions(directory, durability=Durability.FSYNC)]
     agent = Agent(model=ScriptedModel([call("process", item="saved")]), plugins=plugins)
     async with agent.session("saved") as session:
         running = await session.submit("Process and continue later.")

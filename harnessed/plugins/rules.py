@@ -5,13 +5,14 @@ import json
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import replace
-from typing import Annotated, Literal
+from enum import StrEnum
+from typing import Annotated
 
 from pydantic import AfterValidator, ConfigDict, Field, StringConstraints, TypeAdapter
 from pydantic.dataclasses import dataclass
 
 from harnessed.core.hooks import ReviewToolResult
-from harnessed.core.messages import ToolCall, ToolResult, to_dict, user
+from harnessed.core.messages import ToolCall, ToolResult, ToolStatus, to_dict, user
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.runtime.inbox import SessionInbox
@@ -29,7 +30,12 @@ def _synchronous(callback):
     return callback
 
 
-type ActionKind = Literal["note", "context", "steer"]
+class ActionKind(StrEnum):
+    NOTE = "note"
+    CONTEXT = "context"
+    STEER = "steer"
+
+
 type RuleText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
 type ExitCondition = Annotated[Callable[[int], bool], AfterValidator(_synchronous)]
 type ResultCondition = Annotated[
@@ -61,14 +67,14 @@ class Rule:
         return replace(self, actions=(*self.actions, (kind, text)))
 
     def note(self, text: str) -> Rule:
-        return self._action("note", text)
+        return self._action(ActionKind.NOTE, text)
 
     def context(self, text: str) -> Rule:
         """Keep a named context fact while the rule condition remains active."""
-        return self._action("context", text)
+        return self._action(ActionKind.CONTEXT, text)
 
     def steer(self, text: str) -> Rule:
-        return self._action("steer", text)
+        return self._action(ActionKind.STEER, text)
 
     def matches(self, call: ToolCall, result: ToolResult, counter: TokenCounter) -> bool:
         if self.command_contains is not None and self.command_contains not in call.command:
@@ -166,7 +172,10 @@ class Rules(Plugin):
                             counter,
                             matched=recorded[rule_id],
                         )
-                    elif not stored and event.result.status not in ("denied", "unavailable"):
+                    elif not stored and event.result.status not in (
+                        ToolStatus.DENIED,
+                        ToolStatus.UNAVAILABLE,
+                    ):
                         self._count(index, rule, calls[event.call_id], event.result, counter)
         for index, rule in enumerate(self.rules):
             for kind, text in rule.actions:

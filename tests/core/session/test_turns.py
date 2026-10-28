@@ -11,10 +11,12 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ModelRequested,
     StepEnd,
+    StepOutcome,
     StepStart,
     ToolCalled,
     ToolReturned,
     TurnEnd,
+    TurnOutcome,
     TurnStart,
     UserMessage,
 )
@@ -56,10 +58,10 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         turns = agent.log.turns
         assert [len(turn.steps) for turn in turns] == [2, 1]
         assert [[step.number for step in turn.steps] for turn in turns] == [[1, 2], [1]]
-        assert all(turn.closed and turn.reason == "completed" for turn in turns)
+        assert all(turn.closed and turn.reason == TurnOutcome.COMPLETED for turn in turns)
         steps = tuple(step for turn in turns for step in turn.steps)
         assert tuple(step.request for step in steps) == tuple(model.requests)
-        assert all(step.closed and step.reason == "completed" for step in steps)
+        assert all(step.closed and step.reason == StepOutcome.COMPLETED for step in steps)
         assert all(sum(isinstance(e, ModelRequested) for e in step.events) == 1 for step in steps)
         assert any(isinstance(e, ToolCalled) for e in steps[0].events)
         assert any(isinstance(e, ToolReturned) for e in steps[0].events)
@@ -88,7 +90,7 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
         await agent.followup("task")
         await agent.when_idle()
         turn = agent.log.turns[-1]
-        assert turn.closed and turn.reason == "rejected" and (turn.steps == ())
+        assert turn.closed and turn.reason == TurnOutcome.REJECTED and (turn.steps == ())
         assert model.requests == [] and len(agent.log.inbox.next_turn) == 1
 
 
@@ -111,8 +113,8 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
         await started.wait()
         await agent.cancel()
         turn = agent.log.turns[-1]
-        assert turn.closed and turn.reason == "aborted"
-        assert turn.steps[-1].closed and turn.steps[-1].reason == "aborted"
+        assert turn.closed and turn.reason == TurnOutcome.ABORTED
+        assert turn.steps[-1].closed and turn.steps[-1].reason == StepOutcome.ABORTED
         assert agent.status == "idle"
 
 

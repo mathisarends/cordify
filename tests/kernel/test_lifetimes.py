@@ -10,6 +10,7 @@ from harnessed import Session as Agent
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Emit, Inject
+from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import AgentLoop, Approvals
 from harnessed.testing import ScriptedModel
 
@@ -174,7 +175,7 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
         for name in ("one", "two", "three"):
             source = await ctx.plugin(provider(name))
             await ctx.settle()
-            assert feature.status == bridge_handle.status == "active"
+            assert feature.status == bridge_handle.status == PluginStatus.ACTIVE
             assert [definition.name for definition in ctx[ToolRegistry].definitions] == ["read"]
             assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == f"{name}:1"
             assert await ctx[SystemPrompt].render() == name
@@ -182,7 +183,7 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
             await ctx.dispatch(Ping())
             await source.aclose()
             await ctx.settle()
-            assert feature.status == bridge_handle.status == "waiting"
+            assert feature.status == bridge_handle.status == PluginStatus.WAITING
             assert ctx[ToolRegistry].definitions == ()
             assert await ctx[SystemPrompt].render() == ""
             assert Ready not in ctx
@@ -192,7 +193,7 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
         await feature.aclose()
         await ctx.plugin(provider("four"))
         await ctx.settle()
-        assert feature.status == "disposed" and ctx[ToolRegistry].definitions == ()
+        assert feature.status == PluginStatus.DISPOSED and ctx[ToolRegistry].definitions == ()
 
 
 async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_back():
@@ -255,12 +256,12 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
         await remove()
         with pytest.raises(ExceptionGroup, match="composition failed"):
             await ctx.settle()
-        assert handle.status == "waiting" and Ready not in ctx
+        assert handle.status == PluginStatus.WAITING and Ready not in ctx
         assert ctx[ToolRegistry].definitions == () and await ctx[SystemPrompt].render() == ""
         await ctx.dispatch(Ping())
         ctx.provide(Backend, Backend("fixed"))
         await ctx.settle()
-        assert handle.status == "active" and Ready in ctx
+        assert handle.status == PluginStatus.ACTIVE and Ready in ctx
         assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "fixed"
         assert await ctx[SystemPrompt].render() == "fixed"
         await ctx.dispatch(Ping())

@@ -28,7 +28,7 @@ class Step:
     def __post_init__(self):
         object.__setattr__(self, "events", tuple(self.events))
         count = sum(isinstance(event, ModelRequested) for event in self.events)
-        if count > 1 or (self.reason in ("completed", "context_limit") and count != 1):
+        if count > 1 or (self.reason in (TurnOutcome.COMPLETED, "context_limit") and count != 1):
             raise ValueError("A completed step must contain exactly one model request")
 
     @property
@@ -149,7 +149,7 @@ class TurnProjection:
                 len(self._steps) + 1,
             ):
                 raise ValueError("StepEnd must close the current step")
-            if event.reason in ("completed", "context_limit") and self._requests != 1:
+            if event.reason in (TurnOutcome.COMPLETED, "context_limit") and self._requests != 1:
                 raise ValueError("A completed step must contain exactly one model request")
         elif isinstance(event, TurnEnd):
             if self._turn is None or event.turn_id != self._turn or self._step is not None:

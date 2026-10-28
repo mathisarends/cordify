@@ -41,6 +41,37 @@ type JSONMapping = Annotated[
 ]
 
 
+class Role(StrEnum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+class ToolStatus(StrEnum):
+    OK = "ok"
+    ERROR = "error"
+    DENIED = "denied"
+    UNAVAILABLE = "unavailable"
+
+
+class DenialSource(StrEnum):
+    POLICY = "policy"
+    USER = "user"
+
+
+class ContentKind(StrEnum):
+    TEXT = "text"
+    IMAGE_URL = "image_url"
+
+
+class ImageDetail(StrEnum):
+    AUTO = "auto"
+    LOW = "low"
+    HIGH = "high"
+    ORIGINAL = "original"
+
+
 @dataclass(frozen=True)
 class MalformedArguments:
     """Lossless provider input that could not be parsed as a JSON object."""
@@ -101,20 +132,20 @@ class OutputTruncation:
             raise ValueError("Invalid tool output truncation sizes")
 
 
-type ToolStatus = Literal["ok", "error", "denied", "unavailable"]
-
-
 @dataclass(frozen=True)
 class ToolResult:
     content: str | tuple[ContentPart, ...]
-    status: ToolStatus = "ok"
+    status: ToolStatus = ToolStatus.OK
     exit_code: int | None = None
     spill: SpillRef | None = None
     truncation: OutputTruncation | None = None
-    denied_by: Literal["policy", "user"] | None = None
+    denied_by: DenialSource | None = None
     rule_matches: tuple[tuple[str, bool], ...] = ()
 
     def __post_init__(self):
+        object.__setattr__(self, "status", ToolStatus(self.status))
+        if self.denied_by is not None:
+            object.__setattr__(self, "denied_by", DenialSource(self.denied_by))
         object.__setattr__(self, "content", _content(self.content))
         matches = tuple(tuple(item) for item in self.rule_matches)
         if any(
@@ -126,19 +157,19 @@ class ToolResult:
 
     @classmethod
     def error(cls, content: str) -> ToolResult:
-        return cls(content, "error")
+        return cls(content, ToolStatus.ERROR)
 
     @classmethod
-    def denied(cls, content: str, *, source: Literal["policy", "user"] = "policy") -> ToolResult:
-        return cls(content, "denied", denied_by=source)
+    def denied(cls, content: str, *, source: DenialSource = DenialSource.POLICY) -> ToolResult:
+        return cls(content, ToolStatus.DENIED, denied_by=source)
 
     @classmethod
     def unavailable(cls, content: str) -> ToolResult:
-        return cls(content, "unavailable")
+        return cls(content, ToolStatus.UNAVAILABLE)
 
     @property
     def is_error(self) -> bool:
-        return self.status != "ok" or self.exit_code not in (None, 0)
+        return self.status != ToolStatus.OK or self.exit_code not in (None, 0)
 
     def with_note(self, text: str) -> ToolResult:
         if isinstance(self.content, str):
@@ -181,14 +212,14 @@ class ApprovalAnswer(StrEnum):
 @dataclass(frozen=True)
 class TextPart:
     text: str
-    type: Literal["text"] = "text"
+    type: Literal[ContentKind.TEXT] = ContentKind.TEXT
 
 
 @dataclass(frozen=True)
 class ImagePart:
     url: str
-    detail: Literal["auto", "low", "high", "original"] = "auto"
-    type: Literal["image_url"] = "image_url"
+    detail: ImageDetail = ImageDetail.AUTO
+    type: Literal[ContentKind.IMAGE_URL] = ContentKind.IMAGE_URL
 
 
 type ContentPart = TextPart | ImagePart
@@ -246,10 +277,10 @@ class System(_PlainMessage, _NoCallID):
     __hash__ = None
     content: str = ""
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
-    role: Literal["system"] = field(default="system", kw_only=True)
+    role: Literal[Role.SYSTEM] = field(default=Role.SYSTEM, kw_only=True)
 
     def __post_init__(self):
-        if self.role != "system" or not isinstance(self.content, str):
+        if self.role != Role.SYSTEM or not isinstance(self.content, str):
             raise ValueError("System messages require the system role and text content")
 
 
@@ -258,10 +289,10 @@ class User(_PlainMessage, _NoCallID):
     __hash__ = None
     content: str | tuple[ContentPart, ...] = ""
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
-    role: Literal["user"] = field(default="user", kw_only=True)
+    role: Literal[Role.USER] = field(default=Role.USER, kw_only=True)
 
     def __post_init__(self):
-        if self.role != "user":
+        if self.role != Role.USER:
             raise ValueError("User messages require the user role")
         object.__setattr__(self, "content", _content(self.content))
 
@@ -274,10 +305,10 @@ class Assistant(_MessageText, _NoCallID):
     reasoning: str = ""
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
     provider_state: JSONMapping = field(default_factory=dict, kw_only=True)
-    role: Literal["assistant"] = field(default="assistant", kw_only=True)
+    role: Literal[Role.ASSISTANT] = field(default=Role.ASSISTANT, kw_only=True)
 
     def __post_init__(self):
-        if self.role != "assistant" or not isinstance(self.content, str):
+        if self.role != Role.ASSISTANT or not isinstance(self.content, str):
             raise ValueError("Assistant messages require the assistant role and text content")
         if not isinstance(self.reasoning, str):
             raise TypeError("Assistant reasoning must be text")
@@ -290,19 +321,23 @@ class ToolReply(_PlainMessage):
     __hash__ = None
     content: str | tuple[ContentPart, ...] = ""
     tool_call_id: str = field(kw_only=True)
-    status: ToolStatus = field(default="ok", kw_only=True)
+    status: ToolStatus = field(default=ToolStatus.OK, kw_only=True)
     exit_code: int | None = field(default=None, kw_only=True)
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
-    role: Literal["tool"] = field(default="tool", kw_only=True)
+    role: Literal[Role.TOOL] = field(default=Role.TOOL, kw_only=True)
 
     def __post_init__(self):
-        if self.role != "tool" or not isinstance(self.tool_call_id, str) or not self.tool_call_id:
+        if (
+            self.role != Role.TOOL
+            or not isinstance(self.tool_call_id, str)
+            or not self.tool_call_id
+        ):
             raise ValueError("Tool replies require the tool role and a non-empty call ID")
         object.__setattr__(self, "content", _content(self.content))
 
     @property
     def is_error(self) -> bool:
-        return self.status != "ok" or self.exit_code not in (None, 0)
+        return self.status != ToolStatus.OK or self.exit_code not in (None, 0)
 
 
 type Message = Annotated[System | User | Assistant | ToolReply, Field(discriminator="role")]
@@ -325,60 +360,6 @@ class Observation:
     def __post_init__(self):
         if not self.source:
             raise ValueError("Observations require a source")
-
-
-def migrate_message(data: dict) -> dict:
-    """Reject invalid role/field combinations while reading the original message shape."""
-    payload = dict(data)
-    role = payload.get("role")
-    if "reasoning_content" in payload:
-        if "reasoning" in payload:
-            raise ValueError("Duplicate reasoning fields")
-        payload["reasoning"] = payload.pop("reasoning_content")
-    for name, default in (
-        ("tool_calls", ()),
-        ("reasoning", ""),
-        ("provider_state", {}),
-        ("tool_call_id", None),
-    ):
-        relevant = role == "assistant" if name != "tool_call_id" else role == "tool"
-        if not relevant and name in payload:
-            value = payload.pop(name)
-            if value != default and not (name == "tool_calls" and value == []):
-                raise ValueError(f"{role} messages cannot contain {name}")
-    return payload
-
-
-def message_from_dict(data: dict) -> Message:
-    payload = migrate_message(data)
-    content = payload.get("content", "")
-    if not isinstance(content, str):
-        kinds = {"text": TextPart, "image_url": ImagePart}
-        payload["content"] = tuple(kinds[part["type"]](**part) for part in content)
-    if "tool_calls" in payload:
-        calls = []
-        for call in payload["tool_calls"]:
-            arguments: dict[str, Any] = dict(call)
-            if arguments.get("malformed") is not None:
-                arguments["malformed"] = MalformedArguments(**arguments["malformed"])
-            calls.append(ToolCall(**arguments))
-        payload["tool_calls"] = tuple(calls)
-    kinds = {"system": System, "user": User, "assistant": Assistant, "tool": ToolReply}
-    return kinds[payload["role"]](**payload)
-
-
-def tool_result_from_dict(data: dict) -> ToolResult:
-    payload: dict[str, Any] = {
-        **data,
-        "spill": SpillRef(**data["spill"]) if data.get("spill") is not None else None,
-        "truncation": (
-            OutputTruncation(**data["truncation"]) if data.get("truncation") is not None else None
-        ),
-    }
-    if not isinstance(payload["content"], str):
-        kinds = {"text": TextPart, "image_url": ImagePart}
-        payload["content"] = tuple(kinds[part["type"]](**part) for part in payload["content"])
-    return ToolResult(**payload)
 
 
 def result_content(value: Any) -> str:

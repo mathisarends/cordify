@@ -5,6 +5,7 @@ import pytest
 
 from harnessed import Context, ToolCall, plugin
 from harnessed.core.tools.registry import ToolRegistry
+from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import AgentLoop
 from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools
 from harnessed.plugins.shell import ProcResult, ShellTools
@@ -63,11 +64,11 @@ async def test_builtin_features_declare_lifetime_needs_and_wait_for_the_backend(
         await ctx.plugin(AgentLoop())
         registry = ctx[ToolRegistry]
         handle = await ctx.plugin(spec)
-        assert handle.status == "waiting" and registry.definitions == ()
+        assert handle.status == PluginStatus.WAITING and registry.definitions == ()
         first = await ctx.plugin(provider("first"))
         await ctx.settle()
         original = handle.ctx
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
         assert {definition.name for definition in registry.definitions} == names
         assert await invoke(registry, key) == "first"
 
@@ -80,10 +81,10 @@ async def test_builtin_features_declare_lifetime_needs_and_wait_for_the_backend(
         assert await invoke(registry, key) == "first"
 
         await first.aclose()
-        assert handle.status == "waiting" and registry.definitions == ()
+        assert handle.status == PluginStatus.WAITING and registry.definitions == ()
         await ctx.plugin(provider("second"))
         await ctx.settle()
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
         assert await invoke(registry, key) == "second"
         assert len(registry.definitions) == len(names)
 
@@ -98,7 +99,7 @@ async def test_registry_replacement_rebuilds_builtin_registrations_without_dupli
     async with Context() as ctx:
         ctx.provide(key, backend("ready"))
         handle = await ctx.plugin(feature())
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
         first, second = ToolRegistry(ctx), ToolRegistry(ctx)
         ctx.provide(ToolRegistry, first)
         await ctx.settle()

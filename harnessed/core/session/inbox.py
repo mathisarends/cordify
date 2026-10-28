@@ -6,6 +6,7 @@ from harnessed.core.session.events import (
     ContextMessage,
     InboxAdded,
     InboxRemoved,
+    InboxTarget,
     SessionEvent,
     UserMessage,
 )
@@ -38,11 +39,11 @@ class Inbox:
 
     @property
     def next_turn(self) -> tuple[InboxAdded, ...]:
-        return tuple(item for item in self.pending if item.target == "next-turn")
+        return tuple(item for item in self.pending if item.target == InboxTarget.NEXT_TURN)
 
     @property
     def next_step(self) -> tuple[InboxAdded, ...]:
-        return tuple(item for item in self.pending if item.target == "next-step")
+        return tuple(item for item in self.pending if item.target == InboxTarget.NEXT_STEP)
 
     @property
     def has_wakeup(self) -> bool:

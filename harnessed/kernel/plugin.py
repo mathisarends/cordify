@@ -5,8 +5,9 @@ import inspect
 import logging
 from collections.abc import AsyncGenerator, Callable, Iterable
 from contextlib import AsyncExitStack
+from enum import StrEnum
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Concatenate, Literal, overload
+from typing import TYPE_CHECKING, Any, Concatenate, overload
 
 from .declarations import Bundle, PluginBase
 from .di import bind_injected, injections
@@ -22,6 +23,15 @@ if TYPE_CHECKING:
     from .context import Context
 
 
+class PluginStatus(StrEnum):
+    WAITING = "waiting"
+    STARTING = "starting"
+    ACTIVE = "active"
+    STOPPING = "stopping"
+    FAILED = "failed"
+    DISPOSED = "disposed"
+
+
 class _Runtime:
     def __init__(self) -> None:
         self.handles: list[PluginHandle] = []
@@ -33,7 +43,7 @@ class _Runtime:
         self.dirty = True
         for handle in tuple(self.handles):
             if (
-                handle.status == "starting"
+                handle.status == PluginStatus.STARTING
                 and handle._start_task is not None
                 and (handle._mount._closed or handle._signature() != handle._starting_signature)
             ):
@@ -54,7 +64,7 @@ class _Runtime:
                 if handle in blocked or (
                     handle._disposed
                     or handle._mount._closed
-                    or handle.status in ("starting", "stopping")
+                    or handle.status in (PluginStatus.STARTING, PluginStatus.STOPPING)
                 ):
                     continue
                 signature = handle._signature()
@@ -66,10 +76,16 @@ class _Runtime:
                         raise RuntimeError(
                             "Cyclic plugin needs: " + " -> ".join(h.name for h in cycle)
                         )
-                    if handle.status == "active" and signature != handle._active_signature:
+                    if (
+                        handle.status == PluginStatus.ACTIVE
+                        and signature != handle._active_signature
+                    ):
                         await handle._suspend()
                     signature = handle._signature()
-                    if signature is not None and handle.status in ("waiting", "failed"):
+                    if signature is not None and handle.status in (
+                        PluginStatus.WAITING,
+                        PluginStatus.FAILED,
+                    ):
                         if signature != handle._failed_signature:
                             await handle._activate()
                 except Exception as exc:
@@ -83,9 +99,7 @@ class PluginHandle:
         self.name, self.spec, self._mount = spec.name, spec, mount
         self.ctx = mount._child(mount._scope)
         self.ctx._closed = True
-        self.status: Literal["waiting", "starting", "active", "stopping", "failed", "disposed"] = (
-            "waiting"
-        )
+        self.status: PluginStatus = PluginStatus.WAITING
         self.error: Exception | None = None
         self._disposed = False
         self._transition = asyncio.Lock()
@@ -101,7 +115,8 @@ class PluginHandle:
         except MissingService:
             return None
         if any(
-            binding.owner._handle is not None and binding.owner._handle.status != "active"
+            binding.owner._handle is not None
+            and binding.owner._handle.status != PluginStatus.ACTIVE
             for binding in bindings
         ):
             return None
@@ -126,11 +141,11 @@ class PluginHandle:
         return None
 
     async def _activate(self):
-        if self._disposed or self._mount._closed or self.status == "active":
+        if self._disposed or self._mount._closed or self.status == PluginStatus.ACTIVE:
             return
         if self._start_task is None or self._start_task.done():
             self._starting_signature = self._signature()
-            self.status = "starting"
+            self.status = PluginStatus.STARTING
             self._start_task = asyncio.create_task(
                 self._activate_worker(), name=f"harnessed:setup:{self.name}"
             )
@@ -159,11 +174,11 @@ class PluginHandle:
                 self._disposed
                 or self._mount._closed
                 or signature is None
-                or self.status == "active"
+                or self.status == PluginStatus.ACTIVE
             ):
-                self.status = "waiting"
+                self.status = PluginStatus.WAITING
                 return
-            self.status = "starting"
+            self.status = PluginStatus.STARTING
             self.ctx = child = self._mount._child(self._mount._scope)
             child._handle = self
             for binding in signature:
@@ -199,12 +214,12 @@ class PluginHandle:
                 self._active_signature = signature
                 self._failed_signature = None
                 self.error = None
-                self.status = "active"
+                self.status = PluginStatus.ACTIVE
                 await self._mount.dispatch(PluginActivated(self))
                 self._mount._scope.runtime.changed()
             except BaseException as exc:
                 cancelled = isinstance(exc, asyncio.CancelledError)
-                self.status = "waiting" if cancelled else "failed"
+                self.status = PluginStatus.WAITING if cancelled else PluginStatus.FAILED
                 self._failed_signature = None if cancelled else signature
                 self.error = exc if isinstance(exc, Exception) else None
                 if self.error is not None:
@@ -217,7 +232,7 @@ class PluginHandle:
                 raise
 
     async def _suspend(self, visited: set | None = None):
-        if self.status == "starting" and self._start_task is not None:
+        if self.status == PluginStatus.STARTING and self._start_task is not None:
             self._start_task.cancel()
             try:
                 await self._start_task
@@ -228,16 +243,16 @@ class PluginHandle:
             return
         visited.add(self)
         async with self._transition:
-            if self.status not in ("active", "failed"):
+            if self.status not in (PluginStatus.ACTIVE, PluginStatus.FAILED):
                 return
-            self.status = "stopping"
+            self.status = PluginStatus.STOPPING
             try:
                 async with AsyncExitStack() as stack:
                     stack.push_async_callback(self.ctx.aclose)
                     for dependent in tuple(self._dependents):
                         stack.push_async_callback(dependent._suspend, visited)
             finally:
-                self.status = "waiting"
+                self.status = PluginStatus.WAITING
                 self._active_signature = None
                 self._mount._scope.runtime.changed()
 
@@ -250,7 +265,7 @@ class PluginHandle:
         try:
             await self._suspend()
         finally:
-            self.status = "disposed"
+            self.status = PluginStatus.DISPOSED
             runtime.changed()
 
     async def __aenter__(self):

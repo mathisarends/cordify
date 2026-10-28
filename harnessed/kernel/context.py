@@ -7,6 +7,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Self, cast, overload
 
+from harnessed.kernel.plugin import PluginStatus
+
 from .effects import Disposer, effect
 from .events import Event, EventBus
 from .hooks import HookFactory, ListenerFactory
@@ -73,7 +75,9 @@ class Context:
 
     def _registrations_active(self) -> bool:
         return not self._closed and (
-            self._handle is None or self._handle.status == "active" or Context.current() is self
+            self._handle is None
+            or self._handle.status == PluginStatus.ACTIVE
+            or Context.current() is self
         )
 
     def _binding[T](self, key: ServiceKey[T], *, exclude: PluginHandle | None = None) -> _Binding:
@@ -86,9 +90,13 @@ class Context:
                 current = Context.current()
                 if (
                     handle is None
-                    or handle.status == "active"
+                    or handle.status == PluginStatus.ACTIVE
                     or handle is self._handle
-                    or (current is not None and current._closed and handle.status == "stopping")
+                    or (
+                        current is not None
+                        and current._closed
+                        and handle.status == PluginStatus.STOPPING
+                    )
                 ):
                     return binding
             scope = scope.parent

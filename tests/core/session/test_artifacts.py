@@ -5,7 +5,7 @@ import pytest
 from harnessed import Agent, Plugin, tool
 from harnessed.core.errors import ConfigError
 from harnessed.core.messages import SpillRef
-from harnessed.core.session.events import SpillCreated, SpillExpired
+from harnessed.core.session.events import SpillCreated, SpillExpirationReason, SpillExpired
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import JsonlSessions, MemorySessions, Spill
@@ -53,7 +53,11 @@ async def test_missing_source_artifact_is_recorded_on_the_branch_without_mutatin
         await session.ctx[SessionFiles].remove(ref.path)
         async with app.session(branch) as fork:
             missing = [e for e in fork.events if isinstance(e, SpillExpired)]
-            assert len(missing) == 1 and missing[0].ref == ref and missing[0].reason == "missing"
+            assert (
+                len(missing) == 1
+                and missing[0].ref == ref
+                and missing[0].reason == SpillExpirationReason.MISSING
+            )
             assert not await fork.ctx[SessionFiles].entries()
         assert session.events == snapshot
 

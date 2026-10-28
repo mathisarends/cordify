@@ -13,7 +13,12 @@ from harnessed.core.approvals import (
 )
 from harnessed.core.hooks import ApprovalRequest
 from harnessed.core.messages import ApprovalAnswer, ToolCall
-from harnessed.core.session.events import ApprovalRequested, ApprovalResolved, ApprovalRevoked
+from harnessed.core.session.events import (
+    ApprovalRequested,
+    ApprovalResolved,
+    ApprovalRevoked,
+    ApprovalStatus,
+)
 from harnessed.core.tracing import span
 
 if TYPE_CHECKING:
@@ -86,7 +91,7 @@ class SessionApprovals:
         if (
             record is not None
             and record.resolution is not None
-            and record.resolution.status == "answered"
+            and record.resolution.status == ApprovalStatus.ANSWERED
         ):
             if record.decision is not decision:
                 raise ValueError("An approval cannot change its submitted decision")
@@ -135,7 +140,9 @@ async def request_approval(
             await self.log.append(
                 ApprovalResolved(
                     request.request_id,
-                    status="unavailable" if isinstance(exc, ApprovalUnavailable) else "interrupted",
+                    status=ApprovalStatus.UNAVAILABLE
+                    if isinstance(exc, ApprovalUnavailable)
+                    else ApprovalStatus.INTERRUPTED,
                     reason=str(exc) if isinstance(exc, ApprovalUnavailable) else None,
                 )
             )

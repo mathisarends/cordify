@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Protocol
 
 from pydantic import Field
 
 from harnessed.core.budget import ContextBudget
-from harnessed.core.model import Model
+from harnessed.core.model import Model, TokenLimitBehavior
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.options import AgentOptions
@@ -44,7 +44,7 @@ class AgentLoopConfig(PluginConfig):
     approval_timeout: Annotated[float, Field(gt=0)] = 300.0
     max_tokens: Annotated[int, Field(ge=1)] | None = None
     context_window: Annotated[int, Field(ge=1)] | None = None
-    on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
+    on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT
     output_retries: Annotated[int, Field(ge=0)] = 2
 
 
@@ -64,7 +64,7 @@ class AgentLoop(Plugin, slot="loop"):
         approval_timeout: float = 300.0,
         max_tokens: int | None = None,
         context_window: int | None = None,
-        on_max_tokens: Literal["accept", "continue", "fail"] = "accept",
+        on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT,
         output_retries: int = 2,
         error_formatter: ErrorFormatter | None = None,
     ) -> None:

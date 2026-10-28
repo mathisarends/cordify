@@ -9,6 +9,7 @@ from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Emit, MissingService
+from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import AgentLoop
 
 
@@ -26,13 +27,13 @@ async def test_class_keyword_dependencies_suspend_and_restart_the_plugin():
 
     async with Context() as ctx:
         handle = await ctx.plugin(Feature())
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
         remove = ctx.provide(Backend, Backend("first"))
         await ctx.settle()
         assert seen == ["first"]
         await remove()
         await ctx.settle()
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
         ctx.provide(Backend, Backend("second"))
         await ctx.settle()
         assert seen == ["first", "second"]
@@ -66,15 +67,15 @@ async def test_explicit_needs_waits_and_rebuilds_with_fresh_scope_and_local_stat
 
     async with Context() as ctx:
         handle = await ctx.plugin(consumer())
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
         remove = ctx.provide(Backend, Backend("one"))
         await ctx.settle()
         first_scope = handle.ctx
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
         await ctx.dispatch(Ping())
         await remove()
         await ctx.settle()
-        assert handle.status == "waiting" and first_scope._closed
+        assert handle.status == PluginStatus.WAITING and first_scope._closed
         await ctx.dispatch(Ping())
         ctx.provide(Backend, Backend("two"))
         await ctx.settle()
@@ -102,10 +103,10 @@ async def test_provider_unload_suspends_consumers_and_another_provider_reactivat
         old = await ctx.plugin(provider("one"))
         dependent = await ctx.plugin(consumer())
         await old.aclose()
-        assert old.status == "disposed" and dependent.status == "waiting"
+        assert old.status == PluginStatus.DISPOSED and dependent.status == PluginStatus.WAITING
         await ctx.plugin(provider("two"))
         await ctx.settle()
-        assert dependent.status == "active" and observed == ["one", "two"]
+        assert dependent.status == PluginStatus.ACTIVE and observed == ["one", "two"]
 
 
 async def test_transitive_needs_teardown_and_rebuild_in_dependency_order():
@@ -126,7 +127,7 @@ async def test_transitive_needs_teardown_and_rebuild_in_dependency_order():
 
     async with Context() as ctx:
         handles = await ctx.install([leaf(), middle()])
-        assert all(handle.status == "waiting" for handle in handles)
+        assert all(handle.status == PluginStatus.WAITING for handle in handles)
         remove = ctx.provide(Backend, Backend("one"))
         await ctx.settle()
         assert lifecycle == ["middle+", "leaf+"]
@@ -175,11 +176,11 @@ async def test_scope_isolation_and_permanent_disposal_of_waiting_plugin():
         assert seen == [("left", "local"), ("right", "root")]
         await root_remove()
         await root.settle()
-        assert one.status == "active" and two.status == "waiting"
+        assert one.status == PluginStatus.ACTIVE and two.status == PluginStatus.WAITING
         await two.aclose()
         root.provide(Backend, Backend("new root"))
         await root.settle()
-        assert two.status == "disposed" and len(seen) == 2
+        assert two.status == PluginStatus.DISPOSED and len(seen) == 2
 
 
 async def test_class_and_bundle_explicit_needs_remove_tools_and_prompt_sections():
@@ -231,12 +232,12 @@ async def test_background_setup_failure_rolls_back_and_reports_once_then_recover
         remove = ctx.provide(Backend, Backend("broken"))
         with pytest.raises(ExceptionGroup, match="composition failed"):
             await ctx.settle()
-        assert handle.status == "failed" and Feature not in ctx
+        assert handle.status == PluginStatus.FAILED and Feature not in ctx
         await ctx.settle()
         await remove()
         ctx.provide(Backend, Backend("fixed"))
         await ctx.settle()
-        assert handle.status == "active" and Feature in ctx and handle.error is None
+        assert handle.status == PluginStatus.ACTIVE and Feature in ctx and handle.error is None
 
 
 async def test_services_are_not_published_to_consumers_until_provider_setup_yields():
@@ -261,7 +262,7 @@ async def test_services_are_not_published_to_consumers_until_provider_setup_yiel
         mounting = asyncio.create_task(ctx.plugin(provider()))
         await started.wait()
         await ctx.settle()
-        assert Backend not in ctx and handle.status == "waiting" and seen == []
+        assert Backend not in ctx and handle.status == PluginStatus.WAITING and seen == []
         with pytest.raises(MissingService):
             ctx[Backend]
         ready.set()
@@ -279,10 +280,10 @@ async def test_missing_multiple_needs_stay_dormant_without_busy_retry():
         handle = await ctx.plugin(both())
         ctx.provide(Backend, Backend("one"))
         await asyncio.wait_for(ctx.settle(), 1)
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
         ctx.provide(Feature, Feature())
         await ctx.settle()
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
 
 
 async def test_recomposition_runs_automatically_without_an_explicit_settle():
@@ -297,7 +298,7 @@ async def test_recomposition_runs_automatically_without_an_explicit_settle():
         handle = await ctx.plugin(consumer())
         ctx.provide(Backend, Backend("one"))
         await asyncio.wait_for(started.wait(), 1)
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
 
 
 async def test_dependency_loss_cancels_unfinished_setup_and_retries_when_service_returns():
@@ -317,10 +318,10 @@ async def test_dependency_loss_cancels_unfinished_setup_and_retries_when_service
         await started.wait()
         await remove()
         await asyncio.wait_for(ctx.settle(), 1)
-        assert handle.status == "waiting" and cleaned == ["cleanup"]
+        assert handle.status == PluginStatus.WAITING and cleaned == ["cleanup"]
         ctx.provide(Backend, Backend("fast"))
         await ctx.settle()
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
 
 
 async def test_context_close_cancels_background_setup():
@@ -338,7 +339,7 @@ async def test_context_close_cancels_background_setup():
     ctx.provide(Backend, Backend("one"))
     await started.wait()
     await asyncio.wait_for(ctx.aclose(), 1)
-    assert handle.status == "disposed" and cleaned == ["cleanup"]
+    assert handle.status == PluginStatus.DISPOSED and cleaned == ["cleanup"]
 
 
 async def test_wrapping_a_needed_service_keeps_the_upstream_dependency():
@@ -355,7 +356,7 @@ async def test_wrapping_a_needed_service_keeps_the_upstream_dependency():
         assert ctx[Backend].name == "wrapped one"
         await remove()
         await ctx.settle()
-        assert Backend not in ctx and handle.status == "waiting"
+        assert Backend not in ctx and handle.status == PluginStatus.WAITING
         ctx.provide(Backend, Backend("two"))
         await ctx.settle()
         assert ctx[Backend].name == "wrapped two"
@@ -381,4 +382,4 @@ async def test_dynamic_dependency_cycle_reports_without_busy_loop_and_can_recove
         assert "Cyclic plugin needs" in str(error.value.exceptions[0])
         await two.aclose()
         await ctx.settle()
-        assert one.status == "active" and ctx[Backend].name == "base"
+        assert one.status == PluginStatus.ACTIVE and ctx[Backend].name == "base"

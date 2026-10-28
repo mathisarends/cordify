@@ -5,10 +5,19 @@ from typing import TYPE_CHECKING
 
 from harnessed.core.errors import ConfigError
 from harnessed.core.messages import Assistant, ToolResult, User
-from harnessed.core.model import Model, ModelRequest, OutputSchema, StopReason, ToolDefinition
+from harnessed.core.model import (
+    Model,
+    ModelRequest,
+    OutputMode,
+    OutputSchema,
+    StopReason,
+    TokenLimitBehavior,
+    ToolDefinition,
+)
 from harnessed.core.outputs import FINAL_ANSWER, OutputTypes, validation_note
 from harnessed.core.session.events import (
     AssistantMessage,
+    ContextLifetime,
     ContextMessage,
     OutputValidated,
     OutputValidationFailed,
@@ -27,10 +36,10 @@ def prepare_output(
     self.ctx[OutputTypes].resolve(schema)
     if any(tool.name == FINAL_ANSWER for tool in request.tools):
         raise ConfigError("The tool name 'final_answer' is reserved for structured output")
-    mode = "native" if self.ctx[Model].info.supports_structured_output else "tool"
+    mode = OutputMode.NATIVE if self.ctx[Model].info.supports_structured_output else OutputMode.TOOL
     schema = replace(schema, mode=mode)
     tools = request.tools
-    if mode == "tool":
+    if mode == OutputMode.TOOL:
         tools = (
             *tools,
             ToolDefinition(
@@ -59,7 +68,7 @@ async def validate_output(
     if not outputs and (
         answer.stop_reason in (StopReason.CONTENT_FILTER, StopReason.ERROR)
         or answer.stop_reason == StopReason.MAX_TOKENS
-        and self.options.on_max_tokens != "continue"
+        and self.options.on_max_tokens != TokenLimitBehavior.CONTINUE
     ):
         return {}, None
     compiled = self.ctx[OutputTypes].resolve(schema)
@@ -68,7 +77,7 @@ async def validate_output(
             raise ValueError("Finish application tools before returning one final answer")
         if outputs and outputs[0].malformed is not None:
             raise ValueError("Tool arguments must be a valid JSON object")
-        if schema.mode == "tool" and not outputs:
+        if schema.mode == OutputMode.TOOL and not outputs:
             raise ValueError("Use final_answer to return the declared response")
         value, data = compiled.parse(dict(outputs[0].arguments) if outputs else response.text)
     except Exception as error:
@@ -87,7 +96,7 @@ async def validate_output(
                 )
             )
         if not outputs:
-            await self.log.append(ContextMessage(User(note), "turn", current.id))
+            await self.log.append(ContextMessage(User(note), ContextLifetime.TURN, current.id))
         return (
             {call.id: ToolResult.error(note) for call in outputs},
             note if attempt > self.options.output_retries else None,

@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from harnessed.core.messages import Assistant, ToolCall, ToolReply, User
+from harnessed.core.messages import Assistant, ImageDetail, ToolCall, ToolReply, User
 
 pytest.importorskip("pydantic_ai")
 
@@ -477,7 +477,10 @@ async def test_multimodal_tool_returns_are_native_parts_with_preserved_image_det
             (
                 Assistant(tool_calls=(ToolCall("snapshot", id="call"),)),
                 ToolReply(
-                    (TextPart("page"), ImagePart("https://example.test/page.png", "original")),
+                    (
+                        TextPart("page"),
+                        ImagePart("https://example.test/page.png", ImageDetail.ORIGINAL),
+                    ),
                     tool_call_id="call",
                 ),
             ),

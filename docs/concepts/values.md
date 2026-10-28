@@ -17,7 +17,7 @@ serialize the intended JSON payload with a defined canonical encoding and hash
 those bytes.
 
 The persistence codec has a separate versioned boundary. New records use version
-4 and explicit namespaced tags, such as `turn.started` and `tool.returned`.
+4 and explicit namespaced tags, such as `turn.start` and `tool.returned`.
 Version-one slash tags, version-two/three class tags, legacy usage fields and
 version-one/two message shapes migrate while reading. Unknown fields, invalid
 discriminators, non-finite numbers and malformed nested values are rejected.

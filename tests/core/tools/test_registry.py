@@ -12,6 +12,7 @@ from harnessed.core.tools.context import ToolContext
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel.di import InjectMarker
+from harnessed.kernel.plugin import PluginStatus
 from harnessed.testing import ScriptedModel
 
 
@@ -198,14 +199,14 @@ async def test_functional_context_tools_follow_explicit_needs_and_temporal_resta
         registry = ToolRegistry(ctx)
         ctx.provide(ToolRegistry, registry)
         handle = await ctx.plugin(Tools())
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
         first = ctx.provide(Backend, MemoryBackend("first"))
         await ctx.settle()
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
         assert (await registry.execute(ToolCall("read"))).content == "first"
         await first()
         await ctx.settle()
-        assert handle.status == "waiting" and not registry.definitions
+        assert handle.status == PluginStatus.WAITING and not registry.definitions
         ctx.provide(Backend, MemoryBackend("second"))
         await ctx.settle()
         assert (await registry.execute(ToolCall("read"))).content == "second"

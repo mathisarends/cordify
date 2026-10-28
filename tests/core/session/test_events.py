@@ -8,13 +8,12 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
 from harnessed.core.hooks import PrepareRequest
-from harnessed.core.messages import System, User
+from harnessed.core.messages import Assistant, System, User
 from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
-    AssistantChunk,
     AssistantMessage,
     ModelRequested,
     SessionEvent,
@@ -54,12 +53,14 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
         def observe(event):
             assert event not in agent.log.events
             records = (tmp_path / "durable-chunks.jsonl").read_text().splitlines()
-            assert all(record["type"] != AssistantChunk.type for record in map(json.loads, records))
+            assert all(
+                record["type"] not in ("text.delta", "reasoning.delta")
+                for record in map(json.loads, records)
+            )
             observed.append(event)
 
         live = [event async for event in agent.stream("hello")]
         log = agent.log.events
-        assert not any(isinstance(event, AssistantChunk) for event in log)
         chunks = tuple(observed)
         assert len(chunks) == 3
         assert chunks == tuple(
@@ -130,7 +131,7 @@ async def test_exact_requests_include_request_hook_changes_without_rerunning_the
         assert invocations == [True]
 
 
-async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_model_calls(
+async def test_resume_repairs_a_crash_after_interrupted_message_without_repeating_model_calls(
     tmp_path,
 ):
     from harnessed.plugins.sessions import JsonlPersistence
@@ -142,8 +143,7 @@ async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_m
         TurnStart("turn"),
         StepStart("turn", 1),
         UserMessage(User("hello")),
-        AssistantChunk(reasoning="thinking", message_id="reply"),
-        AssistantChunk(text="partial", message_id="reply"),
+        AssistantMessage(Assistant("partial", reasoning="thinking", id="reply"), interrupted=True),
     ):
         await session.append(event)
     prefix = session.events
@@ -166,12 +166,11 @@ async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_m
 async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     events = (
         TurnStart("turn"),
-        AssistantChunk(text="one ", message_id="reply"),
-        AssistantChunk(text="two", message_id="reply"),
+        AssistantMessage(Assistant("one two", id="reply")),
     )
     partial = derive_messages(events)
     assert len(partial) == 1 and partial[0].text == "one two"
-    completed = (*events, AssistantMessage(partial[0]), TurnEnd("turn"))
+    completed = (*events, TurnEnd("turn"))
     assert derive_messages(completed) == partial
     parent = Session("parent", seed=completed)
     child = parent.fork("child")
@@ -224,7 +223,7 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
                 live.append(event)
         assert any(isinstance(e, TextDelta) for e in live)
         assert not any(isinstance(e, AssistantMessage) for e in live)
-        assert not any(isinstance(e, AssistantChunk | AssistantMessage) for e in agent.log.events)
+        assert not any(isinstance(e, AssistantMessage) for e in agent.log.events)
         assert [message.text for message in agent.log.messages] == ["hello"]
 
 
@@ -255,8 +254,8 @@ def test_durable_event_classes_are_frozen_and_event_snapshots_cannot_be_changed(
         is_dataclass(kind) and kind.__dataclass_params__.frozen
         for kind in SESSION_EVENT_TYPES.values()
     )
-    event = AssistantChunk(text="hello", message_id="reply")
+    event = SystemMessage("hello")
     with pytest.raises(FrozenInstanceError):
-        event.text = "changed"
-    with pytest.raises(ValueError, match="message_id"):
-        AssistantChunk(text="hello", message_id="")
+        event.content = "changed"
+    with pytest.raises(ValueError):
+        TurnEnd("turn", "invalid")

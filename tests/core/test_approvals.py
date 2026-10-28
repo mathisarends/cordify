@@ -16,6 +16,7 @@ from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
+    ApprovalStatus,
     ToolExecutionStarted,
     ToolPolicyApplied,
     ToolReturned,
@@ -216,7 +217,7 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
         assert len(agent.log.approvals.pending) == 1
         await agent.cancel()
         assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
-        assert agent.log.approvals.records[-1].resolution.status == "interrupted"
+        assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.INTERRUPTED
         assert not any(isinstance(e, ToolExecutionStarted) for e in agent.log.events)
         assert any(isinstance(e, ToolReturned) and e.result.is_error for e in agent.log.events)
 

@@ -1,12 +1,12 @@
 from collections.abc import Callable, Iterable
 from xml.sax.saxutils import escape, quoteattr
 
-from harnessed.core.messages import Assistant, Message, System, ToolReply, User
+from harnessed.core.messages import Message, System, ToolReply, User
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
-    AssistantChunk,
     AssistantMessage,
     CompactionApplied,
+    ContextLifetime,
     ContextMessage,
     ContextValueChanged,
     ModelRequested,
@@ -26,11 +26,7 @@ type HistoryFold = Callable[[Iterable[SessionEvent]], tuple[tuple[int, Message],
 
 
 class MessageProjection:
-    """Advance history on append; only compaction rebuilds from the pure oracle.
-
-    Observation summaries are updated per source/step. Completed legacy streams
-    drop their chunk buffers, so one old stream never enables a permanent fold.
-    """
+    """Advance history on append; only compaction rebuilds from the pure oracle."""
 
     def __init__(self, events: list[SessionEvent], fold: HistoryFold) -> None:
         self._fold = fold
@@ -48,13 +44,8 @@ class MessageProjection:
         self._by_step: dict[tuple[str, int], dict[str, list[int]]] = {}
         self._observation_events: dict[int, ObservationRecorded] = {}
         self._visible_observations: dict[str, set[int]] = {}
-        self._chunks: dict[str, tuple[int, list[str], list[str]]] = {}
-        self._completed: set[str] = set()
-        self._partial_dirty: set[str] = set()
         for seq, event in enumerate(events):
             self._index(event, seq)
-        for message_id in self._completed:
-            self._chunks.pop(message_id, None)
         self._visible_scoped = set(self._scoped.get(self._turn, {})) & self._entries.keys()
         for source, indices in self._observations.items():
             self._visible_observations[source] = set(indices) & self._entries.keys()
@@ -79,7 +70,7 @@ class MessageProjection:
                 self._step = (event.turn_id, event.step)
             elif isinstance(event, StepEnd | TurnEnd):
                 self._step = None
-        if isinstance(event, ContextMessage) and event.lifetime == "turn":
+        if isinstance(event, ContextMessage) and event.lifetime == ContextLifetime.TURN:
             self._scoped.setdefault(event.turn_id, {})[seq] = event.message
             self._origins[seq] = self._turn
         elif isinstance(event, ObservationPolicyApplied):
@@ -94,15 +85,6 @@ class MessageProjection:
             self._origins[seq] = self._turn
         elif isinstance(event, CompactionApplied):
             self._compaction = event
-        elif isinstance(event, AssistantChunk) and event.message_id not in self._completed:
-            first, text, reasoning = self._chunks.setdefault(event.message_id, (seq, [], []))
-            self._origins.setdefault(first, self._turn)
-            text.append(event.text)
-            reasoning.append(event.reasoning)
-            self._partial_dirty.add(event.message_id)
-        elif isinstance(event, AssistantMessage):
-            self._completed.add(event.message.id)
-            self._partial_dirty.discard(event.message.id)
         if isinstance(event, TurnEnd):
             self._turn = None
 
@@ -159,7 +141,6 @@ class MessageProjection:
         relevant = isinstance(
             event,
             (
-                AssistantChunk,
                 AssistantMessage,
                 CompactionApplied,
                 ContextMessage,
@@ -190,10 +171,6 @@ class MessageProjection:
             if event.content:
                 self._entries = {seq: System(event.content, id="system")} | self._entries
         elif isinstance(event, UserMessage | AssistantMessage):
-            if isinstance(event, AssistantMessage):
-                partial = self._chunks.pop(event.message.id, None)
-                if partial is not None:
-                    self._entries.pop(partial[0], None)
             self._put(seq, event.message)
         elif isinstance(event, ToolReturned):
             self._put(
@@ -214,9 +191,9 @@ class MessageProjection:
             )
             self._put(seq, User(content, id=f"context:{event.id}"))
         elif isinstance(event, ContextMessage):
-            if event.lifetime == "session" or event.turn_id == self._turn:
+            if event.lifetime == ContextLifetime.SESSION or event.turn_id == self._turn:
                 self._put(seq, event.message)
-                if event.lifetime == "turn":
+                if event.lifetime == ContextLifetime.TURN:
                     self._visible_scoped.add(seq)
         elif isinstance(event, TurnStart | TurnEnd):
             for offset in self._visible_scoped:
@@ -239,18 +216,6 @@ class MessageProjection:
                 self._refresh_observations(source, offsets)
 
     def snapshot(self, events: list[SessionEvent]) -> tuple[Message, ...]:
-        for message_id in self._partial_dirty:
-            seq, text, reasoning = self._chunks[message_id]
-            if self._eligible(seq):
-                self._put(
-                    seq,
-                    Assistant(
-                        "".join(text),
-                        reasoning="".join(reasoning),
-                        id=message_id,
-                    ),
-                )
-        self._partial_dirty.clear()
         if self._snapshot is None:
             if self._order_dirty:
                 self._entries = dict(
@@ -281,26 +246,8 @@ def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
     return tuple(event.request for event in events if isinstance(event, ModelRequested))
 
 
-def _pending_assistant_messages(events: Iterable[SessionEvent]) -> dict[int, Assistant]:
-    streams: dict[str, tuple[int, list[str], list[str]]] = {}
-    completed = set()
-    for seq, event in enumerate(events):
-        if isinstance(event, AssistantChunk):
-            _, text, reasoning = streams.setdefault(event.message_id, (seq, [], []))
-            text.append(event.text)
-            reasoning.append(event.reasoning)
-        elif isinstance(event, AssistantMessage):
-            completed.add(event.message.id)
-    return {
-        seq: Assistant("".join(text), reasoning="".join(reasoning), id=message_id)
-        for message_id, (seq, text, reasoning) in streams.items()
-        if message_id not in completed
-    }
-
-
 def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, Message], ...]:
     events = tuple(events)
-    partials = _pending_assistant_messages(events)
     active_turn, active_step, max_summaries = None, None, None
     observations: dict[str, list[int]] = {}
     for seq, event in enumerate(events):
@@ -344,8 +291,6 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
         turn_offsets[seq] = current_turn
         if isinstance(event, TurnEnd):
             current_turn = None
-        if seq in partials:
-            add(seq, partials[seq])
         match event:
             case SystemMessage(content=content):
                 entries = [(offset, m) for offset, m in entries if m.id != "system"]
@@ -354,7 +299,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
             case UserMessage(message=message) | AssistantMessage(message=message):
                 add(seq, message)
             case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
-                if lifetime == "session" or turn_id == active_turn:
+                if lifetime == ContextLifetime.SESSION or turn_id == active_turn:
                     add(seq, message)
             case ContextValueChanged(name=name, value=value):
                 content = (

@@ -6,9 +6,9 @@ import re
 import shutil
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from enum import StrEnum
 from functools import partial
 from pathlib import Path
-from typing import Literal
 from uuid import uuid4
 
 from harnessed.core.errors import SessionLocked
@@ -32,6 +32,12 @@ else:
     import fcntl
 
 
+class Durability(StrEnum):
+    BUFFERED = "buffered"
+    FLUSH = "flush"
+    FSYNC = "fsync"
+
+
 class JsonlPersistence:
     """Serialized off-thread I/O with acknowledged durability and exclusive OS locks.
 
@@ -47,15 +53,15 @@ class JsonlPersistence:
         registry: EventRegistry | None = None,
         fsync: bool = False,
         recover_tail: bool = False,
-        durability: Literal["buffered", "flush", "fsync"] = "flush",
+        durability: Durability = Durability.FLUSH,
     ) -> None:
         self.registry = registry or EventRegistry()
         self.root = Path(root)
         self._root_ready = False
-        if durability not in ("buffered", "flush", "fsync"):
+        if durability not in (Durability.BUFFERED, Durability.FLUSH, Durability.FSYNC):
             raise ValueError("Unknown durability mode")
-        self.durability = "fsync" if fsync else durability
-        self.fsync = self.durability == "fsync"
+        self.durability = Durability.FSYNC if fsync else durability
+        self.fsync = self.durability == Durability.FSYNC
         self._operation = asyncio.Lock()
         self._closed = False
         self._failure: Exception | None = None
@@ -241,7 +247,7 @@ class JsonlPersistence:
         record = {"seq": seq, **encode_event(event, registry=self.registry)}
         # No await between writing and advancing the in-process append position.
         stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
-        if self.durability != "buffered":
+        if self.durability != Durability.BUFFERED:
             stream.flush()
         if self.fsync:
             os.fsync(stream.fileno())
@@ -298,7 +304,7 @@ class JsonlPersistence:
 
 class JsonlSessionsConfig(PluginConfig):
     root: Path
-    durability: Literal["buffered", "flush", "fsync"] = "flush"
+    durability: Durability = Durability.FLUSH
     recover_tail: bool = False
 
 
@@ -313,7 +319,7 @@ class JsonlSessions(Plugin, slot="sessions"):
         self,
         root: str | Path = ".harnessed/sessions",
         *,
-        durability: Literal["buffered", "flush", "fsync"] = "flush",
+        durability: Durability = Durability.FLUSH,
         recover_tail: bool = False,
     ) -> None:
         super().__init__(root=Path(root), durability=durability, recover_tail=recover_tail)

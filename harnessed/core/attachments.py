@@ -5,12 +5,14 @@ import mimetypes
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from harnessed.core.messages import (
     ContentPart,
+    ImageDetail,
     ImagePart,
     Message,
+    Role,
     TextPart,
     User,
     freeze,
@@ -34,7 +36,7 @@ class File:
 @dataclass(frozen=True)
 class Image:
     path: str | Path
-    detail: Literal["auto", "low", "high", "original"] = "auto"
+    detail: ImageDetail = ImageDetail.AUTO
 
     async def parts(self) -> tuple[ContentPart, ...]:
         location = str(self.path)
@@ -61,7 +63,7 @@ async def prepare_input(
     message = user(content) if isinstance(content, str) else content
     attachments = tuple(attachments)
     if attachments:
-        if message.role != "user":
+        if message.role != Role.USER:
             raise ValueError("Attachments belong to user messages")
         parts = (
             [TextPart(message.content)]

@@ -3,7 +3,8 @@
 import asyncio
 
 from harnessed import Agent, Plugin, PolicyDecision, Session, ToolCall, ToolResult, events, tool
-from harnessed.core.messages import user
+from harnessed.core.messages import ToolStatus, user
+from harnessed.core.session.events import InboxMode
 from harnessed.events import InboxAdded
 from harnessed.hooks import ReviewToolResult
 from harnessed.kernel import Inject, hook
@@ -45,7 +46,7 @@ class SimulatedCommandsTools(Plugin):
     @tool
     async def run_command(self, argv: list[str]) -> ToolResult:
         """Run the simulated test command."""
-        return ToolResult("FAILED tests/test_auth.py::test_login", "error", exit_code=1)
+        return ToolResult("FAILED tests/test_auth.py::test_login", ToolStatus.ERROR, exit_code=1)
 
 
 commands = SimulatedCommandsTools()
@@ -71,7 +72,7 @@ async def demo(name, policy):
 
         @session.on(InboxAdded)
         def inbox_changed(event):
-            if event.mode != "followup":
+            if event.mode != InboxMode.FOLLOWUP:
                 print(f"{event.mode}: {event.message.text}")
 
         async for event in session.stream("Run the tests and investigate failures."):
@@ -79,7 +80,8 @@ async def demo(name, policy):
                 print(f"exit_code={event.result.exit_code}: {event.result.content}")
         assert session.context.values
         assert any(
-            isinstance(event, InboxAdded) and event.mode == "steer" for event in session.events
+            isinstance(event, InboxAdded) and event.mode == InboxMode.STEER
+            for event in session.events
         )
 
 

@@ -28,12 +28,13 @@ def test_data_notifications_roundtrip_through_a_discriminated_union():
         assert adapter.validate_json(adapter.dump_json(notification)) == notification
 
 
-def test_namespaced_log_events_preserve_class_tagged_version_three_records():
+def test_namespaced_log_events_use_canonical_tags_only():
     event = events.turn.Started("turn")
     record = encode_event(event)
-    assert record["type"] == "turn.started" and record["version"] == 4
+    assert record["type"] == "turn.start" and record["version"] == 1
     record.update(type="TurnStart", version=3)
-    assert decode_event(record) == event
+    with pytest.raises(ValueError):
+        decode_event(record)
     assert events.compaction.Applied.type == "compaction.applied"
     assert events.spill.Created.type == "spill.created"
 

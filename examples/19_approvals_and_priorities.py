@@ -5,7 +5,8 @@ from time import perf_counter
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable
-from harnessed.core.session.events import ToolReturned
+from harnessed.core.messages import ToolStatus
+from harnessed.core.session.events import ApprovalStatus, ToolReturned
 from harnessed.hooks import ApprovalRequest, ToolPolicy
 from harnessed.kernel import hook
 from harnessed.models import ModelChunk
@@ -28,7 +29,7 @@ async def without_ui():
     ).session("no-ui") as session:
         result = await session.run("Publish the artifact.")
         returned = next(event for event in result.events if isinstance(event, ToolReturned))
-        assert returned.result.status == "unavailable"
+        assert returned.result.status == ToolStatus.UNAVAILABLE
         assert not session.log.approvals.pending
         print(f"No UI: {returned.result.status}; action was not executed.")
 
@@ -102,7 +103,7 @@ async def response_timeout():
         except ApprovalUnavailable as error:
             print(f"SDK: {error}")
         assert stopped.is_set() and (not session.log.approvals.pending)
-        assert session.log.approvals.records[-1].resolution.status == "unavailable"
+        assert session.log.approvals.records[-1].resolution.status == ApprovalStatus.UNAVAILABLE
 
 
 async def main():

@@ -5,7 +5,7 @@ from harnessed import Agent as Application
 from harnessed import File, Image, Inject, Observation, Plugin, PolicyDecision, ToolCall, tool
 from harnessed import Session as Agent
 from harnessed.core.hooks import PreStep
-from harnessed.core.messages import ImagePart, User, system, user
+from harnessed.core.messages import ImageDetail, ImagePart, Role, User, system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
@@ -33,7 +33,7 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
         await agent.run("review", context={"ticket": "Fix login", "details": {"issue": 42}})
         for request in model.requests[:2]:
             assert "Task context [ticket]:\nFix login" in [m.text for m in request.messages]
-            assert request.messages[0].role == "system"
+            assert request.messages[0].role == Role.SYSTEM
             assert request.messages[2].text == "review"
         await agent.run("unrelated")
         assert all("Task context" not in m.text for m in model.requests[-1].messages)
@@ -80,7 +80,8 @@ async def test_system_injection_survives_prompt_updates_and_typed_user_steering(
         await agent.context.set("project", "Updated project facts")
         await agent.run("another turn")
         assert any(
-            m.role == "system" and m.text == "External change" for m in model.requests[-1].messages
+            m.role == Role.SYSTEM and m.text == "External change"
+            for m in model.requests[-1].messages
         )
 
 
@@ -169,7 +170,7 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
 
 
 async def test_remote_images_are_references_without_download():
-    parts = await Image("https://example.com/screenshot.png", detail="low").parts()
-    assert parts == (ImagePart("https://example.com/screenshot.png", "low"),)
+    parts = await Image("https://example.com/screenshot.png", detail=ImageDetail.LOW).parts()
+    assert parts == (ImagePart("https://example.com/screenshot.png", ImageDetail.LOW),)
     message = User(list(parts))
     assert isinstance(message.content, tuple)

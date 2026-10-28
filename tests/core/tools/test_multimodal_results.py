@@ -3,7 +3,7 @@ import json
 import pytest
 
 from harnessed import Agent, Plugin
-from harnessed.core.messages import ImagePart, TextPart, ToolReply, ToolResult
+from harnessed.core.messages import ImageDetail, ImagePart, Role, TextPart, ToolReply, ToolResult
 from harnessed.core.model import ModelInfo, ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
@@ -14,7 +14,7 @@ from harnessed.plugins import Rules, when
 from harnessed.plugins.spill import Spill, SpillStore
 from harnessed.testing import ScriptedModel, call
 
-IMAGE = ImagePart("data:image/png;base64,aW1hZ2U=", detail="high")
+IMAGE = ImagePart("data:image/png;base64,aW1hZ2U=", detail=ImageDetail.HIGH)
 TEXT = "large tool output " * 500
 
 
@@ -39,7 +39,7 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
         tool_result = result.tool_calls[0][1]
         assert tool_result.exit_code == 0 and tool_result.rule_matches
         assert [p for p in tool_result.content if isinstance(p, ImagePart)] == [IMAGE]
-        history = next(m for m in model.requests[1].messages if m.role == "tool")
+        history = next(m for m in model.requests[1].messages if m.role == Role.TOOL)
         assert history.content == tool_result.content
         assert history.status == tool_result.status and history.exit_code == 0
         records = json.loads(json.dumps([encode_event(e) for e in session.events]))

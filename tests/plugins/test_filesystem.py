@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from harnessed import Agent, ToolCall
+from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.plugins.filesystem import Filesystem, LocalFileSystem
@@ -89,5 +90,5 @@ async def test_filesystem_plugin_schema_bounds_search_notices_and_safe_approvals
         ]
     )
     result = await Agent(model=model, plugins=[Filesystem(tmp_path)]).run("Write")
-    assert result.tool_calls[0][1].status == "unavailable"
+    assert result.tool_calls[0][1].status == ToolStatus.UNAVAILABLE
     assert not (tmp_path / "denied.txt").exists()

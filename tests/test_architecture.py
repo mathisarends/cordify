@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from harnessed.kernel.plugin import PluginStatus
+
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "harnessed"
 LAYERS = {"kernel": 0, "core": 1, "plugins": 2, "models": 2, "integrations": 2}
@@ -161,13 +163,13 @@ async def test_typed_keys_have_identity_and_work_with_temporal_needs():
     async with Context() as ctx:
         ctx.provide(second, "other")
         handle = await ctx.plugin(feature())
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
         remove = ctx.provide(first, "one")
         await ctx.settle()
         assert seen == ["one"] and ctx[second] == "other"
         await remove()
         await ctx.settle()
-        assert handle.status == "waiting"
+        assert handle.status == PluginStatus.WAITING
 
 
 async def test_kernel_registration_recipes_extend_lifetimes_without_agent_imports():
@@ -202,4 +204,4 @@ async def test_kernel_registration_recipes_extend_lifetimes_without_agent_import
         assert sink.callbacks[0]() == 42
         await remove()
         await ctx.settle()
-        assert sink.callbacks == [] and handle.status == "waiting"
+        assert sink.callbacks == [] and handle.status == PluginStatus.WAITING

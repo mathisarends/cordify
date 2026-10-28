@@ -3,7 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
-from harnessed.core.messages import ApprovalAnswer, Message, PolicyDecision, ToolCall, ToolResult
+from harnessed.core.messages import (
+    ApprovalAnswer,
+    Message,
+    PolicyDecision,
+    Role,
+    ToolCall,
+    ToolResult,
+)
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import ApprovalRequested, SessionEvent, UserMessage
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
@@ -38,7 +45,7 @@ class PreStep(Waterfall[StepDecision]):
     @property
     def latest_user_text(self) -> str:
         for message in reversed(self.messages):
-            if message.role == "user":
+            if message.role == Role.USER:
                 return message.text
         event = self.agent.log.last(UserMessage)
         return event.message.text if event is not None else ""

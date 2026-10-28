@@ -10,7 +10,13 @@ from harnessed.core.hooks import ConfigureRequest
 from harnessed.core.messages import System, ToolCall
 from harnessed.core.model import ModelChunk, ModelInfo
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import CompactionApplied, ModelRequested, StepEnd
+from harnessed.core.session.events import (
+    CompactionApplied,
+    ControlState,
+    ModelRequested,
+    StepEnd,
+    TurnOutcome,
+)
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
 from harnessed.plugins import AgentLoop, Compaction, JsonlSessions, at_ratio, every_turns
@@ -308,7 +314,7 @@ async def test_context_retry_is_bounded_and_requires_a_safe_smaller_request(case
             await session.run("x" * 4000)
         with pytest.raises(ContextLengthExceeded, match="Still too large"):
             await session.run("current")
-        assert session.turns[-1].reason == "aborted"
+        assert session.turns[-1].reason == TurnOutcome.ABORTED
         assert len(brief.sources) == (1 if case == "repeated" else 0)
         assert len(model.requests) == (
             1 if case == "no-history" else 3 if case == "repeated" else 2
@@ -349,7 +355,7 @@ async def test_paused_context_retry_survives_restart_without_reusing_its_retry(t
         running = asyncio.create_task(session.run("current"))
         await asyncio.wait_for(started.wait(), 3)
         pausing = asyncio.create_task(session.pause())
-        while session.log.control.state != "pausing":
+        while session.log.control.state != ControlState.PAUSING:
             await session.control._changed.wait()
         release.set()
         await asyncio.wait_for(pausing, 3)

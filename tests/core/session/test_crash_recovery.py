@@ -18,13 +18,15 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
+    ApprovalStatus,
     InboxAdded,
+    InboxMode,
     LogTailRecovered,
     ToolReturned,
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, JsonlSessions
-from harnessed.plugins.sessions import JsonlPersistence
+from harnessed.plugins.sessions import Durability, JsonlPersistence
 from harnessed.testing import ScriptedModel
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,6 +36,7 @@ from harnessed.core.approvals import ApprovalGate
 from harnessed import Agent as Application
 from harnessed.plugins import Approvals
 from harnessed.plugins import JsonlSessions
+from harnessed.plugins.sessions import Durability
 import asyncio
 import os
 import sys
@@ -77,7 +80,7 @@ async def main():
     ])
     harness = Application(model=model, plugins=[
         Approvals(default=PolicyDecision.ALLOW), tools, ApprovalGate(risky={'work'}, ask=answer),
-        JsonlSessions(root, durability='fsync'),
+        JsonlSessions(root, durability=Durability.FSYNC),
     ])
     async with harness.session('crash') as agent:
         if phase == 'tool':
@@ -155,7 +158,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
                 Approvals(default=PolicyDecision.ALLOW),
                 tools,
                 ApprovalGate(risky={"work"}, ask=answer),
-                JsonlSessions(tmp_path, durability="fsync"),
+                JsonlSessions(tmp_path, durability=Durability.FSYNC),
             ],
         )
         async with harness.session("crash") as agent:
@@ -170,7 +173,9 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
                     len(interrupted) == 1 and "outcome is unknown" in interrupted[0].result.content
                 )
             elif phase == "approval":
-                assert agent.log.approvals.records[-1].resolution.status == "interrupted"
+                assert (
+                    agent.log.approvals.records[-1].resolution.status == ApprovalStatus.INTERRUPTED
+                )
                 assert not agent.log.approvals.grants
             await agent.when_idle()
             if phase == "idle":
@@ -211,7 +216,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
 async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_idempotent(
     tmp_path, tail
 ):
-    original = InboxAdded.create(user("queued"), "followup")
+    original = InboxAdded.create(user("queued"), InboxMode.FOLLOWUP)
     writer = JsonlPersistence(tmp_path, fsync=True)
     await writer.load("tail")
     await writer.append("tail", 0, original)
@@ -321,11 +326,11 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
         model=ScriptedModel([]),
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
-            JsonlSessions(tmp_path, recover_tail=True, durability="fsync"),
+            JsonlSessions(tmp_path, recover_tail=True, durability=Durability.FSYNC),
         ],
     ).session("answer") as agent:
         assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
-        assert agent.log.approvals.records[0].resolution.status == "interrupted"
+        assert agent.log.approvals.records[0].resolution.status == ApprovalStatus.INTERRUPTED
         recovery = next(e for e in agent.log.events if isinstance(e, LogTailRecovered))
         assert await asyncio.to_thread(Path(recovery.archive).read_bytes) == tail
 

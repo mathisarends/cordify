@@ -12,11 +12,13 @@ from harnessed.core.hooks import (
 )
 from harnessed.core.messages import (
     ApprovalAnswer,
+    DenialSource,
     PolicyDecision,
     ToolCall,
     ToolResult,
 )
 from harnessed.core.session.events import (
+    PolicySource,
     ToolCalled,
     ToolCompleted,
     ToolExecutionStarted,
@@ -116,19 +118,21 @@ async def authorize_tool(self: Session, call: ToolCall) -> ToolResult | None:
         record = self.log.latest_approval(call.id)
         answered = record is not None and record is not previous
         source = (
-            "approval"
+            PolicySource.APPROVAL
             if answered
             and (decision is PolicyDecision.ALLOW or record.decision is ApprovalAnswer.DENY)
-            else "policy"
+            else PolicySource.POLICY
         )
         await self.log.append(ToolPolicyApplied(call.id, decision, source))
         if decision is PolicyDecision.DENY:
             if answered and record.decision is ApprovalAnswer.DENY:
-                return ToolResult.denied("User declined this action", source="user")
-            return ToolResult.denied("Denied by policy", source="policy")
+                return ToolResult.denied("User declined this action", source=DenialSource.USER)
+            return ToolResult.denied("Denied by policy", source=DenialSource.POLICY)
         return None
     except ApprovalUnavailable as exc:
-        await self.log.append(ToolPolicyApplied(call.id, PolicyDecision.DENY, "unavailable"))
+        await self.log.append(
+            ToolPolicyApplied(call.id, PolicyDecision.DENY, PolicySource.UNAVAILABLE)
+        )
         return ToolResult.unavailable(str(exc))
     except Exception as exc:
         return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))

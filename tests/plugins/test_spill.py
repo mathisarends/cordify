@@ -4,9 +4,9 @@ import pytest
 from pydantic import ValidationError
 
 from harnessed import Agent, Plugin
-from harnessed.core.messages import ImagePart, TextPart, ToolResult
+from harnessed.core.messages import ImagePart, TextPart, ToolResult, ToolStatus
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import SpillCreated, SpillExpired
+from harnessed.core.session.events import SpillCreated, SpillExpirationReason, SpillExpired
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.output_limit import ToolOutputLimit
@@ -20,7 +20,9 @@ class Source(Plugin):
     @tool(readonly=True)
     async def source(self, text: str) -> ToolResult:
         return ToolResult(
-            (TextPart(text), ImagePart("https://example.test/image.png")), "error", exit_code=3
+            (TextPart(text), ImagePart("https://example.test/image.png")),
+            ToolStatus.ERROR,
+            exit_code=3,
         )
 
 
@@ -42,7 +44,7 @@ async def test_spill_is_owned_by_its_session_and_resumes_with_exact_content(tmp_
     )
     async with app.session("one") as session:
         result = (await session.run("read")).tool_calls[0][1]
-        assert result.spill and result.exit_code == 3 and result.status == "error"
+        assert result.spill and result.exit_code == 3 and result.status == ToolStatus.ERROR
         assert "Important note." in result.text and result.rule_matches
         assert sum(isinstance(p, ImagePart) for p in result.content) == 1
         ref = result.spill
@@ -109,7 +111,7 @@ async def test_recovery_cleans_orphans_and_logs_missing_files(tmp_path):
     app = configure(ScriptedModel([]), plugins=[JsonlSessions(tmp_path), Spill(threshold_tokens=8)])
     async with app.session("recover") as session:
         assert not await session.ctx[SessionFiles].entries()
-        assert session.last(SpillExpired).reason == "missing"
+        assert session.last(SpillExpired).reason == SpillExpirationReason.MISSING
         with pytest.raises(ToolError):
             await session.ctx[SpillStore].read(ref.path)
 
@@ -121,7 +123,7 @@ async def test_read_spill_is_readonly_has_bounded_schema_and_never_respills():
         ref = (await session.run("source")).tool_calls[0][1].spill
         model.responses.extend([call("read_spill", path=ref.path, offset=1, limit=2), "read"])
         result = (await session.run("range")).tool_calls[0][1]
-        assert result.text == "bc" and result.spill is None and result.status == "ok"
+        assert result.text == "bc" and result.spill is None and result.status == ToolStatus.OK
         schema = next(t for t in model.requests[0].tools if t.name == "read_spill").parameters
         assert schema["$defs"]["ReadLimit"]["maximum"] == 16000
         assert schema["$defs"]["FileOffset"]["minimum"] == 0

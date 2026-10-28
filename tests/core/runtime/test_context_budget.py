@@ -8,7 +8,7 @@ from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.budget import ContextBudget, ContextBudgetExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
-from harnessed.core.messages import Assistant, System, user
+from harnessed.core.messages import Assistant, Role, System, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle, Service
 from harnessed.core.session.codec import decode_event, encode_event
@@ -17,6 +17,7 @@ from harnessed.core.session.events import (
     CompactionApplied,
     SystemMessage,
     TurnEnd,
+    TurnOutcome,
     TurnStart,
     UserMessage,
 )
@@ -78,7 +79,7 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
         assert any(m.text.startswith("THIRD ") for m in request.messages)
         assert not any(m.text.startswith("SECOND ") for m in request.messages)
         assert any(m.text == "CURRENT" for m in request.messages)
-        assert any(m.role == "tool" and m.text == "exact result" for m in request.messages)
+        assert any(m.role == Role.TOOL and m.text == "exact result" for m in request.messages)
         assert all(not m.text.startswith("FIRST GOAL") for m in summaries.sources[0])
         replayed = tuple(decode_event(json.loads(json.dumps(encode_event(e)))) for e in events)
         assert Session("replay", seed=replayed).messages == agent.log.messages
@@ -239,7 +240,7 @@ async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
             await agent.run("small")
         assert error.value.limit == 100 and error.value.reserve_tokens == 20
         assert model.requests == []
-        assert agent.log.turns[-1].reason == "aborted"
+        assert agent.log.turns[-1].reason == TurnOutcome.ABORTED
 
 
 async def test_threshold_uses_guard_limit_and_reserved_output_budget():

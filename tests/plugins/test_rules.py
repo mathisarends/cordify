@@ -2,6 +2,7 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
+from harnessed.core.messages import Role, ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -12,6 +13,7 @@ from harnessed.core.session.events import (
     ToolReturned,
 )
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.rules import Rules, when
 from harnessed.plugins.shell import ProcResult
@@ -51,7 +53,7 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
         assert result.exit_code == 1 and result.content == "failed\n\nOpen a PR."
         inbox = [e for e in agent.log.events if isinstance(e, InboxAdded)]
         assert [e.mode for e in inbox] == ["followup", "steer"]
-        assert inbox[-1].message.role == "user"
+        assert inbox[-1].message.role == Role.USER
         assert any("Consider the failure." in m.text for m in model.requests[-1].messages)
         assert agent.context.values["rule:rules:1"] == "Consider the failure."
         assert not any(isinstance(e, RuleEvaluated) for e in agent.events)
@@ -222,7 +224,7 @@ async def test_process_return_values_are_normalized_with_exit_codes():
     ).session("process") as agent:
         await agent.run("go")
         event = next(e for e in agent.log.events if isinstance(e, ToolReturned))
-        assert event.result.status == "error" and event.result.exit_code == 7
+        assert event.result.status == ToolStatus.ERROR and event.result.exit_code == 7
         assert event.result.with_note("note").exit_code == 7
         assert decode_event(encode_event(event)) == event
 
@@ -346,4 +348,4 @@ async def test_rule_and_observation_policies_mount_with_narrow_services_without_
         handles = await ctx.install(
             [Rules([when(tool="test").context("fact")]), LatestObservationOnly()], settle=True
         )
-        assert all(handle.status == "active" for handle in handles)
+        assert all(handle.status == PluginStatus.ACTIVE for handle in handles)

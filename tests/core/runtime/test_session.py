@@ -7,7 +7,7 @@ from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, ToolContext, plu
 from harnessed import Session as Agent
 from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
 from harnessed.core.hooks import ExecuteTool, PreStep, ReviewToolResult, StepDecision, ToolPolicy
-from harnessed.core.messages import PolicyDecision
+from harnessed.core.messages import PolicyDecision, Role, ToolStatus
 from harnessed.core.model import ModelChunk, ModelInfo
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -15,6 +15,7 @@ from harnessed.core.session.events import (
     ToolProgress,
     ToolReturned,
     TurnEnd,
+    TurnOutcome,
     TurnStart,
 )
 from harnessed.core.stream import TextDelta, ToolFinished
@@ -83,7 +84,7 @@ async def test_inject_stays_idle_steering_enters_next_step_followup_gets_own_tur
         await agent.followup("second")
         model.release.set()
         await agent.when_idle()
-        users = [[m.content for m in r.messages if m.role == "user"] for r in model.requests]
+        users = [[m.content for m in r.messages if m.role == Role.USER] for r in model.requests]
         assert users == [
             ["first", "quiet"],
             ["first", "quiet", "steering", "context"],
@@ -126,7 +127,7 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
     async with harness.session("deny") as agent:
         result = await agent.run("remove")
         outcomes = [e.result for e in result.events if isinstance(e, ToolReturned)]
-        assert outcomes[0].status == "denied"
+        assert outcomes[0].status == ToolStatus.DENIED
         assert stages == []
 
 
@@ -317,7 +318,7 @@ async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
         partial = next(e for e in agent.log.events if isinstance(e, AssistantMessage))
         assert partial.interrupted and partial.message.content == "visible prefix"
         assert isinstance(agent.log.last(TurnEnd), TurnEnd)
-        assert agent.log.last(TurnEnd).reason == "aborted"
+        assert agent.log.last(TurnEnd).reason == TurnOutcome.ABORTED
 
 
 async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
@@ -365,7 +366,7 @@ async def test_same_harness_rejects_two_live_writers_and_max_steps_bounds_the_lo
             async with harness.session("same"):
                 pytest.fail("A second writer entered")
         await agent.run("loop")
-        assert agent.log.events[-1].reason == "max_steps"
+        assert agent.log.events[-1].reason == TurnOutcome.MAX_STEPS
 
 
 async def test_observer_failure_closes_model_iterator_before_run_returns():

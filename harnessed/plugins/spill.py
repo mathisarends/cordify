@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import logging
 from dataclasses import replace
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Protocol
 
 from pydantic import Field
 
@@ -12,7 +12,13 @@ from harnessed.core.budget import truncate
 from harnessed.core.hooks import Next, ReviewToolResult, SessionAppended
 from harnessed.core.messages import SpillRef, ToolResult
 from harnessed.core.plugin import Plugin, PluginConfig
-from harnessed.core.session.events import SpillCreated, SpillExpired, ToolCompleted, ToolReturned
+from harnessed.core.session.events import (
+    SpillCreated,
+    SpillExpirationReason,
+    SpillExpired,
+    ToolCompleted,
+    ToolReturned,
+)
 from harnessed.core.session.files import FileOffset, ReadLimit, SessionFiles
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter
@@ -65,14 +71,14 @@ class _SessionSpills:
         present = {entry.key for entry in entries}
         for key in tuple(self._active):
             if key not in present:
-                await self._expire(key, reason="missing")
+                await self._expire(key, reason=SpillExpirationReason.MISSING)
         for entry in entries:
             if entry.key.startswith("spills/") and entry.key not in self._active:
                 await self.files.remove(entry.key)
         await self._make_room(0, extra_files=0)
 
     async def _expire(
-        self, key: str, *, reason: Literal["retention", "missing"] = "retention"
+        self, key: str, *, reason: SpillExpirationReason = SpillExpirationReason.RETENTION
     ) -> None:
         ref = self._active.pop(key, None)
         if ref is not None:
@@ -134,7 +140,7 @@ class _SessionSpills:
         try:
             return await self.files.read(path, offset=offset, limit=limit)
         except FileNotFoundError:
-            await self._expire(path, reason="missing")
+            await self._expire(path, reason=SpillExpirationReason.MISSING)
             raise ToolError(
                 "Spill file is unavailable. Rerun the source with smaller ranges."
             ) from None

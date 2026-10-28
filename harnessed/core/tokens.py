@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Iterable
 from typing import Protocol
 
 from harnessed.core.messages import ContentPart, ImagePart, Message, content_text, to_dict
-from harnessed.core.model import ModelRequest
+from harnessed.core.model import ModelRequest, OutputMode
 
 
 class TokenCounter(Protocol):
@@ -37,7 +37,7 @@ class ApproximateTokenCounter:
         total = self.count_messages(request.messages) + self.count_text(
             json.dumps(to_dict(request.tools), ensure_ascii=False)
         )
-        if request.output_schema is not None and request.output_schema.mode != "tool":
+        if request.output_schema is not None and request.output_schema.mode != OutputMode.TOOL:
             total += self.count_text(json.dumps(to_dict(request.output_schema.json_schema)))
         return total
 

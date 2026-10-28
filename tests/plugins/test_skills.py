@@ -4,6 +4,7 @@ import pytest
 
 from harnessed import Agent, Section, ToolCall
 from harnessed.core.errors import ConfigError
+from harnessed.core.messages import ToolStatus
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import (
     Compaction,
@@ -68,7 +69,7 @@ async def test_catalog_reads_only_frontmatter_once_per_session_and_loads_body_fr
         assert "Fill PDF forms." in prompt and "Read reference.md first." not in prompt
         folder(tmp_path, description="Updated description.", body="Fresh instructions.")
         result = await execute(session, "load_skill", name="pdf-forms")
-        assert result.status == "ok"
+        assert result.status == ToolStatus.OK
         loaded = json.loads(result.text)
         assert loaded["instructions"] == "Fresh instructions."
         assert loaded["directory"] == str(root.resolve()) and "reference.md" in loaded["files"]
@@ -122,10 +123,10 @@ async def test_inline_skills_work_without_yaml_and_directory_sources_name_the_ex
     inline = Skill(name="notes", description="Write notes.", instructions="Keep notes concise.")
     async with Agent(model=ScriptedModel([]), plugins=[Skills(inline)]).session() as session:
         result = await execute(session, "load_skill", name="notes")
-        assert result.status == "ok" and "Keep notes concise." in result.text
+        assert result.status == ToolStatus.OK and "Keep notes concise." in result.text
         assert (
             await execute(session, "read_skill_file", name="notes", path="file.md")
-        ).status == "error"
+        ).status == ToolStatus.ERROR
     with pytest.raises(ConfigError, match=r"uv add 'harnessed\[skills\]'"):
         Skills(Skill.from_dir(tmp_path))
 
@@ -140,7 +141,7 @@ async def test_resource_paths_cannot_escape_the_selected_skill(tmp_path, path):
         model=ScriptedModel([]), plugins=[Skills(Skill.from_dir(root))]
     ).session() as session:
         result = await execute(session, "read_skill_file", name="pdf-forms", path=path)
-        assert result.status == "error" and "private" not in result.text
+        assert result.status == ToolStatus.ERROR and "private" not in result.text
 
 
 async def test_resource_symlinks_cannot_escape_and_scripts_are_only_read(tmp_path):
@@ -160,7 +161,7 @@ async def test_resource_symlinks_cannot_escape_and_scripts_are_only_read(tmp_pat
         model=ScriptedModel([]), plugins=[Skills(Skill.from_dir(root))]
     ).session() as session:
         result = await execute(session, "read_skill_file", name="pdf-forms", path="outside.txt")
-        assert result.status == "error" and "private" not in result.text
+        assert result.status == ToolStatus.ERROR and "private" not in result.text
         assert (
             await execute(session, "read_skill_file", name="pdf-forms", path="scripts/run.py")
         ).text == script
@@ -218,7 +219,7 @@ async def test_complete_skill_output_is_never_truncated_or_spilled_and_needs_no_
         ],
     ).session() as session:
         result = (await session.run("Load the notes skill")).tool_calls[0][1]
-        assert result.status == "ok" and result.spill is None and result.truncation is None
+        assert result.status == ToolStatus.OK and result.spill is None and result.truncation is None
         assert json.loads(result.text)["instructions"] == instructions
         assert not session.approvals.records
 

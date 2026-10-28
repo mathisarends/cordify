@@ -4,6 +4,7 @@ import asyncio
 
 from harnessed import Agent, events
 from harnessed.core.budget import ContextBudgetExceeded
+from harnessed.core.messages import Role
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import AgentLoop, Compaction, at_ratio, every_turns
 from harnessed.testing import ScriptedModel
@@ -28,7 +29,7 @@ async def compare(name, trigger):
     )
     async with app.session(name) as session:
         await session.run("GOAL: keep the public API stable. " + "detail " * 240)
-        goal = next(message for message in session.messages if message.role == "user")
+        goal = next(message for message in session.messages if message.role == Role.USER)
         prefix = session.events
         for index in range(1, 6):
             await session.run(f"task {index}: " + "detail " * 240)

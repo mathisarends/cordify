@@ -5,18 +5,19 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent, Inject, Plugin, SessionClosed, SessionStatus, StopReason
-from harnessed.core.messages import ApprovalAnswer, ToolCall, User
+from harnessed.core.messages import ApprovalAnswer, Assistant, ToolCall, User
 from harnessed.core.model import ModelChunk, ModelRequest
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
     AgentControlChanged,
-    AssistantChunk,
     AssistantMessage,
+    ControlState,
     ModelRequested,
     StepStart,
     ToolReturned,
+    TurnOutcome,
     TurnStart,
     UserMessage,
 )
@@ -309,15 +310,15 @@ async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_tu
         UserMessage(User("task")),
         ModelRequested(ModelRequest("model", (User("task"),))),
         AgentControlChanged(state),
-        AssistantChunk("visible", message_id="message"),
+        AssistantMessage(Assistant("visible", id="message"), interrupted=True),
     ):
         await log.append(event)
     await log.repair_interrupted()
-    paused = state == "pausing"
+    paused = state == ControlState.PAUSING
     assert log.control.state == ("paused" if paused else "active")
     assert log.turns[-1].closed is not paused
     if not paused:
-        assert log.turns[-1].reason == "aborted"
+        assert log.turns[-1].reason == TurnOutcome.ABORTED
     partial = next(e for e in log.events if isinstance(e, AssistantMessage))
     assert partial.interrupted and partial.message.text == "visible"
     prefix = log.events
@@ -326,7 +327,7 @@ async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_tu
     replay = SessionLog("replay", seed=[decode_event(encode_event(e)) for e in prefix])
     assert replay.control == log.control == RunControl(log.events)
     with pytest.raises(FrozenInstanceError):
-        replay.control.state = "active"
+        replay.control.state = ControlState.ACTIVE
 
 
 @pytest.mark.parametrize("state, keep_inbox", [("unknown", False), ("paused", True), ("active", 1)])
@@ -355,7 +356,7 @@ async def test_resume_from_a_durable_pause_listener_does_not_deadlock():
     async with Agent(model=ScriptedModel(["done"])).session() as session:
 
         async def resume(event):
-            if event.state == "paused":
+            if event.state == ControlState.PAUSED:
                 await session.resume()
 
         session.on(AgentControlChanged, resume)

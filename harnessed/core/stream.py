@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, final
 
 from pydantic import Field
 
+from harnessed.core.event_kinds import EventKind
 from harnessed.core.messages import ToolCall, ToolResult
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.session.control import SessionStatus
@@ -35,14 +36,16 @@ class CustomTransientEvent(TransientEvent):
 
 @dataclass(frozen=True, slots=True)
 class TextDelta(TransientEvent):
-    type: Literal["text.delta"] = field(default="text.delta", kw_only=True)
+    type: Literal[EventKind.TEXT_DELTA] = field(default=EventKind.TEXT_DELTA, kw_only=True)
     message_id: str
     text: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class ReasoningDelta(TransientEvent):
-    type: Literal["reasoning.delta"] = field(default="reasoning.delta", kw_only=True)
+    type: Literal[EventKind.REASONING_DELTA] = field(
+        default=EventKind.REASONING_DELTA, kw_only=True
+    )
     message_id: str
     text: str
 
@@ -50,21 +53,23 @@ class ReasoningDelta(TransientEvent):
 @dataclass(frozen=True, slots=True)
 class ToolStarted(TransientEvent):
     __hash__ = None
-    type: Literal["tool.started"] = field(default="tool.started", kw_only=True)
+    type: Literal[EventKind.TOOL_STARTED] = field(default=EventKind.TOOL_STARTED, kw_only=True)
     call: ToolCall
 
 
 @dataclass(frozen=True, slots=True)
 class ToolFinished(TransientEvent):
     __hash__ = None
-    type: Literal["tool.finished"] = field(default="tool.finished", kw_only=True)
+    type: Literal[EventKind.TOOL_FINISHED] = field(default=EventKind.TOOL_FINISHED, kw_only=True)
     call: ToolCall
     result: ToolResult
 
 
 @dataclass(frozen=True, slots=True)
 class ApprovalNeeded(TransientEvent):
-    type: Literal["approval.needed"] = field(default="approval.needed", kw_only=True)
+    type: Literal[EventKind.APPROVAL_NEEDED] = field(
+        default=EventKind.APPROVAL_NEEDED, kw_only=True
+    )
     request_id: str
     call: ToolCall
     reason: str
@@ -72,7 +77,7 @@ class ApprovalNeeded(TransientEvent):
 
 @dataclass(frozen=True, slots=True)
 class StatusChanged(TransientEvent):
-    type: Literal["session.status.changed"] = field(default="session.status.changed", kw_only=True)
+    type: Literal[EventKind.STATUS_CHANGED] = field(default=EventKind.STATUS_CHANGED, kw_only=True)
     status: SessionStatus
 
 
@@ -80,7 +85,7 @@ class StatusChanged(TransientEvent):
 @dataclass(frozen=True, slots=True)
 class TurnFinished[T](TransientEvent):
     __hash__ = None
-    type: Literal["turn.finished"] = field(default="turn.finished", kw_only=True)
+    type: Literal[EventKind.TURN_FINISHED] = field(default=EventKind.TURN_FINISHED, kw_only=True)
     result: RunResult[T]
 
 

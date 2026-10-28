@@ -12,10 +12,10 @@ from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
-    AssistantChunk,
     AssistantMessage,
     CompactionApplied,
     InboxAdded,
+    InboxMode,
     InboxRemoved,
     ModelRequested,
     ObservationPolicyApplied,
@@ -54,7 +54,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
 
     for turn in range(5):
         message = User(f"Task {turn}", id=f"input-{turn}")
-        await append(InboxAdded.create(message, "followup"))
+        await append(InboxAdded.create(message, InboxMode.FOLLOWUP))
         await append(TurnStart(str(turn), message.id))
         await append(UserMessage(message))
         for step in range(1, rng.randint(2, 5)):
@@ -100,7 +100,7 @@ async def test_last_and_since_indexes_match_the_log_suffix():
 
 
 @pytest.mark.parametrize("seed", range(5))
-async def test_incremental_observations_legacy_chunks_and_compaction_match_every_prefix(seed):
+async def test_incremental_observations_and_compaction_match_every_prefix(seed):
     rng = random.Random(seed)
     session = Session("observations")
     boundaries = []
@@ -131,8 +131,6 @@ async def test_incremental_observations_legacy_chunks_and_compaction_match_every
                     )
             await append(ModelRequested(ModelRequest("test", session.messages)))
             message_id = f"{turn}:{step}"
-            await append(AssistantChunk("hello ", message_id=message_id))
-            await append(AssistantChunk("world", message_id=message_id))
             await append(AssistantMessage(Assistant("hello world", id=message_id)))
             await append(StepEnd(str(turn), step))
         await append(TurnEnd(str(turn)))
@@ -145,22 +143,20 @@ async def test_incremental_observations_legacy_chunks_and_compaction_match_every
                     preserve_turns=("0",),
                 )
             )
-    assert session._history._chunks == {}
 
 
-async def test_completed_legacy_stream_does_not_enable_a_permanent_history_fold():
-    message = Assistant("legacy", id="old")
+async def test_completed_message_does_not_enable_a_permanent_history_fold():
+    message = Assistant("completed", id="old")
     session = Session(
-        "legacy",
+        "completed",
         seed=[
-            AssistantChunk("legacy", message_id="old"),
             AssistantMessage(message),
             ObservationPolicyApplied(2),
         ],
     )
 
     def unexpected_fold(events):
-        pytest.fail("Ordinary appends refolded the history after a completed legacy stream")
+        pytest.fail("Ordinary appends refolded the history after a completed message")
 
     session._history._fold = unexpected_fold
     for index in range(30):
@@ -177,4 +173,3 @@ async def test_completed_legacy_stream_does_not_enable_a_permanent_history_fold(
         await session.append(StepEnd(str(index), 1))
         await session.append(TurnEnd(str(index)))
         assert session.messages == derive_messages(session.events)
-    assert session._history._chunks == {}

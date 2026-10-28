@@ -4,6 +4,7 @@ import pytest
 
 from harnessed.kernel import Context, Emit, Inject, InjectMarker, Key, plugin
 from harnessed.kernel.di import binding_plan
+from harnessed.kernel.plugin import PluginStatus
 
 
 async def test_listener_resolves_current_service_without_repeating_reflection(monkeypatch):
@@ -44,7 +45,7 @@ async def test_optional_injection_does_not_create_a_hard_lifetime_dependency():
 
     async with Context() as ctx:
         handle = await ctx.plugin(optional())
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
         binding_plan(read).bind(ctx)
         remove = ctx.provide(str, "available")
         await ctx.settle()
@@ -55,7 +56,7 @@ async def test_optional_injection_does_not_create_a_hard_lifetime_dependency():
         bound = binding_plan(read).bind(ctx)
         read(*bound.args, **bound.kwargs)
         assert starts == [None]
-        assert handle.status == "active"
+        assert handle.status == PluginStatus.ACTIVE
     assert values == ["available", None]
 
 

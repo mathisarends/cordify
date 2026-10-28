@@ -12,6 +12,7 @@ from harnessed.core.approvals import ApprovalGate
 from harnessed.core.session.events import LogTailRecovered, ToolReturned
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals, JsonlSessions
+from harnessed.plugins.sessions import Durability
 from harnessed.testing import ScriptedModel
 
 
@@ -31,7 +32,7 @@ def compose(root: Path, model, answer):
             Approvals(default=PolicyDecision.ALLOW),
             tools,
             ApprovalGate(risky={"work"}, ask=answer, scope="demo-work"),
-            JsonlSessions(root, recover_tail=True, durability="fsync"),
+            JsonlSessions(root, recover_tail=True, durability=Durability.FSYNC),
         ],
     )
 

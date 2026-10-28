@@ -6,6 +6,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
 from harnessed.core.hooks import ReviewToolResult
+from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolReturned
@@ -25,12 +26,12 @@ def test_output_limit_includes_notice_keeps_head_and_tail_and_is_idempotent():
     limit = ToolOutputLimit(max_chars=512)
     unchanged = ToolResult("x" * 512, exit_code=0)
     assert limit.apply(unchanged) is unchanged
-    source = ToolResult("HEAD\n" + "x" * 2000 + "\nTAIL ERROR", "error", exit_code=3)
+    source = ToolResult("HEAD\n" + "x" * 2000 + "\nTAIL ERROR", ToolStatus.ERROR, exit_code=3)
     result = limit.apply(source)
     assert len(result.content) == 512
     assert result.content.startswith("HEAD\n") and result.content.endswith("\nTAIL ERROR")
     assert "Output truncated" in result.content and "offset/limit" in result.content
-    assert result.status == "error" and result.exit_code == 3 and result.is_error
+    assert result.status == ToolStatus.ERROR and result.exit_code == 3 and result.is_error
     assert result.truncation.original_chars == len(source.content)
     assert result.truncation.retained_chars < 512
     assert result.truncation.max_chars == 512
@@ -50,7 +51,7 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
     class FeaturesPlugin(Plugin):
         @tool
         async def cat(self) -> ToolResult:
-            return ToolResult(source, "error", exit_code=3)
+            return ToolResult(source, ToolStatus.ERROR, exit_code=3)
 
     features = FeaturesPlugin(name="large")
 
@@ -98,7 +99,7 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) <= 512 and result.truncation is not None
-        assert (result.status == "error") == (stage == "error")
+        assert (result.status == ToolStatus.ERROR) == (stage == "error")
         assert decode_event(
             json.loads(json.dumps(encode_event(ToolReturned("call", result))))
         ) == ToolReturned("call", result)
@@ -221,6 +222,6 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
         await agent.run("go")
         result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) == 1024 and "TAIL_ERROR" in result.content
-        assert result.status == "error" and result.exit_code == 3
+        assert result.status == ToolStatus.ERROR and result.exit_code == 3
         assert 500000 < result.truncation.original_chars < 1048576
         assert "stdout truncated" in result.content

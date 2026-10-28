@@ -8,7 +8,7 @@ from typing import Annotated, Protocol, Self
 
 from pydantic import Field, model_validator
 
-from harnessed.core.messages import ToolResult, result_content, to_dict
+from harnessed.core.messages import ToolResult, ToolStatus, result_content, to_dict
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
@@ -178,7 +178,7 @@ def proc_result(value: ProcResult) -> ToolResult:
     """Preserve process failure semantics without a shell dependency in core."""
     return ToolResult(
         result_content(to_dict(value)),
-        "ok" if value.returncode == 0 else "error",
+        ToolStatus.OK if value.returncode == 0 else ToolStatus.ERROR,
         exit_code=value.returncode,
     )
 

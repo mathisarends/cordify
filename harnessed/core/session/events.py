@@ -1,11 +1,13 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from time import time
-from typing import TYPE_CHECKING, Annotated, Any, Literal, Self, get_args
+from typing import Annotated, Any, Literal, Self, get_args
 from uuid import uuid4
 
 from pydantic import Field
 
+from harnessed.core.event_kinds import EventKind
 from harnessed.core.messages import (
     ApprovalAnswer,
     Assistant,
@@ -15,29 +17,86 @@ from harnessed.core.messages import (
     SpillRef,
     ToolCall,
     ToolResult,
+    ToolStatus,
     User,
     freeze,
 )
 from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema, StopReason
 from harnessed.kernel.events import Emit
 
-if TYPE_CHECKING:
-    pass
+
+class InboxMode(StrEnum):
+    FOLLOWUP = "followup"
+    STEER = "steer"
+    INJECT = "inject"
 
 
-type InboxMode = Literal["followup", "steer", "inject"]
-type InboxTarget = Literal["next-turn", "next-step"]
-type ControlState = Literal["active", "pausing", "paused", "stopping", "aborting", "stopped"]
-type StepOutcome = Literal["completed", "interrupted", "aborted", "context_limit"]
-type TurnOutcome = Literal[
-    "completed", "interrupted", "stopped", "max_steps", "rejected", "aborted", "discarded"
-]
+class InboxTarget(StrEnum):
+    NEXT_TURN = "next-turn"
+    NEXT_STEP = "next-step"
+
+
+class ControlState(StrEnum):
+    ACTIVE = "active"
+    PAUSING = "pausing"
+    PAUSED = "paused"
+    STOPPING = "stopping"
+    ABORTING = "aborting"
+    STOPPED = "stopped"
+
+
+class StepOutcome(StrEnum):
+    COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
+    ABORTED = "aborted"
+    CONTEXT_LIMIT = "context_limit"
+
+
+class TurnOutcome(StrEnum):
+    COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
+    STOPPED = "stopped"
+    MAX_STEPS = "max_steps"
+    REJECTED = "rejected"
+    ABORTED = "aborted"
+    DISCARDED = "discarded"
+
+
+class ContextLifetime(StrEnum):
+    SESSION = "session"
+    TURN = "turn"
+
+
+class ApprovalStatus(StrEnum):
+    ANSWERED = "answered"
+    INTERRUPTED = "interrupted"
+    UNAVAILABLE = "unavailable"
+
+
+class PolicySource(StrEnum):
+    POLICY = "policy"
+    APPROVAL = "approval"
+    UNAVAILABLE = "unavailable"
+
+
+class InboxRemovalReason(StrEnum):
+    CLAIMED = "claimed"
+    CANCELED = "canceled"
+    STOPPED = "stopped"
+    DISCARDED = "discarded"
+
+
+class SpillExpirationReason(StrEnum):
+    RETENTION = "retention"
+    MISSING = "missing"
+
+
 type Identifier = Annotated[str, Field(min_length=1)]
 type StepNumber = Annotated[int, Field(ge=1)]
 _INBOX_ROUTES: dict[InboxMode, tuple[InboxTarget, bool]] = {
-    "followup": ("next-turn", True),
-    "steer": ("next-step", True),
-    "inject": ("next-step", False),
+    InboxMode.FOLLOWUP: (InboxTarget.NEXT_TURN, True),
+    InboxMode.STEER: (InboxTarget.NEXT_STEP, True),
+    InboxMode.INJECT: (InboxTarget.NEXT_STEP, False),
 }
 
 
@@ -55,17 +114,27 @@ class DurableEvent(SessionEvent):
 class AgentControlChanged(SessionEvent):
     __hash__ = None
 
-    type: Literal["session.control.changed"] = field(
-        default="session.control.changed", kw_only=True
+    type: Literal[EventKind.AGENT_CONTROL_CHANGED] = field(
+        default=EventKind.AGENT_CONTROL_CHANGED, kw_only=True
     )
     state: ControlState
     keep_inbox: bool = False
 
     def __post_init__(self):
-        if self.state not in ("active", "pausing", "paused", "stopping", "aborting", "stopped"):
+        object.__setattr__(self, "state", ControlState(self.state))
+        if self.state not in (
+            ControlState.ACTIVE,
+            ControlState.PAUSING,
+            ControlState.PAUSED,
+            ControlState.STOPPING,
+            ControlState.ABORTING,
+            ControlState.STOPPED,
+        ):
             raise ValueError("Unknown agent control state")
         if type(self.keep_inbox) is not bool or (
-            self.keep_inbox and self.state not in ("stopping", "aborting", "stopped")
+            self.keep_inbox
+            and self.state
+            not in (ControlState.STOPPING, ControlState.ABORTING, ControlState.STOPPED)
         ):
             raise ValueError("keep_inbox applies only to stop or abort requests")
 
@@ -74,7 +143,9 @@ class AgentControlChanged(SessionEvent):
 class ApprovalRequested(SessionEvent):
     __hash__ = None
 
-    type: Literal["approval.requested"] = field(default="approval.requested", kw_only=True)
+    type: Literal[EventKind.APPROVAL_REQUESTED] = field(
+        default=EventKind.APPROVAL_REQUESTED, kw_only=True
+    )
     request_id: Identifier
     call: ToolCall
     reason: str
@@ -97,13 +168,16 @@ class ApprovalRequested(SessionEvent):
 class ApprovalResolved(SessionEvent):
     __hash__ = None
 
-    type: Literal["approval.resolved"] = field(default="approval.resolved", kw_only=True)
+    type: Literal[EventKind.APPROVAL_RESOLVED] = field(
+        default=EventKind.APPROVAL_RESOLVED, kw_only=True
+    )
     request_id: Identifier
     decision: ApprovalAnswer | None = None
-    status: Literal["answered", "interrupted", "unavailable"] = "answered"
+    status: ApprovalStatus = ApprovalStatus.ANSWERED
     reason: str | None = None
 
     def __post_init__(self):
+        object.__setattr__(self, "status", ApprovalStatus(self.status))
         if self.decision is not None:
             object.__setattr__(self, "decision", ApprovalAnswer(self.decision))
         if self.reason is not None and not isinstance(self.reason, str):
@@ -114,7 +188,7 @@ class ApprovalResolved(SessionEvent):
             ApprovalAnswer.ALWAYS,
         ):
             return
-        if self.status in ("interrupted", "unavailable") and self.decision is None:
+        if self.status in ("interrupted", ToolStatus.UNAVAILABLE) and self.decision is None:
             return
         raise ValueError("Approval must be answered, interrupted or unavailable")
 
@@ -123,7 +197,9 @@ class ApprovalResolved(SessionEvent):
 class ApprovalRevoked(SessionEvent):
     __hash__ = None
 
-    type: Literal["approval.revoked"] = field(default="approval.revoked", kw_only=True)
+    type: Literal[EventKind.APPROVAL_REVOKED] = field(
+        default=EventKind.APPROVAL_REVOKED, kw_only=True
+    )
     request_id: Identifier
     reason: str = "revoked"
 
@@ -132,16 +208,23 @@ class ApprovalRevoked(SessionEvent):
 class ToolPolicyApplied(SessionEvent):
     __hash__ = None
 
-    type: Literal["tool.policy.applied"] = field(default="tool.policy.applied", kw_only=True)
+    type: Literal[EventKind.TOOL_POLICY_APPLIED] = field(
+        default=EventKind.TOOL_POLICY_APPLIED, kw_only=True
+    )
     call_id: Identifier
     decision: PolicyDecision
-    source: Literal["policy", "approval", "unavailable"] = "policy"
+    source: PolicySource = PolicySource.POLICY
 
     def __post_init__(self):
+        object.__setattr__(self, "source", PolicySource(self.source))
         object.__setattr__(self, "decision", PolicyDecision(self.decision))
         if self.decision is PolicyDecision.ASK:
             raise ValueError("ToolPolicyApplied requires a final decision")
-        if self.source not in ("policy", "approval", "unavailable"):
+        if self.source not in (
+            PolicySource.POLICY,
+            PolicySource.APPROVAL,
+            PolicySource.UNAVAILABLE,
+        ):
             raise ValueError("Unknown tool policy source")
 
 
@@ -149,7 +232,9 @@ class ToolPolicyApplied(SessionEvent):
 class ToolExecutionStarted(SessionEvent):
     __hash__ = None
 
-    type: Literal["tool.execution.started"] = field(default="tool.execution.started", kw_only=True)
+    type: Literal[EventKind.TOOL_EXECUTION_STARTED] = field(
+        default=EventKind.TOOL_EXECUTION_STARTED, kw_only=True
+    )
     call_id: Identifier
 
 
@@ -157,7 +242,9 @@ class ToolExecutionStarted(SessionEvent):
 class LogTailRecovered(SessionEvent):
     __hash__ = None
 
-    type: Literal["session.log.recovered"] = field(default="session.log.recovered", kw_only=True)
+    type: Literal[EventKind.LOG_TAIL_RECOVERED] = field(
+        default=EventKind.LOG_TAIL_RECOVERED, kw_only=True
+    )
     offset: int
     discarded_bytes: int
     sha256: str
@@ -174,26 +261,10 @@ class LogTailRecovered(SessionEvent):
 
 
 @dataclass(frozen=True)
-class AssistantChunk(SessionEvent):
-    __hash__ = None
-
-    type: Literal["assistant.chunk"] = field(default="assistant.chunk", kw_only=True)
-    text: str = ""
-    reasoning: str = ""
-    message_id: str = field(kw_only=True)
-
-    def __post_init__(self):
-        if not isinstance(self.message_id, str) or not self.message_id:
-            raise ValueError("Assistant chunks require a message_id")
-        if not isinstance(self.text, str) or not isinstance(self.reasoning, str):
-            raise TypeError("Assistant chunk text and reasoning must be strings")
-
-
-@dataclass(frozen=True)
 class InboxAdded(SessionEvent):
     __hash__ = None
 
-    type: Literal["inbox.added"] = field(default="inbox.added", kw_only=True)
+    type: Literal[EventKind.INBOX_ADDED] = field(default=EventKind.INBOX_ADDED, kw_only=True)
     message: Message
     target: InboxTarget
     wakeup: bool
@@ -204,14 +275,16 @@ class InboxAdded(SessionEvent):
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
+        object.__setattr__(self, "mode", InboxMode(self.mode))
+        object.__setattr__(self, "target", InboxTarget(self.target))
         if self.mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {self.mode!r}")
         if type(self.wakeup) is not bool or (self.target, self.wakeup) != _INBOX_ROUTES[self.mode]:
             raise ValueError(f"Inbox routing does not match {self.mode!r}")
-        allowed = ("user", "system") if self.mode == "inject" else ("user",)
+        allowed = ("user", "system") if self.mode == InboxMode.INJECT else ("user",)
         if self.message.role not in allowed:
             raise ValueError(f"{self.mode} requires one of these roles: {allowed}")
-        if self.output_schema is not None and self.mode != "followup":
+        if self.output_schema is not None and self.mode != InboxMode.FOLLOWUP:
             raise ValueError("Only a new turn can declare an output contract")
         object.__setattr__(self, "context", tuple(self.context))
         object.__setattr__(self, "settings", freeze(self.settings))
@@ -245,16 +318,16 @@ class InboxAdded(SessionEvent):
 class InboxRemoved(SessionEvent):
     __hash__ = None
 
-    type: Literal["inbox.removed"] = field(default="inbox.removed", kw_only=True)
+    type: Literal[EventKind.INBOX_REMOVED] = field(default=EventKind.INBOX_REMOVED, kw_only=True)
     message_id: Identifier
-    reason: Literal["claimed", "canceled", "stopped", "discarded"] = "claimed"
+    reason: InboxRemovalReason = InboxRemovalReason.CLAIMED
 
 
 @dataclass(frozen=True)
 class TurnStart(SessionEvent):
     __hash__ = None
 
-    type: Literal["turn.started"] = field(default="turn.started", kw_only=True)
+    type: Literal[EventKind.TURN_START] = field(default=EventKind.TURN_START, kw_only=True)
     turn_id: Identifier
     input_id: str | None = None
     settings: Mapping[str, Any] = field(default_factory=dict)
@@ -268,7 +341,7 @@ class TurnStart(SessionEvent):
 class StepStart(SessionEvent):
     __hash__ = None
 
-    type: Literal["step.started"] = field(default="step.started", kw_only=True)
+    type: Literal[EventKind.STEP_START] = field(default=EventKind.STEP_START, kw_only=True)
     turn_id: Identifier
     step: StepNumber
 
@@ -277,7 +350,7 @@ class StepStart(SessionEvent):
 class SystemMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["message.system"] = field(default="message.system", kw_only=True)
+    type: Literal[EventKind.SYSTEM_MESSAGE] = field(default=EventKind.SYSTEM_MESSAGE, kw_only=True)
     content: str
 
 
@@ -285,7 +358,7 @@ class SystemMessage(SessionEvent):
 class UserMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["message.user"] = field(default="message.user", kw_only=True)
+    type: Literal[EventKind.USER_MESSAGE] = field(default=EventKind.USER_MESSAGE, kw_only=True)
     message: User
 
     def __post_init__(self):
@@ -297,9 +370,11 @@ class UserMessage(SessionEvent):
 class ContextMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["message.context"] = field(default="message.context", kw_only=True)
+    type: Literal[EventKind.CONTEXT_MESSAGE] = field(
+        default=EventKind.CONTEXT_MESSAGE, kw_only=True
+    )
     message: Message
-    lifetime: Literal["session", "turn"] = "session"
+    lifetime: ContextLifetime = ContextLifetime.SESSION
     turn_id: str | None = None
 
 
@@ -307,7 +382,9 @@ class ContextMessage(SessionEvent):
 class ContextValueChanged(SessionEvent):
     __hash__ = None
 
-    type: Literal["context.changed"] = field(default="context.changed", kw_only=True)
+    type: Literal[EventKind.CONTEXT_VALUE_CHANGED] = field(
+        default=EventKind.CONTEXT_VALUE_CHANGED, kw_only=True
+    )
     name: str
     value: str | None
     id: str = field(default_factory=lambda: uuid4().hex)
@@ -317,7 +394,9 @@ class ContextValueChanged(SessionEvent):
 class ObservationRecorded(SessionEvent):
     __hash__ = None
 
-    type: Literal["observation.recorded"] = field(default="observation.recorded", kw_only=True)
+    type: Literal[EventKind.OBSERVATION_RECORDED] = field(
+        default=EventKind.OBSERVATION_RECORDED, kw_only=True
+    )
     observation: Observation
     turn_id: Identifier
     step: StepNumber
@@ -327,7 +406,9 @@ class ObservationRecorded(SessionEvent):
 class ModelRequested(SessionEvent):
     __hash__ = None
 
-    type: Literal["model.requested"] = field(default="model.requested", kw_only=True)
+    type: Literal[EventKind.MODEL_REQUESTED] = field(
+        default=EventKind.MODEL_REQUESTED, kw_only=True
+    )
     request: ModelRequest
 
 
@@ -335,7 +416,9 @@ class ModelRequested(SessionEvent):
 class ModelUsageRecorded(SessionEvent):
     __hash__ = None
 
-    type: Literal["model.usage"] = field(default="model.usage", kw_only=True)
+    type: Literal[EventKind.MODEL_USAGE_RECORDED] = field(
+        default=EventKind.MODEL_USAGE_RECORDED, kw_only=True
+    )
     usage: ModelUsage
 
 
@@ -343,7 +426,7 @@ class ModelUsageRecorded(SessionEvent):
 class CacheMetrics(SessionEvent):
     __hash__ = None
 
-    type: Literal["model.cache"] = field(default="model.cache", kw_only=True)
+    type: Literal[EventKind.CACHE_METRICS] = field(default=EventKind.CACHE_METRICS, kw_only=True)
     usage: ModelUsage
     hit_rate: float | None = None
 
@@ -355,7 +438,9 @@ class CacheMetrics(SessionEvent):
 class CompactionApplied(SessionEvent):
     __hash__ = None
 
-    type: Literal["compaction.applied"] = field(default="compaction.applied", kw_only=True)
+    type: Literal[EventKind.COMPACTION_APPLIED] = field(
+        default=EventKind.COMPACTION_APPLIED, kw_only=True
+    )
     through: int
     summary: str
     preserve_turns: tuple[str, ...] = ()
@@ -384,8 +469,8 @@ class CompactionApplied(SessionEvent):
 class ObservationPolicyApplied(SessionEvent):
     __hash__ = None
 
-    type: Literal["observation.policy.applied"] = field(
-        default="observation.policy.applied", kw_only=True
+    type: Literal[EventKind.OBSERVATION_POLICY_APPLIED] = field(
+        default=EventKind.OBSERVATION_POLICY_APPLIED, kw_only=True
     )
     max_summaries: int | None = None
 
@@ -400,7 +485,7 @@ class ObservationPolicyApplied(SessionEvent):
 class SpillCreated(SessionEvent):
     __hash__ = None
 
-    type: Literal["spill.created"] = field(default="spill.created", kw_only=True)
+    type: Literal[EventKind.SPILL_CREATED] = field(default=EventKind.SPILL_CREATED, kw_only=True)
     call_id: Identifier
     ref: SpillRef
     tokens: int
@@ -409,16 +494,16 @@ class SpillCreated(SessionEvent):
 @dataclass(frozen=True)
 class SpillExpired(SessionEvent):
     __hash__ = None
-    type: Literal["spill.expired"] = field(default="spill.expired", kw_only=True)
+    type: Literal[EventKind.SPILL_EXPIRED] = field(default=EventKind.SPILL_EXPIRED, kw_only=True)
     ref: SpillRef
-    reason: Literal["retention", "missing"] = "retention"
+    reason: SpillExpirationReason = SpillExpirationReason.RETENTION
 
 
 @dataclass(frozen=True)
 class RuleTriggered(SessionEvent):
     __hash__ = None
 
-    type: Literal["rule.triggered"] = field(default="rule.triggered", kw_only=True)
+    type: Literal[EventKind.RULE_TRIGGERED] = field(default=EventKind.RULE_TRIGGERED, kw_only=True)
     rule: str
     call_id: Identifier
     occurrence: int
@@ -432,7 +517,7 @@ class RuleTriggered(SessionEvent):
 class RuleEvaluated(SessionEvent):
     __hash__ = None
 
-    type: Literal["rule.evaluated"] = field(default="rule.evaluated", kw_only=True)
+    type: Literal[EventKind.RULE_EVALUATED] = field(default=EventKind.RULE_EVALUATED, kw_only=True)
     rule: str
     key: str
     occurrence: int
@@ -442,7 +527,9 @@ class RuleEvaluated(SessionEvent):
 class AssistantMessage(SessionEvent):
     __hash__ = None
 
-    type: Literal["message.assistant"] = field(default="message.assistant", kw_only=True)
+    type: Literal[EventKind.ASSISTANT_MESSAGE] = field(
+        default=EventKind.ASSISTANT_MESSAGE, kw_only=True
+    )
     message: Assistant
     interrupted: bool = False
     stop_reason: StopReason | None = None
@@ -458,7 +545,7 @@ class AssistantMessage(SessionEvent):
 class ToolCalled(SessionEvent):
     __hash__ = None
 
-    type: Literal["tool.called"] = field(default="tool.called", kw_only=True)
+    type: Literal[EventKind.TOOL_CALLED] = field(default=EventKind.TOOL_CALLED, kw_only=True)
     call: ToolCall
 
     @property
@@ -470,7 +557,7 @@ class ToolCalled(SessionEvent):
 class ToolReturned(SessionEvent):
     __hash__ = None
 
-    type: Literal["tool.returned"] = field(default="tool.returned", kw_only=True)
+    type: Literal[EventKind.TOOL_RETURNED] = field(default=EventKind.TOOL_RETURNED, kw_only=True)
     call_id: Identifier
     result: ToolResult
 
@@ -479,7 +566,7 @@ class ToolReturned(SessionEvent):
 class ToolCompleted(SessionEvent):
     __hash__ = None
 
-    type: Literal["tool.completed"] = field(default="tool.completed", kw_only=True)
+    type: Literal[EventKind.TOOL_COMPLETED] = field(default=EventKind.TOOL_COMPLETED, kw_only=True)
     call_id: Identifier
     result: ToolResult
 
@@ -488,7 +575,7 @@ class ToolCompleted(SessionEvent):
 class ToolProgress(SessionEvent):
     __hash__ = None
 
-    type: Literal["tool.progress"] = field(default="tool.progress", kw_only=True)
+    type: Literal[EventKind.TOOL_PROGRESS] = field(default=EventKind.TOOL_PROGRESS, kw_only=True)
     call_id: Identifier
     text: str
 
@@ -497,13 +584,14 @@ class ToolProgress(SessionEvent):
 class StepEnd(SessionEvent):
     __hash__ = None
 
-    type: Literal["step.finished"] = field(default="step.finished", kw_only=True)
+    type: Literal[EventKind.STEP_END] = field(default=EventKind.STEP_END, kw_only=True)
     turn_id: Identifier
     step: StepNumber
-    reason: StepOutcome = "completed"
+    reason: StepOutcome = StepOutcome.COMPLETED
 
     def __post_init__(self):
-        if self.reason not in get_args(StepOutcome.__value__):
+        object.__setattr__(self, "reason", StepOutcome(self.reason))
+        if self.reason not in StepOutcome:
             raise ValueError("Unknown step outcome")
 
 
@@ -511,19 +599,20 @@ class StepEnd(SessionEvent):
 class TurnEnd(SessionEvent):
     __hash__ = None
 
-    type: Literal["turn.ended"] = field(default="turn.ended", kw_only=True)
+    type: Literal[EventKind.TURN_END] = field(default=EventKind.TURN_END, kw_only=True)
     turn_id: Identifier
-    reason: TurnOutcome = "completed"
+    reason: TurnOutcome = TurnOutcome.COMPLETED
 
     def __post_init__(self):
+        object.__setattr__(self, "reason", TurnOutcome(self.reason))
         if self.reason not in (
-            "completed",
-            "interrupted",
-            "stopped",
-            "max_steps",
-            "rejected",
-            "aborted",
-            "discarded",
+            TurnOutcome.COMPLETED,
+            TurnOutcome.INTERRUPTED,
+            TurnOutcome.STOPPED,
+            TurnOutcome.MAX_STEPS,
+            TurnOutcome.REJECTED,
+            TurnOutcome.ABORTED,
+            TurnOutcome.DISCARDED,
         ):
             raise ValueError("Unknown turn outcome")
 
@@ -533,7 +622,9 @@ class OutputValidated(SessionEvent):
     """An accepted JSON answer, tied to the exact assistant message it validates."""
 
     __hash__ = None
-    type: Literal["output.validated"] = field(default="output.validated", kw_only=True)
+    type: Literal[EventKind.OUTPUT_VALIDATED] = field(
+        default=EventKind.OUTPUT_VALIDATED, kw_only=True
+    )
     turn_id: Identifier
     schema_id: Identifier
     message_id: Identifier
@@ -550,8 +641,8 @@ class OutputValidationFailed(SessionEvent):
     """A bounded repair attempt; rejected input values are never echoed here."""
 
     __hash__ = None
-    type: Literal["output.validation.failed"] = field(
-        default="output.validation.failed", kw_only=True
+    type: Literal[EventKind.OUTPUT_VALIDATION_FAILED] = field(
+        default=EventKind.OUTPUT_VALIDATION_FAILED, kw_only=True
     )
     turn_id: Identifier
     schema_id: Identifier
@@ -571,7 +662,6 @@ type LogEvent = Annotated[
         | ToolPolicyApplied
         | ToolExecutionStarted
         | LogTailRecovered
-        | AssistantChunk
         | InboxAdded
         | InboxRemoved
         | TurnStart

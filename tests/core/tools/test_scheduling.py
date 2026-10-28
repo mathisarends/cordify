@@ -6,7 +6,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import Inject, Plugin, ToolCall, ToolContext, plugin, tool
 from harnessed.core.hooks import ReviewToolResult
-from harnessed.core.messages import Assistant, PolicyDecision
+from harnessed.core.messages import Assistant, PolicyDecision, Role
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -79,7 +79,7 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
             "finished 1",
             "finished 0",
         ]
-        assert [m.tool_call_id for m in model.requests[-1].messages if m.role == "tool"] == [
+        assert [m.tool_call_id for m in model.requests[-1].messages if m.role == Role.TOOL] == [
             c.id for c in calls
         ]
         restored = tuple(decode_event(encode_event(event)) for event in events)

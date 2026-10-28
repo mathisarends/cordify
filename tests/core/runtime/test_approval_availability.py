@@ -6,13 +6,19 @@ from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Plugin, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable, Approver, CallbackApprover
 from harnessed.core.hooks import ApprovalRequest, ToolPolicy
-from harnessed.core.messages import PolicyDecision
+from harnessed.core.messages import PolicyDecision, ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import ApprovalResolved, ToolExecutionStarted, ToolReturned
+from harnessed.core.session.events import (
+    ApprovalResolved,
+    ApprovalStatus,
+    ToolExecutionStarted,
+    ToolReturned,
+)
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.kernel import hook
+from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import AgentLoop, Approvals, JsonlSessions, Service
 from harnessed.testing import ScriptedModel
 
@@ -39,13 +45,13 @@ async def test_removing_an_approver_never_removes_the_scoped_guard():
     ).session() as session:
         guard = await session.use(ApprovalGate(risky={"publish"}))
         provider = await session.use(Service(Approver, CallbackApprover(lambda call: True)))
-        assert (await session.run("publish")).tool_calls[0][1].status == "ok"
+        assert (await session.run("publish")).tool_calls[0][1].status == ToolStatus.OK
         await provider.aclose()
         await session.ctx.settle()
-        assert guard.status == "active"
-        assert (await session.run("publish")).tool_calls[0][1].status == "unavailable"
+        assert guard.status == PluginStatus.ACTIVE
+        assert (await session.run("publish")).tool_calls[0][1].status == ToolStatus.UNAVAILABLE
         await session.use(Service(Approver, CallbackApprover(lambda call: True)))
-        assert (await session.run("publish")).tool_calls[0][1].status == "ok"
+        assert (await session.run("publish")).tool_calls[0][1].status == ToolStatus.OK
         assert effects == ["published", "published"]
 
 
@@ -77,7 +83,7 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
         assert executed == ["safe"]
         approvals = agent.log.approvals
         assert not approvals.pending and (not approvals.grants)
-        assert approvals.records[0].resolution.status == "unavailable"
+        assert approvals.records[0].resolution.status == ApprovalStatus.UNAVAILABLE
         assert approvals.records[0].decision is None
         replay = Session(
             "replay", seed=tuple(decode_event(encode_event(e)) for e in agent.log.events)
@@ -92,7 +98,7 @@ async def test_direct_sdk_approval_raises_typed_unavailable_and_leaves_no_pendin
         with pytest.raises(ApprovalUnavailable, match="No approval responder"):
             await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
         record = agent.log.approvals.records[-1]
-        assert record.resolution.status == "unavailable" and record.decision is None
+        assert record.resolution.status == ApprovalStatus.UNAVAILABLE and record.decision is None
         assert not agent.log.approvals.pending
 
 
@@ -176,7 +182,7 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
             await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
         assert stopped.is_set()
         assert not agent.log.approvals.pending
-        assert agent.log.approvals.records[-1].resolution.status == "unavailable"
+        assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.UNAVAILABLE
 
 
 @pytest.mark.parametrize("answer", [None, PolicyDecision.ASK, "allow", ValueError("disconnected")])
@@ -194,7 +200,7 @@ async def test_responder_abstention_invalid_answers_and_failures_are_unavailable
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
         record = agent.log.approvals.records[-1]
-        assert record.resolution.status == "unavailable" and record.resolution.reason
+        assert record.resolution.status == ApprovalStatus.UNAVAILABLE and record.resolution.reason
         assert not record.pending and (not record.is_grant)
 
 
@@ -231,7 +237,7 @@ async def test_gate_stays_active_after_approver_service_is_removed():
         await agent.ctx.settle()
         await agent.run("second")
         assert executed == [True]
-        assert agent.log.approvals.records[-1].resolution.status == "unavailable"
+        assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.UNAVAILABLE
         assert len([e for e in agent.log.events if isinstance(e, ToolExecutionStarted)]) == 1
 
 
@@ -324,6 +330,6 @@ def test_approval_timeout_must_be_finite_and_positive(timeout):
 
 def test_unavailable_resolution_is_not_an_answer_or_a_persistent_permission():
     with pytest.raises(ValueError):
-        ApprovalResolved("request", ApprovalAnswer.ALLOW, status="unavailable")
+        ApprovalResolved("request", ApprovalAnswer.ALLOW, status=ApprovalStatus.UNAVAILABLE)
     with pytest.raises(TypeError):
         ApprovalResolved("request", ApprovalAnswer.ALLOW, reason=123)

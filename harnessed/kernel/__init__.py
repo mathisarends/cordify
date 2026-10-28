@@ -15,7 +15,7 @@ from .events import (
     on,
 )
 from .hooks import Next
-from .plugin import PluginHandle, PluginLike, PluginSpec, hook, plugin
+from .plugin import PluginHandle, PluginLike, PluginSpec, PluginStatus, hook, plugin
 
 __all__ = [
     "Bail",
@@ -38,6 +38,7 @@ __all__ = [
     "PluginHandle",
     "PluginLike",
     "PluginSpec",
+    "PluginStatus",
     "Priority",
     "Registration",
     "Waterfall",
