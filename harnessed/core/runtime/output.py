@@ -1,5 +1,3 @@
-"""Attach response contracts and validate answers without executing output tools."""
-
 from __future__ import annotations
 
 from dataclasses import replace

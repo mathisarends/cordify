@@ -1,5 +1,3 @@
-"""Workspace filesystem contract, implementation and opt-in tool plugin."""
-
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass

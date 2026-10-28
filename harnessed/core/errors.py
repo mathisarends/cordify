@@ -1,6 +1,3 @@
-"""Host-facing errors, independent of provider SDKs."""
-
-
 class HarnessedError(Exception):
     pass
 

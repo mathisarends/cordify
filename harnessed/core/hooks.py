@@ -1,5 +1,3 @@
-"""Typed, in-memory extension points; persistable events live in session.events."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field

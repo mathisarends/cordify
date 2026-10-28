@@ -1,5 +1,3 @@
-"""Changed context values are durable facts, separate from fixed instructions."""
-
 import asyncio
 import inspect
 from collections.abc import Awaitable, Callable

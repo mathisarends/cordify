@@ -1,5 +1,3 @@
-"""Manage stored conversations without starting a model or tool runtime."""
-
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 

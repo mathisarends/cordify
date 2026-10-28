@@ -1,5 +1,3 @@
-"""A durable run queue and steering service, independent of the model driver."""
-
 import asyncio
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import asynccontextmanager

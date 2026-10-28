@@ -1,7 +1,3 @@
-"""Validated per-tool result policy, independent of plugin implementations."""
-
-from __future__ import annotations
-
 from enum import Enum
 from typing import Annotated
 

@@ -1,5 +1,3 @@
-"""Incremental history, observation retention and legacy stream normalization."""
-
 from collections.abc import Callable, Iterable
 from xml.sax.saxutils import escape, quoteattr
 

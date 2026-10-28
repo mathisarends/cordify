@@ -1,5 +1,3 @@
-"""The only boundary that imports PydanticAI; provider SDKs remain optional."""
-
 from __future__ import annotations
 
 import json

@@ -1,5 +1,3 @@
-"""The application SDK; optional features and model contracts have their own facades."""
-
 import logging
 from typing import TYPE_CHECKING
 

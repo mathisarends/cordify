@@ -1,5 +1,3 @@
-"""Validated options consumed by a single session's loop."""
-
 from collections.abc import Iterable, Mapping
 from dataclasses import field
 from typing import Annotated, Any, Literal, TypedDict

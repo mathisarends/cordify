@@ -1,5 +1,3 @@
-"""Registration-time injection plans; resolution always uses the current scope."""
-
 import inspect
 import types
 from collections.abc import Callable, Mapping

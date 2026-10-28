@@ -1,5 +1,3 @@
-"""Reusable agent configuration, expressed entirely as public plugins."""
-
 from __future__ import annotations
 
 from collections.abc import Iterable

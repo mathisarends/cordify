@@ -1,5 +1,3 @@
-"""Immutable recipes, independent of runtime handles and contexts."""
-
 from collections.abc import AsyncGenerator, Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType

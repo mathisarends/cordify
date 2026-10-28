@@ -1,5 +1,3 @@
-"""Provider-independent contracts and the optional PydanticAI integration."""
-
 from typing import TYPE_CHECKING
 
 from harnessed._exports import exported

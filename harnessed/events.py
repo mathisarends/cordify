@@ -1,5 +1,3 @@
-"""Public durable session records and live notifications."""
-
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalRequested,

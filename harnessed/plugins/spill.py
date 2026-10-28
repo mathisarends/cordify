@@ -1,5 +1,3 @@
-"""Bounded, session-owned tool output spill with durable retention decisions."""
-
 from __future__ import annotations
 
 import asyncio

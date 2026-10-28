@@ -1,7 +1,3 @@
-"""Session-owned text artifacts shared by storage backends and optional features."""
-
-from __future__ import annotations
-
 from dataclasses import dataclass
 from time import time_ns
 from typing import Annotated, Protocol

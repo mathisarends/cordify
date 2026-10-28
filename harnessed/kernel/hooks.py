@@ -1,5 +1,3 @@
-"""Typed declarations for observer and middleware callback signatures."""
-
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable

@@ -1,5 +1,3 @@
-"""Live events that are deliberately separate from the durable session log."""
-
 from __future__ import annotations
 
 import asyncio

@@ -1,5 +1,3 @@
-"""One declaration path for class methods and functional tool recipes."""
-
 from collections.abc import Callable
 from typing import Any, overload
 

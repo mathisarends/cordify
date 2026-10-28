@@ -1,5 +1,3 @@
-"""Immutable conversation values and lossless JSON helpers."""
-
 from __future__ import annotations
 
 import json

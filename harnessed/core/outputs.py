@@ -1,7 +1,3 @@
-"""Compile response contracts without importing a provider SDK or executing log data."""
-
-from __future__ import annotations
-
 import json
 from collections import Counter
 from contextlib import contextmanager

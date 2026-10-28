@@ -1,5 +1,3 @@
-"""Bounded command execution, process-tree ownership and an opt-in tool plugin."""
-
 import asyncio
 import os
 import signal

@@ -1,5 +1,3 @@
-"""Assertions over completed turn results, independent of the model adapter."""
-
 from typing import TYPE_CHECKING
 
 from harnessed.core.messages import ToolCall, ToolResult, freeze

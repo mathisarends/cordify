@@ -1,5 +1,3 @@
-"""Offline helpers; production code never imports this package."""
-
 from .assertions import assert_tool_called
 from .compaction import ExtractiveSummarizer
 from .fakes import FakeShell, InMemoryFS, InMemoryPersistence

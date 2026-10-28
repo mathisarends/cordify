@@ -1,5 +1,14 @@
 # Repository guidance
 
+## Annotations and documentation
+
+Use `from __future__ import annotations` only when a module needs deferred names,
+such as forward references or types imported under `TYPE_CHECKING`. Python 3.12+
+already supports the native generic syntax; that alone needs no future import.
+Prefer `Self` for constructors returning the current class. Avoid boilerplate
+module docstrings that restate the filename. Document public behavior and useful
+invariants where readers need them.
+
 ## Imports
 
 Use absolute `harnessed` imports when crossing package boundaries. Parent-relative
@@ -35,7 +44,8 @@ Ruff enforces the parent-relative import rule with `TID252` and
 the same rule also runs through pre-commit and CI.
 
 Keep production imports at module scope. Ruff enforces `PLC0415`; the explicit
-exception is `models/pydantic_ai.py`, which delays optional SDK imports. Test-local
+exceptions are `models/pydantic_ai.py` (optional SDK) and `plugins/skills.py`
+(optional YAML), which delay their extra's imports. Test-local
 imports used for optional integration and import-failure tests are also exempt.
 Do not add local imports to work around dependency cycles; move shared types or
 change the dependency direction instead.

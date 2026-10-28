@@ -1,7 +1,3 @@
-"""Durable run-control requests and the live session state machine."""
-
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager

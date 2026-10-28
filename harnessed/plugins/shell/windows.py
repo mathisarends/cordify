@@ -4,8 +4,6 @@ See https://learn.microsoft.com/windows/win32/procthread/job-objects.
 The job denies breakaway and kills all descendants when its handle closes.
 """
 
-from __future__ import annotations
-
 import ctypes
 import sys
 from ctypes import wintypes

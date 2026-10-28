@@ -1,5 +1,3 @@
-"""Deterministic model values for offline application tests."""
-
 import asyncio
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Iterable

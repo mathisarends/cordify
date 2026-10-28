@@ -1,5 +1,3 @@
-"""The default loop is configured and installed through the ordinary plugin API."""
-
 from dataclasses import replace
 from typing import Annotated, Literal, Protocol
 

@@ -1,5 +1,3 @@
-"""Composable compaction triggers; the mechanism and manual API live in core."""
-
 from __future__ import annotations
 
 import inspect

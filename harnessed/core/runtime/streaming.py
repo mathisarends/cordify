@@ -1,5 +1,3 @@
-"""A turn-scoped UI view over raw events and an approval responder with the same lifetime."""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator

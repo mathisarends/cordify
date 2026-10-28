@@ -1,5 +1,3 @@
-"""Owned instruction snapshots; changing facts belong to DynamicContext."""
-
 from dataclasses import dataclass
 
 from pydantic import ConfigDict, TypeAdapter

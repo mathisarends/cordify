@@ -1,5 +1,3 @@
-"""An explicitly selected, deterministic fake for offline compaction tests."""
-
 import json
 
 from harnessed.core.budget import truncate

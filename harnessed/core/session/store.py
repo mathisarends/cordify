@@ -1,5 +1,3 @@
-"""Session storage and exclusive live ownership, independent of providers."""
-
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Annotated, Protocol

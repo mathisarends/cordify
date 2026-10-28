@@ -1,5 +1,3 @@
-"""A small tracing seam; exporters can implement it without a core dependency."""
-
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any, Protocol
 

@@ -1,5 +1,3 @@
-"""One model request and its tool execution, independent of inbox scheduling."""
-
 from __future__ import annotations
 
 from contextvars import ContextVar

@@ -1,5 +1,3 @@
-"""Public runtime hook contracts."""
-
 from harnessed.core.hooks import (
     ApprovalRequest,
     ConfigureRequest,

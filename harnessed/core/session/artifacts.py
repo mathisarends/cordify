@@ -1,7 +1,3 @@
-"""Copy only live, content-verified artifact references from a fork's log prefix."""
-
-from __future__ import annotations
-
 import hashlib
 from collections.abc import Iterable
 
