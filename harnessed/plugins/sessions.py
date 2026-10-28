@@ -14,6 +14,12 @@ from harnessed.core.errors import SessionLocked
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.codec import CURRENT_VERSION, decode_event, encode_event
 from harnessed.core.session.events import LogTailRecovered, SessionEvent
+from harnessed.core.session.files import (
+    SessionFiles,
+    StoredFile,
+    validate_file_key,
+    validate_file_range,
+)
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionPersistence, SessionStore, validate_session_id
 from harnessed.kernel import Context, plugin, run_sync
@@ -270,6 +276,10 @@ class _JsonlStore:
     def __init__(self, config: JsonlSessions.Config):
         self.config = config
 
+    def files(self, session_id: str) -> SessionFiles:
+        session_id = validate_session_id(session_id)
+        return DirectoryFiles(self.config.root / f"{session_id}.files")
+
     @asynccontextmanager
     async def open(self, session_id: str) -> AsyncGenerator[SessionPersistence]:
         persistence = await run_sync(partial(JsonlPersistence, **self.config.model_dump()))
@@ -277,6 +287,88 @@ class _JsonlStore:
             yield persistence
         finally:
             await persistence.aclose()
+
+
+class DirectoryFiles:
+    """Atomic, cancellation-drained text artifacts in one session directory."""
+
+    def __init__(self, root: str | Path):
+        self.root = Path(root)
+        self._operation = asyncio.Lock()
+
+    def _path(self, key: str) -> Path:
+        root = self.root.resolve()
+        path = (root / validate_file_key(key)).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("Session file path is outside its namespace")
+        return path
+
+    async def put(self, key: str, text: str) -> None:
+        key = validate_file_key(key)
+        if not isinstance(text, str):
+            raise TypeError("Session file content must be text")
+        async with self._operation:
+            await run_sync(partial(self._put, key, text))
+
+    def _put(self, key: str, text: str) -> None:
+        path = self._path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            with temporary.open("w", encoding="utf-8", newline="") as stream:
+                stream.write(text)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    async def read(self, key: str, *, offset: int = 0, limit: int = 4000) -> str:
+        key = validate_file_key(key)
+        offset, limit = validate_file_range(offset, limit)
+        async with self._operation:
+            return await run_sync(partial(self._read, key, offset, limit))
+
+    def _read(self, key: str, offset: int, limit: int) -> str:
+        with self._path(key).open(encoding="utf-8", newline="") as stream:
+            remaining = offset
+            while remaining:
+                skipped = stream.read(min(remaining, 65_536))
+                if not skipped:
+                    return ""
+                remaining -= len(skipped)
+            return stream.read(limit)
+
+    async def remove(self, key: str) -> None:
+        key = validate_file_key(key)
+        async with self._operation:
+            await run_sync(lambda: self._path(key).unlink(missing_ok=True))
+
+    async def entries(self) -> tuple[StoredFile, ...]:
+        async with self._operation:
+            return await run_sync(self._entries)
+
+    def _entries(self) -> tuple[StoredFile, ...]:
+        root, result = self.root.resolve(), []
+        if not root.exists():
+            return ()
+        for directory, children, names in os.walk(root, followlinks=False):
+            children[:] = [
+                name
+                for name in children
+                if not (path := Path(directory) / name).is_symlink()
+                and not path.is_junction()
+                and path.resolve().is_relative_to(root)
+            ]
+            for name in names:
+                key = (Path(directory) / name).relative_to(root).as_posix()
+                try:
+                    path = self._path(key)
+                except ValueError:
+                    continue
+                metadata = path.stat()
+                result.append(StoredFile(key, metadata.st_size, metadata.st_mtime_ns))
+        return tuple(sorted(result, key=lambda item: item.key))
 
 
 @plugin()

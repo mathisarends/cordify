@@ -108,3 +108,16 @@ seconds. Removing an already claimed or unknown ID raises `KeyError`. Removal
 is durable and only discards that queued turn. `steer()` returns its `InboxItem`;
 it adds a message to the running turn's next step, or wakes a new turn when idle.
 Plugins can inject `SessionInbox` to steer or inspect inputs without the driver.
+
+## Session-owned files
+
+Storage also provides a narrow `SessionFiles` service for optional features.
+MemorySessions retains these artifacts with its in-memory conversation; JsonlSessions
+keeps them under `<session-id>.files/` beside the log. Different session IDs have
+separate namespaces. Relative keys reject traversal, absolute paths and platform
+reserved names. Character ranges preserve Unicode and exact newline sequences.
+
+Disk reads, atomic replacements, flushes and directory scans run off the event
+loop. Cancellation drains an in-flight worker before a following operation obtains
+the same storage lock. The optional Spill plugin can build retention and content
+addressing over this shared storage contract without importing the JSONL plugin.

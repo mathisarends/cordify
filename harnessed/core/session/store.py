@@ -9,6 +9,7 @@ from pydantic import ConfigDict, StringConstraints, TypeAdapter
 from harnessed.core.errors import SessionLocked
 from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import SessionEvent
+from harnessed.core.session.files import MemoryFiles, SessionFiles
 from harnessed.kernel import Context
 
 type SessionID = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$")]
@@ -31,6 +32,7 @@ class SessionStore(Protocol):
     """Lease a single writer for an existing or new session."""
 
     def open(self, session_id: str) -> AbstractAsyncContextManager[SessionPersistence]: ...
+    def files(self, session_id: str) -> SessionFiles: ...
 
 
 class MemoryPersistence:
@@ -59,6 +61,11 @@ class _MemoryStore:
     def __init__(self):
         self.persistence = MemoryPersistence()
         self._active: set[str] = set()
+        self._files: dict[str, MemoryFiles] = {}
+
+    def files(self, session_id: str) -> SessionFiles:
+        session_id = validate_session_id(session_id)
+        return self._files.setdefault(session_id, MemoryFiles())
 
     @asynccontextmanager
     async def open(self, session_id: str) -> AsyncGenerator[SessionPersistence]:

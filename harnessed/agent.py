@@ -16,6 +16,7 @@ from harnessed.core.prompt.instructions import Instructions
 from harnessed.core.prompt.values import InstructionValues, PromptPlan
 from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
 from harnessed.core.runtime.session import Session as LiveSession
+from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import MemorySessions, SessionPersistence, SessionStore
 from harnessed.core.tools.output_limit import ToolOutputLimit
@@ -101,6 +102,7 @@ class Agent:
             ctx.effect(lambda: lease.__aexit__(None, None, None))
             ctx.provide(SessionPersistence, persistence)
             seed = await persistence.load(selected_id)
+            ctx.provide(SessionFiles, ctx[SessionStore].files(selected_id))
             if branch is not None:
                 if seed:
                     raise ConfigError(f"Fork destination {selected_id!r} already contains a log")
