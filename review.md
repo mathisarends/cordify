@@ -6,15 +6,6 @@ superseded provider designs have been removed; their details remain in Git histo
 Do not add more native provider clients, retry policies, or presets. PydanticAI is
 an optional Direct API integration; the Harnessed kernel, loop and log remain independent.
 
-## P1 — Runtime design and ergonomics
-
-### P1-10 — Finish the PydanticAI migration
-
-- Use upstream context-window metadata when available and explicit overrides;
-  document unsupported native request/response capabilities clearly.
-- Verify missing-extra errors, owned/borrowed client lifetimes, stream abort,
-  failure mapping and Python 3.12–3.14 against the completed migration.
-
 ## P2 — Structure, typing, docs and testing
 
 ### P2-7 — Complete structure-target.md

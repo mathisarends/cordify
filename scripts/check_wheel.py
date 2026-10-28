@@ -17,7 +17,9 @@ import re
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
 from harnessed import Agent, Plugin, tool
+from harnessed.events import TurnFinished
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
+from pydantic import BaseModel
 import harnessed
 
 package = Path(harnessed.__file__).resolve()
@@ -39,6 +41,9 @@ class Calculator(Plugin):
     async def add(self, a: int, b: int) -> int:
         return a + b
 
+class Answer(BaseModel):
+    value: int
+
 async def main():
     agent = Agent(model=ScriptedModel([call('add', a=19, b=23), reply('42')]),
                   plugins=[Calculator()], instructions='Fixed instructions.')
@@ -47,6 +52,12 @@ async def main():
         assert result.text == '42'
         assert assert_tool_called(result, 'add', a=19, b=23)[1].content == '42'
         assert await session.prompt.render() == 'Fixed instructions.'
+    typed = await Agent(model=ScriptedModel([call('final_answer', value=42)])).run(
+        'Answer', output=Answer)
+    assert isinstance(typed.output, Answer) and typed.output.value == 42
+    async with Agent(model=ScriptedModel([call('final_answer', value=43)])).session() as session:
+        events = [event async for event in session.stream('Answer', output=Answer)]
+        assert isinstance(events[-1], TurnFinished) and events[-1].result.output.value == 43
     assert not any(name.startswith('pydantic_ai') for name in sys.modules)
     assert not any(name in sys.modules for name in ('mkdocs', 'markdown', 'yaml'))
 
