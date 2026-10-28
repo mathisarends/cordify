@@ -178,8 +178,12 @@ class Context:
         plugins: Iterable["PluginLike"],
         *,
         strict: bool = False,
+        settle: bool = False,
     ) -> tuple["PluginHandle", ...]:
-        """Mount providers before consumers, regardless of composition order."""
+        """Retain each recipe once, optionally waiting for composition to settle.
+
+        Missing dependencies remain waiting unless ``strict`` is true.
+        """
         mounted, pending = await self._install_ready(plugins)
         if pending and strict:
             for handle in reversed(mounted):
@@ -192,6 +196,8 @@ class Context:
         try:
             for spec in pending:
                 mounted.append(await self.plugin(spec))
+            if settle:
+                await self.settle()
         except BaseException:
             for handle in reversed(mounted):
                 await handle.aclose()

@@ -23,3 +23,30 @@ async def test_coding_composes_project_tools_and_optional_shell(tmp_path, shell)
     names = {tool.name for tool in request.tools}
     assert {"read_file", "write_file"} <= names
     assert ("run_command" in names) == shell
+
+
+async def test_session_installs_waiting_plugins_once_and_disposes_agent_once(monkeypatch):
+    from harnessed import Agent, Context, Harness, plugin
+    from harnessed.plugins.agents.loop import agent_loop
+    from harnessed.plugins.services import llm
+
+    starts = []
+    closes = []
+    original_close = Agent.aclose
+
+    async def close(self):
+        closes.append(self)
+        await original_close(self)
+
+    monkeypatch.setattr(Agent, "aclose", close)
+
+    @plugin(needs=[Agent])
+    async def observer(ctx: Context):
+        starts.append(ctx[Agent])
+        yield
+
+    harness = Harness([observer(), agent_loop(), llm(ScriptedLLM(["ready"]))])
+    async with harness.session("single-install") as agent:
+        assert starts == [agent]
+        assert (await agent.run("hello")).text == "ready"
+    assert closes == [agent]

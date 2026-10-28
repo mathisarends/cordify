@@ -74,7 +74,7 @@ class Harness:
         self._active.add(session_id)
         try:
             async with Context() as ctx:
-                _, pending = await ctx._install_ready(
+                await ctx.install(
                     [
                         tools(),
                         system_prompt(),
@@ -83,10 +83,9 @@ class Harness:
                         spill_store(),
                         *self.plugins,
                         self._bundle,
-                    ]
+                    ],
+                    settle=True,
                 )
-                if AgentFactory not in ctx:
-                    await ctx.install(pending)
                 selected_model = (
                     model
                     or self.model
@@ -108,8 +107,6 @@ class Harness:
                 agent = ctx[AgentFactory].create(ctx, session, options)
                 ctx.effect(agent.aclose)
                 ctx.provide(Agent, agent)
-                await ctx.install(pending)
-                ctx.effect(agent.aclose)
                 await ctx.settle()
                 agent.start()
                 yield agent
