@@ -39,7 +39,7 @@ cordify/
     persistence.py       JSONL plugin
   adapters/              DeepSeek, local FS/shell, JSONL, spill, token counter,
                          compactor, and deterministic replay adapter
-    base.py              Optional BaseLLM with RetryPolicy
+    base.py              Optional LLM with RetryPolicy
     sse.py               Shared SSE data framing for streaming adapters
   presets.py             Harness, minimal(), coding(), headless()
   testing.py             Test helpers
@@ -90,7 +90,7 @@ check against the seam. Shared implementation logic belongs in adapters or
 plugins; data contracts remain immutable value types.
 The tests run independent FS, LLM, Shell, and Approver implementations through
 the actual DI, approval, and tool pipelines without inheritance.
-An optional `BaseLLM` supports adapters that share implementation logic;
+An optional `cordify.adapters.base.LLM` supports adapters that share implementation logic;
 the registered service key remains `LLM`.
 
 The old flat module paths and `cordify.std` have been removed. Root imports such
@@ -132,7 +132,7 @@ Runnable examples (from the repository root):
 | `python -m examples.10_context_strategies` | Spill, compaction, observation limits, and cache metadata together |
 | `python -m examples.11_temporal_needs` | Reversible tools, prompt sections, listeners, and custom effects as services change |
 | `python -m examples.12_layered_sdk` | Layered architecture, standalone kernel, and presets |
-| `python -m examples.13_llm_adapters` | Custom BaseLLM adapter with retries and a structural adapter without inheritance |
+| `python -m examples.13_llm_adapters` | Custom LLM adapter with retries and a structural adapter without inheritance |
 | `python -m examples.14_session_log` | Durable chunks, pure log projections, request replay, and an independent fork |
 | `python -m examples.15_tool_output_limits` | Bounding a 2 MB output, ExecuteTool waterfall, and reading with offset/limit |
 | `python -m examples.16_compaction_policies` | Threshold, turn window, periodic compaction, preserved turns, and budget guard |
@@ -1072,18 +1072,18 @@ These extensions can build on the same services and events.
 
 ## Custom LLM adapters
 
-`LLM` remains a `Protocol`. `BaseLLM` is an optional helper for retries,
+`cordify.seams.LLM` remains a `Protocol`. `cordify.adapters.base.LLM` is an optional helper for retries,
 exponential backoff, and closing streams after each attempt. Custom providers
 implement `_stream_once()` and, if needed, `is_retryable(error)`:
 
 ```python
 from collections.abc import AsyncIterator
 
-from cordify.adapters.base import BaseLLM, RetryPolicy
+from cordify.adapters.base import LLM, RetryPolicy
 from cordify.seams import ModelChunk, ModelRequest
 
 
-class DemoLLM(BaseLLM):
+class DemoLLM(LLM):
     async def _stream_once(self, request: ModelRequest) -> AsyncIterator[ModelChunk]:
         yield ModelChunk(text="Hello from my adapter.")
 

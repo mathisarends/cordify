@@ -12,11 +12,11 @@ from ..seams.models import (
     ToolCall,
     to_dict,
 )
-from .base import BaseLLM, RetryPolicy
+from .base import LLM, RetryPolicy
 from .sse import iter_sse_data
 
 
-class DeepSeekLLM(BaseLLM):
+class DeepSeekLLM(LLM):
     def __init__(
         self,
         *,

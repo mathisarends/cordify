@@ -3,13 +3,14 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from cordify import BaseLLM, ModelChunk, ModelRequest, ModelUsage, RetryPolicy, ToolCall
+from cordify import ModelChunk, ModelRequest, ModelUsage, RetryPolicy, ToolCall
+from cordify.adapters.base import LLM
 from cordify.adapters.replay import ScriptedLLM
 
 REQUEST = ModelRequest("test", ())
 
 
-class FlakyLLM(BaseLLM):
+class FlakyLLM(LLM):
     def __init__(self, failures=1, *, chunk=None, error=None, **kwargs):
         super().__init__(**kwargs)
         self.failures = failures
@@ -96,7 +97,7 @@ async def test_cancellation_during_provider_stream_is_not_retried():
     started = asyncio.Event()
     closed = []
 
-    class WaitingLLM(BaseLLM):
+    class WaitingLLM(LLM):
         async def _stream_once(self, request):
             try:
                 started.set()
@@ -150,12 +151,12 @@ async def test_plain_iterator_adapters_and_structural_adapters_still_work():
             self.done = True
             return ModelChunk(text="iterator")
 
-    class IteratorLLM(BaseLLM):
+    class IteratorLLM(LLM):
         def _stream_once(self, request):
             return OneChunk()
 
     assert [chunk.text async for chunk in IteratorLLM().stream(REQUEST)] == ["iterator"]
-    assert not isinstance(ScriptedLLM([]), BaseLLM)
+    assert not isinstance(ScriptedLLM([]), LLM)
     assert [chunk.text async for chunk in ScriptedLLM(["replay"]).stream(REQUEST)] == ["replay"]
 
 

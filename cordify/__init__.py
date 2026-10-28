@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING
 from ._exports import exported
 
 if TYPE_CHECKING:
-    from cordify.adapters.base import BaseLLM as BaseLLM
     from cordify.adapters.base import RetryPolicy as RetryPolicy
     from cordify.adapters.compaction import ExtractiveCompactor as ExtractiveCompactor
     from cordify.adapters.compaction import LLMCompactor as LLMCompactor
@@ -107,7 +106,6 @@ _EXPORTS = {
     "Step": ("cordify.core.turns", "Step"),
     "Turn": ("cordify.core.turns", "Turn"),
     "derive_turns": ("cordify.core.turns", "derive_turns"),
-    "BaseLLM": ("cordify.adapters.base", "BaseLLM"),
     "RetryPolicy": ("cordify.adapters.base", "RetryPolicy"),
     "Agent": ("cordify.core.loop", "Agent"),
     "AgentFactory": ("cordify.core.loop", "AgentFactory"),
@@ -196,7 +194,6 @@ __all__ = [
     "Step",
     "Turn",
     "derive_turns",
-    "BaseLLM",
     "RetryPolicy",
     "Agent",
     "AgentFactory",

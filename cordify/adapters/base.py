@@ -23,7 +23,7 @@ class RetryPolicy:
                 raise ValueError(f"{name} must be finite and >= {1 if name == 'multiplier' else 0}")
 
 
-class BaseLLM:
+class LLM:
     """Optional adapter helper; consumers depend on the LLM Protocol."""
 
     def __init__(self, *, retry: RetryPolicy | None = None):
