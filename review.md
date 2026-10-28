@@ -97,13 +97,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   placement/replacement/omission, file sections and origins already work.
 - Remove legacy persona/agents_md and order/stable prompt APIs from defaults.
 
-### P1-12 — Rule persistence
-
-- Eliminate one RuleEvaluated event per rule per tool result; only triggers
-  should require rule events, with counters derived from canonical tool results.
-- Preserve exact resume semantics when notes, spill or output limits transform
-  results. Do not infer pre-transformation matches from lossy final output.
-
 ## P2 — Structure, typing, docs and testing
 
 ### P2-1 — Type hook signatures

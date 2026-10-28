@@ -88,15 +88,15 @@ if TYPE_CHECKING:
         SlidingWindowCompaction as SlidingWindowCompaction,
     )
     from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
-    from harnessed.plugins._context.observations import (
-        LatestObservationOnly as LatestObservationOnly,
-    )
     from harnessed.plugins._context.spill import SpillLargeResults as SpillLargeResults
     from harnessed.plugins.filesystem import FS as FS
+    from harnessed.plugins.observations import (
+        LatestObservationOnly as LatestObservationOnly,
+    )
     from harnessed.plugins.observe.cache import CacheBreakpoints as CacheBreakpoints
-    from harnessed.plugins.permissions.rules import Rule as Rule
-    from harnessed.plugins.permissions.rules import Rules as Rules
-    from harnessed.plugins.permissions.rules import when as when
+    from harnessed.plugins.rules import Rule as Rule
+    from harnessed.plugins.rules import Rules as Rules
+    from harnessed.plugins.rules import when as when
     from harnessed.plugins.shell import ProcResult as ProcResult
     from harnessed.plugins.shell import ShellBackend as Shell
     from harnessed.presets import Harness as Harness
@@ -178,9 +178,9 @@ _EXPORTS = {
     "hook": ("harnessed.kernel.plugin", "hook"),
     "tool": ("harnessed.core.tools.decorator", "tool"),
     "SystemPrompt": ("harnessed.core.prompt.system_prompt", "SystemPrompt"),
-    "Rule": ("harnessed.plugins.permissions.rules", "Rule"),
-    "Rules": ("harnessed.plugins.permissions.rules", "Rules"),
-    "when": ("harnessed.plugins.permissions.rules", "when"),
+    "Rule": ("harnessed.plugins.rules", "Rule"),
+    "Rules": ("harnessed.plugins.rules", "Rules"),
+    "when": ("harnessed.plugins.rules", "when"),
     "FS": ("harnessed.plugins.filesystem", "FS"),
     "ProcResult": ("harnessed.plugins.shell", "ProcResult"),
     "Shell": ("harnessed.plugins.shell", "ShellBackend"),
@@ -192,7 +192,7 @@ _EXPORTS = {
     "LocalSpillStore": ("harnessed.adapters.spill", "LocalSpillStore"),
     "SpillStore": ("harnessed.seams.spill", "SpillStore"),
     "CacheBreakpoints": ("harnessed.plugins.observe.cache", "CacheBreakpoints"),
-    "LatestObservationOnly": ("harnessed.plugins._context.observations", "LatestObservationOnly"),
+    "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
     "SpillLargeResults": ("harnessed.plugins._context.spill", "SpillLargeResults"),
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
     "ToolRegistry": ("harnessed.core.tools.registry", "ToolRegistry"),

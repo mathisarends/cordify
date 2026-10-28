@@ -89,6 +89,16 @@ class ToolResult:
     spill: SpillRef | None = None
     truncation: OutputTruncation | None = None
     denied_by: Literal["policy", "user"] | None = None
+    rule_matches: tuple[tuple[str, bool], ...] = ()
+
+    def __post_init__(self):
+        matches = tuple(tuple(item) for item in self.rule_matches)
+        if any(
+            len(item) != 2 or not isinstance(item[0], str) or type(item[1]) is not bool
+            for item in matches
+        ) or len({item[0] for item in matches}) != len(matches):
+            raise ValueError("Rule matches require unique names and boolean outcomes")
+        object.__setattr__(self, "rule_matches", matches)
 
     @classmethod
     def error(cls, content: str) -> "ToolResult":

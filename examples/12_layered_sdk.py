@@ -4,7 +4,7 @@ import asyncio
 
 from harnessed.adapters.replay import ScriptedLLM
 from harnessed.kernel import Context, Key, plugin
-from harnessed.plugins.permissions.rules import Rules, when
+from harnessed.plugins.rules import Rules, when
 from harnessed.presets import minimal
 
 backend = Key[str]("backend")

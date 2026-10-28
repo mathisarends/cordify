@@ -16,7 +16,6 @@ from harnessed import (
     Rules,
     ToolCall,
     hook,
-    system,
     user,
     when,
 )
@@ -46,7 +45,9 @@ class TestDiscipline(Plugin):
         if self.failures == 1:
             return result.with_note("Read the first failure before editing anything.")
         if self.failures == 3:
-            await agent.inject(system("Tests failed three times. Reconsider your approach."))
+            await agent.context.set(
+                "test-discipline", "Tests failed three times. Reconsider your approach."
+            )
         if self.failures >= 5:
             await agent.steer(user("Stop editing. Summarize what you tried and what is wrong."))
         return result
@@ -94,7 +95,7 @@ async def main():
                 when(tool="run_command", command_contains="git push").steer(
                     "Never push directly. Open a PR instead."
                 ),
-                when(tool="run_command", exit_code=lambda code: code != 0, repeated=3).inject(
+                when(tool="run_command", exit_code=lambda code: code != 0, repeated=3).context(
                     "Same command failed three times. Try something different."
                 ),
                 when(tool="run_command", exit_code=lambda code: code != 0, repeated=5).steer(

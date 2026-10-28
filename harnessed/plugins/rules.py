@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 
 from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.loop import Agent
-from harnessed.core.messages import ToolCall, ToolResult, system, to_dict, user
+from harnessed.core.messages import ToolCall, ToolResult, to_dict, user
 from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import RuleEvaluated, RuleTriggered, ToolCalled, ToolReturned
 from harnessed.core.tokens import TokenCounter
@@ -30,8 +30,9 @@ class Rule:
     def note(self, text: str) -> "Rule":
         return self._action("note", text)
 
-    def inject(self, text: str) -> "Rule":
-        return self._action("inject", text)
+    def context(self, text: str) -> "Rule":
+        """Keep a named context fact while the rule condition remains active."""
+        return self._action("context", text)
 
     def steer(self, text: str) -> "Rule":
         return self._action("steer", text)
@@ -81,49 +82,85 @@ class Rules(Plugin):
         super().__init__(name=name)
         self.rules = tuple(rules)
         if any(not isinstance(rule, Rule) or not rule.actions for rule in self.rules):
-            raise ValueError("Each rule needs at least one note, inject or steer action")
+            raise ValueError("Each rule needs at least one note, context or steer action")
 
     def _count(
-        self, index: int, rule: Rule, call: ToolCall, result: ToolResult, counter: TokenCounter
+        self,
+        index: int,
+        rule: Rule,
+        call: ToolCall,
+        result: ToolResult,
+        counter: TokenCounter,
+        *,
+        matched: bool | None = None,
     ):
         if rule.tools and call.name not in rule.tools:
             return None, 0
         arguments = call.command or json.dumps(to_dict(call.arguments), sort_keys=True)
         key = (index, json.dumps([call.name, arguments], ensure_ascii=False))
-        self._counts[key] = self._counts[key] + 1 if rule.matches(call, result, counter) else 0
+        if matched is None:
+            matched = rule.matches(call, result, counter)
+        self._counts[key] = self._counts[key] + 1 if matched else 0
+        self._last_counts[index] = self._counts[key]
         return key, self._counts[key]
 
     async def setup(self, agent: Inject[Agent], counter: Inject[TokenCounter]):
         self._counts: Counter = Counter()
-        stored = [event for event in agent.session.events if isinstance(event, RuleEvaluated)]
-        restored = False
+        self._last_counts = {}
+        # Legacy per-evaluation records are read only during migration. New logs
+        # keep match bits with the canonical result, surviving notes/spill/limits.
+        stored = [
+            event
+            for event in agent.session.events
+            if isinstance(event, RuleEvaluated) and event.rule.startswith(f"{self.name}:")
+        ]
         for index in range(len(self.rules)):
             for event in stored:
                 if event.rule == f"{self.name}:{index}":
                     self._counts[(index, event.key)] = event.occurrence
-                    restored = True
-        if restored:
-            return
+                    self._last_counts[index] = event.occurrence
         calls = {}
         for event in agent.session.events:
             if isinstance(event, ToolCalled):
                 calls[event.call.id] = event.call
-            elif (
-                isinstance(event, ToolReturned)
-                and event.call_id in calls
-                and event.result.status != "denied"
-            ):
+            elif isinstance(event, ToolReturned) and event.call_id in calls:
+                recorded = dict(event.result.rule_matches)
                 for index, rule in enumerate(self.rules):
-                    self._count(index, rule, calls[event.call_id], event.result, counter)
+                    rule_id = f"{self.name}:{index}"
+                    if rule_id in recorded:
+                        self._count(
+                            index,
+                            rule,
+                            calls[event.call_id],
+                            event.result,
+                            counter,
+                            matched=recorded[rule_id],
+                        )
+                    elif not stored and event.result.status not in ("denied", "unavailable"):
+                        self._count(index, rule, calls[event.call_id], event.result, counter)
+        for index, rule in enumerate(self.rules):
+            for kind, text in rule.actions:
+                if kind == "context" and self._last_counts.get(index, 0) >= rule.repeated:
+                    await agent.context.set(f"rule:{self.name}:{index}", text)
 
     @hook(ReviewToolResult)
     async def review(self, event, next_, agent: Inject[Agent], counter: Inject[TokenCounter]):
         result = await next_()
+        matches = list(result.rule_matches)
         for index, rule in enumerate(self.rules):
             key, count = self._count(index, rule, event.call, result, counter)
             if key is not None:
-                await agent.session.append(RuleEvaluated(f"{self.name}:{index}", key[1], count))
+                rule_id = f"{self.name}:{index}"
+                if any(name == rule_id for name, _ in matches):
+                    raise ValueError(f"Duplicate rules plugin name: {self.name!r}")
+                matches.append((rule_id, count > 0))
             if count == 0 or (rule.repeated > 1 and count != rule.repeated):
+                if (
+                    key is not None
+                    and count == 0
+                    and any(kind == "context" for kind, _ in rule.actions)
+                ):
+                    await agent.context.remove(f"rule:{self.name}:{index}")
                 continue
             await agent.session.append(
                 RuleTriggered(
@@ -136,8 +173,13 @@ class Rules(Plugin):
             for kind, text in rule.actions:
                 if kind == "note":
                     result = result.with_note(text)
-                elif kind == "inject":
-                    await agent.inject(system(text))
+                elif kind == "context":
+                    await agent.context.set(f"rule:{self.name}:{index}", text)
                 else:
                     await agent.steer(user(text))
-        return result
+        return replace(result, rule_matches=tuple(matches))
+
+    async def teardown(self, agent: Inject[Agent]):
+        for index, rule in enumerate(self.rules):
+            if any(kind == "context" for kind, _ in rule.actions):
+                await agent.context.remove(f"rule:{self.name}:{index}")
