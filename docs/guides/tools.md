@@ -101,3 +101,8 @@ PydanticAI receives native multimodal tool-return content and handles providers
 whose tool channel only accepts text. Image detail is forwarded; `original` maps
 to `high` on the native adapter. The current neutral content types cover text and
 images, not audio/video/documents.
+
+Spill runs inside ordinary review hooks at `Priority.OBSERVE`, so a default-priority
+rule can add a note to the final preview. Rule conditions inspect the original
+execution result before lossy spill/limit transforms; their match bits travel with
+the canonical result for replay.

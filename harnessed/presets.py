@@ -80,7 +80,9 @@ class Harness:
         max_parallel_tools: int | None = None,
         approval_timeout: float | None = None,
     ):
-        from .plugins._context.providers import compactor, spill_store
+        from harnessed.plugins.spill import spill_store
+
+        from .plugins._context.providers import compactor
         from .plugins.observe.tokens import token_counter
         from .plugins.services import system_prompt, tools
 

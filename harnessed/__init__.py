@@ -8,7 +8,6 @@ logging.getLogger("harnessed").addHandler(logging.NullHandler())
 if TYPE_CHECKING:
     from harnessed.adapters.compaction import ExtractiveCompactor as ExtractiveCompactor
     from harnessed.adapters.compaction import LLMCompactor as LLMCompactor
-    from harnessed.adapters.spill import LocalSpillStore as LocalSpillStore
     from harnessed.agent import Agent as Agent
     from harnessed.agent import PluginConflict as PluginConflict
     from harnessed.core.approvals import Approval as Approval
@@ -89,7 +88,6 @@ if TYPE_CHECKING:
         SlidingWindowCompaction as SlidingWindowCompaction,
     )
     from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
-    from harnessed.plugins._context.spill import SpillLargeResults as SpillLargeResults
     from harnessed.plugins.filesystem import FS as FS
     from harnessed.plugins.observations import (
         LatestObservationOnly as LatestObservationOnly,
@@ -99,10 +97,12 @@ if TYPE_CHECKING:
     from harnessed.plugins.rules import when as when
     from harnessed.plugins.shell import ProcResult as ProcResult
     from harnessed.plugins.shell import ShellBackend as Shell
+    from harnessed.plugins.spill import LocalSpillStore as LocalSpillStore
+    from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
+    from harnessed.plugins.spill import SpillStore as SpillStore
     from harnessed.presets import Harness as Harness
     from harnessed.seams.compaction import Compactor as Compactor
     from harnessed.seams.llm import LLM as LLM
-    from harnessed.seams.spill import SpillStore as SpillStore
 _EXPORTS = {
     "SessionStatus": ("harnessed.core.runtime.control", "SessionStatus"),
     "SessionClosed": ("harnessed.core.errors", "SessionClosed"),
@@ -190,10 +190,10 @@ _EXPORTS = {
     "SessionPersistence": ("harnessed.core.session.store", "SessionPersistence"),
     "derive_messages": ("harnessed.core.session.session", "derive_messages"),
     "derive_requests": ("harnessed.core.session.session", "derive_requests"),
-    "LocalSpillStore": ("harnessed.adapters.spill", "LocalSpillStore"),
-    "SpillStore": ("harnessed.seams.spill", "SpillStore"),
+    "LocalSpillStore": ("harnessed.plugins.spill", "LocalSpillStore"),
+    "SpillStore": ("harnessed.plugins.spill", "SpillStore"),
     "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
-    "SpillLargeResults": ("harnessed.plugins._context.spill", "SpillLargeResults"),
+    "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
     "ToolRegistry": ("harnessed.core.tools.registry", "ToolRegistry"),
     "Key": ("harnessed.kernel.keys", "Key"),

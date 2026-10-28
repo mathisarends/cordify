@@ -12,8 +12,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
   all stream-only LLM compatibility paths.
-- Finish moving the remaining feature contracts to their consumers; FS is now
-  collocated with its implementation and bounded, schema-validated tools.
+- Collocate the remaining compaction contract with its consumer.
 
 ### P0-7 — Finish the public facade and remove duplicate paths
 
@@ -41,7 +40,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-8 — Boundary validation
 
-- Replace the remaining legacy compaction, spill and rule option validators with
+- Replace the remaining legacy compaction and rule option validators with
   declarative constraints as those feature plugins migrate.
 
 ### P1-10 — Finish the PydanticAI migration
@@ -84,7 +83,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Unify compaction into Compaction(trigger, summarizer, focus, retention). Provide
   at_ratio/every_turns triggers, model summarization, pre-request side-effect
   boundaries and one reactive context-error retry.
-- Spill is session-owned, bounded by retention, with ranged reads and cleanup.
+- Add session list/delete management and remove session artifacts when deleting a session.
 - Add the approved Subagent child-session/log mechanism and inherited approvals.
 - Add Skill/Skills with lazy discovery/load/read, safe path handling and optional
   YAML as specified in api-target.md. MCP, OTel, UI, RAG and eval systems remain

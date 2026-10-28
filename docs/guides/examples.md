@@ -12,6 +12,7 @@ requires its provider extra and credentials.
 | Function plugin ownership | `uv run python -m examples.06_explicit_registration` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/06_explicit_registration.py) |
 | Structural Model | `uv run python -m examples.13_llm_adapters` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/13_llm_adapters.py) |
 | Pause/resume/stop/abort | `uv run python -m examples.20_pause_resume_stop` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/20_pause_resume_stop.py) |
+| Session-owned spill | `uv run python -m examples.24_session_spill` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/24_session_spill.py) |
 | Validated forms | `uv run python -m examples.21_validated_forms` | [Code](https://github.com/mathisarends/cordify/blob/main/examples/21_validated_forms.py) |
 
 These examples use the application API and public plugin declarations. Remaining

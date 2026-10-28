@@ -37,10 +37,11 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog as Session
-from harnessed.plugins._context.providers import compactor, spill_store
+from harnessed.plugins._context.providers import compactor
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.plugins.sessions import session_jsonl
+from harnessed.plugins.spill import spill_store
 from harnessed.testing import ScriptedLLM
 
 
@@ -104,7 +105,7 @@ async def test_spill_reuses_verified_concurrent_winner_on_windows_replace_race(
         destination.write_bytes(source.read_bytes())
         raise PermissionError("target opened by concurrent writer")
 
-    monkeypatch.setattr("harnessed.adapters.spill.os.replace", racing_replace)
+    monkeypatch.setattr("harnessed.plugins.spill.os.replace", racing_replace)
     ref = await LocalSpillStore(tmp_path).put("concurrent content")
     assert await LocalSpillStore(tmp_path).read(ref.path) == "concurrent content"
     assert not list(tmp_path.glob("*.tmp"))
@@ -114,7 +115,7 @@ async def test_spill_does_not_hide_unrelated_write_failures(tmp_path, monkeypatc
     def denied(source, destination):
         raise PermissionError("write denied")
 
-    monkeypatch.setattr("harnessed.adapters.spill.os.replace", denied)
+    monkeypatch.setattr("harnessed.plugins.spill.os.replace", denied)
     with pytest.raises(PermissionError, match="write denied"):
         await LocalSpillStore(tmp_path).put("content")
     assert not list(tmp_path.glob("*.tmp"))

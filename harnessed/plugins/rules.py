@@ -148,7 +148,7 @@ class Rules(Plugin):
         result = await next_()
         matches = list(result.rule_matches)
         for index, rule in enumerate(self.rules):
-            key, count = self._count(index, rule, event.call, result, counter)
+            key, count = self._count(index, rule, event.call, event.result, counter)
             if key is not None:
                 rule_id = f"{self.name}:{index}"
                 if any(name == rule_id for name, _ in matches):

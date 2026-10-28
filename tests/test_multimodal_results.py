@@ -5,7 +5,6 @@ import json
 import pytest
 
 from harnessed import Agent, Plugin, ToolOutputLimit, tool
-from harnessed.adapters.spill import LocalSpillStore
 from harnessed.core.messages import ImagePart, TextPart, ToolReply, ToolResult
 from harnessed.core.model import ModelInfo, ModelRequest
 from harnessed.core.plugin import Service
@@ -13,8 +12,7 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import ApproximateTokenCounter, count_content
 from harnessed.plugins import Rules, when
-from harnessed.plugins._context.spill import SpillLargeResults
-from harnessed.seams.spill import SpillStore
+from harnessed.plugins.spill import LocalSpillStore, SpillLargeResults, SpillStore
 from harnessed.testing import ScriptedModel, call
 
 IMAGE = ImagePart("data:image/png;base64,aW1hZ2U=", detail="high")

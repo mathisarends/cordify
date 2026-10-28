@@ -34,6 +34,7 @@ nav:
       - Tools and hooks: guides/tools.md
       - Plugins: guides/plugins.md
       - Context: guides/context.md
+      - Output limits and spill: guides/output.md
       - Sessions and controls: guides/sessions.md
       - Approvals: guides/approvals.md
       - Testing: guides/testing.md

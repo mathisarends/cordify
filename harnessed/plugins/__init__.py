@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     )
     from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
     from harnessed.plugins._context.prompt import instructions as instructions
-    from harnessed.plugins._context.spill import SpillLargeResults as SpillLargeResults
     from harnessed.plugins.agents.loop import agent_loop as agent_loop
     from harnessed.plugins.filesystem import Filesystem as Filesystem
     from harnessed.plugins.observations import (
@@ -31,7 +30,10 @@ if TYPE_CHECKING:
     from harnessed.plugins.sessions import JsonlSessions as JsonlSessions
     from harnessed.plugins.sessions import session_jsonl as jsonl_sessions
     from harnessed.plugins.shell import Shell as Shell
+    from harnessed.plugins.spill import Spill as Spill
+    from harnessed.plugins.spill import SpillLargeResults as SpillLargeResults
 _EXPORTS = {
+    "Spill": ("harnessed.plugins.spill", "Spill"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "AgentLoop": ("harnessed.core.runtime.agent_loop", "AgentLoop"),
     "MemorySessions": ("harnessed.core.session.store", "MemorySessions"),
@@ -54,10 +56,11 @@ _EXPORTS = {
     "Rules": ("harnessed.plugins.rules", "Rules"),
     "when": ("harnessed.plugins.rules", "when"),
     "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
-    "SpillLargeResults": ("harnessed.plugins._context.spill", "SpillLargeResults"),
+    "SpillLargeResults": ("harnessed.plugins.spill", "SpillLargeResults"),
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
 }
 __all__ = [
+    "Spill",
     "ApprovalAnswer",
     "AgentLoop",
     "MemorySessions",

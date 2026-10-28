@@ -38,9 +38,9 @@ if TYPE_CHECKING:
     from harnessed.plugins.filesystem import FS as FS
     from harnessed.plugins.shell import ProcResult as ProcResult
     from harnessed.plugins.shell import ShellBackend as Shell
+    from harnessed.plugins.spill import SpillStore as SpillStore
     from harnessed.seams.compaction import Compactor as Compactor
     from harnessed.seams.llm import LLM as LLM
-    from harnessed.seams.spill import SpillStore as SpillStore
 _EXPORTS = {
     "ProviderUnavailable": ("harnessed.core.errors", "ProviderUnavailable"),
     "InvalidRequest": ("harnessed.core.errors", "InvalidRequest"),
@@ -79,7 +79,7 @@ _EXPORTS = {
     "ProcResult": ("harnessed.plugins.shell", "ProcResult"),
     "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
     "Compactor": ("harnessed.seams.compaction", "Compactor"),
-    "SpillStore": ("harnessed.seams.spill", "SpillStore"),
+    "SpillStore": ("harnessed.plugins.spill", "SpillStore"),
 }
 __all__ = [
     "ProviderUnavailable",

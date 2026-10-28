@@ -15,15 +15,14 @@ from harnessed import (
     ToolRegistry,
     ToolResult,
 )
-from harnessed.adapters.spill import LocalSpillStore
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolError
-from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.filesystem import fs_local, fs_tools
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.plugins.shell import shell_local, shell_tools
+from harnessed.plugins.spill import LocalSpillStore, spill_store
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

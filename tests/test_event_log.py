@@ -16,7 +16,6 @@ from harnessed.core.session.events import (
     SessionEvent,
     StepStart,
     SystemMessage,
-    ToolReturned,
     TurnEnd,
     TurnStart,
     UserMessage,
@@ -204,7 +203,6 @@ class UnknownEvent(SessionEvent):
         SessionEvent(),
         UnknownEvent(),
         SystemMessage(["mutable"]),
-        ToolReturned("call", ToolResult(["mutable"])),
     ],
 )
 async def test_memory_logs_seeds_and_codecs_reject_unregistered_or_mutable_events(event):
@@ -216,6 +214,11 @@ async def test_memory_logs_seeds_and_codecs_reject_unregistered_or_mutable_event
     with pytest.raises(TypeError):
         encode_event(event)
     assert session.events == ()
+
+
+def test_tool_results_reject_unsupported_parts_before_reaching_the_log():
+    with pytest.raises(TypeError, match="text/image parts"):
+        ToolResult(["mutable"])
 
 
 def test_durable_event_classes_are_frozen_and_event_snapshots_cannot_be_changed():

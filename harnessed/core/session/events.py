@@ -387,6 +387,14 @@ class SpillCreated(SessionEvent):
 
 
 @dataclass(frozen=True)
+class SpillExpired(SessionEvent):
+    __hash__ = None
+    type: Literal["SpillExpired"] = field(default="SpillExpired", kw_only=True)
+    ref: SpillRef
+    reason: Literal["retention", "missing"] = "retention"
+
+
+@dataclass(frozen=True)
 class RuleTriggered(SessionEvent):
     __hash__ = None
 
@@ -526,6 +534,7 @@ type LogEvent = Annotated[
         | CompactionApplied
         | ObservationPolicyApplied
         | SpillCreated
+        | SpillExpired
         | RuleTriggered
         | RuleEvaluated
         | AssistantMessage
