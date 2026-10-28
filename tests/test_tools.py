@@ -53,7 +53,7 @@ async def test_caller_cannot_supply_injected_parameters():
         assert registry.definitions[0].parameters["properties"] == {}
         result = await registry.execute(ToolCall("show", {"number": 99}))
         assert result.is_error
-        assert "Unknown model argument" in result.content
+        assert "Extra inputs are not permitted" in result.content
         assert (await registry.execute(ToolCall("show"))).content == "42"
 
 

@@ -3,6 +3,7 @@ import json
 from collections.abc import Mapping
 from copy import copy
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Annotated, Any, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
@@ -62,14 +63,11 @@ class ToolArguments:
         model.model_json_schema()  # Reject annotations without a JSON schema at registration.
         return cls(model, names)
 
-    @property
+    @cached_property
     def schema(self) -> dict:
         return self.model.model_json_schema(by_alias=True)
 
     def parse(self, arguments: Mapping) -> dict:
-        for name in arguments:
-            if name not in self.names.values():
-                raise ValueError(f"Unknown model argument: {name}")
         parsed = self.model.model_validate_json(
             json.dumps(to_dict(arguments), allow_nan=False),
             strict=True,

@@ -60,7 +60,11 @@ class Bundle:
         hooks, registrations = tuple(self._hooks), tuple(self._registrations)
         needs = [
             *self.needs,
-            *(key for _, callback, _, _ in hooks for key in injections(callback).values()),
+            *(
+                key
+                for _, callback, _, _ in hooks
+                for key in injections(callback, required_only=True).values()
+            ),
         ]
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
@@ -122,8 +126,12 @@ class Plugin:
                 registrations.extend(
                     (recipe, callback) for recipe in getattr(member, "_harnessed_registrations", ())
                 )
-        needs = [*getattr(self, "needs", ()), *injections(self.setup).values()]
-        needs.extend(key for _, callback, _ in hooks for key in injections(callback).values())
+        needs = [*getattr(self, "needs", ()), *injections(self.setup, required_only=True).values()]
+        needs.extend(
+            key
+            for _, callback, _ in hooks
+            for key in injections(callback, required_only=True).values()
+        )
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
         async def mount(ctx):

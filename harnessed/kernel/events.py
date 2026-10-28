@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from .di import bind_injected
+from .di import BindingPlan, binding_plan
 from .effects import Disposer, resolve
 
 if TYPE_CHECKING:
@@ -34,6 +34,7 @@ class _Listener:
     event: type[Event[Any]]
     callback: Any
     owner: "Context"
+    plan: BindingPlan
     priority: int = 0
     active: bool = True
 
@@ -49,8 +50,11 @@ class EventBus:
         owner._check_open()
         if type(priority) is not int:
             raise TypeError("Listener priority must be an integer")
-        listener = _Listener(event, callback, owner, priority)
-        self.listeners.insert(0, listener) if prepend else self.listeners.append(listener)
+        listener = _Listener(event, callback, owner, binding_plan(callback), priority)
+        if prepend:
+            self.listeners.insert(0, listener)
+        else:
+            self.listeners.append(listener)
 
         def remove():
             listener.active = False
@@ -79,7 +83,7 @@ class EventBus:
             if not listener.active or not listener.owner._registrations_active():
                 return None
             with listener.owner.activate():
-                bound = bind_injected(listener.callback, ctx, args)
+                bound = listener.plan.bind(ctx, args)
                 return await resolve(listener.callback(*bound.args, **bound.kwargs))
 
         if isinstance(event, Waterfall):

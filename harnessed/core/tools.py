@@ -3,10 +3,10 @@ import inspect
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, cast, get_type_hints, overload
+from typing import Any, cast, overload
 
 from harnessed.kernel.context import Context
-from harnessed.kernel.di import bind_injected, injections
+from harnessed.kernel.di import BindingPlan, binding_plan
 from harnessed.kernel.effects import Disposer, run_sync
 from harnessed.seams.models import ToolCall, ToolDefinition, ToolResult, result_content, to_dict
 from harnessed.seams.shell import ProcResult
@@ -23,8 +23,7 @@ class _Tool:
     definition: ToolDefinition
     callback: Callable
     owner: Context
-    signature: inspect.Signature
-    injected: dict[str, type]
+    plan: BindingPlan
     timeout: float | None
     parallel: bool
     resources: ResourceSpec
@@ -82,11 +81,11 @@ class ToolRegistry:
         resources = resource_spec(resources)
         if timeout is not None and timeout <= 0:
             raise ValueError("Tool timeout must be positive")
-        signature = inspect.signature(callback)
-        hints = get_type_hints(callback, include_extras=True)
-        injected = injections(callback)
+        plan = binding_plan(callback)
         tool_name = name or getattr(callback, "__name__", type(callback).__name__)
-        arguments = ToolArguments.from_signature(tool_name, signature, hints, injected)
+        arguments = ToolArguments.from_signature(
+            tool_name, plan.signature, plan.hints, plan.dependencies
+        )
         definition = ToolDefinition(
             tool_name,
             inspect.getdoc(callback) or "",
@@ -96,8 +95,7 @@ class ToolRegistry:
             definition,
             callback,
             owner,
-            signature,
-            injected,
+            plan,
             timeout,
             parallel,
             resources,
@@ -121,8 +119,10 @@ class ToolRegistry:
         from .loop import Agent
 
         return all(
-            key in ctx or (key is ToolCallContext and Agent in ctx)
-            for key in tool.injected.values()
+            dependency.optional
+            or dependency.key in ctx
+            or (dependency.key is ToolCallContext and Agent in ctx)
+            for dependency in tool.plan.dependencies.values()
         )
 
     def visible_definitions(self, ctx: Context) -> tuple[ToolDefinition, ...]:
@@ -170,15 +170,16 @@ class ToolRegistry:
             return ToolResult.error(f"Tool {call.name} is unavailable: missing injected service")
         try:
             arguments = tool.arguments.parse(call.arguments)
-            if call_context is None and ToolCallContext in tool.injected.values():
+            if call_context is None and any(
+                dependency.key is ToolCallContext for dependency in tool.plan.dependencies.values()
+            ):
                 from .loop import Agent
 
                 call_context = ToolCallContext(call, ctx[Agent])
             extra: dict[type, Any] = (
                 {ToolCallContext: call_context} if call_context is not None else {}
             )
-            bound = bind_injected(tool.callback, ctx, kwargs=arguments, extra=extra)
-            tool.signature.bind(*bound.args, **bound.kwargs)
+            bound = tool.plan.bind(ctx, kwargs=arguments, extra=extra)
             with tool.owner.activate():
                 async with asyncio.timeout(tool.timeout):
                     if inspect.iscoroutinefunction(tool.callback):

@@ -1,9 +1,10 @@
 import asyncio
 import inspect
-from collections.abc import AsyncGenerator, Callable, Iterable
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, overload
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from .declarations import Bundle, Plugin
 from .di import bind_injected, injections
@@ -88,7 +89,9 @@ class PluginHandle:
         self.name, self.spec, self._mount = spec.name, spec, mount
         self.ctx = Context(_scope=mount._scope)
         self.ctx._closed = True
-        self.status = "waiting"
+        self.status: Literal["waiting", "starting", "active", "stopping", "failed", "disposed"] = (
+            "waiting"
+        )
         self.error: Exception | None = None
         self._disposed = False
         self._transition = asyncio.Lock()
@@ -266,7 +269,10 @@ class PluginSpec:
     factory: Callable[..., AsyncGenerator[None, None]]
     needs: tuple[ServiceKey[Any], ...]
     args: tuple[Any, ...]
-    kwargs: dict[str, Any]
+    kwargs: Mapping[str, Any]
+
+    def __post_init__(self):
+        object.__setattr__(self, "kwargs", MappingProxyType(dict(self.kwargs)))
 
 
 @overload
@@ -289,7 +295,9 @@ def plugin(fn=None, /, *, needs: Iterable[ServiceKey[Any]] = (), name: str | Non
 
         @wraps(factory)
         def configure(*args, **kwargs):
-            dependencies = tuple(dict.fromkeys((*needs, *injections(factory).values())))
+            dependencies = tuple(
+                dict.fromkeys((*needs, *injections(factory, required_only=True).values()))
+            )
             return PluginSpec(name or factory.__name__, factory, dependencies, args, kwargs)
 
         vars(configure)["_harnessed_plugin"] = True

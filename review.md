@@ -3,6 +3,9 @@
 **Implementation status (2026-10-28):** Findings below describe the reviewed snapshot, not necessarily the current code. Struck-through findings have been fixed and verified; partial findings remain open. Existing SDK entry points stay supported while improvements are introduced. The optional retry helper keeps the explicitly requested name `LLM`; OpenTelemetry remains deferred.
 
 - P1-6 (partial): duplicate session installation and duplicate cleanup removed; presets now use public `Context.install(..., settle=True)`.
+- P1-3: resolved — registration-time binding plans, weak callable cache, no DI reflection in listener/tool dispatch.
+- 1.2 optional/named injection: resolved — `Inject[T | None]` and `Annotated[T, InjectMarker(key)]`. Optional injection does not restart plugins.
+- P1-4 (partial): immutable plugin keyword configuration. P1-9 (partial): cached tool schemas and redundant validation removed.
 - Remaining findings: open; implementation and verification are in progress.
 
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
@@ -61,11 +64,11 @@ Harnessed ist technisch sehr sorgfältig gebaut. Der Kernel ist sauber, die Schi
 
 - **`ctx.on()` gibt die Funktion zurück, `add_listener()` einen Disposer** (`kernel/context.py:137`/`148`). In Cordis liefert `ctx.on` den Disposer, das Kernidiom für reversible Effects.
   **→ Empfehlung:** Als Decorator (`@ctx.on(Event)`) gibt `on` die Funktion zurück. Als Aufruf (`ctx.on(Event, fn)`) gibt es einen Disposer zurück, analog zu `ToolRegistry.register`. `add_listener` entfällt.
-- **Kein optionales Inject.** Cordis unterscheidet `required` und `optional`. Hier sind `needs` immer hart, sodass ein Plugin wie „nutze den TokenCounter, falls vorhanden“ nicht ausdrückbar ist.
+~~- **Kein optionales Inject.** Cordis unterscheidet `required` und `optional`. Hier sind `needs` immer hart, sodass ein Plugin wie „nutze den TokenCounter, falls vorhanden“ nicht ausdrückbar ist.~~
   **→ Empfehlung:** `Inject[T | None]` bzw. `needs=[Optional(T)]`. Der Wert ist `None`, solange der Service fehlt, und das Plugin wird **nicht** neu gestartet, wenn er auftaucht. Wer Reaktivität braucht, nimmt weiter ein hartes `needs`.
 - **Kein Config-Schema für Plugins.** Cordis hat `Schema`. Harnessed validiert Konfiguration von Hand.
   **→ Empfehlung:** Pydantic-Config-Modelle pro Plugin, siehe P1-8.
-- **`Inject[...]` akzeptiert nur `type`, `needs` dagegen auch `Key[T]`** (`kernel/di.py:27-33`). Damit ist `Key` zweitklassig.
+~~- **`Inject[...]` akzeptiert nur `type`, `needs` dagegen auch `Key[T]`** (`kernel/di.py:27-33`). Damit ist `Key` zweitklassig.~~
   **→ Empfehlung:** `Inject[Key[T]]` bzw. `Annotated[T, Inject(key)]` unterstützen und per Test absichern, dass jede Form, die `needs` kennt, auch injizierbar ist.
 - **DSH- und OpenAI-Wire-Begriffe in den generischen Seams** (`reasoning_content`, `prompt_cache_*`, `image_url`, `ToolCall.command`). Ein Port sollte die *Ideen* von DSH übernehmen, nicht dessen Wire-Format.
   **→ Empfehlung:** Umbenennen und verschieben, Details in P0-6.
@@ -296,7 +299,9 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
 - `run()` und `stream()` werden an die eigene Inbox-ID bzw. den eigenen Turn gebunden.
 - Die öffentliche Stream-Union steht in 3.2.
 
-#### P1-3 · DI-Reflection bei jedem Aufruf
+#### ~~P1-3 · DI-Reflection bei jedem Aufruf~~
+
+**Resolved:** `BindingPlan` is compiled on registration. Listener and tool entries retain the plan; dynamic service values are never cached. Regression tests: `tests/test_di_plans.py`.
 `bind_injected` (`kernel/di.py:38`) ruft bei jedem Listener-Aufruf, Tool-Call und Plugin-Start `get_type_hints` und `inspect.signature` auf. `ToolRegistry.register` berechnet `_Tool.injected` schon vorab, ruft danach aber trotzdem `bind_injected` auf.
 
 **→ Empfehlung:** Bei der Registrierung einmal einen `BindingPlan` berechnen (Parametername → Key oder „vom Aufrufer“) und pro Callable cachen. Pro Aufruf bleibt dann nur ein Dict-Lookup im Context.
@@ -310,7 +315,7 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
 - `Plugin.clone()` ist `copy.deepcopy(self)` (`kernel/declarations.py:95-96`). Das scheitert bei Clients, Locks und Closures.
 - Plugins halten mutablen Zustand in `__init__` (`Rules._counts`, `LatestObservationOnly._previous`), der nur durch `clone` pro Mount getrennt wird.
 - Die Overloads von `plugin()` geben `Callable[..., PluginSpec]` zurück (`kernel/plugin.py:273`). Dadurch gibt es keine IDE-Hilfe für `fs_local(root=...)`.
-- `PluginSpec` ist frozen, enthält aber ein mutables `kwargs: dict`.
+~~- `PluginSpec` ist frozen, enthält aber ein mutables `kwargs: dict`.~~
 
 **→ Empfehlung:** Genau zwei Stile.
 1. **Funktional:** `@plugin`-Generator mit `ParamSpec`-typisierter Config. `PluginSpec.kwargs` wird ein `MappingProxyType`.
@@ -396,9 +401,9 @@ Regel für Contributor: *„Kommt der Wert von außen (User-Config, Datei, Netzw
   **→ Empfehlung:** Ein Result-Converter-Registry (`ToolRegistry.convert(ProcResult, fn)`), das das Shell-Plugin befüllt.
 - **Zirkuläre Imports** (`from .loop import Agent` in `core/tools.py:121`, `:172`).
   **→ Empfehlung:** `ToolCallContext` kennt nur `session`, `inbox` und `signal`, nicht den Agent. Damit verschwindet der Zyklus.
-- **Redundanz:** `tool.signature.bind(...)` (`:177`) nach `bind_injected` sowie die Unknown-Argument-Schleife in `ToolArguments.parse` (`core/validation.py:70-72`) neben `extra="forbid"`.
+~~- **Redundanz:** `tool.signature.bind(...)` (`:177`) nach `bind_injected` sowie die Unknown-Argument-Schleife in `ToolArguments.parse` (`core/validation.py:70-72`) neben `extra="forbid"`.~~
   **→ Empfehlung:** Beides löschen.
-- `ToolArguments.schema` ruft bei jedem Step für jedes Tool `model_json_schema` auf.
+~~- `ToolArguments.schema` ruft bei jedem Step für jedes Tool `model_json_schema` auf.~~
   **→ Empfehlung:** Mit `functools.cached_property` cachen.
 
 #### P1-10 · DeepSeek-Adapter
@@ -439,7 +444,7 @@ Regel für Contributor: *„Kommt der Wert von außen (User-Config, Datei, Netzw
 - **P2-2 · Lokale Imports als Zyklus-Workaround** (`presets.py:67-69`, `129-130`, `154-158`; `plugins/permissions/approval.py:49`; `kernel/plugin.py`).
   **→ Empfehlung:** Zyklen über die Aufteilung in P1-1 und P1-9 auflösen. Danach verbietet Ruff mit `PLC0415` (import-outside-toplevel) neue lokale Imports.
 - **P2-3 · Kleinkram im Kernel:**
-  - `self.listeners.insert(0, ...) if prepend else self.listeners.append(...)` steht als Ausdruck in Statement-Position (`kernel/events.py`).
+~~  - `self.listeners.insert(0, ...) if prepend else self.listeners.append(...)` steht als Ausdruck in Statement-Position (`kernel/events.py`).~~
     **→ Empfehlung:** Ein normales `if`.
   - Der Kwarg `_scope` ist privat, steht aber im öffentlichen Konstruktor (`kernel/context.py:48`).
     **→ Empfehlung:** Eine Klassenmethode `Context._child(...)`.
