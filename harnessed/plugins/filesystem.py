@@ -57,7 +57,7 @@ class LocalFS:
             raise ValueError("File ranges must be non-negative")
 
         def read():
-            with self._path(path).open(encoding="utf-8") as stream:
+            with self._path(path).open(encoding="utf-8", newline="") as stream:
                 remaining = offset
                 while remaining:
                     chunk = stream.read(min(remaining, 65_536))
@@ -74,7 +74,7 @@ class LocalFS:
         temporary = None
         try:
             with NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=resolved.parent, delete=False
+                mode="w", encoding="utf-8", newline="", dir=resolved.parent, delete=False
             ) as stream:
                 temporary = Path(stream.name)
                 stream.write(text)
@@ -128,7 +128,8 @@ class LocalFS:
             raise ToolError("The text to replace must not be empty.")
 
         def edit():
-            text = self._path(path).read_text(encoding="utf-8")
+            with self._path(path).open(encoding="utf-8", newline="") as stream:
+                text = stream.read()
             count = text.count(old)
             if count != 1:
                 raise ToolError(

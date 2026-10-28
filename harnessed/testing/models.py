@@ -5,7 +5,7 @@ from collections import deque
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 
-from harnessed.core.messages import Message
+from harnessed.core.messages import Message, ToolCall
 from harnessed.core.model import ModelChunk, ModelInfo, ModelRequest, ModelResponse, ModelUsage
 
 
@@ -13,7 +13,10 @@ class ScriptedModel:
     """A structural Model with deterministic responses and recorded requests."""
 
     def __init__(
-        self, responses: Iterable[str | Iterable[ModelChunk]], *, info: ModelInfo | None = None
+        self,
+        responses: Iterable[str | ModelResponse | Iterable[ModelChunk]],
+        *,
+        info: ModelInfo | None = None,
     ):
         self.info = info or ModelInfo("scripted", context_window=128_000)
         self.responses = deque(responses)
@@ -40,7 +43,15 @@ class ScriptedModel:
 
 
 class _Stream:
-    def __init__(self, chunks: Iterable[ModelChunk]):
+    def __init__(self, chunks: ModelResponse | Iterable[ModelChunk]):
+        self._provided = chunks if isinstance(chunks, ModelResponse) else None
+        if isinstance(chunks, ModelResponse):
+            message = chunks.message
+            chunks = (
+                ModelChunk(text=message.text, reasoning=message.reasoning_content),
+                *(ModelChunk(tool_call=call) for call in message.tool_calls),
+                ModelChunk(usage=chunks.usage, stop_reason=chunks.stop_reason),
+            )
         self._chunks = iter(chunks)
         self._text: list[str] = []
         self._reasoning: list[str] = []
@@ -57,7 +68,7 @@ class _Stream:
         try:
             chunk = next(self._chunks)
         except StopIteration:
-            self._response = ModelResponse(
+            self._response = self._provided or ModelResponse(
                 Message(
                     "assistant",
                     "".join(self._text),
@@ -86,3 +97,17 @@ class _Stream:
     async def aclose(self):
         if close := getattr(self._chunks, "close", None):
             close()
+
+
+def reply(text: str, *, reasoning: str = "", usage: ModelUsage | None = None) -> ModelResponse:
+    """Script a completed assistant response."""
+    return ModelResponse(
+        Message("assistant", text, reasoning_content=reasoning), usage or ModelUsage(0)
+    )
+
+
+def call(name: str, /, **arguments) -> ModelResponse:
+    """Script one model tool call; keyword arguments are its model-supplied form."""
+    return ModelResponse(
+        Message("assistant", tool_calls=(ToolCall(name, arguments),)), stop_reason="tool_calls"
+    )

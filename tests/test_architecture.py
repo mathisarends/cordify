@@ -68,6 +68,8 @@ def test_optional_integrations_and_features_are_isolated():
             elif isinstance(node, ast.ImportFrom):
                 imported = [node.module or ""] if node.level == 0 else []
             for module in imported:
+                if module == "harnessed.testing" or module.startswith("harnessed.testing."):
+                    assert relative.startswith("testing/"), relative
                 if module == "pydantic_ai" or module.startswith("pydantic_ai."):
                     assert relative == "models/pydantic_ai.py", relative
                 if module == "yaml":

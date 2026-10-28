@@ -21,6 +21,8 @@ The package lives directly in `harnessed/`.
 
 See [immutable values and hashing](docs/concepts/values.md) for the value and
 versioned persistence contracts.
+The [testing guide](docs/guides/testing.md) covers scripted responses, fake feature
+plugins and the opt-in pytest fixture.
 
 ## Package structure
 

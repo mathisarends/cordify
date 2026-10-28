@@ -110,9 +110,8 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P2-6 — Testing package
 
-- ScriptedModel exists. Add InMemoryFS, FakeShell, InMemoryPersistence, reply/call,
-  tool-call assertions and the pytest fixture/plugin. Move the extractive fake
-  compactor here; production compaction uses the session model.
+- Move the extractive fake compactor into testing; production compaction must
+  use the session model after the remaining legacy consumers migrate.
 
 ### P2-7 — Complete structure-target.md
 
