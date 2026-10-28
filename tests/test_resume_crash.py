@@ -262,10 +262,10 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
     await asyncio.to_thread(path.write_bytes, tail)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
 
-    async def crash(session_id, seq, event):
+    def crash(session_id, seq, event):
         raise OSError("repair event could not be saved")
 
-    monkeypatch.setattr(persistence, "append", crash)
+    monkeypatch.setattr(persistence, "_append", crash)
     with pytest.raises(OSError):
         await persistence.load("interrupted-repair")
     assert await asyncio.to_thread(path.read_bytes) == b""

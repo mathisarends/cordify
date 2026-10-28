@@ -478,6 +478,7 @@ class Agent:
             await self.session.repair_interrupted()
         else:
             await self.cancel()
+        await self.session.flush()
         self.status = "disposed"
 
     async def _drive(self):
@@ -696,6 +697,7 @@ class Agent:
         execution = ToolCallContext(call, self)
         try:
             await self.session.append(ToolExecutionStarted(call.id))
+            await self.session.flush()
             result = await self.ctx.dispatch(
                 ExecuteTool(call, self),
                 default=lambda: self.ctx[ToolRegistry].execute(

@@ -7,6 +7,7 @@
 - 1.2 optional/named injection: resolved — `Inject[T | None]` and `Annotated[T, InjectMarker(key)]`. Optional injection does not restart plugins.
 - P1-4 (partial): immutable plugin keyword configuration. P1-9 (partial): cached tool schemas and redundant validation removed.
 - P0-2: resolved — `Session.publish(TextDelta)` is transient; the model buffer commits one completed/interrupted `AssistantMessage`. Legacy chunk logs remain readable for resume.
+- P0-3: resolved — serialized off-thread JSONL I/O, explicit durability/flush/close, write errors retained, cancellation drains acknowledged writes before projection commit.
 - Remaining findings: open; implementation and verification are in progress.
 
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
@@ -160,7 +161,9 @@ class TextDelta(TransientEvent):        # replaces AssistantChunk in the log
 - `stream()` abonniert beide Kanäle. Damit sieht eine UI weiterhin jeden Token, das Log aber nicht.
 - Der einzige Verlust ist der Teiltext bei einem **harten** Prozess-Crash mitten im Stream. Der wird ohnehin neu generiert. Wer ihn trotzdem braucht, bekommt einen optionalen Checkpoint (`AssistantPartial` alle N Sekunden), der standardmäßig aus ist.
 
-#### P0-3 · Blockierende I/O im Event-Loop
+#### ~~P0-3 · Blockierende I/O im Event-Loop~~
+
+**Resolved:** Load/write/flush/fsync/close run in drained workers. Durability modes are `buffered`, `flush` (default), and `fsync`; tools flush their start record before execution, turn ends and close flush too. Unlike the suggested fire-and-forget queue, append still acknowledges the write, preserving the existing durable-before-observer contract. Group commit is a future optimization, not required to remove blocking I/O. Tests: `test_async_persistence.py`, crash/tail-recovery suites.
 - `JsonlPersistence.load` liest synchron. `append` schreibt, flusht und fsynct synchron, obwohl die Methoden `async def` sind (`adapters/persistence.py:27-105`, `134-144`). Jeder `fsync` hält damit **alle** Coroutinen an: Streams, parallele Tools und andere Sessions im selben Prozess.
 - `LocalSpillStore` und `LocalFS` lagern dagegen über `to_thread` aus. Das ist inkonsistent.
 

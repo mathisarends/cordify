@@ -1639,3 +1639,17 @@ DeepSeek caches prefixes automatically and receives no invented cache parameters
 its adapter records the reported `prompt_cache_hit_tokens` and
 `prompt_cache_miss_tokens`. No specific number of cache misses is guaranteed.
 See [DeepSeek Context Caching](https://api-docs.deepseek.com/guides/kv_cache/).
+
+### Persistence I/O and durability
+
+JSONL load, append, flush and close execute in worker threads. Writes are ordered
+and acknowledged before the event enters the in-memory log or reaches observers.
+Cancellation drains an in-flight write before releasing its lock and committing
+the corresponding event to memory. Failed writes are reported on later writes
+and flushes as well.
+
+Use `session_jsonl(path, durability="flush")` (default), `"fsync"` for an OS
+sync at each append, or `"buffered"` for explicit barriers. Tools flush their
+start record before execution, closed turns flush, and adapter close flushes.
+`await session.flush()` provides an explicit barrier for hosts. A buffered event
+can be lost on abrupt process termination before a barrier.

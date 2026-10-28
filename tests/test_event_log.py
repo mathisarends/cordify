@@ -164,6 +164,9 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
         async def load(self, session_id):
             return ()
 
+        async def flush(self):
+            pass
+
         async def append(self, session_id, seq, event):
             if isinstance(event, AssistantMessage):
                 raise OSError("storage unavailable")

@@ -61,6 +61,8 @@ from .turns import Turn, derive_turns
 class SessionPersistence(Protocol):
     async def load(self, session_id: str) -> tuple[SessionEvent, ...]: ...
     async def append(self, session_id: str, seq: int, event: SessionEvent) -> None: ...
+    async def flush(self) -> None: ...
+    async def aclose(self) -> None: ...
 
 
 def _validate_event(event: SessionEvent) -> None:
@@ -329,6 +331,7 @@ class Session:
 
     async def append(self, event: SessionEvent) -> None:
         _validate_event(event)
+        cancelled = False
         async with self._lock:
             if isinstance(event, InboxAdded | InboxRemoved):
                 Inbox((*self._events, event))
@@ -338,11 +341,32 @@ class Session:
             if isinstance(event, CompactionApplied):
                 _validate_compaction(self._events, event, seq)
             if self._persistence is not None:
-                await self._persistence.append(self.id, seq, event)
+                persistence = self._persistence
+
+                async def persist():
+                    await persistence.append(self.id, seq, event)
+                    if isinstance(event, TurnEnd):
+                        await persistence.flush()
+
+                write = asyncio.create_task(persist())
+                while not write.done():
+                    try:
+                        await asyncio.shield(write)
+                    except asyncio.CancelledError:
+                        cancelled = True
+                write.result()
             self._events.append(event)
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
             await self.ctx.dispatch(event)
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def flush(self) -> None:
+        """Wait for persistence to acknowledge every preceding append."""
+        async with self._lock:
+            if self._persistence is not None:
+                await self._persistence.flush()
 
     async def publish(self, event: TransientEvent) -> None:
         """Deliver a live event without persistence or projection changes."""

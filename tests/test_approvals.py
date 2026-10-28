@@ -195,6 +195,9 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
         async def load(self, session_id):
             return ()
 
+        async def flush(self):
+            pass
+
         async def append(self, session_id, seq, event):
             if isinstance(event, ApprovalResolved) and event.status == "answered":
                 raise OSError("approval could not be saved")
