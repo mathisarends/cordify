@@ -13,6 +13,7 @@ from harnessed.core.messages import ToolCall, ToolResult
 from harnessed.core.model import ToolDefinition
 from harnessed.core.tools.arguments import ToolArguments, tool_result_content
 from harnessed.core.tools.context import ToolContext, ToolContexts
+from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting, validate_output_limit
 from harnessed.core.tools.scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
 from harnessed.kernel.context import Context
 from harnessed.kernel.di import BindingPlan, Dependency, binding_plan
@@ -47,6 +48,10 @@ class ToolSpec:
     resources: ResourceSpec = ()
     readonly: bool = False
     override: bool = False
+    output_limit: OutputLimitSetting = OutputLimit.INHERIT
+
+    def __post_init__(self):
+        validate_output_limit(self.output_limit)
 
     @property
     def needs(self) -> tuple[type, ...]:
@@ -131,6 +136,7 @@ class ToolRegistry:
         parallel: bool = False,
         resources: ResourceSpec = (),
         readonly: bool = False,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
         owner: Context | None = None,
     ) -> Callable[[F], F]: ...
@@ -145,6 +151,7 @@ class ToolRegistry:
         parallel: bool = False,
         resources: ResourceSpec = (),
         readonly: bool = False,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
         owner: Context | None = None,
     ):
@@ -156,6 +163,7 @@ class ToolRegistry:
                 parallel=parallel,
                 resources=resources,
                 readonly=readonly,
+                output_limit=output_limit,
                 override=override,
                 owner=owner,
             )
@@ -172,11 +180,14 @@ class ToolRegistry:
         parallel: bool = False,
         resources: ResourceSpec = (),
         readonly: bool = False,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
         owner: Context | None = None,
         spec: ToolSpec | None = None,
     ) -> Disposer:
-        spec = spec or ToolSpec(name, timeout, parallel, resources, readonly, override)
+        spec = spec or ToolSpec(
+            name, timeout, parallel, resources, readonly, override, output_limit
+        )
         name, timeout, parallel = spec.name, spec.timeout, spec.parallel
         resources, readonly, override = spec.resources, spec.readonly, spec.override
         owner = owner if owner is not None else Context.current() or self._ctx
@@ -278,7 +289,10 @@ class ToolRegistry:
                 keys.close()
             raise TypeError("Resource resolvers must return resource names, not an awaitable")
         return ToolPlan(
-            call, ToolScheduling(tool.spec.parallel, tuple(cast(Iterable[str], keys))), binding=tool
+            call,
+            ToolScheduling(tool.spec.parallel, tuple(cast(Iterable[str], keys))),
+            binding=tool,
+            output_limit=tool.spec.output_limit,
         )
 
     async def execute(

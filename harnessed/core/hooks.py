@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from harnessed.core.messages import ApprovalAnswer, Message, PolicyDecision, ToolCall, ToolResult
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import ApprovalRequested, SessionEvent, UserMessage
+from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.kernel.events import Bail, Emit, Waterfall
 from harnessed.kernel.hooks import Next as Next
 
@@ -62,6 +63,7 @@ class ReviewToolResult(Waterfall[ToolResult]):
     call: ToolCall
     result: ToolResult
     agent: Agent
+    output_limit: OutputLimitSetting = field(default=OutputLimit.INHERIT, kw_only=True)
 
 
 @dataclass(frozen=True)

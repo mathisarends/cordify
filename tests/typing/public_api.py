@@ -34,7 +34,7 @@ async def configured(ctx: Context, root: str, *, enabled: bool = True) -> AsyncG
 assert_type(configured("workspace", enabled=False), PluginSpec)
 
 
-@tool(readonly=True)
+@tool(readonly=True, output_limit=None)
 async def count(value: int, *, injected: Inject[str]) -> int:
     assert_type(injected, str)
     return value

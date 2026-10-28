@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import Any, overload
 
+from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.core.tools.registry import ToolSpec
 from harnessed.core.tools.scheduling import ResourceSpec, resource_spec
 
@@ -19,6 +20,7 @@ def tool[F: Callable[..., Any]](
     parallel: bool = False,
     resources: ResourceSpec = (),
     readonly: bool = False,
+    output_limit: OutputLimitSetting = OutputLimit.INHERIT,
     override: bool = False,
 ) -> Callable[[F], F]: ...
 
@@ -32,12 +34,13 @@ def tool(
     parallel: bool = False,
     resources: ResourceSpec = (),
     readonly: bool = False,
+    output_limit: OutputLimitSetting = OutputLimit.INHERIT,
     override: bool = False,
 ):
     resources = resource_spec(resources)
 
     def decorate(callback):
-        spec = ToolSpec(name, timeout, parallel, resources, readonly, override)
+        spec = ToolSpec(name, timeout, parallel, resources, readonly, override, output_limit)
         callback._harnessed_tool = spec
         callback._harnessed_registrations = [
             *getattr(callback, "_harnessed_registrations", ()),

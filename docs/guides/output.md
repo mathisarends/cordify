@@ -6,6 +6,13 @@ ranges or filter its command. It runs after result-review hooks so even a policy
 that expands text cannot bypass the final limit. Images and structured status
 metadata survive the transformation.
 
+A tool inherits the session limit by default. An explicit
+`@tool(output_limit=512)` sets its own character budget (at least 256).
+`@tool(output_limit=None)` preserves its complete output and opts out of spill;
+use it for complete instructions that must reach the model intact. The same option
+works on `Context.tool`, bundle and registry declarations. Policies are captured
+when the tool batch is planned. Review hooks receive the setting on their event.
+
 ## Keep large results retrievable
 
 ```python

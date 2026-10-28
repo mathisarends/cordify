@@ -174,6 +174,8 @@ class Spill(Plugin, slot="spill"):
         session: Inject[SessionLog],
     ) -> ToolResult:
         result = await next_()
+        if event.output_limit is None:
+            return result
         tokens = counter.count_text(result.text)
         if (
             tokens <= self.config.threshold_tokens
@@ -199,7 +201,7 @@ class Spill(Plugin, slot="spill"):
         )
         return replace(result.with_text(text), spill=ref)
 
-    @tool(readonly=True, parallel=True, resources=("session-spills",))
+    @tool(readonly=True, parallel=True, resources=("session-spills",), output_limit=None)
     async def read_spill(self, path: str, offset: FileOffset = 0, limit: ReadLimit = 4000) -> str:
         """Read a session spill by Unicode character range, up to 16000 characters."""
         return await self.store.read(path, offset=offset, limit=limit)

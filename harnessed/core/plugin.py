@@ -5,6 +5,7 @@ from typing import Any, overload
 from pydantic import BaseModel, ConfigDict
 
 from harnessed.core.prompt.values import Section
+from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.core.tools.registry import ToolRegistry, ToolSpec
 from harnessed.core.tools.scheduling import ResourceSpec, resource_spec
 from harnessed.kernel import Context, Key
@@ -39,6 +40,7 @@ class PluginContext(Context):
         parallel: bool = False,
         resources: ResourceSpec = (),
         readonly: bool = False,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
     ) -> Callable[[F], F]: ...
 
@@ -52,6 +54,7 @@ class PluginContext(Context):
         parallel=False,
         resources=(),
         readonly=False,
+        output_limit=OutputLimit.INHERIT,
         override=False,
     ):
         def register(callback):
@@ -62,6 +65,7 @@ class PluginContext(Context):
                 parallel=parallel,
                 resources=resources,
                 readonly=readonly,
+                output_limit=output_limit,
                 override=override,
                 owner=self,
             )
@@ -80,10 +84,13 @@ class Bundle(KernelBundle):
         parallel: bool = False,
         resources: ResourceSpec = (),
         readonly: bool = False,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
     ):
         return self.add_registration(
-            ToolSpec(name, timeout, parallel, resource_spec(resources), readonly, override),
+            ToolSpec(
+                name, timeout, parallel, resource_spec(resources), readonly, override, output_limit
+            ),
             callback,
         )
 
@@ -99,6 +106,7 @@ class Bundle(KernelBundle):
         parallel: bool = False,
         resources: ResourceSpec = (),
         readonly: bool = False,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
     ) -> Callable[[F], F]: ...
 
@@ -112,6 +120,7 @@ class Bundle(KernelBundle):
         parallel: bool = False,
         resources: ResourceSpec = (),
         readonly: bool = False,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
     ):
         def register(callback):
@@ -122,6 +131,7 @@ class Bundle(KernelBundle):
                 parallel=parallel,
                 resources=resources,
                 readonly=readonly,
+                output_limit=output_limit,
                 override=override,
             )
 

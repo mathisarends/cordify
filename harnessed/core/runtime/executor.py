@@ -24,6 +24,8 @@ from harnessed.core.session.events import (
     ToolReturned,
 )
 from harnessed.core.tools.context import ToolContexts
+from harnessed.core.tools.output_limit import ToolOutputLimit
+from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.core.tools.registry import ToolRegistry, format_tool_error
 from harnessed.core.tools.scheduling import ToolPlan, ToolScheduler, ToolScheduling
 from harnessed.core.tracing import span
@@ -78,8 +80,14 @@ async def run_tool_group(
             if index:
                 await reviewed[index - 1].wait()
             if reviewable:
-                result = await review_tool(self, plan.call, result)
-            result = self.options.tool_output_limit.apply(result)
+                result = await review_tool(self, plan.call, result, output_limit=plan.output_limit)
+            if plan.output_limit is not None:
+                limit = (
+                    self.options.tool_output_limit
+                    if isinstance(plan.output_limit, OutputLimit)
+                    else ToolOutputLimit(plan.output_limit)
+                )
+                result = limit.apply(result)
             await self.log.append(ToolCompleted(plan.call.id, result))
             return result
         finally:
@@ -157,10 +165,16 @@ async def execute_tool(self: Session, plan: ToolPlan) -> tuple[ToolResult, bool]
         return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter)), False
 
 
-async def review_tool(self: Session, call: ToolCall, result: ToolResult) -> ToolResult:
+async def review_tool(
+    self: Session,
+    call: ToolCall,
+    result: ToolResult,
+    *,
+    output_limit: OutputLimitSetting = OutputLimit.INHERIT,
+) -> ToolResult:
     try:
         result = await self.ctx.dispatch(
-            ReviewToolResult(call, result, self),
+            ReviewToolResult(call, result, self, output_limit=output_limit),
             default=lambda: result,
         )
         if not isinstance(result, ToolResult):
