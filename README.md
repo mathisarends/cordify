@@ -1,20 +1,20 @@
-# Cordify
+# Harnessed
 
 A native Python SDK for an agent harness: Context, services, plugins, typed
 events, a session log, and a replaceable ReAct loop. Inspired by
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and
 [Cordis](https://github.com/cordiverse/cordis), using their terminology with
-Python APIs. Cordify does not provide API or file format compatibility with
+Python APIs. Harnessed does not provide API or file format compatibility with
 the TypeScript projects.
 
 Python **3.12–3.14**, PEP 695 generics, and Pydantic v2 for boundary validation.
 The agent-independent kernel uses only the standard library.
-The package lives directly in `cordify/`.
+The package lives directly in `harnessed/`.
 
 ## Package structure
 
 ```text
-cordify/
+harnessed/
   kernel/                Context, keys, DI, events, effects, plugin lifecycle
     context.py
     plugin.py
@@ -51,10 +51,10 @@ cordify/
 
 Dependencies point toward the lower layers:
 **kernel ← seams ← core ← plugins/adapters ← presets**.
-Architecture tests enforce these boundaries. `cordify.kernel` loads no agents,
+Architecture tests enforce these boundaries. `harnessed.kernel` loads no agents,
 adapters, or third-party packages. The kernel provides generic registration
 recipes; `core.features` connects them to ToolRegistry.
-`kernel.Plugin` is the general base, while `cordify.Plugin` adds agent
+`kernel.Plugin` is the general base, while `harnessed.Plugin` adds agent
 conveniences such as `tools=[...]` and bundles with `.tool`.
 
 ### Seams use Protocol
@@ -62,7 +62,7 @@ conveniences such as `tools=[...]` and bundles with `.tool`.
 `FS`, `LLM`, `Shell`, `Approver`, `TokenCounter`, `Compactor`, and `SpillStore`
 are small `typing.Protocol` contracts. The internal `AgentFactory` and
 `SessionPersistence` contracts follow the same pattern. Implementations satisfy
-these contracts structurally and do not need a Cordify base class:
+these contracts structurally and do not need a Harnessed base class:
 
 ```python
 from pathlib import Path
@@ -79,8 +79,8 @@ class MemoryFiles:
         self.files[str(path)] = text
 
 
-# Only the integration imports Cordify; the implementation above stays independent.
-from cordify import Context, FS
+# Only the integration imports Harnessed; the implementation above stays independent.
+from harnessed import Context, FS
 
 async with Context() as ctx:
     ctx.provide(FS, MemoryFiles())
@@ -93,27 +93,27 @@ check against the seam. Shared implementation logic belongs in adapters or
 plugins; data contracts remain immutable value types.
 The tests run independent FS, LLM, Shell, and Approver implementations through
 the actual DI, approval, and tool pipelines without inheritance.
-An optional `cordify.adapters.base.LLM` supports adapters that share implementation logic;
+An optional `harnessed.adapters.base.LLM` supports adapters that share implementation logic;
 the registered service key remains `LLM`.
 
-The old flat module paths and `cordify.std` have been removed. Root imports such
-as `from cordify import Harness, Plugin, Inject` remain available. Import
+The old flat module paths and `harnessed.std` have been removed. Root imports such
+as `from harnessed import Harness, Plugin, Inject` remain available. Import
 concrete implementations from their respective layers:
 
 ```python
-from cordify.kernel import Context, Key, plugin
-from cordify.adapters.deepseek import DeepSeekLLM
-from cordify.plugins.context.compaction import ThresholdCompaction
-from cordify.presets import minimal, coding, headless
+from harnessed.kernel import Context, Key, plugin
+from harnessed.adapters.deepseek import DeepSeekLLM
+from harnessed.plugins.context.compaction import ThresholdCompaction
+from harnessed.presets import minimal, coding, headless
 
 agent = minimal(DeepSeekLLM(model="deepseek-flash"))
 # coding(adapter, root="./repo", shell=True) explicitly adds file tools and a shell.
 ```
 
-For plugin authors, `cordify.kernel` is the public entry point for `Context`,
+For plugin authors, `harnessed.kernel` is the public entry point for `Context`,
 `Inject`, `plugin`, `hook`, and the other kernel APIs. Built-in plugins use this
 facade too, so reorganizing kernel modules does not change their imports.
-Cross-package imports use absolute `cordify` paths; single-dot sibling imports
+Cross-package imports use absolute `harnessed` paths; single-dot sibling imports
 remain allowed. Ruff enforces this convention locally and in CI.
 
 OTel and extras for unimplemented capabilities are not included. MCP, sandbox
@@ -159,11 +159,11 @@ use deterministic model responses to demonstrate the SDK.
 import asyncio
 from pathlib import Path
 
-from cordify import Bundle, FS, Harness, Inject
-from cordify.plugins.agents.loop import agent_loop
-from cordify.plugins.tools.fs import fs_local
-from cordify.plugins.services import llm
-from cordify.testing import ScriptedLLM
+from harnessed import Bundle, FS, Harness, Inject
+from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.tools.fs import fs_local
+from harnessed.plugins.services import llm
+from harnessed.testing import ScriptedLLM
 
 workspace = Bundle("workspace")
 
@@ -178,7 +178,7 @@ async def main():
     harness = Harness(
         [
             agent_loop(),
-            llm(ScriptedLLM(["Hello from Cordify."])),
+            llm(ScriptedLLM(["Hello from Harnessed."])),
             fs_local("."),
             workspace,
         ]
@@ -203,7 +203,7 @@ Each mount owns its own cleanup stack.
 
 ## Validation and typed forms
 
-Cordify uses **Pydantic v2** (`pydantic>=2.12,<3`) for tool arguments and
+Harnessed uses **Pydantic v2** (`pydantic>=2.12,<3`) for tool arguments and
 provider boundaries. The kernel remains independent of Pydantic.
 Seams remain Protocols; their value types and append-only session events remain
 frozen dataclasses. Validated provider data and form models are converted to
@@ -216,7 +216,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cordify import Bundle, Inject, ToolCallContext
+from harnessed import Bundle, Inject, ToolCallContext
 
 
 class Priority(StrEnum):
@@ -275,7 +275,7 @@ to JSON; `ToolResult` and `ProcResult` keep their existing behavior.
 
 ### DeepSeek wire models
 
-`cordify.adapters.deepseek_models` defines `DeepSeekConfig`,
+`harnessed.adapters.deepseek_models` defines `DeepSeekConfig`,
 `ChatCompletionRequest`, `ChatMessage`, `ChatCompletionChunk`, tool-call deltas,
 and usage models. `DeepSeekLLM` uses them directly, so provider parsing does not
 depend on chains of untyped dictionaries.
@@ -283,9 +283,9 @@ depend on chains of untyped dictionaries.
 ```python
 from pydantic import ValidationError
 
-from cordify import ModelRequest, user
-from cordify.adapters.deepseek import DeepSeekLLM
-from cordify.adapters.deepseek_models import ChatCompletionRequest
+from harnessed import ModelRequest, user
+from harnessed.adapters.deepseek import DeepSeekLLM
+from harnessed.adapters.deepseek_models import ChatCompletionRequest
 
 adapter = DeepSeekLLM(model="deepseek-flash", api_key="example-key", timeout=120)
 print(adapter.config)  # API keys are masked by SecretStr.
@@ -343,7 +343,7 @@ Multiple follow-ups run FIFO in separate turns; the next queued turn may start
 immediately after the current one.
 
 ```python
-from cordify import system
+from harnessed import system
 
 await agent.inject(system("The door was opened."))  # Stays queued while idle.
 await agent.followup("Check the room.")  # Wakes the agent for a new turn.
@@ -375,7 +375,7 @@ Turns and steps are themselves `frozen` log projections, with no separate
 mutable history:
 
 ```python
-from cordify import derive_turns
+from harnessed import derive_turns
 
 assert agent.session.turns == derive_turns(agent.session.events)
 for turn in agent.session.turns:
@@ -512,7 +512,7 @@ the completed tool.
 
 ```python
 from pathlib import Path
-from cordify import FS, Inject, Plugin, SystemPrompt
+from harnessed import FS, Inject, Plugin, SystemPrompt
 
 
 class ProjectInstructions(Plugin):
@@ -535,7 +535,7 @@ behavior. Unloading the plugin removes its sections.
 **2. Per-task context** and attachments:
 
 ```python
-from cordify import File, Image
+from harnessed import File, Image
 
 result = await agent.run(
     "Review this PR.",
@@ -554,7 +554,7 @@ model. `followup` and `stream` accept the same options.
 **3. During a run**, send silent messages or steering:
 
 ```python
-from cordify import system, user
+from harnessed import system, user
 
 await agent.inject(system("utils.py was modified externally."))
 await agent.steer(user("Focus on the auth module first."))
@@ -567,7 +567,7 @@ and model history.
 **4. Push context before a step**, such as memory:
 
 ```python
-from cordify import Agent, Inject, Plugin, PreStep, hook, system
+from harnessed import Agent, Inject, Plugin, PreStep, hook, system
 
 
 class RelevantMemories(Plugin):
@@ -604,7 +604,7 @@ a runnable implementation with a `Memory` service.
 ## Observations for browsers and other live state
 
 ```python
-from cordify import Agent, Inject, Observation, Plugin, PreStep, hook
+from harnessed import Agent, Inject, Observation, Plugin, PreStep, hook
 
 
 class BrowserObserver(Plugin):
@@ -656,7 +656,7 @@ Listeners registered through `agent.on` and `agent.add_hook` also belong to the
 currently active plugin Context, or to the session when called outside a plugin.
 
 ```python
-from cordify import Context, Emit, SystemPrompt, ToolRegistry
+from harnessed import Context, Emit, SystemPrompt, ToolRegistry
 
 
 class Changed(Emit):
@@ -787,8 +787,8 @@ at their respective boundaries:
 ```python
 from pathlib import Path
 
-from cordify import Context, Inject, Shell, ToolRegistry, plugin
-from cordify.seams.shell import ProcResult
+from harnessed import Context, Inject, Shell, ToolRegistry, plugin
+from harnessed.seams.shell import ProcResult
 
 
 @plugin(needs=[Shell, ToolRegistry])
@@ -806,7 +806,7 @@ setup. [`22_builtin_tool_lifetimes.py`](examples/22_builtin_tool_lifetimes.py)
 demonstrates this through a harness session with two offline shell backends.
 
 ```python
-from cordify import Context, Inject, SystemPrompt, ToolRegistry, plugin
+from harnessed import Context, Inject, SystemPrompt, ToolRegistry, plugin
 
 
 @plugin
@@ -825,7 +825,7 @@ tool parameters come from the model. In hooks, the event and `next_` remain
 ordinary parameters. The agent is injected per session:
 
 ```python
-from cordify import Agent, Bundle, Inject, ReviewToolResult
+from harnessed import Agent, Bundle, Inject, ReviewToolResult
 
 safety = Bundle("safety")
 
@@ -917,7 +917,7 @@ phases run sequentially regardless of their listener priorities.
 UI and SDK responders can also use `ApprovalRequest`, a `Bail[Decision]` event:
 
 ```python
-from cordify import ApprovalRequest, Decision
+from harnessed import ApprovalRequest, Decision
 
 
 @harness.on(ApprovalRequest, priority=0)
@@ -993,8 +993,8 @@ session log, and the next model request. It also bounds error text and additions
 from review hooks. This is a fixed agent policy, active without an extra plugin.
 
 ```python
-from cordify import ToolOutputLimit
-from cordify.presets import coding
+from harnessed import ToolOutputLimit
+from harnessed.presets import coding
 
 harness = coding(model, root="./repo", tool_output_limit=ToolOutputLimit(max_chars=8000))
 async with harness.session("review", tool_output_limit=ToolOutputLimit(max_chars=4000)) as agent:
@@ -1022,7 +1022,7 @@ notice. Small results stay unchanged. The policy is idempotent and can also
 be used in a custom waterfall around `ExecuteTool`:
 
 ```python
-from cordify import Bundle, ExecuteTool, ToolOutputLimit
+from harnessed import Bundle, ExecuteTool, ToolOutputLimit
 
 limits = Bundle("output-limits")
 budget = ToolOutputLimit(max_chars=8000)
@@ -1076,8 +1076,8 @@ These options work with Bundle, class `@tool` decorators, Harness, Agent, and
 arguments in the tool schema.
 
 ```python
-from cordify import Bundle, Inject, ToolCall
-from cordify.presets import minimal
+from harnessed import Bundle, Inject, ToolCall
+from harnessed.presets import minimal
 
 tools = Bundle("records")
 
@@ -1146,7 +1146,7 @@ without changing earlier entries.
 The public projections are pure functions:
 
 ```python
-from cordify import Session, derive_messages, derive_requests
+from harnessed import Session, derive_messages, derive_requests
 
 history = derive_messages(session.events)  # Identical to session.messages.
 requests = derive_requests(session.events)  # Identical to session.requests.
@@ -1178,7 +1178,7 @@ fork = replay.fork("alternative")  # Independent log with the same closed prefix
 
 Replay and fork need neither the original provider nor tool execution or plugin
 setup. Evals and debugging can inspect the same events and request snapshots.
-The `encode_event()` and `decode_event()` codecs in `cordify.core.session`
+The `encode_event()` and `decode_event()` codecs in `harnessed.core.session`
 preserve projections across a JSON round trip.
 
 If a crash follows stored chunks, `repair_interrupted()` appends
@@ -1199,9 +1199,9 @@ The application remounts its services and plugins; messages, inbox, permissions,
 compaction, and other recorded state are reconstructed from the log.
 
 ```python
-from cordify.plugins.permissions.approval import approval_gate
-from cordify.plugins.persistence import session_jsonl
-from cordify.presets import coding
+from harnessed.plugins.permissions.approval import approval_gate
+from harnessed.plugins.persistence import session_jsonl
+from harnessed.presets import coding
 
 harness = coding(
     model,
@@ -1357,7 +1357,7 @@ unchanged. Remove older wheel versions before running it after a version bump.
 
 JSONL append is synchronous and flushes each event; `fsync=True` additionally
 flushes to disk. Corrupt or unknown records are rejected.
-The log uses Cordify's own versioned format. Projections currently read the
+The log uses Harnessed's own versioned format. Projections currently read the
 whole history; large sessions will need incremental projections later.
 Compaction reduces model history while leaving the append-only log intact.
 
@@ -1388,15 +1388,15 @@ These extensions can build on the same services and events.
 
 ## Custom LLM adapters
 
-`cordify.seams.LLM` remains a `Protocol`. `cordify.adapters.base.LLM` is an optional helper for retries,
+`harnessed.seams.LLM` remains a `Protocol`. `harnessed.adapters.base.LLM` is an optional helper for retries,
 exponential backoff, and closing streams after each attempt. Custom providers
 implement `_stream_once()` and, if needed, `is_retryable(error)`:
 
 ```python
 from collections.abc import AsyncIterator
 
-from cordify.adapters.base import LLM, RetryPolicy
-from cordify.seams import ModelChunk, ModelRequest
+from harnessed.adapters.base import LLM, RetryPolicy
+from harnessed.seams import ModelChunk, ModelRequest
 
 
 class DemoLLM(LLM):
@@ -1424,10 +1424,10 @@ the DI container. `ScriptedLLM` continues to satisfy the Protocol directly.
 existing provider plugin:
 
 ```python
-from cordify import Harness
-from cordify.adapters.base import RetryPolicy
-from cordify.adapters.deepseek import deepseek
-from cordify.plugins.agents.loop import agent_loop
+from harnessed import Harness
+from harnessed.adapters.base import RetryPolicy
+from harnessed.adapters.deepseek import deepseek
+from harnessed.plugins.agents.loop import agent_loop
 
 harness = Harness(
     [
@@ -1438,7 +1438,7 @@ harness = Harness(
 ```
 
 For SSE providers,
-`cordify.adapters.sse.iter_sse_data(response.aiter_lines())` handles shared
+`harnessed.adapters.sse.iter_sse_data(response.aiter_lines())` handles shared
 data framing, including multiline data and comments. Interpretation of JSON
 deltas, tool-call fragments, and `[DONE]` stays with the provider.
 Framing follows the
@@ -1479,13 +1479,13 @@ System context from `inject()` may be summarized as conversation content;
 rules that must remain verbatim belong in `SystemPrompt.section()`.
 
 ```python
-from cordify import (
+from harnessed import (
     ContextBudgetGuard,
     PeriodicCompaction,
     SlidingWindowCompaction,
     ThresholdCompaction,
 )
-from cordify.presets import coding
+from harnessed.presets import coding
 
 policies = {
     "coding": ThresholdCompaction(at=0.8, keep_turns=2, keep_first_turns=1),
@@ -1532,7 +1532,7 @@ the guard before the provider call.
 ## Rules and context strategies
 
 ```python
-from cordify import (
+from harnessed import (
     CacheBreakpoints,
     LatestObservationOnly,
     Rules,
@@ -1601,7 +1601,7 @@ its meaning, and use distinct names for independent Rules instances.
 - `SpillLargeResults` stores large results in the `SpillStore`. The model gets a
   path, hash, preview, and a reference to the registered `read_spill` tool.
   Files remain available for later reads and forks and should be retained with
-  the session. Default path: `.cordify/spills`.
+  the session. Default path: `.harnessed/spills`.
 - `ThresholdCompaction` checks the complete request plus reserved output tokens.
   At `at * context_window`, it summarizes older completed turns and keeps the
   last two by default. A successful replacement writes exactly one
@@ -1619,9 +1619,9 @@ discovered model limit. Mount a suitable TokenCounter for accurate budgets.
 Semantic summaries can be enabled explicitly:
 
 ```python
-from cordify import LLMCompactor, LocalSpillStore
-from cordify.plugins.context.providers import compactor, spill_store
-from cordify.plugins.observe.tokens import token_counter
+from harnessed import LLMCompactor, LocalSpillStore
+from harnessed.plugins.context.providers import compactor, spill_store
+from harnessed.plugins.observe.tokens import token_counter
 
 # Add to the Harness plugins:
 # compactor(LLMCompactor(summary_llm, model="your-summary-model"))
