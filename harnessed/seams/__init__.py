@@ -35,10 +35,10 @@ if TYPE_CHECKING:
     from harnessed.core.model import request_from_dict as request_from_dict
     from harnessed.core.tokens import TokenCounter as TokenCounter
     from harnessed.plugins.filesystem import FS as FS
+    from harnessed.plugins.shell import ProcResult as ProcResult
+    from harnessed.plugins.shell import ShellBackend as Shell
     from harnessed.seams.compaction import Compactor as Compactor
     from harnessed.seams.llm import LLM as LLM
-    from harnessed.seams.shell import ProcResult as ProcResult
-    from harnessed.seams.shell import Shell as Shell
     from harnessed.seams.spill import SpillStore as SpillStore
 _EXPORTS = {
     "ProviderUnavailable": ("harnessed.core.errors", "ProviderUnavailable"),
@@ -73,8 +73,8 @@ _EXPORTS = {
     "result_content": ("harnessed.core.messages", "result_content"),
     "ContentPart": ("harnessed.core.messages", "ContentPart"),
     "FS": ("harnessed.plugins.filesystem", "FS"),
-    "Shell": ("harnessed.seams.shell", "Shell"),
-    "ProcResult": ("harnessed.seams.shell", "ProcResult"),
+    "Shell": ("harnessed.plugins.shell", "ShellBackend"),
+    "ProcResult": ("harnessed.plugins.shell", "ProcResult"),
     "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
     "Compactor": ("harnessed.seams.compaction", "Compactor"),
     "SpillStore": ("harnessed.seams.spill", "SpillStore"),

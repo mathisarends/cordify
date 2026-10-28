@@ -30,9 +30,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P0-5 — Shell containment and accurate denials
 
-- Cap shell timeout and incrementally bound stdout/stderr (including truncation
-  markers). Terminate process trees on timeout/abort, with POSIX process groups
-  and Windows job ownership. Add focused descendant/process-output tests.
 - Distinguish policy denials from user denials in values, log and model text.
 - Preserve the safe default: read-only tools ALLOW; side effects ASK; absent
   responders unavailable. Keep full unexpected exceptions out of model output.

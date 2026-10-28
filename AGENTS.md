@@ -7,9 +7,8 @@ imports (`from ..` and `from ...`, including deeper forms) are not allowed.
 Single-dot relative imports within the same package remain allowed.
 
 ```python
-from harnessed.adapters.shell import LocalShell
+from harnessed.plugins.shell import LocalShell, ProcResult, ShellBackend
 from harnessed.kernel import Context, Inject, plugin
-from harnessed.seams.shell import ProcResult, Shell
 ```
 
 Plugin implementations and examples must use the public `harnessed.kernel` facade

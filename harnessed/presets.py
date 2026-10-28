@@ -163,7 +163,7 @@ def coding(
 ) -> Harness:
     from .plugins._context.instructions import agents_md
     from .plugins.filesystem import fs_local, fs_tools
-    from .plugins.tools.shell import shell_local, shell_tools
+    from .plugins.shell import shell_local, shell_tools
 
     workspace = Path(root).resolve()
     capabilities = [fs_local(workspace), fs_tools(), agents_md(workspace / "AGENTS.md")]

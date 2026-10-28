@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from harnessed.plugins.permissions.rules import when as when
     from harnessed.plugins.persistence import session_jsonl as jsonl_sessions
     from harnessed.plugins.services import llm as llm
+    from harnessed.plugins.shell import Shell as Shell
 _EXPORTS = {
     "AgentLoop": ("harnessed.core.runtime", "AgentLoop"),
     "MemorySessions": ("harnessed.core.store", "MemorySessions"),
@@ -36,6 +37,7 @@ _EXPORTS = {
     "Instructions": ("harnessed.core.instruction_plugin", "Instructions"),
     "NoopTracer": ("harnessed.core.tracing", "NoopTracer"),
     "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
+    "Shell": ("harnessed.plugins.shell", "Shell"),
     "Service": ("harnessed.core.features", "Service"),
     "jsonl_sessions": ("harnessed.plugins.persistence", "session_jsonl"),
     "agent_loop": ("harnessed.plugins.agents.loop", "agent_loop"),
@@ -60,6 +62,7 @@ __all__ = [
     "Instructions",
     "NoopTracer",
     "Filesystem",
+    "Shell",
     "Service",
     "jsonl_sessions",
     "agent_loop",

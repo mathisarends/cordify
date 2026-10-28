@@ -5,9 +5,8 @@ from pathlib import Path
 
 from harnessed import Context, ModelChunk, Shell, ToolCall, ToolRegistry, plugin
 from harnessed.core.events import ToolReturned
-from harnessed.plugins.tools.shell import shell_tools
+from harnessed.plugins.shell import ProcResult, shell_tools
 from harnessed.presets import minimal
-from harnessed.seams.shell import ProcResult
 from harnessed.testing import ScriptedLLM
 
 

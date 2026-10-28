@@ -96,11 +96,11 @@ if TYPE_CHECKING:
     from harnessed.plugins.permissions.rules import Rule as Rule
     from harnessed.plugins.permissions.rules import Rules as Rules
     from harnessed.plugins.permissions.rules import when as when
+    from harnessed.plugins.shell import ProcResult as ProcResult
+    from harnessed.plugins.shell import ShellBackend as Shell
     from harnessed.presets import Harness as Harness
     from harnessed.seams.compaction import Compactor as Compactor
     from harnessed.seams.llm import LLM as LLM
-    from harnessed.seams.shell import ProcResult as ProcResult
-    from harnessed.seams.shell import Shell as Shell
     from harnessed.seams.spill import SpillStore as SpillStore
 _EXPORTS = {
     "Section": ("harnessed.core.instructions", "Section"),
@@ -180,8 +180,8 @@ _EXPORTS = {
     "Rules": ("harnessed.plugins.permissions.rules", "Rules"),
     "when": ("harnessed.plugins.permissions.rules", "when"),
     "FS": ("harnessed.plugins.filesystem", "FS"),
-    "ProcResult": ("harnessed.seams.shell", "ProcResult"),
-    "Shell": ("harnessed.seams.shell", "Shell"),
+    "ProcResult": ("harnessed.plugins.shell", "ProcResult"),
+    "Shell": ("harnessed.plugins.shell", "ShellBackend"),
     "Inbox": ("harnessed.core.inbox", "Inbox"),
     "Session": ("harnessed.core.session", "Session"),
     "SessionPersistence": ("harnessed.core.session", "SessionPersistence"),

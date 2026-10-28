@@ -6,8 +6,7 @@ import pytest
 from harnessed import FS, Context, Shell, ToolCall, ToolRegistry, plugin
 from harnessed.plugins.filesystem import fs_tools
 from harnessed.plugins.services import tools
-from harnessed.plugins.tools.shell import shell_tools
-from harnessed.seams.shell import ProcResult
+from harnessed.plugins.shell import ProcResult, shell_tools
 
 
 class MemoryFS:

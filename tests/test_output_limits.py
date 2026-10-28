@@ -22,7 +22,7 @@ from harnessed.core.tools import ToolError
 from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.filesystem import fs_local, fs_tools
 from harnessed.plugins.persistence import session_jsonl
-from harnessed.plugins.tools.shell import shell_local, shell_tools
+from harnessed.plugins.shell import shell_local, shell_tools
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -200,4 +200,5 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
         result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
         assert len(result.content) == 1024 and "TAIL_ERROR" in result.content
         assert result.status == "error" and result.exit_code == 3
-        assert result.truncation.original_chars > 2 * 1024 * 1024
+        assert 500_000 < result.truncation.original_chars < 1_048_576
+        assert "stdout truncated" in result.content

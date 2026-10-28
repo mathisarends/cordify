@@ -11,7 +11,7 @@ from harnessed.kernel import Context
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_tools
 from harnessed.plugins.services import llm
-from harnessed.plugins.tools.shell import shell_tools
+from harnessed.plugins.shell import shell_tools
 from harnessed.seams import (
     FS,
     LLM,
