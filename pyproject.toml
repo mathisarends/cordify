@@ -19,6 +19,7 @@ dependencies = ["pydantic>=2.12,<3"]
 openai = ["pydantic-ai-slim[openai]>=2.63,<3"]
 anthropic = ["pydantic-ai-slim[anthropic]>=2.63,<3"]
 google = ["pydantic-ai-slim[google]>=2.63,<3"]
+skills = ["pyyaml>=6.0.3,<7"]
 
 [dependency-groups]
 dev = [
@@ -57,6 +58,7 @@ ignore = ["ASYNC109"]
 [tool.ruff.lint.per-file-ignores]
 # Provider SDKs are optional; importing the core must not require an extra.
 "harnessed/models/pydantic_ai.py" = ["PLC0415"]
+"harnessed/plugins/skills.py" = ["PLC0415"]
 # Tests import optional integrations and patch import failures in their own scope.
 "tests/**/*.py" = ["PLC0415"]
 

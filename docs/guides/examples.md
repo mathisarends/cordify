@@ -35,3 +35,10 @@ and [the response-contract guide](structured-output.md).
 an acknowledged approval and a typed terminal report. See
 [the source](https://github.com/mathisarends/cordify/blob/main/examples/26_ui_stream.py)
 and [the stream contract](streaming.md).
+
+## Skills
+
+`uv run python -m examples.27_skills` discovers a folder and inline skill, loads
+instructions, and reads a resource without approvals or output truncation. See
+[the source](https://github.com/mathisarends/cordify/blob/main/examples/27_skills.py)
+and [the Skills guide](skills.md).

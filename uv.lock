@@ -498,6 +498,9 @@ google = [
 openai = [
     { name = "pydantic-ai-slim", extra = ["openai"] },
 ]
+skills = [
+    { name = "pyyaml" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -515,8 +518,9 @@ requires-dist = [
     { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", specifier = ">=2.63,<3" },
     { name = "pydantic-ai-slim", extras = ["google"], marker = "extra == 'google'", specifier = ">=2.63,<3" },
     { name = "pydantic-ai-slim", extras = ["openai"], marker = "extra == 'openai'", specifier = ">=2.63,<3" },
+    { name = "pyyaml", marker = "extra == 'skills'", specifier = ">=6.0.3,<7" },
 ]
-provides-extras = ["openai", "anthropic", "google"]
+provides-extras = ["openai", "anthropic", "google", "skills"]
 
 [package.metadata.requires-dev]
 dev = [

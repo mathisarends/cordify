@@ -1,5 +1,3 @@
-"""Optional features and configurable default plugins."""
-
 from typing import TYPE_CHECKING
 
 from harnessed._exports import exported
@@ -27,6 +25,8 @@ if TYPE_CHECKING:
     from harnessed.plugins.sessions import JsonlSessions as JsonlSessions
     from harnessed.plugins.shell import Shell as Shell
     from harnessed.plugins.shell import ShellTools as ShellTools
+    from harnessed.plugins.skills import Skill as Skill
+    from harnessed.plugins.skills import Skills as Skills
     from harnessed.plugins.spill import Spill as Spill
 
 _EXPORTS = {
@@ -48,6 +48,8 @@ _EXPORTS = {
     "Service": ("harnessed.core.plugin", "Service"),
     "Shell": ("harnessed.plugins.shell", "Shell"),
     "ShellTools": ("harnessed.plugins.shell", "ShellTools"),
+    "Skill": ("harnessed.plugins.skills", "Skill"),
+    "Skills": ("harnessed.plugins.skills", "Skills"),
     "Spill": ("harnessed.plugins.spill", "Spill"),
     "ToolOutputLimit": ("harnessed.core.tools.output_limit", "ToolOutputLimit"),
     "at_ratio": ("harnessed.plugins.compaction", "at_ratio"),
@@ -73,6 +75,8 @@ __all__ = [
     "Service",
     "Shell",
     "ShellTools",
+    "Skill",
+    "Skills",
     "Spill",
     "ToolOutputLimit",
     "at_ratio",

@@ -44,6 +44,7 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.24_session_spill",
         "examples.25_structured_output",
         "examples.26_ui_stream",
+        "examples.27_skills",
     ],
 )
 def test_offline_sdk_example_runs(module):

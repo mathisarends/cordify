@@ -23,9 +23,8 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ## Target features and policies
 
-- Add Skill/Skills with lazy discovery/load/read, safe path handling and optional
-  YAML as specified in api-target.md. Subagents, MCP, OTel, UI, RAG and eval systems remain
-  outside the current implementation scope.
+Subagents, MCP, OTel, UI applications, RAG and eval systems remain outside the
+current implementation scope.
 
 Subagents are deferred at the user's request. Section 11 of api-target.md retains
 the future design; do not implement child-session logs, session.children or
