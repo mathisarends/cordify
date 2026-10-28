@@ -28,7 +28,7 @@ cordify/
   core/                  Agent invariants and public core events
     loop.py, session.py, inbox.py, approvals.py, tools.py, scheduling.py, prompt.py, events.py
     features.py          Tool declarations as kernel registrations
-    attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py
+    attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py, control.py
   plugins/
     context/             Instructions, observations, compaction, spill
     tools/               File and shell tools
@@ -139,6 +139,7 @@ Runnable examples (from the repository root):
 | `python -m examples.17_resume_crash` | Process restart with durable approvals, inbox, and archived JSONL tail |
 | `python -m examples.18_parallel_tools` | Parallel calls, stable results, and file conflicts using resource keys |
 | `python -m examples.19_approvals_and_priorities` | Headless approval, response timeout, and explicit waterfall priorities |
+| `python -m examples.20_pause_resume_stop` | Pause a tool batch, resume the same turn, stop work, and reopen a paused session |
 
 Only example 04 needs an API key and the `deepseek` extra. The other examples
 use deterministic model responses to demonstrate the SDK.
@@ -260,6 +261,108 @@ before its request has `request=None`. Cancellation, normal completion, and
 `max_steps` remain visible through their events and completion reasons. Replay
 and fork produce the same turn/step projections. The runnable
 [`03_inbox.py`](examples/03_inbox.py) shows two turns with three steps in total.
+
+## Pause, resume, and stop
+
+Run control is separate from inbox routing. A paused agent accepts `followup`,
+`steer`, and `inject` inputs without starting another step until resumed.
+
+| API | Behavior |
+| --- | --- |
+| `await agent.pause()` | Requests a pause after the current step, including its whole tool batch and result reviews |
+| `await agent.when_paused()` | Waits until that boundary is reached; status becomes `paused` |
+| `await agent.resume()` | Resumes the same turn at its next step, then processes queued follow-ups |
+| `await agent.stop()` | Cancels active work, closes its turn as `stopped`, and discards pending inputs |
+| `await agent.stop(keep_inbox=True)` | Cancels active work but retains queued inputs for an explicit resume |
+| `await agent.cancel(keep_inbox=False)` | Cancels work as `interrupted` and returns to `idle`; also clears a paused state |
+
+`pause()` returns after storing the request. While a model call, approval, or
+tool batch is still running, `status` is `pausing`. The whole current step
+finishes before the agent becomes `paused`. It does not cancel individual calls
+or release resources underneath running tools. Pausing an idle agent takes
+effect immediately.
+
+```python
+import asyncio
+
+async with harness.session("review") as agent:
+    running = asyncio.create_task(agent.run("Review this repository."))
+
+    await agent.pause()
+    await agent.when_paused()
+    await agent.steer("Focus on the authentication module when you continue.")
+    await agent.followup("Write a separate summary afterward.")
+
+    await agent.resume()
+    result = await running
+```
+
+The pending `run()`, `stream()`, and `when_idle()` continue waiting while a
+running turn is paused. Streams stay subscribed and include the control events.
+Use `when_paused()` as the boundary check; it requires a pending or acknowledged
+pause request. Repeating `pause()` or `resume()` is idempotent.
+If the paused step already produced a final answer, resume can finish the turn
+without another model call.
+
+Hooks may call `await agent.pause()`. They must not wait for their own pause
+boundary. Call `stop()` and `cancel()` from an external controller, because they
+wait for the driver and its tools to finish cancellation.
+
+```python
+await agent.stop()  # Waits for cancellation and cleanup; status is now stopped.
+
+# Starting new work reuses the session and its history.
+result = await agent.run("Start a new task.")
+
+# To retain work that was queued behind the active task:
+await agent.stop(keep_inbox=True)
+await agent.resume()
+await agent.when_idle()
+```
+
+Stopping interrupts a current model stream or approval request and signals
+cancelled tools through `ToolCallContext.signal`. It waits for cleanup, including
+synchronous workers that cannot be forcibly stopped. Partial assistant output
+and interrupted tool results remain in the log. An interrupted external action
+may have an unknown outcome; resume never automatically re-executes that call.
+Resume after stop processes retained inbox entries, rather than restarting the
+stopped turn. With no retained work, it simply returns to `idle`.
+A new wakeup input such as `run()` or `followup()` starts new work after stop.
+
+Control transitions are durable `AgentControlChanged` events.
+`session.control` is a frozen `RunControl` projection with `state`,
+`keep_inbox`, `paused`, and `stopped`. The control states are `active`,
+`pausing`, `paused`, `stopping`, and `stopped`; the runtime additionally exposes
+`idle`, `running`, and `disposed` through `agent.status`.
+
+With `session_jsonl()`, closing a paused session preserves its open turn,
+completed steps, and queued inputs. A fresh harness remains paused when opening
+the same ID:
+
+```python
+async with harness.session("review") as agent:
+    await agent.pause()
+    await agent.when_paused()
+# The paused state is stored before the session closes.
+
+async with fresh_harness.session("review") as agent:
+    assert agent.status == "paused"
+    await agent.resume()
+    await agent.when_idle()
+```
+
+If a process crashes while a pause request is still draining, repair closes its
+incomplete step as `interrupted` and acknowledges `paused`, while retaining the
+turn for explicit resume. A durable stop request is likewise completed during
+repair, including its inbox retention policy. Normal crash recovery without a
+pause request still closes interrupted turns as before.
+Step numbers and `max_steps` continue across a persisted pause.
+`aclose()` remains terminal for the current Agent object; reopening creates a
+new one from the saved log.
+
+[`20_pause_resume_stop.py`](examples/20_pause_resume_stop.py) runs all three
+scenarios offline, including reopening a paused JSONL session without repeating
+the completed tool.
 
 ## Context: five paths
 
@@ -1003,7 +1106,8 @@ Before the new driver starts, `repair_interrupted()` appends repairs to the log:
 - Tool calls without results receive an interrupted error result. For executions
   that already started, the external outcome is marked unknown; resume does not
   automatically repeat these calls.
-- Open steps and turns are closed. Repeating repair creates no duplicate
+- Open steps are closed. Turns are also closed unless a durable pause request
+  retains the turn for explicit resume. Repeating repair creates no duplicate
   completions.
 
 The agent then processes stored inbox inputs according to their wakeup flags.

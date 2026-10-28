@@ -27,6 +27,7 @@ import pytest
         "examples.17_resume_crash",
         "examples.18_parallel_tools",
         "examples.19_approvals_and_priorities",
+        "examples.20_pause_resume_stop",
     ],
 )
 def test_offline_sdk_example_runs(module):
