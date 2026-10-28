@@ -1,6 +1,3 @@
-from typing import TYPE_CHECKING
-
-from harnessed._exports import exported
 from harnessed.core.model import (
     Model,
     ModelChunk,
@@ -9,19 +6,13 @@ from harnessed.core.model import (
     ModelResponse,
     ModelStream,
     ModelUsage,
+    OutputMode,
     StopReason,
+    TokenLimitBehavior,
     ToolDefinition,
 )
 
-if TYPE_CHECKING:
-    from .pydantic_ai import PydanticAIModel as PydanticAIModel
-
-_EXPORTS = {"PydanticAIModel": ("harnessed.models.pydantic_ai", "PydanticAIModel")}
-
-
-def __getattr__(name):
-    return exported(name, _EXPORTS, globals())
-
+from .pydantic_ai import PydanticAIModel as PydanticAIModel
 
 __all__ = [
     "Model",
@@ -31,7 +22,9 @@ __all__ = [
     "ModelResponse",
     "ModelStream",
     "ModelUsage",
+    "OutputMode",
     "PydanticAIModel",
     "StopReason",
+    "TokenLimitBehavior",
     "ToolDefinition",
 ]

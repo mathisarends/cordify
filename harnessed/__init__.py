@@ -1,54 +1,27 @@
 import logging
-from typing import TYPE_CHECKING
+from importlib import import_module
+from typing import Any
 
-from harnessed._exports import exported
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
-logging.getLogger(__name__).addHandler(logging.NullHandler())
-
-if TYPE_CHECKING:
-    from harnessed.agent import Agent as Agent
-    from harnessed.agent import PluginConflict as PluginConflict
-    from harnessed.core.attachments import File as File
-    from harnessed.core.attachments import Image as Image
-    from harnessed.core.errors import SessionClosed as SessionClosed
-    from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
-    from harnessed.core.messages import Observation as Observation
-    from harnessed.core.messages import PolicyDecision as PolicyDecision
-    from harnessed.core.messages import ToolCall as ToolCall
-    from harnessed.core.messages import ToolResult as ToolResult
-    from harnessed.core.model import StopReason as StopReason
-    from harnessed.core.outputs import OutputContract as OutputContract
-    from harnessed.core.plugin import Plugin as Plugin
-    from harnessed.core.plugin import PluginConfig as PluginConfig
-    from harnessed.core.plugin import PluginContext as Context
-    from harnessed.core.prompt.values import Section as Section
-    from harnessed.core.runtime.control import SessionStatus as SessionStatus
-    from harnessed.core.runtime.handles import RunHandle as RunHandle
-    from harnessed.core.runtime.result import RunResult as RunResult
-    from harnessed.core.runtime.session import Session as Session
-    from harnessed.core.session.events import ApprovalRequested as ApprovalRequest
-    from harnessed.core.stream import TextDelta as TextDelta
-    from harnessed.core.tools.context import ToolContext as ToolContext
-    from harnessed.core.tools.decorator import tool as tool
-    from harnessed.core.tools.registry import ToolError as ToolError
-    from harnessed.kernel import Inject as Inject
-    from harnessed.kernel import hook as hook
-    from harnessed.kernel import plugin as plugin
-
+# Keep the standalone kernel independent of Pydantic and optional provider SDKs.
 _EXPORTS = {
-    "OutputContract": ("harnessed.core.outputs", "OutputContract"),
     "Agent": ("harnessed.agent", "Agent"),
-    "ApprovalRequest": ("harnessed.core.session.events", "ApprovalRequested"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
+    "ApprovalRequest": ("harnessed.core.session.events", "ApprovalRequested"),
     "Context": ("harnessed.core.plugin", "PluginContext"),
     "File": ("harnessed.core.attachments", "File"),
     "Image": ("harnessed.core.attachments", "Image"),
+    "ImageDetail": ("harnessed.core.messages", "ImageDetail"),
     "Inject": ("harnessed.kernel", "Inject"),
     "Observation": ("harnessed.core.messages", "Observation"),
-    "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
+    "OutputContract": ("harnessed.core.outputs", "OutputContract"),
     "Plugin": ("harnessed.core.plugin", "Plugin"),
     "PluginConfig": ("harnessed.core.plugin", "PluginConfig"),
-    "PluginConflict": ("harnessed.agent", "PluginConflict"),
+    "PluginConflict": ("harnessed.core.errors", "PluginConflict"),
+    "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),
+    "Role": ("harnessed.core.messages", "Role"),
     "RunHandle": ("harnessed.core.runtime.handles", "RunHandle"),
     "RunResult": ("harnessed.core.runtime.result", "RunResult"),
     "Section": ("harnessed.core.prompt.values", "Section"),
@@ -56,48 +29,28 @@ _EXPORTS = {
     "SessionClosed": ("harnessed.core.errors", "SessionClosed"),
     "SessionStatus": ("harnessed.core.runtime.control", "SessionStatus"),
     "StopReason": ("harnessed.core.model", "StopReason"),
-    "TextDelta": ("harnessed.core.stream", "TextDelta"),
     "ToolCall": ("harnessed.core.messages", "ToolCall"),
     "ToolContext": ("harnessed.core.tools.context", "ToolContext"),
     "ToolError": ("harnessed.core.tools.registry", "ToolError"),
     "ToolResult": ("harnessed.core.messages", "ToolResult"),
+    "ToolStatus": ("harnessed.core.messages", "ToolStatus"),
     "hook": ("harnessed.kernel", "hook"),
     "plugin": ("harnessed.kernel", "plugin"),
     "tool": ("harnessed.core.tools.decorator", "tool"),
 }
 
 
-def __getattr__(name):
-    return exported(name, _EXPORTS, globals())
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module, attribute = _EXPORTS[name]
+    value = getattr(import_module(module), attribute)
+    globals()[name] = value
+    return value
 
 
-__all__ = [
-    "Agent",
-    "ApprovalAnswer",
-    "ApprovalRequest",
-    "Context",
-    "File",
-    "Image",
-    "Inject",
-    "Observation",
-    "OutputContract",
-    "Plugin",
-    "PluginConfig",
-    "PluginConflict",
-    "PolicyDecision",
-    "RunHandle",
-    "RunResult",
-    "Section",
-    "Session",
-    "SessionClosed",
-    "SessionStatus",
-    "StopReason",
-    "TextDelta",
-    "ToolCall",
-    "ToolContext",
-    "ToolError",
-    "ToolResult",
-    "hook",
-    "plugin",
-    "tool",
-]
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_EXPORTS))
+
+
+__all__ = sorted(_EXPORTS)

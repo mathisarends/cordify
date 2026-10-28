@@ -1,3 +1,4 @@
+from harnessed.core.session.events import PolicySource
 from harnessed.core.session.events import ToolCalled as Called
 from harnessed.core.session.events import ToolCompleted as Completed
 from harnessed.core.session.events import ToolExecutionStarted as ExecutionStarted
@@ -13,6 +14,7 @@ __all__ = [
     "ExecutionStarted",
     "Finished",
     "PolicyApplied",
+    "PolicySource",
     "Progress",
     "Returned",
     "Started",

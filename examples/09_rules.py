@@ -5,7 +5,7 @@ import asyncio
 from harnessed import Agent, Plugin, PolicyDecision, Session, ToolCall, ToolResult, events, tool
 from harnessed.core.messages import ToolStatus, user
 from harnessed.core.session.events import InboxMode
-from harnessed.events import InboxAdded
+from harnessed.events.inbox import Added as InboxAdded
 from harnessed.hooks import ReviewToolResult
 from harnessed.kernel import Inject, hook
 from harnessed.models import ModelChunk

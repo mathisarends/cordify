@@ -36,7 +36,7 @@ where = ["."]
 include = ["harnessed*"]
 
 [tool.setuptools.package-data]
-harnessed = ["py.typed"]
+harnessed = ["py.typed", "*.pyi"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

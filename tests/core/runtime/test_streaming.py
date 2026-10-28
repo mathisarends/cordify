@@ -8,19 +8,17 @@ from harnessed.core.errors import ApprovalUnavailable, OutputUnavailable, Sessio
 from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.events import ApprovalStatus
-from harnessed.events import (
-    ApprovalNeeded,
-    ApprovalResolved,
-    InboxAdded,
-    ReasoningDelta,
-    SessionEvent,
-    StatusChanged,
-    TextDelta,
-    ToolFinished,
-    ToolProgress,
-    ToolStarted,
-    TurnFinished,
-)
+from harnessed.events import SessionEvent
+from harnessed.events.approval import Needed as ApprovalNeeded
+from harnessed.events.approval import Resolved as ApprovalResolved
+from harnessed.events.inbox import Added as InboxAdded
+from harnessed.events.reasoning import Delta as ReasoningDelta
+from harnessed.events.session import StatusChanged as StatusChanged
+from harnessed.events.text import Delta as TextDelta
+from harnessed.events.tool import Finished as ToolFinished
+from harnessed.events.tool import Progress as ToolProgress
+from harnessed.events.tool import Started as ToolStarted
+from harnessed.events.turn import Finished as TurnFinished
 from harnessed.plugins import Approvals, MemorySessions
 from harnessed.testing import ScriptedModel
 

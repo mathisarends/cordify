@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel, field_validator
 
 from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
-from harnessed.events import InboxAdded
+from harnessed.events.inbox import Added as InboxAdded
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
 

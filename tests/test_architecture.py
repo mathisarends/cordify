@@ -117,7 +117,21 @@ def test_validation_is_explicit_and_otel_is_not_added():
 @pytest.mark.parametrize("module", ["harnessed", "harnessed.plugins", "harnessed.models"])
 def test_public_exports_resolve_to_their_canonical_classes_and_functions(module):
     facade = importlib.import_module(module)
-    for name, (canonical, attribute) in facade._EXPORTS.items():
+    declarations = dict(getattr(facade, "_EXPORTS", {}))
+    if not declarations:
+        source = Path(facade.__file__).read_text(encoding="utf-8")
+        for node in ast.parse(source).body:
+            if isinstance(node, ast.ImportFrom):
+                canonical = (
+                    importlib.util.resolve_name("." * node.level + (node.module or ""), module)
+                    if node.level
+                    else node.module
+                )
+                for alias in node.names:
+                    if (name := alias.asname or alias.name) in facade.__all__:
+                        declarations[name] = (canonical, alias.name)
+    assert set(declarations) == set(facade.__all__)
+    for name, (canonical, attribute) in declarations.items():
         assert getattr(facade, name) is getattr(importlib.import_module(canonical), attribute)
     assert facade.__all__ == sorted(set(facade.__all__))
 
@@ -125,7 +139,7 @@ def test_public_exports_resolve_to_their_canonical_classes_and_functions(module)
 def test_application_facade_stays_small_and_has_no_transitional_names():
     import harnessed
 
-    assert len(harnessed.__all__) <= 30
+    assert len(harnessed.__all__) <= 33
     assert {"Agent", "Session", "Plugin", "tool", "RunResult", "ToolContext"} <= set(
         harnessed.__all__
     )
@@ -137,7 +151,6 @@ def test_application_facade_stays_small_and_has_no_transitional_names():
 def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
     assert {path.name for path in PACKAGE.glob("*.py")} == {
         "__init__.py",
-        "_exports.py",
         "agent.py",
         "hooks.py",
     }
@@ -205,3 +218,16 @@ async def test_kernel_registration_recipes_extend_lifetimes_without_agent_import
         await remove()
         await ctx.settle()
         assert sink.callbacks == [] and handle.status == PluginStatus.WAITING
+
+
+def test_lazy_sdk_exports_and_type_stub_stay_in_sync():
+    import harnessed
+
+    stub = ast.parse((PACKAGE / "__init__.pyi").read_text(encoding="utf-8"))
+    declared = {
+        alias.asname or alias.name: (node.module, alias.name)
+        for node in stub.body
+        if isinstance(node, ast.ImportFrom) and not node.level
+        for alias in node.names
+    }
+    assert declared == harnessed._EXPORTS
