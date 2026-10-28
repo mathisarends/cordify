@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import pytest
 from pydantic import Field, TypeAdapter
 
 from harnessed import ToolCall, events
@@ -35,3 +36,9 @@ def test_namespaced_log_events_preserve_class_tagged_version_three_records():
     assert decode_event(record) == event
     assert events.compaction.Applied.type == "compaction.applied"
     assert events.spill.Created.type == "spill.created"
+
+
+def test_live_notifications_cannot_spoof_a_different_registered_discriminator():
+    registry = events.EventRegistry()
+    with pytest.raises(TypeError, match="registered"):
+        registry.validate(events.text.Delta("message", "hello", type="reasoning.delta"))

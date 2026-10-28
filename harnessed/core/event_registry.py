@@ -77,8 +77,15 @@ class EventRegistry:
         self._adapter = None
 
     def validate(self, event: SessionEvent | TransientEvent) -> None:
+        kind = type(event)
+        if self._types.get(getattr(event, "type", None)) is not kind:
+            raise TypeError("Only registered frozen event instances may be emitted")
+        adapter = self._custom.get(kind)
+        # Built-in live notifications are internal values on the token path.
+        # Application data still crosses the full immutable/schema boundary.
+        if isinstance(event, TransientEvent) and adapter is None:
+            return
         _validate_event(event, self._types)
-        adapter = self._custom.get(type(event))
         if adapter is not None:
             adapter.validate_json(json.dumps(to_dict(event), allow_nan=False), strict=True)
 
