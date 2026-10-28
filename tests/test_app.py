@@ -5,7 +5,7 @@ from harnessed.core.events import CompactionApplied, ContextValueChanged, TurnEn
 from harnessed.core.model import ModelChunk
 from harnessed.core.session import Session
 from harnessed.models import Model
-from harnessed.plugins import Approvals, Service, context, instructions
+from harnessed.plugins import Approvals, Instructions, Service, context
 from harnessed.testing import ScriptedModel
 
 
@@ -47,7 +47,7 @@ async def test_application_facade_composes_plugins_and_fixed_ordered_guidance(tm
 async def test_facade_parameters_are_equivalent_to_public_plugins():
     one, two = ScriptedModel(["done"]), ScriptedModel(["done"])
     await Agent(model=one, instructions="Rules.", plugins=[Calculator()]).run("Go")
-    await Agent(plugins=[Service(Model, two), instructions("Rules."), Calculator()]).run("Go")
+    await Agent(plugins=[Service(Model, two), Instructions("Rules."), Calculator()]).run("Go")
     assert [message.text for message in one.requests[0].messages] == [
         message.text for message in two.requests[0].messages
     ]

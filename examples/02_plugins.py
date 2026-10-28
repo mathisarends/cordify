@@ -4,7 +4,7 @@ import asyncio
 
 from harnessed import Agent, ModelChunk, Plugin, ToolCall, tool
 from harnessed.models import Model
-from harnessed.plugins import Service, instructions
+from harnessed.plugins import Instructions, Service
 from harnessed.testing import ScriptedModel
 
 
@@ -26,9 +26,9 @@ async def main():
     )
     # Exactly the same services and behavior as model=... and instructions=... .
     agent = Agent(
-        plugins=[Service(Model, model), instructions("Keep answers concise."), Calculator()]
+        plugins=[Service(Model, model), Instructions("Keep answers concise."), Calculator()]
     )
-    print("Composition:", [spec.slot or spec.name for spec in agent.plugins])
+    print("Composition:", [type(value).__name__ for value in agent.plugins])
     print(agent.prompt)
     async with agent.session("explicit-calculator") as session:
         print((await session.run("What is 19 + 23?")).text)

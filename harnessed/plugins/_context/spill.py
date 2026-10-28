@@ -4,9 +4,9 @@ from harnessed.core.budget import truncate
 from harnessed.core.events import ReviewToolResult, SpillCreated
 from harnessed.core.features import Plugin, tool
 from harnessed.core.loop import Agent
+from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Inject, hook
 from harnessed.seams.spill import SpillStore
-from harnessed.seams.tokens import TokenCounter
 
 
 class SpillLargeResults(Plugin):

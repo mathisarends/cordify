@@ -3,8 +3,8 @@ from itertools import permutations
 import pytest
 
 from harnessed import Bundle, Context, Emit, Plugin, Waterfall, hook
+from harnessed.kernel import PluginBase as KernelPlugin
 from harnessed.kernel.declarations import Bundle as KernelBundle
-from harnessed.kernel.declarations import Plugin as KernelPlugin
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

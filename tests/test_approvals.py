@@ -7,7 +7,6 @@ from harnessed import (
     AgentHandle as Agent,
 )
 from harnessed import (
-    Approvals,
     Bundle,
     Decision,
     Inject,
@@ -17,6 +16,7 @@ from harnessed import (
     ToolCall,
     plugin,
 )
+from harnessed.core.approvals import ApprovalState
 from harnessed.core.events import (
     ApprovalRequested,
     ApprovalResolved,
@@ -81,7 +81,7 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
         await resumed.run("third")
         assert len(asked) == 2 and len(executed) == 3
         events = tuple(decode_event(encode_event(event)) for event in resumed.session.events)
-        assert Approvals(events) == resumed.session.approvals
+        assert ApprovalState(events) == resumed.session.approvals
 
 
 @pytest.mark.parametrize("decision", [Decision.ALLOW, Decision.DENY])

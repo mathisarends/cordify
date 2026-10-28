@@ -1,9 +1,24 @@
+import inspect
 import json
 import math
-from collections.abc import Iterable
+from collections.abc import Awaitable, Iterable
+from typing import Protocol
 
 from harnessed.core.messages import ImagePart, Message, to_dict
 from harnessed.core.model import ModelRequest
+
+
+class TokenCounter(Protocol):
+    """Cheap text estimates and optionally asynchronous provider request counts."""
+
+    def count_text(self, text: str) -> int: ...
+    def count_request(self, request: ModelRequest) -> int | Awaitable[int]: ...
+
+
+async def count_request(counter: TokenCounter, request: ModelRequest) -> int:
+    """Resolve either a local estimate or an asynchronous provider count."""
+    count = counter.count_request(request)
+    return await count if inspect.isawaitable(count) else count
 
 
 class ApproximateTokenCounter:

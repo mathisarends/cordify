@@ -6,11 +6,6 @@ superseded provider designs have been removed; their details remain in Git histo
 Do not add more native provider clients, retry policies, or presets. PydanticAI is
 an optional Direct API integration; the Harnessed kernel, loop and log remain independent.
 
-The current baseline passes 493 tests, including offline native DeepSeek and
-Anthropic provider round trips. The adapter preserves provider response state,
-reasoning signatures, tool calls, usage, settings and replay history. Live remote
-API calls have not been used for these checks.
-
 ## P0 — Runtime and public contracts
 
 ### P0-1 — Finish incremental history and policy indexing
@@ -58,12 +53,9 @@ API calls have not been used for these checks.
 
 ### P0-7 — Finish the public facade and remove duplicate paths
 
-- Move the application facade to agent.py and remove app/, llms/, presets.py,
-  Harness and the old presets. A configuration is its resolved plugin list.
-- Agent has exactly model, instructions and plugins. Normalize model strings and
-  native PydanticAI models into Service(Model, PydanticAIModel(...)).
-- Resolve defaults through explicit slots; expose their actual configuration in
-  agent.plugins. Built-ins are CapWords classes and use the public APIs.
+- Remove llms/, presets.py, Harness and the old presets after their remaining
+  consumers migrate. The application facade is now independent of Harness.
+- Finish converting optional built-ins to CapWords classes using public APIs.
 - Reduce root exports, sort/check __all__, and remove duplicate class names,
   AgentHandle and compatibility aliases once consumers migrate.
 
@@ -95,9 +87,9 @@ API calls have not been used for these checks.
 
 ### P1-6 — Loop configuration and composition
 
-- Move repeated harness/preset options into the validated AgentLoop configuration.
-- Let AgentLoop provide its registry/prompt/runtime services. Remove privileged
-  services.py setup, implicit extractive compaction and implicit spill stores.
+- Remove the legacy services.py and preset setup after migrating their remaining
+  consumers. AgentLoop now provides its registry/prompt/runtime services, and the
+  application path no longer installs implicit compaction or spill stores.
 - Keep the tested single-install/single-disposer behavior and public settle barrier.
 
 ### P1-7 — Events, names and codec

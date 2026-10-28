@@ -5,12 +5,13 @@ from uuid import uuid4
 
 from harnessed.core.budget import ContextBudget, truncate
 from harnessed.core.compaction import compact_request, plan_compaction
+from harnessed.core.errors import ConfigError
 from harnessed.core.events import CompactionApplied, PrepareRequest, StepStart
 from harnessed.core.features import Plugin
 from harnessed.core.loop import Agent
+from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.kernel import Inject, hook
 from harnessed.seams.compaction import Compactor
-from harnessed.seams.tokens import TokenCounter
 
 
 class _Compaction(Plugin):
@@ -34,7 +35,7 @@ class _Compaction(Plugin):
             raise ValueError("preserve_turns must contain non-empty turn ids")
         self.summary_tokens = summary_tokens
 
-    def _due(self, request, agent, counter, new_turns):
+    async def _due(self, request, agent, counter, new_turns):
         raise NotImplementedError
 
     @hook(PrepareRequest)
@@ -64,7 +65,7 @@ class _Compaction(Plugin):
             keep_first_turns=self.keep_first_turns,
             preserve_turns=self.preserve_turns,
         )
-        if plan is None or not self._due(request, agent, counter, plan.new_turns):
+        if plan is None or not await self._due(request, agent, counter, plan.new_turns):
             return request
         summary = await compactor.summarize(plan.messages, max_tokens=self.summary_tokens)
         if not isinstance(summary, str) or not summary.strip():
@@ -85,7 +86,8 @@ class _Compaction(Plugin):
         compacted = replace(
             request, messages=compact_request(request, events, applied), cache_breakpoints=()
         )
-        before, after = counter.count_request(request), counter.count_request(compacted)
+        before = await count_request(counter, request)
+        after = await count_request(counter, compacted)
         if after >= before:
             return request
         applied = replace(applied, before_tokens=before, after_tokens=after)
@@ -113,10 +115,13 @@ class ThresholdCompaction(_Compaction):
         )
         self.at = at
 
-    def _due(self, request, agent, counter, new_turns):
+    async def _due(self, request, agent, counter, new_turns):
         budget = agent.ctx[ContextBudget] if ContextBudget in agent.ctx else ContextBudget()
-        used = counter.count_request(request) + budget.output_reserve(request)
-        return used >= self.at * budget.window_limit(agent.options.context_window)
+        used = await count_request(counter, request) + budget.output_reserve(request)
+        window = budget.window_limit(agent.options.context_window)
+        if window is None:
+            raise ConfigError("Ratio compaction requires a known or configured context window")
+        return used >= self.at * window
 
 
 class SlidingWindowCompaction(_Compaction):
@@ -135,7 +140,7 @@ class SlidingWindowCompaction(_Compaction):
             summary_tokens=summary_tokens,
         )
 
-    def _due(self, request, agent, counter, new_turns):
+    async def _due(self, request, agent, counter, new_turns):
         return True
 
 
@@ -159,7 +164,7 @@ class PeriodicCompaction(_Compaction):
         )
         self.every = every
 
-    def _due(self, request, agent, counter, new_turns):
+    async def _due(self, request, agent, counter, new_turns):
         return new_turns >= self.every
 
 

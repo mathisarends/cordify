@@ -1,9 +1,9 @@
 from collections.abc import Callable, Iterable
 
+from harnessed.core.approvals import Approver
 from harnessed.core.events import ToolPolicy
 from harnessed.core.messages import Decision
 from harnessed.kernel import Context, Priority, plugin
-from harnessed.seams.approver import Approver
 
 
 def approval_gate(

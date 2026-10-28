@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from harnessed.core.approvals import Approvals
+from harnessed.core.approvals import ApprovalState
 from harnessed.core.control import RunControl
 from harnessed.core.events import (
     AgentControlChanged,
@@ -37,7 +37,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         await session.append(event)
         prefix.append(event)
         assert session.inbox == Inbox(prefix)
-        assert session.approvals == Approvals(prefix)
+        assert session.approvals == ApprovalState(prefix)
         assert session.control == RunControl(prefix)
         assert session.turns == derive_turns(prefix)
         assert session.requests == derive_requests(prefix)
@@ -68,7 +68,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         await append(AgentControlChanged(rng.choice(["active", "paused", "stopped"])))
 
     for events, inbox, approvals, turns in snapshots:
-        assert inbox == Inbox(events) and approvals == Approvals(events)
+        assert inbox == Inbox(events) and approvals == ApprovalState(events)
         assert turns == derive_turns(events)
 
 

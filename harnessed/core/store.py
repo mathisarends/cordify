@@ -1,0 +1,67 @@
+"""Session storage and exclusive live ownership, independent of providers."""
+
+from collections.abc import AsyncGenerator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Protocol
+
+from harnessed.kernel import Context
+
+from .errors import SessionLocked
+from .events import SessionEvent
+from .features import Plugin
+from .session import SessionPersistence
+
+
+class SessionStore(Protocol):
+    """Lease a single writer for an existing or new session."""
+
+    def open(self, session_id: str) -> AbstractAsyncContextManager[SessionPersistence]: ...
+
+
+class MemoryPersistence:
+    """Shared in-process log storage; closing a lease preserves its records."""
+
+    def __init__(self):
+        self.records: dict[str, list[SessionEvent]] = {}
+
+    async def load(self, session_id: str) -> tuple[SessionEvent, ...]:
+        return tuple(self.records.get(session_id, ()))
+
+    async def append(self, session_id: str, seq: int, event: SessionEvent) -> None:
+        records = self.records.setdefault(session_id, [])
+        if seq != len(records):
+            raise ValueError("Session append sequence does not match the stored log")
+        records.append(event)
+
+    async def flush(self) -> None:
+        pass
+
+    async def aclose(self) -> None:
+        pass
+
+
+class _MemoryStore:
+    def __init__(self):
+        self.persistence = MemoryPersistence()
+        self._active: set[str] = set()
+
+    @asynccontextmanager
+    async def open(self, session_id: str) -> AsyncGenerator[SessionPersistence]:
+        if session_id in self._active:
+            raise SessionLocked(f"Session {session_id!r} already has a live owner")
+        self._active.add(session_id)
+        try:
+            yield self.persistence
+        finally:
+            self._active.remove(session_id)
+
+
+class MemorySessions(Plugin, slot="sessions"):
+    """Keep conversations by ID for the lifetime of this configured plugin."""
+
+    def __init__(self):
+        super().__init__()
+        self.store = _MemoryStore()
+
+    async def setup(self, ctx: Context):
+        ctx.provide(SessionStore, self.store)

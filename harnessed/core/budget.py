@@ -1,7 +1,8 @@
+import inspect
 from dataclasses import dataclass
 
 from harnessed.core.model import ModelRequest
-from harnessed.seams.tokens import TokenCounter
+from harnessed.core.tokens import TokenCounter
 
 
 def truncate(text: str, max_tokens: int, counter: TokenCounter) -> str:
@@ -35,14 +36,22 @@ class ContextBudget:
         if type(self.reserve_tokens) is not int or self.reserve_tokens < 0:
             raise ValueError("reserve_tokens must be a non-negative integer")
 
-    def window_limit(self, context_window: int) -> int:
+    def window_limit(self, context_window: int | None) -> int | None:
+        if context_window is None:
+            return self.limit
         return min(context_window, self.limit) if self.limit is not None else context_window
 
     def output_reserve(self, request: ModelRequest) -> int:
         return max(request.max_tokens or 0, self.reserve_tokens)
 
-    def check(self, request: ModelRequest, *, context_window: int, counter: TokenCounter) -> None:
-        used, reserve = counter.count_request(request), self.output_reserve(request)
+    async def check(
+        self, request: ModelRequest, *, context_window: int | None, counter: TokenCounter
+    ) -> None:
         limit = self.window_limit(context_window)
+        if limit is None:
+            return
+        counted = counter.count_request(request)
+        used = await counted if inspect.isawaitable(counted) else counted
+        reserve = self.output_reserve(request)
         if used + reserve > limit:
             raise ContextBudgetExceeded(used, reserve, limit)

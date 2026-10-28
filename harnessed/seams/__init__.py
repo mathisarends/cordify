@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING
 from harnessed._exports import exported
 
 if TYPE_CHECKING:
+    from harnessed.core.approvals import ApprovalUnavailable as ApprovalUnavailable
+    from harnessed.core.approvals import Approver as Approver
     from harnessed.core.errors import AuthError as AuthError
     from harnessed.core.errors import ContextLengthExceeded as ContextLengthExceeded
     from harnessed.core.errors import InvalidRequest as InvalidRequest
@@ -31,15 +33,13 @@ if TYPE_CHECKING:
     from harnessed.core.model import ModelUsage as ModelUsage
     from harnessed.core.model import ToolDefinition as ToolDefinition
     from harnessed.core.model import request_from_dict as request_from_dict
+    from harnessed.core.tokens import TokenCounter as TokenCounter
     from harnessed.plugins.filesystem import FS as FS
-    from harnessed.seams.approver import ApprovalUnavailable as ApprovalUnavailable
-    from harnessed.seams.approver import Approver as Approver
     from harnessed.seams.compaction import Compactor as Compactor
     from harnessed.seams.llm import LLM as LLM
     from harnessed.seams.shell import ProcResult as ProcResult
     from harnessed.seams.shell import Shell as Shell
     from harnessed.seams.spill import SpillStore as SpillStore
-    from harnessed.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
     "ProviderUnavailable": ("harnessed.core.errors", "ProviderUnavailable"),
     "InvalidRequest": ("harnessed.core.errors", "InvalidRequest"),
@@ -47,7 +47,7 @@ _EXPORTS = {
     "RateLimited": ("harnessed.core.errors", "RateLimited"),
     "AuthError": ("harnessed.core.errors", "AuthError"),
     "ProviderError": ("harnessed.core.errors", "ProviderError"),
-    "ApprovalUnavailable": ("harnessed.seams.approver", "ApprovalUnavailable"),
+    "ApprovalUnavailable": ("harnessed.core.approvals", "ApprovalUnavailable"),
     "OutputTruncation": ("harnessed.core.messages", "OutputTruncation"),
     "freeze": ("harnessed.core.messages", "freeze"),
     "to_dict": ("harnessed.core.messages", "to_dict"),
@@ -55,7 +55,7 @@ _EXPORTS = {
     "SpillRef": ("harnessed.core.messages", "SpillRef"),
     "ToolResult": ("harnessed.core.messages", "ToolResult"),
     "Decision": ("harnessed.core.messages", "Decision"),
-    "Approver": ("harnessed.seams.approver", "Approver"),
+    "Approver": ("harnessed.core.approvals", "Approver"),
     "TextPart": ("harnessed.core.messages", "TextPart"),
     "ImagePart": ("harnessed.core.messages", "ImagePart"),
     "Message": ("harnessed.core.messages", "Message"),
@@ -75,7 +75,7 @@ _EXPORTS = {
     "FS": ("harnessed.plugins.filesystem", "FS"),
     "Shell": ("harnessed.seams.shell", "Shell"),
     "ProcResult": ("harnessed.seams.shell", "ProcResult"),
-    "TokenCounter": ("harnessed.seams.tokens", "TokenCounter"),
+    "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
     "Compactor": ("harnessed.seams.compaction", "Compactor"),
     "SpillStore": ("harnessed.seams.spill", "SpillStore"),
 }

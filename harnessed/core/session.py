@@ -19,7 +19,7 @@ from harnessed.core.messages import (
 from harnessed.core.model import ModelRequest, ModelUsage, request_from_dict
 from harnessed.kernel.context import Context
 
-from .approvals import Approval, Approvals, approval_transition
+from .approvals import Approval, ApprovalState, approval_transition
 from .control import RunControl
 from .events import (
     SESSION_EVENT_TYPES,
@@ -331,7 +331,7 @@ class Session:
         self._step_wakeups = {
             key for key, item in self._pending.items() if item.wakeup and item.target == "next-step"
         }
-        self._approvals: Approvals | None = Approvals(self._events)
+        self._approvals: ApprovalState | None = ApprovalState(self._events)
         self._approval_records = {record.request_id: record for record in self._approvals.records}
         self._approvals_by_call: dict[str, dict[str, Approval]] = {}
         self._grants: dict[tuple[str, str], dict[str, Approval]] = {}
@@ -401,9 +401,9 @@ class Session:
         return bool(self._step_wakeups)
 
     @property
-    def approvals(self) -> Approvals:
+    def approvals(self) -> ApprovalState:
         if self._approvals is None:
-            self._approvals = Approvals.from_records(self._approval_records.values())
+            self._approvals = ApprovalState.from_records(self._approval_records.values())
         return self._approvals
 
     @property
@@ -578,7 +578,7 @@ class Session:
                 open_turn = False
         if open_turn:
             raise ValueError("Fork at a closed turn boundary")
-        approvals = Approvals(seed)
+        approvals = ApprovalState(seed)
         seed.extend(
             ApprovalResolved(item.request_id, status="interrupted") for item in approvals.pending
         )

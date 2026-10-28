@@ -1,9 +1,9 @@
 from harnessed.adapters.compaction import ExtractiveCompactor
 from harnessed.adapters.spill import LocalSpillStore
+from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Context, plugin
 from harnessed.seams.compaction import Compactor
 from harnessed.seams.spill import SpillStore
-from harnessed.seams.tokens import TokenCounter
 
 
 @plugin(needs=[TokenCounter])

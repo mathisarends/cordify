@@ -60,8 +60,9 @@ class _Tool:
 
 
 class ToolRegistry:
-    def __init__(self, ctx: Context):
+    def __init__(self, ctx: Context, *, default_timeout: float | None = None):
         self._ctx = ctx
+        self._default_timeout = default_timeout
         self._tools: dict[str, list[_Tool]] = {}
 
     @overload
@@ -244,7 +245,9 @@ class ToolRegistry:
             )
             bound = tool.plan.bind(ctx, kwargs=arguments, extra=extra)
             with tool.owner.activate():
-                async with asyncio.timeout(tool.timeout):
+                async with asyncio.timeout(
+                    tool.timeout if tool.timeout is not None else self._default_timeout
+                ):
                     if inspect.iscoroutinefunction(tool.callback):
                         value = await tool.callback(*bound.args, **bound.kwargs)
                     else:

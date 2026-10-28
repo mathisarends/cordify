@@ -5,13 +5,13 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
+from harnessed.core.approvals import ApprovalUnavailable, Approver
 from harnessed.core.messages import Decision, Message, Observation, ToolCall, ToolResult
 from harnessed.core.model import Model, ModelRequest, ModelUsage
+from harnessed.core.tokens import TokenCounter
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
-from harnessed.seams.approver import ApprovalUnavailable, Approver
-from harnessed.seams.tokens import TokenCounter
 
 from .approvals import validate_approval_timeout
 from .attachments import Attachment, prepare_input
@@ -71,11 +71,12 @@ class AgentOptions:
     model: str
     max_steps: int = 32
     max_tokens: int | None = None
-    context_window: int = 128_000
+    context_window: int | None = None
     tool_output_limit: ToolOutputLimit = field(default_factory=ToolOutputLimit)
     max_parallel_tools: int = 4
     approval_timeout: float = 300.0
     error_formatter: ErrorFormatter | None = None
+    on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
 
     def __post_init__(self):
         if not self.model:
@@ -86,7 +87,9 @@ class AgentOptions:
             type(self.max_tokens) is not int or self.max_tokens < 1
         ):
             raise ValueError("max_tokens must be a positive integer")
-        if type(self.context_window) is not int or self.context_window < 1:
+        if self.context_window is not None and (
+            type(self.context_window) is not int or self.context_window < 1
+        ):
             raise ValueError("context_window must be a positive integer")
         if type(self.max_parallel_tools) is not int or self.max_parallel_tools < 1:
             raise ValueError("max_parallel_tools must be a positive integer")
@@ -115,7 +118,9 @@ class RunResult:
 
 
 class AgentFactory(Protocol):
-    def create(self, ctx: Context, session: Session, options: AgentOptions) -> "Agent": ...
+    def create(
+        self, ctx: Context, session: Session, options: AgentOptions | None = None
+    ) -> "Agent": ...
 
 
 class Agent:
@@ -703,7 +708,7 @@ class Agent:
                 default=lambda request=request: request,
             )
             if ContextBudget in self.ctx:
-                self.ctx[ContextBudget].check(
+                await self.ctx[ContextBudget].check(
                     request,
                     context_window=self.options.context_window,
                     counter=self.ctx[TokenCounter],
@@ -727,6 +732,11 @@ class Agent:
             (event for event in reversed(step.events) if isinstance(event, AssistantMessage)),
             None,
         )
+        if response is not None and response.stop_reason == "max_tokens":
+            if self.options.on_max_tokens == "fail":
+                raise RuntimeError("The model reached its output token limit")
+            if self.options.on_max_tokens == "continue":
+                return True
         if (
             step.reason == "interrupted"
             or response is None
@@ -890,7 +900,10 @@ class ReactLoopFactory:
     def __init__(self, *, error_formatter: ErrorFormatter | None = None):
         self.error_formatter = error_formatter
 
-    def create(self, ctx: Context, session: Session, options: AgentOptions) -> Agent:
+    def create(self, ctx: Context, session: Session, options: AgentOptions | None = None) -> Agent:
+        if options is None:
+            model = ctx[Model]
+            options = AgentOptions(model.info.name, context_window=model.info.context_window)
         if self.error_formatter is not None:
             options = replace(options, error_formatter=self.error_formatter)
         return Agent(ctx, session, options)

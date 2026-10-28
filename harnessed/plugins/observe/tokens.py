@@ -1,6 +1,5 @@
-from harnessed.adapters.tokens import ApproximateTokenCounter
+from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
 from harnessed.kernel import Context, plugin
-from harnessed.seams.tokens import TokenCounter
 
 
 @plugin

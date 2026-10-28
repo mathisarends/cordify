@@ -13,8 +13,8 @@ from harnessed.core.events import (
 from harnessed.core.features import Plugin
 from harnessed.core.loop import Agent
 from harnessed.core.messages import ToolCall, ToolResult, system, to_dict, user
+from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Inject, hook
-from harnessed.seams.tokens import TokenCounter
 
 
 @dataclass(frozen=True)

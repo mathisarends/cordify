@@ -10,11 +10,12 @@ if TYPE_CHECKING:
     from harnessed.adapters.compaction import ExtractiveCompactor as ExtractiveCompactor
     from harnessed.adapters.compaction import LLMCompactor as LLMCompactor
     from harnessed.adapters.spill import LocalSpillStore as LocalSpillStore
-    from harnessed.adapters.tokens import ApproximateTokenCounter as ApproximateTokenCounter
-    from harnessed.app import Agent as Agent
-    from harnessed.app import PluginConflict as PluginConflict
+    from harnessed.agent import Agent as Agent
+    from harnessed.agent import PluginConflict as PluginConflict
     from harnessed.core.approvals import Approval as Approval
     from harnessed.core.approvals import Approvals as Approvals
+    from harnessed.core.approvals import ApprovalUnavailable as ApprovalUnavailable
+    from harnessed.core.approvals import Approver as Approver
     from harnessed.core.attachments import File as File
     from harnessed.core.attachments import Image as Image
     from harnessed.core.budget import ContextBudget as ContextBudget
@@ -58,6 +59,8 @@ if TYPE_CHECKING:
     from harnessed.core.session import derive_messages as derive_messages
     from harnessed.core.session import derive_requests as derive_requests
     from harnessed.core.stream import TextDelta as TextDelta
+    from harnessed.core.tokens import ApproximateTokenCounter as ApproximateTokenCounter
+    from harnessed.core.tokens import TokenCounter as TokenCounter
     from harnessed.core.tools import ToolError as ToolError
     from harnessed.core.tools import ToolRegistry as ToolRegistry
     from harnessed.core.turns import Step as Step
@@ -94,23 +97,20 @@ if TYPE_CHECKING:
     from harnessed.plugins.permissions.rules import Rules as Rules
     from harnessed.plugins.permissions.rules import when as when
     from harnessed.presets import Harness as Harness
-    from harnessed.seams.approver import ApprovalUnavailable as ApprovalUnavailable
-    from harnessed.seams.approver import Approver as Approver
     from harnessed.seams.compaction import Compactor as Compactor
     from harnessed.seams.llm import LLM as LLM
     from harnessed.seams.shell import ProcResult as ProcResult
     from harnessed.seams.shell import Shell as Shell
     from harnessed.seams.spill import SpillStore as SpillStore
-    from harnessed.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
     "Section": ("harnessed.core.instructions", "Section"),
     "ToolError": ("harnessed.core.tools", "ToolError"),
-    "PluginConflict": ("harnessed.app", "PluginConflict"),
+    "PluginConflict": ("harnessed.agent", "PluginConflict"),
     "TextDelta": ("harnessed.core.stream", "TextDelta"),
     "RunControl": ("harnessed.core.control", "RunControl"),
     "AgentControlChanged": ("harnessed.core.events", "AgentControlChanged"),
     "ApprovalRequest": ("harnessed.core.events", "ApprovalRequest"),
-    "ApprovalUnavailable": ("harnessed.seams.approver", "ApprovalUnavailable"),
+    "ApprovalUnavailable": ("harnessed.core.approvals", "ApprovalUnavailable"),
     "Approval": ("harnessed.core.approvals", "Approval"),
     "Approvals": ("harnessed.core.approvals", "Approvals"),
     "ContextBudget": ("harnessed.core.budget", "ContextBudget"),
@@ -124,13 +124,13 @@ _EXPORTS = {
     "Turn": ("harnessed.core.turns", "Turn"),
     "derive_turns": ("harnessed.core.turns", "derive_turns"),
     "RetryPolicy": ("harnessed.adapters.base", "RetryPolicy"),
-    "Agent": ("harnessed.app", "Agent"),
+    "Agent": ("harnessed.agent", "Agent"),
     "AgentFactory": ("harnessed.core.loop", "AgentFactory"),
     "AgentHandle": ("harnessed.core.loop", "AgentHandle"),
     "AgentOptions": ("harnessed.core.loop", "AgentOptions"),
     "RunResult": ("harnessed.core.loop", "RunResult"),
-    "ApproximateTokenCounter": ("harnessed.adapters.tokens", "ApproximateTokenCounter"),
-    "TokenCounter": ("harnessed.seams.tokens", "TokenCounter"),
+    "ApproximateTokenCounter": ("harnessed.core.tokens", "ApproximateTokenCounter"),
+    "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
     "Compactor": ("harnessed.seams.compaction", "Compactor"),
     "ExtractiveCompactor": ("harnessed.adapters.compaction", "ExtractiveCompactor"),
     "LLMCompactor": ("harnessed.adapters.compaction", "LLMCompactor"),
@@ -156,7 +156,7 @@ _EXPORTS = {
     "ToolCallContext": ("harnessed.core.execution", "ToolCallContext"),
     "Harness": ("harnessed.presets", "Harness"),
     "LLM": ("harnessed.seams.llm", "LLM"),
-    "Approver": ("harnessed.seams.approver", "Approver"),
+    "Approver": ("harnessed.core.approvals", "Approver"),
     "Decision": ("harnessed.core.messages", "Decision"),
     "ImagePart": ("harnessed.core.messages", "ImagePart"),
     "Message": ("harnessed.core.messages", "Message"),
