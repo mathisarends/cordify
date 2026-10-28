@@ -27,7 +27,8 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.inbox import Inbox
-from harnessed.core.session.session import Session, derive_messages, derive_requests
+from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import derive_messages, derive_requests
 from harnessed.core.session.turns import derive_turns
 
 

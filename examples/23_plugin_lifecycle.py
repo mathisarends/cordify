@@ -62,7 +62,7 @@ async def trace(ctx: Context):
     @ctx.on(SessionAppended)
     def record(event):
         if event.event.type == "turn/end":
-            print(f"{event.session.id}: turn ended at event {event.seq}")
+            print(f"{event.log.id}: turn ended at event {event.seq}")
 
     yield
 

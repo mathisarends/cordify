@@ -4,12 +4,14 @@ from pathlib import Path
 
 from harnessed.core.plugin import Bundle
 from harnessed.core.prompt.context import DynamicContext
-from harnessed.core.session.session import Session
+from harnessed.core.runtime.agent_loop import AgentFactory
+from harnessed.core.runtime.options import AgentOptions
+from harnessed.core.runtime.session import Session as Agent
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionPersistence
 from harnessed.core.tools.output_limit import ToolOutputLimit
 
 from .core.approvals import validate_approval_timeout
-from .core.loop import Agent, AgentFactory, AgentOptions
 from .core.model import Model
 from .kernel.context import Context
 from .kernel.plugin import PluginLike, plugin
@@ -22,6 +24,7 @@ __all__ = ["Harness", "minimal", "coding", "headless"]
 async def _agent_service(ctx: Context, agent: Agent):
     """Make teardown ordering follow the same needs graph as plugin startup."""
     ctx.provide(Agent, agent)
+    ctx.provide(Session, agent.log)
     ctx.provide(DynamicContext, agent.context)
     yield
 
@@ -113,6 +116,7 @@ class Harness:
                 persistence = ctx[SessionPersistence] if SessionPersistence in ctx else None
                 seed = await persistence.load(session_id) if persistence is not None else ()
                 session = Session(session_id, ctx=ctx, seed=seed, persistence=persistence)
+                ctx.effect(session.finish_subscriptions)
                 await session.repair_interrupted()
                 agent = ctx[AgentFactory].create(ctx, session, options)
                 try:

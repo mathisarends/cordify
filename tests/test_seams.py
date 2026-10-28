@@ -5,8 +5,8 @@ import pytest
 
 from harnessed import Harness, ModelChunk, ToolCall, plugin
 from harnessed.core.hooks import ToolPolicy
-from harnessed.core.loop import AgentFactory
 from harnessed.core.messages import PolicyDecision
+from harnessed.core.runtime.agent_loop import AgentFactory
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.store import SessionPersistence
 from harnessed.kernel import Context

@@ -12,14 +12,11 @@ from harnessed import (
     ModelChunk,
     ModelRequest,
     RunControl,
-    Session,
     ToolCall,
     ToolContext,
     system,
 )
-from harnessed import (
-    AgentHandle as Agent,
-)
+from harnessed import Session as Agent
 from harnessed.core.hooks import PreStep, ReviewToolResult, StepDecision
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -32,6 +29,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
 from harnessed.presets import minimal
@@ -76,7 +74,7 @@ async def test_pause_finishes_the_entire_step_then_resume_continues_the_same_tur
         running = asyncio.create_task(agent.run("first task"))
         try:
             await asyncio.wait_for(ready.wait(), 2)
-            turn_id = agent.session.turns[-1].id
+            turn_id = agent.log.turns[-1].id
             await agent.pause()
             assert agent.status == "pausing"
             await agent.followup("second task")
@@ -86,15 +84,15 @@ async def test_pause_finishes_the_entire_step_then_resume_continues_the_same_tur
             release.set()
             await asyncio.wait_for(agent.when_paused(), 2)
             assert agent.status == "paused" and sorted(executed) == [0, 1, 2]
-            results = [e for e in agent.session.events if isinstance(e, ToolReturned)]
+            results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
             assert [e.call_id for e in results] == [call.id for call in calls]
             assert all(not e.result.is_error for e in results)
-            assert not running.done() and not agent.session.turns[-1].closed
-            assert agent.session.turns[-1].steps[-1].closed
+            assert not running.done() and not agent.log.turns[-1].closed
+            assert agent.log.turns[-1].steps[-1].closed
             await agent.resume()
             await asyncio.wait_for(running, 2)
-            assert [len(turn.steps) for turn in agent.session.turns] == [2, 1]
-            assert agent.session.turns[0].id == turn_id
+            assert [len(turn.steps) for turn in agent.log.turns] == [2, 1]
+            assert agent.log.turns[0].id == turn_id
             assert len(model.requests) == 3 and len(executed) == 3
         finally:
             release.set()
@@ -120,10 +118,10 @@ async def test_pause_after_a_final_answer_does_not_make_an_extra_model_call():
         await agent.followup("task")
         await asyncio.wait_for(requested.wait(), 2)
         await asyncio.wait_for(agent.when_paused(), 2)
-        assert agent.session.turns[-1].steps[-1].closed
+        assert agent.log.turns[-1].steps[-1].closed
         await agent.resume()
         await asyncio.wait_for(agent.when_idle(), 2)
-        assert agent.session.turns[-1].closed and len(agent.session.requests) == 1
+        assert agent.log.turns[-1].closed and len(agent.log.requests) == 1
 
 
 async def test_idle_pause_queues_all_input_modes_and_control_calls_are_idempotent():
@@ -131,18 +129,18 @@ async def test_idle_pause_queues_all_input_modes_and_control_calls_are_idempoten
     async with minimal(model).session("idle-pause") as agent:
         await agent.pause()
         await agent.when_paused()
-        prefix = agent.session.events
+        prefix = agent.log.events
         await agent.pause()
-        assert agent.session.events == prefix
+        assert agent.log.events == prefix
         await agent.inject(system("quiet context"))
         await agent.followup("task")
         await agent.steer("focus")
         await asyncio.sleep(0)
         assert agent.status == "paused" and not model.requests and len(agent.inbox.pending) == 3
         await agent.resume()
-        prefix = agent.session.events
+        prefix = agent.log.events
         await agent.resume()
-        assert agent.session.events == prefix
+        assert agent.log.events == prefix
         await asyncio.wait_for(agent.when_idle(), 2)
         assert len(model.requests) == 1 and not agent.inbox.pending
 
@@ -198,12 +196,12 @@ async def test_stop_cancels_current_activity_and_closes_the_turn_without_repeati
         await agent.followup("discard queued task")
         await asyncio.wait_for(agent.stop(), 2)
         assert closed.is_set() and agent.status == "stopped"
-        assert agent.session.turns[-1].reason == "stopped"
-        assert not agent.inbox.pending and not agent.session.approvals.pending
+        assert agent.log.turns[-1].reason == "stopped"
+        assert not agent.inbox.pending and not agent.log.approvals.pending
         assert all(context.signal.is_set() for context in contexts)
-        prefix = agent.session.events
+        prefix = agent.log.events
         await agent.stop()
-        assert agent.session.events == prefix
+        assert agent.log.events == prefix
         await agent.resume()
         await agent.when_idle()
         assert agent.status == "idle" and len(model.requests) == 1
@@ -238,7 +236,7 @@ async def test_stop_can_retain_queued_inputs_but_never_resumes_the_stopped_turn(
         await asyncio.wait_for(agent.when_idle(), 2)
         assert len(model.requests) == (2 if keep_inbox else 1)
         if keep_inbox:
-            assert [turn.reason for turn in agent.session.turns] == ["stopped", "completed"]
+            assert [turn.reason for turn in agent.log.turns] == ["stopped", "completed"]
         await agent.stop()
         assert (await agent.run("new task")).text == "done"
 
@@ -272,16 +270,16 @@ async def test_close_and_reopen_a_paused_session_continues_at_the_next_step(tmp_
         await agent.followup("task")
         await asyncio.wait_for(paused.wait(), 2)
         await asyncio.wait_for(agent.when_paused(), 2)
-        turn_id, prefix = agent.session.turns[-1].id, agent.session.events
-        assert not agent.session.turns[-1].closed
+        turn_id, prefix = agent.log.turns[-1].id, agent.log.events
+        assert not agent.log.turns[-1].closed
     model = ScriptedLLM(["continued"])
     async with minimal(model, plugins=[tools, session_jsonl(tmp_path)]).session("saved") as agent:
-        assert agent.status == "paused" and agent.session.events == prefix
+        assert agent.status == "paused" and agent.log.events == prefix
         await asyncio.sleep(0)
         assert not model.requests
         await agent.resume()
         await asyncio.wait_for(agent.when_idle(), 2)
-        turn = agent.session.turns[-1]
+        turn = agent.log.turns[-1]
         assert turn.id == turn_id and turn.closed and len(turn.steps) == 2
         assert executed == [True]
         assert any(m.text == "stored result" for m in model.requests[0].messages)
@@ -305,14 +303,14 @@ async def test_crash_during_a_pause_request_preserves_partial_output_and_require
     model = ScriptedLLM(["continued"])
     async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("crash") as agent:
         assert agent.status == "paused" and not model.requests
-        turn = agent.session.turns[-1]
+        turn = agent.log.turns[-1]
         assert not turn.closed and turn.steps[-1].reason == "interrupted"
-        partial = next(e for e in agent.session.events if isinstance(e, AssistantMessage))
+        partial = next(e for e in agent.log.events if isinstance(e, AssistantMessage))
         assert partial.interrupted and partial.message.text == "visible"
         await agent.resume()
         await asyncio.wait_for(agent.when_idle(), 2)
-        assert agent.session.turns[-1].id == "turn"
-        assert len(agent.session.turns[-1].steps) == 2
+        assert agent.log.turns[-1].id == "turn"
+        assert len(agent.log.turns[-1].steps) == 2
         assert any(m.text == "visible" for m in model.requests[0].messages)
 
 
@@ -398,7 +396,7 @@ async def test_stream_stays_open_during_pause_and_reports_control_changes_until_
                 "paused",
                 "active",
             ]
-            assert agent.session.messages[-1].text == "final answer"
+            assert agent.log.messages[-1].text == "final answer"
         finally:
             if not stream.done():
                 await agent.stop()
@@ -429,8 +427,8 @@ async def test_a_failed_step_reports_its_error_and_can_resume_after_pause_repair
             await asyncio.wait_for(agent.when_paused(), 2)
         await agent.resume()
         await asyncio.wait_for(agent.when_idle(), 2)
-        assert agent.session.messages[-1].text == "recovered"
-        assert len(agent.session.turns[-1].steps) == 2
+        assert agent.log.messages[-1].text == "recovered"
+        assert len(agent.log.turns[-1].steps) == 2
 
 
 async def test_resume_from_a_pause_acknowledged_as_the_driver_exits_does_not_lose_wakeup():
@@ -457,7 +455,7 @@ async def test_resume_from_a_pause_acknowledged_as_the_driver_exits_does_not_los
         await asyncio.wait_for(resumed.wait(), 2)
         await asyncio.sleep(0)
         await asyncio.wait_for(agent.when_idle(), 2)
-        assert model.requests and agent.session.messages[-1].text == "accepted"
+        assert model.requests and agent.log.messages[-1].text == "accepted"
 
 
 @pytest.mark.parametrize("state, keep_inbox", [("unknown", False), ("paused", True), ("active", 1)])

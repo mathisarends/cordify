@@ -14,8 +14,8 @@ from harnessed.core.errors import SessionLocked
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.codec import CURRENT_VERSION, decode_event, encode_event
 from harnessed.core.session.events import LogTailRecovered, SessionEvent
-from harnessed.core.session.session import Session
-from harnessed.core.session.store import SessionPersistence, SessionStore
+from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.store import SessionPersistence, SessionStore, validate_session_id
 from harnessed.kernel import Context, plugin, run_sync
 
 if os.name == "nt":
@@ -53,8 +53,7 @@ class JsonlPersistence:
         self._files: dict[str, tuple] = {}
 
     def _path(self, session_id: str) -> Path:
-        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}", session_id):
-            raise ValueError("Session ids must be 1-128 letters, digits, underscores or hyphens")
+        session_id = validate_session_id(session_id)
         if not self._root_ready:
             self.root = self.root.resolve()
             self.root.mkdir(parents=True, exist_ok=True)

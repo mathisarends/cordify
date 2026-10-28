@@ -57,9 +57,7 @@ async def main():
         print((await agent.run("Run another command.")).text)
 
         outputs = [
-            event.result.content
-            for event in agent.session.events
-            if isinstance(event, ToolReturned)
+            event.result.content for event in agent.log.events if isinstance(event, ToolReturned)
         ]
         assert len(outputs) == 2 and "local:" in outputs[0] and "remote:" in outputs[1]
         print("Recorded outputs:", *outputs, sep="\n")

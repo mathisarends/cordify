@@ -5,9 +5,6 @@ from pathlib import Path
 import pytest
 
 from harnessed import (
-    AgentHandle as Agent,
-)
-from harnessed import (
     Bundle,
     Harness,
     Inject,
@@ -26,6 +23,7 @@ from harnessed import (
     ToolResult,
     hook,
 )
+from harnessed import Session as Agent
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionApplied,
@@ -38,7 +36,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins._context.providers import compactor, spill_store
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
@@ -67,7 +65,7 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
     )
     async with harness.session("spill") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert result.exit_code == 3 and result.status == "error"
         assert result.spill is not None and result.content != original
         assert (
@@ -78,9 +76,9 @@ async def test_large_results_spill_to_persistent_file_and_keep_structured_metada
         assert model.requests[1].messages[-1].text == result.content
         assert result.with_note("extra").spill == result.spill
         events = tuple(
-            decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.session.events
+            decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
         )
-        assert Session("replay", seed=events).messages == agent.session.messages
+        assert Session("replay", seed=events).messages == agent.log.messages
         assert any(isinstance(e, SpillCreated) for e in events)
         ref = result.spill
     assert await store.read(ref.path, offset=7, limit=6) == "output"
@@ -132,9 +130,9 @@ async def test_read_spill_tool_returns_bounded_ranges_without_respilling(tmp_pat
         [agent_loop(), llm(model), spill_store(store), SpillLargeResults(1)]
     ).session("read-spill") as agent:
         await agent.run("read")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert result.content == "x" * 40 and result.spill is None
-        assert not any(isinstance(e, SpillCreated) for e in agent.session.events)
+        assert not any(isinstance(e, SpillCreated) for e in agent.log.events)
 
 
 async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path):
@@ -158,7 +156,7 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
     async with harness.session("compact") as agent:
         await agent.run("old context " + "x" * 1200)
         await agent.run("current task", context={"ticket": "preserve current context"})
-        applied = [e for e in agent.session.events if isinstance(e, CompactionApplied)]
+        applied = [e for e in agent.log.events if isinstance(e, CompactionApplied)]
         assert len(applied) == 1
         request = model.requests[1]
         texts = [m.text for m in request.messages]
@@ -166,12 +164,11 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
         assert "current task" in texts
         assert "Task context [ticket]:\npreserve current context" in texts
         assert "x" * 1200 not in "\n".join(texts)
-        replay = Session("replay", seed=agent.session.events)
-        assert replay.messages == agent.session.messages
-        assert agent.session.fork("fork").messages == replay.messages
+        replay = Session("replay", seed=agent.log.events)
+        assert replay.messages == agent.log.messages
+        assert agent.log.fork("fork").messages == replay.messages
         assert any(
-            isinstance(e, UserMessage) and "x" * 1200 in e.message.text
-            for e in agent.session.events
+            isinstance(e, UserMessage) and "x" * 1200 in e.message.text for e in agent.log.events
         )
     persisted = tuple(
         decode_event(json.loads(line))
@@ -227,8 +224,8 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
         await agent.followup("next")
         await started.wait()
         await agent.cancel()
-        assert not any(isinstance(e, CompactionApplied) for e in agent.session.events)
-        assert "x" * 1000 in "\n".join(m.text for m in agent.session.messages)
+        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
+        assert "x" * 1000 in "\n".join(m.text for m in agent.log.messages)
 
 
 async def test_compactor_error_is_reported_and_history_is_intact():
@@ -245,7 +242,7 @@ async def test_compactor_error_is_reported_and_history_is_intact():
         await agent.run("x" * 1000)
         with pytest.raises(ValueError, match="summary failed"):
             await agent.run("next")
-        assert not any(isinstance(e, CompactionApplied) for e in agent.session.events)
+        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
         assert len(model.requests) == 1
 
 
@@ -267,8 +264,8 @@ async def test_keep_turns_retains_recent_work_and_later_compaction_merges_old_su
         assert any("y" * 800 in text for text in texts)
         assert not any("x" * 800 in text for text in texts)
         await agent.run("next")
-        assert sum(isinstance(e, CompactionApplied) for e in agent.session.events) == 2
-        assert sum(m.id.startswith("compaction:") for m in agent.session.messages) == 1
+        assert sum(isinstance(e, CompactionApplied) for e in agent.log.events) == 2
+        assert sum(m.id.startswith("compaction:") for m in agent.log.messages) == 1
 
 
 async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
@@ -289,7 +286,7 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
     async with harness.session("no-growth") as agent:
         await agent.run("original" * 30)
         await agent.run("next")
-        assert not any(isinstance(e, CompactionApplied) for e in agent.session.events)
+        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
 
 
 async def test_empty_or_non_advancing_compaction_is_rejected_on_replay():
@@ -320,9 +317,9 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
         texts = [m.text for m in model.requests[-1].messages]
         assert "brief 1" not in texts and "brief 2" in texts and "full 3" in texts
         assert "full 1" not in texts
-        assert Session("replay", seed=agent.session.events).messages == agent.session.messages
-    assert isinstance(agent.session.events[-1], ObservationPolicyApplied)
-    assert agent.session.events[-1].max_summaries is None
+        assert Session("replay", seed=agent.log.events).messages == agent.log.messages
+    assert isinstance(agent.log.events[-1], ObservationPolicyApplied)
+    assert agent.log.events[-1].max_summaries is None
 
 
 async def test_cache_usage_is_preserved_as_provider_reported_usage():
@@ -330,7 +327,7 @@ async def test_cache_usage_is_preserved_as_provider_reported_usage():
     model = ScriptedLLM([[ModelChunk(text="one", usage=usage)]])
     async with Harness([agent_loop(), llm(model)]).session("cache") as agent:
         await agent.run("one")
-        event = agent.session.last(ModelUsageRecorded)
+        event = agent.log.last(ModelUsageRecorded)
         assert event.usage.cache_hit_rate == 0.8
         assert decode_event(encode_event(event)) == event
 

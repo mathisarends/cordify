@@ -3,7 +3,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from harnessed import Bundle, ModelChunk, ModelRequest, Session, ToolCall, derive_turns
+from harnessed import Bundle, ModelChunk, ModelRequest, ToolCall, derive_turns
 from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -16,6 +16,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -36,7 +37,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
     async with minimal(model, plugins=[features]).session("turns") as agent:
         await agent.followup("first task")
         await started.wait()
-        live = agent.session.turns[-1]
+        live = agent.log.turns[-1]
         assert not live.closed and not live.steps[-1].closed
         assert live.steps[-1].request is model.requests[0]
         await agent.steer("focus here")
@@ -45,7 +46,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         assert len(model.requests) == 1
         release.set()
         await agent.when_idle()
-        turns = agent.session.turns
+        turns = agent.log.turns
         assert [len(turn.steps) for turn in turns] == [2, 1]
         assert [[step.number for step in turn.steps] for turn in turns] == [[1, 2], [1]]
         assert all(turn.closed and turn.reason == "completed" for turn in turns)
@@ -60,9 +61,9 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         second_users = [e.message.text for e in turns[1].events if isinstance(e, UserMessage)]
         assert first_users == ["first task", "focus here", "extra context"]
         assert second_users == ["second task"]
-        restored = tuple(decode_event(encode_event(event)) for event in agent.session.events)
+        restored = tuple(decode_event(encode_event(event)) for event in agent.log.events)
         assert derive_turns(restored) == turns
-        assert agent.session.fork("fork").turns == turns
+        assert agent.log.fork("fork").turns == turns
         with pytest.raises(FrozenInstanceError):
             turns[0].steps[0].number = 2
 
@@ -77,7 +78,7 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
 
         await agent.followup("task")
         await agent.when_idle()
-        turn = agent.session.turns[-1]
+        turn = agent.log.turns[-1]
         assert turn.closed and turn.reason == "rejected" and turn.steps == ()
         assert model.requests == [] and len(agent.inbox.next_turn) == 1
 
@@ -95,7 +96,7 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
         await agent.followup("task")
         await started.wait()
         await agent.cancel()
-        turn = agent.session.turns[-1]
+        turn = agent.log.turns[-1]
         assert turn.closed and turn.reason == "interrupted"
         assert turn.steps[-1].closed and turn.steps[-1].reason == "interrupted"
         assert agent.status == "idle"

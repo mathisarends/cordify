@@ -3,8 +3,8 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from harnessed import AgentHandle as Agent
 from harnessed import Bundle, Inject, ModelChunk, ToolCall
+from harnessed import Session as Agent
 from harnessed.core.hooks import ReviewToolResult
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
@@ -39,7 +39,7 @@ async def pause_a_tool_batch():
     async with minimal(model, plugins=[tools]).session("batch") as agent:
         running = asyncio.create_task(agent.run("Process a, b and c."))
         await started.wait()
-        turn_id = agent.session.turns[-1].id
+        turn_id = agent.log.turns[-1].id
 
         await agent.pause()  # Requests a pause; active tools may still finish.
         print("After pause request:", agent.status)  # pausing
@@ -52,8 +52,8 @@ async def pause_a_tool_batch():
         await agent.resume()  # Same turn and next step, followed by the queued turn.
         result = await running
         print("After resume:", agent.status, ";", result.text)
-        assert agent.session.turns[0].id == turn_id
-        assert [len(turn.steps) for turn in agent.session.turns] == [2, 1]
+        assert agent.log.turns[0].id == turn_id
+        assert [len(turn.steps) for turn in agent.log.turns] == [2, 1]
 
 
 async def stop_current_work():
@@ -80,13 +80,13 @@ async def stop_current_work():
 
         await agent.stop(keep_inbox=True)  # Cancel now; preserve only queued inputs.
         print("After stop:", agent.status, "; queued inputs:", len(agent.inbox.pending))
-        assert agent.session.turns[-1].reason == "stopped"
-        assert agent.session.messages[-1].text == "Visible output before stopping."
+        assert agent.log.turns[-1].reason == "stopped"
+        assert agent.log.messages[-1].text == "Visible output before stopping."
 
         await agent.resume()  # Runs the queued task; never repeats the stopped call.
         await agent.when_idle()
         assert model.calls == 2
-        print("Turn outcomes:", [turn.reason for turn in agent.session.turns])
+        print("Turn outcomes:", [turn.reason for turn in agent.log.turns])
 
         await agent.stop()  # By default, discard pending inputs too.
         print("A fresh run after stop:", (await agent.run("Start a new task.")).text)
@@ -116,7 +116,7 @@ async def reopen_a_paused_session(directory: str):
         await agent.followup("Store a result and continue afterward.")
         await pause_requested.wait()
         await agent.when_paused()
-        turn_id = agent.session.turns[-1].id
+        turn_id = agent.log.turns[-1].id
         print("Closing the paused session with its completed step in JSONL.")
 
     # A fresh harness and model reconstruct the paused state from the same log.
@@ -126,8 +126,8 @@ async def reopen_a_paused_session(directory: str):
         assert not fresh.requests and agent.status == "paused"
         await agent.resume()
         await agent.when_idle()
-        assert agent.session.turns[-1].id == turn_id and len(executed) == 1
-        print(agent.session.messages[-1].text, "Tool executed once.")
+        assert agent.log.turns[-1].id == turn_id and len(executed) == 1
+        print(agent.log.messages[-1].text, "Tool executed once.")
 
 
 async def main():

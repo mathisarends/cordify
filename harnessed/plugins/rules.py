@@ -4,9 +4,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 
 from harnessed.core.hooks import ReviewToolResult
-from harnessed.core.loop import Agent
 from harnessed.core.messages import ToolCall, ToolResult, to_dict, user
 from harnessed.core.plugin import Plugin
+from harnessed.core.runtime.session import Session as Agent
 from harnessed.core.session.events import RuleEvaluated, RuleTriggered, ToolCalled, ToolReturned
 from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Inject, hook
@@ -111,7 +111,7 @@ class Rules(Plugin):
         # keep match bits with the canonical result, surviving notes/spill/limits.
         stored = [
             event
-            for event in agent.session.events
+            for event in agent.log.events
             if isinstance(event, RuleEvaluated) and event.rule.startswith(f"{self.name}:")
         ]
         for index in range(len(self.rules)):
@@ -120,7 +120,7 @@ class Rules(Plugin):
                     self._counts[(index, event.key)] = event.occurrence
                     self._last_counts[index] = event.occurrence
         calls = {}
-        for event in agent.session.events:
+        for event in agent.log.events:
             if isinstance(event, ToolCalled):
                 calls[event.call.id] = event.call
             elif isinstance(event, ToolReturned) and event.call_id in calls:
@@ -162,7 +162,7 @@ class Rules(Plugin):
                 ):
                     await agent.context.remove(f"rule:{self.name}:{index}")
                 continue
-            await agent.session.append(
+            await agent.log.append(
                 RuleTriggered(
                     f"{self.name}:{index}",
                     event.call.id,

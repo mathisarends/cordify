@@ -1,6 +1,6 @@
 import asyncio
 from bisect import bisect_right
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from typing import cast
 from xml.sax.saxutils import escape, quoteattr
 
@@ -42,7 +42,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.history import MessageProjection
 from harnessed.core.session.inbox import Inbox
-from harnessed.core.session.store import SessionPersistence
+from harnessed.core.session.store import SessionPersistence, validate_session_id
 from harnessed.core.session.turns import Turn, TurnProjection
 from harnessed.core.stream import SessionPublished, TransientEvent
 from harnessed.kernel.context import Context
@@ -222,7 +222,7 @@ def _validate_compaction(events, event: CompactionApplied, seq: int):
         raise ValueError("Preserved turns must be closed inside the compaction prefix")
 
 
-class Session:
+class SessionLog:
     """An append-only log. Inbox state and model history are pure projections."""
 
     def __init__(
@@ -233,7 +233,7 @@ class Session:
         seed: Iterable[SessionEvent] = (),
         persistence: SessionPersistence | None = None,
     ):
-        self.id = session_id
+        self.id = validate_session_id(session_id)
         self.ctx = ctx
         self._events = list(seed)
         self._snapshot: tuple[SessionEvent, ...] | None = None
@@ -242,6 +242,8 @@ class Session:
         }
         self._persistence = persistence
         self._usage: ModelUsage | None = None
+        self._observers: dict[asyncio.Queue, bool] = {}
+        self._subscriptions_closed = False
         self._lock = asyncio.Lock()
         for event in self._events:
             _validate_event(event)
@@ -298,6 +300,31 @@ class Session:
     @property
     def usage(self) -> ModelUsage:
         return self._usage if self._usage is not None else ModelUsage(0)
+
+    async def subscribe(
+        self, *, transient: bool = False
+    ) -> AsyncIterator[SessionEvent | TransientEvent]:
+        """Observe acknowledged records; optionally include live notifications."""
+        if self._subscriptions_closed:
+            return
+        queue = asyncio.Queue()
+        self._observers[queue] = transient
+        try:
+            while (event := await queue.get()) is not None:
+                yield event
+        finally:
+            self._observers.pop(queue, None)
+
+    def _notify(self, event: SessionEvent | TransientEvent):
+        for queue, transient in tuple(self._observers.items()):
+            if isinstance(event, SessionEvent) or transient:
+                queue.put_nowait(event)
+
+    def finish_subscriptions(self):
+        """Finish audit subscriptions after dependent plugins have torn down."""
+        self._subscriptions_closed = True
+        for queue in tuple(self._observers):
+            queue.put_nowait(None)
 
     @property
     def uncompacted_turn_count(self) -> int:
@@ -451,6 +478,7 @@ class Session:
                 self._usage = (
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
                 )
+            self._notify(event)
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
             await self.ctx.dispatch(event)
@@ -467,6 +495,7 @@ class Session:
         """Deliver a live event without persistence or projection changes."""
         if not isinstance(event, TransientEvent):
             raise TypeError("publish requires a TransientEvent")
+        self._notify(event)
         if self.ctx is not None:
             await self.ctx.dispatch(SessionPublished(self, event))
             await self.ctx.dispatch(event)
@@ -526,7 +555,7 @@ class Session:
 
     def fork(
         self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
-    ) -> "Session":
+    ) -> "SessionLog":
         """Copy an event prefix ending at a closed turn; ``at`` is an exclusive offset."""
         if at is not None and (type(at) is not int or not 0 <= at <= len(self._events)):
             raise ValueError("Fork offset must lie inside the session log")
@@ -545,4 +574,4 @@ class Session:
         )
         if not inherit_approvals:
             seed.extend(ApprovalRevoked(item.request_id, "fork") for item in approvals.grants)
-        return Session(session_id, seed=seed)
+        return SessionLog(session_id, seed=seed)

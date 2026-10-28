@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from harnessed.core.messages import Message
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import CompactionApplied, SessionEvent, TurnEnd, TurnStart
-from harnessed.core.session.session import Session, _derive_message_entries, derive_messages
+from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import _derive_message_entries, derive_messages
 
 
 @dataclass(frozen=True)

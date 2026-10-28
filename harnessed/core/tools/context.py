@@ -7,7 +7,7 @@ from harnessed.core.messages import ToolCall
 from harnessed.core.session.events import ToolProgress
 
 if TYPE_CHECKING:
-    from harnessed.core.session.session import Session
+    from harnessed.core.session.session import SessionLog as Session
 
 
 class ToolInbox(Protocol):

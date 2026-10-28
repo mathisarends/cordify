@@ -3,9 +3,6 @@ import asyncio
 import pytest
 
 from harnessed import (
-    AgentHandle as Agent,
-)
-from harnessed import (
     ApprovalAnswer,
     Bundle,
     ExecuteTool,
@@ -22,6 +19,7 @@ from harnessed import (
     plugin,
     tool,
 )
+from harnessed import Session as Agent
 from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.session.events import (
@@ -59,7 +57,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
         assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "The result is 3."
         assert [e.text for e in events if isinstance(e, ToolProgress)] == ["adding"]
         assert any(isinstance(e, ToolReturned) and e.result.content == "3" for e in events)
-        recorded = [e.request for e in agent.session.events if isinstance(e, ModelRequested)]
+        recorded = [e.request for e in agent.log.events if isinstance(e, ModelRequested)]
         assert recorded == model.requests
         assert model.requests[0].model == "test-model"
         assert [m.role for m in model.requests[1].messages] == ["user", "assistant", "tool"]
@@ -100,7 +98,7 @@ async def test_inject_stays_idle_steering_enters_next_step_followup_gets_own_tur
             ["first", "quiet", "steering", "context"],
             ["first", "quiet", "steering", "context", "second"],
         ]
-        assert sum(isinstance(e, TurnStart) for e in agent.session.events) == 2
+        assert sum(isinstance(e, TurnStart) for e in agent.log.events) == 2
         assert not agent.inbox.pending
 
 
@@ -183,7 +181,7 @@ async def test_approval_always_is_session_local_and_review_can_inject_nudges():
         assert asked == ["work"]
         assert stages == ["policy", "tool", "review", "policy", "tool", "review"]
         assert any(m.content == "consider this" for m in model.requests[-1].messages)
-        results = [e.result for e in agent.session.events if isinstance(e, ToolReturned)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
         assert all(result.content == "done\n\nReviewed" for result in results)
 
 
@@ -303,10 +301,10 @@ async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
         await agent.followup("go")
         await started.wait()
         await agent.cancel()
-        partial = next(e for e in agent.session.events if isinstance(e, AssistantMessage))
+        partial = next(e for e in agent.log.events if isinstance(e, AssistantMessage))
         assert partial.interrupted and partial.message.content == "visible prefix"
-        assert isinstance(agent.session.events[-1], TurnEnd)
-        assert agent.session.events[-1].reason == "interrupted"
+        assert isinstance(agent.log.events[-1], TurnEnd)
+        assert agent.log.events[-1].reason == "interrupted"
 
 
 async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
@@ -327,7 +325,7 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
         await started.wait()
         await agent.cancel()
         assert calls[0].signal.is_set()
-        results = [e.result for e in agent.session.events if isinstance(e, ToolReturned)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
         assert len(results) == 1 and results[0].is_error
 
 
@@ -345,7 +343,7 @@ async def test_same_harness_rejects_two_live_writers_and_max_steps_bounds_the_lo
             async with harness.session("same"):
                 pytest.fail("A second writer entered")
         await agent.run("loop")
-        assert agent.session.events[-1].reason == "max_steps"
+        assert agent.log.events[-1].reason == "max_steps"
 
 
 async def test_observer_failure_closes_model_iterator_before_run_returns():
@@ -368,7 +366,7 @@ async def test_observer_failure_closes_model_iterator_before_run_returns():
         with pytest.raises(ValueError, match="observer failure"):
             await agent.run("go")
         assert closed.is_set()
-        assert agent.session.messages[-1].content == "partial"
+        assert agent.log.messages[-1].content == "partial"
 
 
 async def test_policy_ask_routes_to_approver_seam():
@@ -404,4 +402,4 @@ async def test_canceling_when_idle_waiter_does_not_cancel_the_agent():
         assert agent.status == "running"
         model.release.set()
         await agent.when_idle()
-        assert agent.session.messages[-1].content == "response 1"
+        assert agent.log.messages[-1].content == "response 1"

@@ -136,7 +136,7 @@ class _Callback:
         self.callback, self.agent = callback, agent
 
     async def ask(self, call: ToolCall, reason: str) -> ApprovalAnswer:
-        record = self.agent.session.latest_approval(call.id)
+        record = self.agent.log.latest_approval(call.id)
         assert record is not None
         value = self.callback(record.request)
         return await value if inspect.isawaitable(value) else value

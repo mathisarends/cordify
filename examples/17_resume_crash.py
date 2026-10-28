@@ -77,17 +77,15 @@ async def resume(root: Path):
             for message in model.requests[0].messages
         )
         print("Second process: queued followup and silent context restored.")
-        recovered = next(e for e in agent.session.events if isinstance(e, LogTailRecovered))
+        recovered = next(e for e in agent.log.events if isinstance(e, LogTailRecovered))
         print(f"Archived {recovered.discarded_bytes} incomplete bytes: {recovered.archive}")
         await agent.run("Run the same tool in a fresh task.")
-        result = next(
-            e.result for e in reversed(agent.session.events) if isinstance(e, ToolReturned)
-        )
+        result = next(e.result for e in reversed(agent.log.events) if isinstance(e, ToolReturned))
         assert not result.is_error and asked == []
         print("Persisted ALWAYS grant reused; no new approval question.")
-        grant = agent.session.approvals.grant_for("work", scope="demo-work")
+        grant = agent.log.approvals.grant_for("work", scope="demo-work")
         await agent.revoke_approval(grant.request_id)
-        assert not agent.session.approvals.grants
+        assert not agent.log.approvals.grants
         print("Grant revoked through another log event.")
 
 

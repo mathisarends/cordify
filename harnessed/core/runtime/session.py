@@ -2,30 +2,29 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextvars import ContextVar
-from dataclasses import dataclass, field, replace
-from typing import Any, Literal, Protocol
+from dataclasses import replace
+from typing import Any, Literal
 from uuid import uuid4
 
-from harnessed.core.approvals import ApprovalUnavailable, Approver
+from harnessed.core.approvals import ApprovalUnavailable, Approver, validate_approval_timeout
+from harnessed.core.attachments import Attachment, prepare_input
 from harnessed.core.hooks import (
     ApprovalRequest,
-    ExecuteTool,
-    ReviewToolResult,
     SessionAppended,
-    ToolPolicy,
     TurnStopping,
 )
 from harnessed.core.messages import (
     ApprovalAnswer,
     Message,
     Observation,
-    PolicyDecision,
     ToolCall,
-    ToolResult,
 )
 from harnessed.core.model import Model, ModelRequest, ModelUsage, sum_usage
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.runtime.options import AgentOptions
+from harnessed.core.runtime.result import RunResult
+from harnessed.core.runtime.stepper import run_step
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalRequested,
@@ -37,98 +36,29 @@ from harnessed.core.session.events import (
     InboxRemoved,
     ModelUsageRecorded,
     SessionEvent,
-    ToolCalled,
-    ToolCompleted,
-    ToolExecutionStarted,
-    ToolPolicyApplied,
-    ToolReturned,
     TurnEnd,
     TurnStart,
 )
-from harnessed.core.session.session import Session, derive_messages
+from harnessed.core.session.session import SessionLog, derive_messages
+from harnessed.core.stream import SessionPublished, TextDelta, TransientEvent
 from harnessed.core.tools.context import BoundToolContexts, InboxSender, ToolContexts
-from harnessed.core.tools.output_limit import ToolOutputLimit
-from harnessed.core.tools.registry import ErrorFormatter, ToolRegistry, format_tool_error
-from harnessed.core.tools.scheduling import ToolPlan, ToolScheduler, ToolScheduling
+from harnessed.core.tools.registry import ToolRegistry
+from harnessed.core.tracing import span
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 
-from .approvals import validate_approval_timeout
-from .attachments import Attachment, prepare_input
-from .runtime.stepper import run_step
-from .stream import SessionPublished, TextDelta, TransientEvent
-from .tracing import span
-
 type AgentEvent = SessionEvent | TransientEvent
-_preparing: ContextVar["Agent | None"] = ContextVar("harnessed_preparing", default=None)
-_driving: ContextVar["Agent | None"] = ContextVar("harnessed_driving", default=None)
+_preparing: ContextVar["Session | None"] = ContextVar("harnessed_preparing", default=None)
+_driving: ContextVar["Session | None"] = ContextVar("harnessed_driving", default=None)
 log = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class AgentOptions:
-    model: str
-    max_steps: int = 32
-    max_tokens: int | None = None
-    context_window: int | None = None
-    tool_output_limit: ToolOutputLimit = field(default_factory=ToolOutputLimit)
-    max_parallel_tools: int = 4
-    approval_timeout: float = 300.0
-    error_formatter: ErrorFormatter | None = None
-    on_max_tokens: Literal["accept", "continue", "fail"] = "accept"
+class Session:
+    """A live conversation with durable inputs, turn-scoped results and controls."""
 
-    def __post_init__(self):
-        if not self.model:
-            raise ValueError("A model is required")
-        if type(self.max_steps) is not int or self.max_steps < 1:
-            raise ValueError("max_steps must be a positive integer")
-        if self.max_tokens is not None and (
-            type(self.max_tokens) is not int or self.max_tokens < 1
-        ):
-            raise ValueError("max_tokens must be a positive integer")
-        if self.context_window is not None and (
-            type(self.context_window) is not int or self.context_window < 1
-        ):
-            raise ValueError("context_window must be a positive integer")
-        if type(self.max_parallel_tools) is not int or self.max_parallel_tools < 1:
-            raise ValueError("max_parallel_tools must be a positive integer")
-        validate_approval_timeout(self.approval_timeout)
-
-
-@dataclass(frozen=True)
-class RunResult:
-    __hash__ = None
-    text: str
-    events: tuple[SessionEvent, ...]
-    usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
-    stop_reason: str = "end"
-    turn_id: str | None = None
-    messages: tuple[Message, ...] = ()
-
-    @property
-    def tool_calls(self) -> tuple[tuple[ToolCall, ToolResult], ...]:
-        calls = {
-            event.call.id: event.call for event in self.events if isinstance(event, ToolCalled)
-        }
-        return tuple(
-            (calls[event.call_id], event.result)
-            for event in self.events
-            if isinstance(event, ToolReturned) and event.call_id in calls
-        )
-
-
-class AgentFactory(Protocol):
-    def create(
-        self, ctx: Context, session: Session, options: AgentOptions | None = None
-    ) -> "Agent": ...
-
-
-class Agent:
-    """The default ReAct driver. Inputs are durable; idle observes the whole driver."""
-
-    def __init__(self, ctx: Context, session: Session, options: AgentOptions):
-        self.ctx, self.session, self.options = ctx, session, options
+    def __init__(self, ctx: Context, session: SessionLog, options: AgentOptions):
+        self.ctx, self.log, self.options = ctx, session, options
         self.id = session.id
         self.context = DynamicContext(session)
         ctx.provide(
@@ -155,7 +85,7 @@ class Agent:
 
     @property
     def inbox(self):
-        return self.session.inbox
+        return self.log.inbox
 
     @property
     def prompt(self) -> SystemPrompt:
@@ -163,22 +93,35 @@ class Agent:
 
     @property
     def events(self) -> tuple[SessionEvent, ...]:
-        return self.session.events
+        return self.log.events
 
     @property
     def messages(self) -> tuple[Message, ...]:
-        return self.session.messages
+        return self.log.messages
 
     @property
     def usage(self) -> ModelUsage:
-        return self.session.usage
+        return self.log.usage
 
     @property
     def turns(self):
-        return self.session.turns
+        return self.log.turns
 
     def last(self, kind):
-        return self.session.last(kind)
+        return self.log.last(kind)
+
+    @property
+    def approvals(self):
+        return self.log.approvals
+
+    def fork(self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False):
+        """Create a branch from a closed log prefix; pass it to Agent.session()."""
+        return self.log.fork(session_id, at=at, inherit_approvals=inherit_approvals)
+
+    async def subscribe(self, *, transient: bool = False):
+        """Observe the raw log independently of any individual run/stream call."""
+        async for event in self.log.subscribe(transient=transient):
+            yield event
 
     async def use(self, plugin):
         """Mount a recipe at runtime; its guidance is context, never system text."""
@@ -220,7 +163,7 @@ class Agent:
 
     def observe(self, observation: Observation) -> None:
         if self._closing:
-            raise RuntimeError("Agent is disposed")
+            raise RuntimeError("Session is disposed")
         self._observations[observation.source] = observation
 
     def start(self):
@@ -229,10 +172,10 @@ class Agent:
         self._wake()
 
     def _open_turn(self):
-        return self.session.open_turn
+        return self.log.open_turn
 
     def _update_status(self):
-        control = self.session.control
+        control = self.log.control
         if control.state != "active":
             self.status = control.state
         else:
@@ -243,8 +186,8 @@ class Agent:
             self._ready
             and not self._closing
             and not self._canceling
-            and self.session.control.state == "active"
-            and (self.session.has_wakeup or self._open_turn() is not None)
+            and self.log.control.state == "active"
+            and (self.log.has_wakeup or self._open_turn() is not None)
             and (self._runner is None or self._runner.done())
         ):
             self._error = None
@@ -252,7 +195,7 @@ class Agent:
             self._runner = asyncio.create_task(self._drive(), name=f"harnessed:{self.id}")
 
     def _session_event(self, event: SessionAppended):
-        if event.session is self.session:
+        if event.log is self.log:
             if isinstance(event.event, AgentControlChanged):
                 self._update_status()
                 self._control_changed.set()
@@ -264,7 +207,7 @@ class Agent:
             queue.put_nowait(event)
 
     def _stream_event(self, event: SessionPublished):
-        if event.session is self.session:
+        if event.log is self.log:
             self._publish(event.event)
 
     async def _send(
@@ -277,19 +220,19 @@ class Agent:
         settings: Mapping[str, Any] | None = None,
     ) -> str:
         if self._closing or self._canceling:
-            raise RuntimeError("Agent is being cancelled or disposed")
+            raise RuntimeError("Session is being cancelled or disposed")
         message, contributions = await prepare_input(
             content, attachments=attachments, context=context
         )
         if self._closing or self._canceling:
-            raise RuntimeError("Agent is being cancelled or disposed")
+            raise RuntimeError("Session is being cancelled or disposed")
         item = InboxAdded.create(message, mode, context=contributions, settings=settings)
-        await self.session.append(item)
+        await self.log.append(item)
         if mode == "inject" and _preparing.get() is self:
             self._step_push.append(item)
         if item.wakeup:
-            if self.session.control.state == "stopped":
-                await self.session.append(AgentControlChanged("active"))
+            if self.log.control.state == "stopped":
+                await self.log.append(AgentControlChanged("active"))
             self._wake()
         return message.id
 
@@ -317,17 +260,17 @@ class Agent:
 
     def _check_control(self):
         if self._closing or self._canceling:
-            raise RuntimeError("Agent is being cancelled or disposed")
+            raise RuntimeError("Session is being cancelled or disposed")
 
     async def pause(self) -> None:
         """Request a pause after the current step; use when_paused() to await it."""
         self._check_control()
-        if self.session.control.paused:
+        if self.log.control.paused:
             return
-        if self.session.control.stopped:
+        if self.log.control.stopped:
             raise RuntimeError("Resume the stopped agent before pausing it")
         state = "pausing" if self._runner and not self._runner.done() else "paused"
-        await self.session.append(AgentControlChanged(state))
+        await self.log.append(AgentControlChanged(state))
 
     async def when_paused(self) -> None:
         if _driving.get() is self:
@@ -335,9 +278,9 @@ class Agent:
         while True:
             if self._error is not None:
                 raise self._error
-            if self.session.control.state == "paused":
+            if self.log.control.state == "paused":
                 return
-            if self.session.control.state != "pausing":
+            if self.log.control.state != "pausing":
                 raise RuntimeError("The agent has no pending pause request")
             await self._control_changed.wait()
 
@@ -350,8 +293,8 @@ class Agent:
         )
         if finishing and _driving.get() is not self:
             await asyncio.shield(self._runner)
-        if self.session.control.state != "active":
-            await self.session.append(AgentControlChanged("active"))
+        if self.log.control.state != "active":
+            await self.log.append(AgentControlChanged("active"))
         if finishing and _driving.get() is self:
             self._runner.add_done_callback(lambda _: self._wake())
         self._wake()
@@ -360,12 +303,12 @@ class Agent:
         while True:
             if self._canceling:
                 raise asyncio.CancelledError
-            if self.session.control.state == "active":
+            if self.log.control.state == "active":
                 return
-            if self.session.control.state == "pausing":
-                await self.session.append(AgentControlChanged("paused"))
+            if self.log.control.state == "pausing":
+                await self.log.append(AgentControlChanged("paused"))
                 continue
-            if self.session.control.stopped:
+            if self.log.control.stopped:
                 raise asyncio.CancelledError
             await self._control_changed.wait()
 
@@ -379,23 +322,23 @@ class Agent:
         timeout: float | None = None,
     ) -> ApprovalAnswer:
         if self._closing or self._canceling:
-            raise RuntimeError("Agent is being cancelled or disposed")
-        grant = self.session.approval_grant(call.name, scope=scope)
+            raise RuntimeError("Session is being cancelled or disposed")
+        grant = self.log.approval_grant(call.name, scope=scope)
         request = ApprovalRequested(
             uuid4().hex, call, reason, scope, grant.request_id if grant else None
         )
-        await self.session.append(request)
+        await self.log.append(request)
         try:
             if grant is not None:
                 decision = ApprovalAnswer.ALWAYS
             else:
                 decision = await self._approval_answer(request, approver, timeout=timeout)
-            await self.session.append(ApprovalResolved(request.request_id, decision))
+            await self.log.append(ApprovalResolved(request.request_id, decision))
             return decision
         except BaseException as exc:
-            record = self.session.approval(request.request_id)
+            record = self.log.approval(request.request_id)
             if record is not None and record.pending:
-                await self.session.append(
+                await self.log.append(
                     ApprovalResolved(
                         request.request_id,
                         status="unavailable"
@@ -445,12 +388,12 @@ class Agent:
 
     async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
         if self._closing or self._canceling:
-            raise RuntimeError("Agent is being cancelled or disposed")
-        record = self.session.approval(request_id)
+            raise RuntimeError("Session is being cancelled or disposed")
+        record = self.log.approval(request_id)
         if record is None:
             raise KeyError(request_id)
         if not record.revoked:
-            await self.session.append(ApprovalRevoked(request_id, reason))
+            await self.log.append(ApprovalRevoked(request_id, reason))
 
     async def when_idle(self) -> None:
         while self._runner is not None and not self._runner.done():
@@ -548,18 +491,18 @@ class Agent:
             raise RuntimeError("Call cancel() from outside the agent driver")
         self._canceling = True
         try:
-            if self.session.control.state != "active":
-                await self.session.append(AgentControlChanged("active"))
+            if self.log.control.state != "active":
+                await self.log.append(AgentControlChanged("active"))
             if self._runner is not None and not self._runner.done():
                 self._runner.cancel()
                 try:
                     await self._runner
                 except asyncio.CancelledError:
                     pass
-            await self.session.repair_interrupted()
+            await self.log.repair_interrupted()
             if not keep_inbox:
                 for item in self.inbox.pending:
-                    await self.session.append(InboxRemoved(item.message.id, "canceled"))
+                    await self.log.append(InboxRemoved(item.message.id, "canceled"))
             self._update_status()
             self._publish(None)
         finally:
@@ -572,18 +515,18 @@ class Agent:
             raise TypeError("keep_inbox must be a bool")
         if _driving.get() is self:
             raise RuntimeError("Call stop() from outside the agent driver")
-        if self.session.control.state == "stopped" and (keep_inbox or not self.inbox.pending):
+        if self.log.control.state == "stopped" and (keep_inbox or not self.inbox.pending):
             return
         self._canceling = True
         try:
-            await self.session.append(AgentControlChanged("stopping", keep_inbox))
+            await self.log.append(AgentControlChanged("stopping", keep_inbox))
             if self._runner is not None and not self._runner.done():
                 self._runner.cancel()
                 try:
                     await self._runner
                 except asyncio.CancelledError:
                     pass
-            await self.session.repair_interrupted()
+            await self.log.repair_interrupted()
             self._update_status()
             self._publish(None)
         finally:
@@ -591,51 +534,49 @@ class Agent:
 
     async def aclose(self) -> None:
         self._closing = True
-        if self.session.control.paused or self.session.control.stopped:
+        if self.log.control.paused or self.log.control.stopped:
             if self._runner is not None and not self._runner.done():
                 self._runner.cancel()
                 try:
                     await self._runner
                 except asyncio.CancelledError:
                     pass
-            await self.session.repair_interrupted()
+            await self.log.repair_interrupted()
         else:
             await self.cancel()
-        await self.session.flush()
+        await self.log.flush()
         self.status = "disposed"
 
     async def _drive(self):
         token = _driving.set(self)
         self._finishing = False
         try:
-            while self.session.has_wakeup or self._open_turn() is not None:
+            while self.log.has_wakeup or self._open_turn() is not None:
                 await self._checkpoint()
                 if not await self._turn():
                     break
         except asyncio.CancelledError:
             try:
-                await self.session.repair_interrupted()
+                await self.log.repair_interrupted()
             except Exception as exc:
                 self._error = exc
         except Exception as exc:
             self._error = exc
             try:
-                await self.session.repair_interrupted()
+                await self.log.repair_interrupted()
             except Exception as repair_error:
                 self._error = ExceptionGroup(
                     "Driver and session repair failed", [exc, repair_error]
                 )
         finally:
             self._finishing = True
-            if self.session.control.state == "pausing":
+            if self.log.control.state == "pausing":
                 try:
-                    await self.session.append(AgentControlChanged("paused"))
+                    await self.log.append(AgentControlChanged("paused"))
                 except Exception as exc:
                     self._error = exc
             _driving.reset(token)
-            self.status = (
-                self.session.control.state if self.session.control.state != "active" else "idle"
-            )
+            self.status = self.log.control.state if self.log.control.state != "active" else "idle"
             self._control_changed.set()
             self._control_changed = asyncio.Event()
             self._publish(None)
@@ -653,24 +594,24 @@ class Agent:
         if previous is None:
             candidates = self.inbox.next_turn or self.inbox.next_step
             settings = candidates[0].settings if candidates else {}
-            await self.session.append(
+            await self.log.append(
                 TurnStart(turn, candidates[0].message.id if candidates else None, settings)
             )
         elif previous.steps and not await self._continue_turn(previous.steps[-1]):
-            await self.session.append(TurnEnd(turn))
+            await self.log.append(TurnEnd(turn))
             return True
         for step in range(first_step, self.options.max_steps + 1):
             with span(self.ctx, "step", session_id=self.id, turn_id=turn, step=step):
                 if not await run_step(self, turn, step, settings, _preparing):
                     return False
             await self._checkpoint()
-            current = self.session.open_turn
+            current = self.log.open_turn
             assert current is not None
             if await self._continue_turn(current.steps[-1]):
                 continue
-            await self.session.append(TurnEnd(turn))
+            await self.log.append(TurnEnd(turn))
             return True
-        await self.session.append(TurnEnd(turn, "max_steps"))
+        await self.log.append(TurnEnd(turn, "max_steps"))
         return True
 
     async def _continue_turn(self, step) -> bool:
@@ -687,142 +628,11 @@ class Agent:
             step.reason == "interrupted"
             or response is None
             or response.message.tool_calls
-            or self.session.has_step_wakeup
+            or self.log.has_step_wakeup
         ):
             return True
         continuation = await self.ctx.dispatch(TurnStopping(self))
-        return bool(continuation or self.session.has_step_wakeup)
-
-    async def _run_tools(self, calls: tuple[ToolCall, ...]) -> None:
-        if not calls:
-            return
-        plans = []
-        registry = self.ctx[ToolRegistry]
-        for call in calls:
-            await self.session.append(ToolCalled(call))
-            try:
-                plans.append(registry.plan(call))
-            except Exception as exc:
-                plans.append(
-                    ToolPlan(
-                        call,
-                        ToolScheduling(),
-                        ToolResult.error(
-                            format_tool_error(call, exc, self.options.error_formatter)
-                        ),
-                    )
-                )
-        scheduler = ToolScheduler(self.options.max_parallel_tools)
-        for group in scheduler.groups(plans):
-            await self._run_tool_group(group, scheduler)
-
-    async def _run_tool_group(self, plans: tuple[ToolPlan, ...], scheduler: ToolScheduler) -> None:
-        authorizations = [
-            plan.error if plan.error is not None else await self._authorize_tool(plan.call)
-            for plan in plans
-        ]
-        reviewed = [asyncio.Event() for _ in plans]
-
-        async def worker(index: int, plan: ToolPlan) -> ToolResult:
-            try:
-                result = authorizations[index]
-                reviewable = result is None
-                if result is None:
-                    async with scheduler.slots:
-                        result, reviewable = await self._invoke_tool(plan)
-                if index:
-                    await reviewed[index - 1].wait()
-                if reviewable:
-                    result = await self._review_tool(plan.call, result)
-                result = self.options.tool_output_limit.apply(result)
-                await self.session.append(ToolCompleted(plan.call.id, result))
-                return result
-            finally:
-                reviewed[index].set()
-
-        async def commit(call: ToolCall, result: ToolResult):
-            await self.session.append(ToolReturned(call.id, result))
-
-        await scheduler.run(plans, worker, commit)
-
-    async def _authorize_tool(self, call: ToolCall) -> ToolResult | None:
-        try:
-            previous = self.session.latest_approval(call.id)
-            decision = await self.ctx.dispatch(
-                ToolPolicy(call, self),
-                default=lambda: PolicyDecision.ALLOW,
-            )
-            if not isinstance(decision, PolicyDecision):
-                raise TypeError("ToolPolicy hooks must return PolicyDecision")
-            if decision is PolicyDecision.ASK:
-                answer = await self.request_approval(call, "Tool policy requested approval")
-                decision = (
-                    PolicyDecision.DENY if answer is ApprovalAnswer.DENY else PolicyDecision.ALLOW
-                )
-            record = self.session.latest_approval(call.id)
-            answered = record is not None and record is not previous
-            source = (
-                "approval"
-                if answered
-                and (decision is PolicyDecision.ALLOW or record.decision is ApprovalAnswer.DENY)
-                else "policy"
-            )
-            await self.session.append(ToolPolicyApplied(call.id, decision, source))
-            if decision is PolicyDecision.DENY:
-                if answered and record.decision is ApprovalAnswer.DENY:
-                    return ToolResult.denied("User declined this action", source="user")
-                return ToolResult.denied("Denied by policy", source="policy")
-            return None
-        except ApprovalUnavailable as exc:
-            await self.session.append(
-                ToolPolicyApplied(call.id, PolicyDecision.DENY, "unavailable")
-            )
-            return ToolResult.unavailable(str(exc))
-        except Exception as exc:
-            return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
-
-    async def _invoke_tool(self, plan: ToolPlan) -> tuple[ToolResult, bool]:
-        with span(self.ctx, "tool", session_id=self.id, tool=plan.call.name, call_id=plan.call.id):
-            return await self._execute_tool(plan)
-
-    async def _execute_tool(self, plan: ToolPlan) -> tuple[ToolResult, bool]:
-        call = plan.call
-        execution = self.ctx[ToolContexts].create(call)
-        try:
-            await self.session.append(ToolExecutionStarted(call.id))
-            await self.session.flush()
-            result = await self.ctx.dispatch(
-                ExecuteTool(call, self),
-                default=lambda: self.ctx[ToolRegistry].execute(
-                    call,
-                    ctx=self.ctx,
-                    call_context=execution,
-                    _expected=plan.binding,
-                    error_formatter=self.options.error_formatter,
-                ),
-            )
-            if not isinstance(result, ToolResult):
-                raise TypeError("Tool hooks must return a ToolResult")
-            return result, True
-        except asyncio.CancelledError:
-            execution.signal.set()
-            raise
-        except Exception as exc:
-            return ToolResult.error(
-                format_tool_error(call, exc, self.options.error_formatter)
-            ), False
-
-    async def _review_tool(self, call: ToolCall, result: ToolResult) -> ToolResult:
-        try:
-            result = await self.ctx.dispatch(
-                ReviewToolResult(call, result, self),
-                default=lambda: result,
-            )
-            if not isinstance(result, ToolResult):
-                raise TypeError("Tool hooks must return a ToolResult")
-            return result
-        except Exception as exc:
-            return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
+        return bool(continuation or self.log.has_step_wakeup)
 
     async def _respond(self, request: ModelRequest) -> Message:
         with span(self.ctx, "model", session_id=self.id, model=request.model):
@@ -850,37 +660,19 @@ class Agent:
                     if chunk.text or chunk.reasoning:
                         text.append(chunk.text)
                         reasoning.append(chunk.reasoning)
-                        await self.session.publish(
-                            TextDelta(message_id, chunk.text, chunk.reasoning)
-                        )
+                        await self.log.publish(TextDelta(message_id, chunk.text, chunk.reasoning))
                     if chunk.tool_call is not None:
                         calls.append(chunk.tool_call)
                 response = stream.response()
         except BaseException:
             if last_usage is not None:
-                await self.session.append(ModelUsageRecorded(last_usage))
+                await self.log.append(ModelUsageRecorded(last_usage))
             if text or reasoning:
-                await self.session.append(AssistantMessage(message(), interrupted=True))
+                await self.log.append(AssistantMessage(message(), interrupted=True))
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
-        await self.session.append(ModelUsageRecorded(response.usage))
+        await self.log.append(ModelUsageRecorded(response.usage))
         final = replace(response.message, id=message_id)
-        await self.session.append(AssistantMessage(final, stop_reason=response.stop_reason))
+        await self.log.append(AssistantMessage(final, stop_reason=response.stop_reason))
         return final
-
-
-class ReactLoopFactory:
-    def __init__(self, *, error_formatter: ErrorFormatter | None = None):
-        self.error_formatter = error_formatter
-
-    def create(self, ctx: Context, session: Session, options: AgentOptions | None = None) -> Agent:
-        if options is None:
-            model = ctx[Model]
-            options = AgentOptions(model.info.name, context_window=model.info.context_window)
-        if self.error_formatter is not None:
-            options = replace(options, error_formatter=self.error_formatter)
-        return Agent(ctx, session, options)
-
-
-AgentHandle = Agent

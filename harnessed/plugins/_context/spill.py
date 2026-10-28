@@ -2,8 +2,8 @@ from dataclasses import replace
 
 from harnessed.core.budget import truncate
 from harnessed.core.hooks import ReviewToolResult
-from harnessed.core.loop import Agent
 from harnessed.core.plugin import Plugin
+from harnessed.core.runtime.session import Session as Agent
 from harnessed.core.session.events import SpillCreated
 from harnessed.core.tokens import TokenCounter
 from harnessed.core.tools.decorator import tool
@@ -40,7 +40,7 @@ class SpillLargeResults(Plugin):
             f"Preview:\n{preview}\n\n"
             "Use read_spill(path=..., offset=0, limit=4000) to read character ranges."
         )
-        await agent.session.append(SpillCreated(event.call.id, ref, tokens))
+        await agent.log.append(SpillCreated(event.call.id, ref, tokens))
         return replace(result, content=content, spill=ref)
 
     @tool

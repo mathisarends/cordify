@@ -4,9 +4,6 @@ import asyncio
 from tempfile import TemporaryDirectory
 
 from harnessed import (
-    AgentHandle as Agent,
-)
-from harnessed import (
     Bundle,
     Harness,
     Inject,
@@ -22,6 +19,7 @@ from harnessed import (
     ToolCall,
     hook,
 )
+from harnessed import Session as Agent
 from harnessed.core.session.events import CompactionApplied, SpillCreated
 from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.agents.loop import agent_loop
@@ -86,7 +84,7 @@ async def main():
         async with harness.session("strategies") as agent:
             await agent.run("Old task context: " + "x" * 2000)
             print((await agent.run("Inspect the report.")).text)
-            for event in agent.session.events:
+            for event in agent.log.events:
                 if isinstance(event, CompactionApplied):
                     print(f"Compacted event prefix [0, {event.through}): {event.summary[:100]}")
                 elif isinstance(event, SpillCreated):

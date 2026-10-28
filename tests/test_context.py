@@ -20,12 +20,10 @@ from harnessed import (
     system,
     user,
 )
-from harnessed import (
-    AgentHandle as Agent,
-)
+from harnessed import Session as Agent
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.services import llm
@@ -48,8 +46,8 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
             assert request.messages[2].text == "review"
         await agent.run("unrelated")
         assert all("Task context" not in m.text for m in model.requests[-1].messages)
-        assert any(isinstance(e, ContextMessage) for e in agent.session.events)
-        assert "Fix login" in json.dumps([encode_event(e) for e in agent.session.events])
+        assert any(isinstance(e, ContextMessage) for e in agent.log.events)
+        assert "Fix login" in json.dumps([encode_event(e) for e in agent.log.events])
 
 
 async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payload(tmp_path):
@@ -68,7 +66,7 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
         assert image_part.url.startswith("data:image/png;")
         diff.write_text("changed after admission", encoding="utf-8")
         restored = tuple(
-            decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.session.events
+            decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
         )
         recorded = next(e.request for e in restored if isinstance(e, ModelRequested))
         assert recorded == request and "changed after admission" not in recorded.messages[0].text
@@ -154,11 +152,11 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
         texts = [m.text for m in model.requests[1].messages]
         assert "SUMMARY before" in texts and "FULL before refs" not in texts
         assert texts[-1] == "FULL after refs"
-        assert any(isinstance(e, ObservationRecorded) for e in agent.session.events)
-        replay = Session("replay", seed=agent.session.events)
-        assert replay.messages == agent.session.messages
+        assert any(isinstance(e, ObservationRecorded) for e in agent.log.events)
+        replay = Session("replay", seed=agent.log.events)
+        assert replay.messages == agent.log.messages
         assert all(not m.text.startswith("FULL") for m in replay.messages)
-        fork = agent.session.fork("fork")
+        fork = agent.log.fork("fork")
         assert fork.messages == replay.messages
 
 

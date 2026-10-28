@@ -3,17 +3,10 @@
 import asyncio
 import json
 
-from harnessed import (
-    Bundle,
-    Message,
-    ModelChunk,
-    Session,
-    ToolCall,
-    derive_messages,
-    derive_requests,
-)
+from harnessed import Bundle, Message, ModelChunk, ToolCall, derive_messages, derive_requests
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import AssistantMessage, UserMessage
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.stream import TextDelta
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
@@ -38,7 +31,7 @@ async def main():
             if isinstance(event, TextDelta):
                 print(event.text, end="", flush=True)
         print()
-        log = agent.session.events
+        log = agent.log.events
 
     # Replay reads only serialized events: no model, tool, Context or plugin setup.
     encoded = json.dumps([encode_event(event) for event in log])

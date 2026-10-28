@@ -47,7 +47,7 @@ async def main():
             for message in request.messages:
                 if message.role == "user":
                     print(f"  {message.content}")
-        turns = agent.session.turns
+        turns = agent.log.turns
         print(f"\n{len(turns)} turns, {len(model.requests)} steps, status: {agent.status}")
         for number, turn in enumerate(turns, 1):
             print(f"Turn {number}: {len(turn.steps)} steps, reason: {turn.reason}")

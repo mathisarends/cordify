@@ -127,6 +127,8 @@ Durable appends run off the event loop and acknowledge the configured durability
 boundary. Resume repairs interrupted work. The log remains append-only; compaction
 is another event, and projected history is checked against pure replay folds.
 See [immutable values and the versioned codec](docs/concepts/values.md).
+The [session guide](docs/guides/sessions.md) covers direct access, forks and raw
+audit subscriptions.
 
 ## Models and extension points
 

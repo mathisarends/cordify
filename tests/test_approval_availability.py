@@ -10,13 +10,13 @@ from harnessed import (
     Approver,
     Bundle,
     ModelChunk,
-    Session,
     ToolCall,
 )
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ApprovalResolved, ToolExecutionStarted, ToolReturned
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import headless, minimal
@@ -43,18 +43,16 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
         "no-ui"
     ) as agent:
         await asyncio.wait_for(agent.run("go"), 2)
-        results = [
-            event.result for event in agent.session.events if isinstance(event, ToolReturned)
-        ]
+        results = [event.result for event in agent.log.events if isinstance(event, ToolReturned)]
         assert [result.status for result in results] == ["unavailable", "ok"]
         assert "No approval responder" in results[0].content
         assert executed == ["safe"]
-        approvals = agent.session.approvals
+        approvals = agent.log.approvals
         assert not approvals.pending and not approvals.grants
         assert approvals.records[0].resolution.status == "unavailable"
         assert approvals.records[0].decision is None
         replay = Session(
-            "replay", seed=tuple(decode_event(encode_event(e)) for e in agent.session.events)
+            "replay", seed=tuple(decode_event(encode_event(e)) for e in agent.log.events)
         )
         assert replay.approvals == approvals
 
@@ -63,9 +61,9 @@ async def test_direct_sdk_approval_raises_typed_unavailable_and_leaves_no_pendin
     async with minimal(ScriptedLLM([])).session("direct") as agent:
         with pytest.raises(ApprovalUnavailable, match="No approval responder"):
             await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
-        record = agent.session.approvals.records[-1]
+        record = agent.log.approvals.records[-1]
         assert record.resolution.status == "unavailable" and record.decision is None
-        assert not agent.session.approvals.pending
+        assert not agent.log.approvals.pending
 
 
 async def test_explicit_approver_then_service_take_precedence_over_request_listeners():
@@ -96,7 +94,7 @@ async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or
         def answer(event):
             assert event.call.name == "work" and event.reason == "permission"
             assert event.request.request_id in {
-                item.request_id for item in event.agent.session.approvals.pending
+                item.request_id for item in event.agent.log.approvals.pending
             }
             asked.append("deny")
             return ApprovalAnswer.DENY
@@ -135,8 +133,8 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
         with pytest.raises(ApprovalUnavailable, match="timed out after 0.02 seconds"):
             await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
         assert stopped.is_set()
-        assert not agent.session.approvals.pending
-        assert agent.session.approvals.records[-1].resolution.status == "unavailable"
+        assert not agent.log.approvals.pending
+        assert agent.log.approvals.records[-1].resolution.status == "unavailable"
 
 
 @pytest.mark.parametrize("answer", [None, PolicyDecision.ASK, "allow", ValueError("disconnected")])
@@ -150,7 +148,7 @@ async def test_responder_abstention_invalid_answers_and_failures_are_unavailable
         agent.on(ApprovalRequest, respond)
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
-        record = agent.session.approvals.records[-1]
+        record = agent.log.approvals.records[-1]
         assert record.resolution.status == "unavailable" and record.resolution.reason
         assert not record.pending and not record.is_grant
 
@@ -185,8 +183,8 @@ async def test_gate_stays_active_after_approver_service_is_removed():
         await agent.ctx.settle()
         await agent.run("second")
         assert executed == [True]
-        assert agent.session.approvals.records[-1].resolution.status == "unavailable"
-        assert len([e for e in agent.session.events if isinstance(e, ToolExecutionStarted)]) == 1
+        assert agent.log.approvals.records[-1].resolution.status == "unavailable"
+        assert len([e for e in agent.log.events if isinstance(e, ToolExecutionStarted)]) == 1
 
 
 async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_new_request(tmp_path):
@@ -195,24 +193,24 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
     ) as agent:
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
-        prefix = agent.session.events
+        prefix = agent.log.events
     async with minimal(
         ScriptedLLM([]),
         plugins=[session_jsonl(tmp_path), callback_approver(lambda call: ApprovalAnswer.ALWAYS)],
     ).session("resume") as resumed:
-        assert resumed.session.events == prefix and not resumed.session.approvals.pending
+        assert resumed.log.events == prefix and not resumed.log.approvals.pending
         assert (
             await resumed.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
         )
-        assert len(resumed.session.approvals.records) == 2
-        grant = resumed.session.approvals.grants[0]
+        assert len(resumed.log.approvals.records) == 2
+        grant = resumed.log.approvals.grants[0]
     async with minimal(ScriptedLLM([]), plugins=[session_jsonl(tmp_path)]).session(
         "resume"
     ) as resumed:
         assert (
             await resumed.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
         )
-        assert resumed.session.approvals.records[-1].request.grant_id == grant.request_id
+        assert resumed.log.approvals.records[-1].request.grant_id == grant.request_id
 
 
 @pytest.mark.parametrize("gate_first", [True, False])

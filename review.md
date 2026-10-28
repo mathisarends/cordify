@@ -31,8 +31,8 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-1 — Split the driver and make state explicit
 
-- Split loop.py into runtime stepper, executor, inbox/control and result modules.
-  Use dedicated services instead of making every plugin depend on the driver.
+- Finish separating inbox/control from the live Session and provide dedicated
+  services instead of making every plugin depend on the driver.
 - Replace interacting boolean flags with SessionStatus and centralized legal
   transitions. Implement the approved pause/resume/stop/abort boundaries and
   durable outcomes; update race/restart tests and examples.
@@ -44,7 +44,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   final-answer tool fallback and a bounded validation retry.
 - Add the stable typed StreamEvent union and terminal TurnFinished result;
   expose raw durable/transient subscriptions separately.
-- Expose the public Session API without the legacy agent.session indirection.
 
 ### P1-6 — Loop configuration and composition
 

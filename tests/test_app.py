@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PluginConflict, Section, ToolCall, tool
@@ -10,7 +12,7 @@ from harnessed.core.session.events import (
     TurnEnd,
     TurnStart,
 )
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.models import Model
 from harnessed.plugins import Approvals, ContextValue, Instructions, Service
 from harnessed.testing import ScriptedModel
@@ -180,3 +182,38 @@ async def test_runtime_guidance_tracks_temporal_dependency_restarts():
         session.ctx.provide(Backend, Backend())
         await session.ctx.settle()
         assert list(session.context.values.values()) == ["Use the active backend."]
+
+
+async def test_public_session_type_and_forks_open_as_independent_conversations():
+    from harnessed import Session as LiveSession
+
+    app = Agent(model=ScriptedModel(["first", "alternate", "resumed"]))
+    async with app.session("original") as session:
+        assert isinstance(session, LiveSession)
+        await session.run("Remember the original")
+        branch = session.fork("branch")
+    async with app.session(branch) as alternative:
+        await alternative.run("Try another approach")
+        assert alternative.messages[-1].text == "alternate"
+    async with app.session("original") as resumed:
+        assert all(message.text != "Try another approach" for message in resumed.messages)
+        await resumed.run("Continue")
+        assert resumed.messages[-1].text == "resumed"
+
+
+async def test_raw_subscription_includes_dependent_teardown_before_it_finishes():
+    app = Agent(model=ScriptedModel(["done"]), plugins=[ContextValue("temporary", "present")])
+    seen = []
+    async with app.session() as session:
+
+        async def observe():
+            async for event in session.subscribe():
+                seen.append(event)
+
+        observing = asyncio.create_task(observe())
+        await asyncio.sleep(0)
+        await session.run("Go")
+        assert not observing.done()
+    await asyncio.wait_for(observing, 2)
+    changes = [event for event in seen if isinstance(event, ContextValueChanged)]
+    assert [event.value for event in changes] == ["present", None]

@@ -24,10 +24,6 @@ if TYPE_CHECKING:
     from harnessed.core.hooks import PreStep as PreStep
     from harnessed.core.hooks import ReviewToolResult as ReviewToolResult
     from harnessed.core.hooks import ToolPolicy as ToolPolicy
-    from harnessed.core.loop import AgentFactory as AgentFactory
-    from harnessed.core.loop import AgentHandle as AgentHandle
-    from harnessed.core.loop import AgentOptions as AgentOptions
-    from harnessed.core.loop import RunResult as RunResult
     from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
     from harnessed.core.messages import ImagePart as ImagePart
     from harnessed.core.messages import Message as Message
@@ -48,10 +44,13 @@ if TYPE_CHECKING:
     from harnessed.core.plugin import Plugin as Plugin
     from harnessed.core.prompt.system_prompt import SystemPrompt as SystemPrompt
     from harnessed.core.prompt.values import Section as Section
+    from harnessed.core.runtime.agent_loop import AgentFactory
+    from harnessed.core.runtime.options import AgentOptions
+    from harnessed.core.runtime.result import RunResult
+    from harnessed.core.runtime.session import Session as Session
     from harnessed.core.session.control import RunControl as RunControl
     from harnessed.core.session.events import AgentControlChanged as AgentControlChanged
     from harnessed.core.session.inbox import Inbox as Inbox
-    from harnessed.core.session.session import Session as Session
     from harnessed.core.session.session import derive_messages as derive_messages
     from harnessed.core.session.session import derive_requests as derive_requests
     from harnessed.core.session.store import SessionPersistence as SessionPersistence
@@ -123,10 +122,9 @@ _EXPORTS = {
     "Turn": ("harnessed.core.session.turns", "Turn"),
     "derive_turns": ("harnessed.core.session.turns", "derive_turns"),
     "Agent": ("harnessed.agent", "Agent"),
-    "AgentFactory": ("harnessed.core.loop", "AgentFactory"),
-    "AgentHandle": ("harnessed.core.loop", "AgentHandle"),
-    "AgentOptions": ("harnessed.core.loop", "AgentOptions"),
-    "RunResult": ("harnessed.core.loop", "RunResult"),
+    "AgentFactory": ("harnessed.core.runtime.agent_loop", "AgentFactory"),
+    "AgentOptions": ("harnessed.core.runtime.options", "AgentOptions"),
+    "RunResult": ("harnessed.core.runtime.result", "RunResult"),
     "ApproximateTokenCounter": ("harnessed.core.tokens", "ApproximateTokenCounter"),
     "TokenCounter": ("harnessed.core.tokens", "TokenCounter"),
     "Compactor": ("harnessed.seams.compaction", "Compactor"),
@@ -182,7 +180,7 @@ _EXPORTS = {
     "ProcResult": ("harnessed.plugins.shell", "ProcResult"),
     "Shell": ("harnessed.plugins.shell", "ShellBackend"),
     "Inbox": ("harnessed.core.session.inbox", "Inbox"),
-    "Session": ("harnessed.core.session.session", "Session"),
+    "Session": ("harnessed.core.runtime.session", "Session"),
     "SessionPersistence": ("harnessed.core.session.store", "SessionPersistence"),
     "derive_messages": ("harnessed.core.session.session", "derive_messages"),
     "derive_requests": ("harnessed.core.session.session", "derive_requests"),
@@ -217,7 +215,6 @@ __all__ = [
     "derive_turns",
     "Agent",
     "AgentFactory",
-    "AgentHandle",
     "AgentOptions",
     "RunResult",
     "ApproximateTokenCounter",

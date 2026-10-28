@@ -2,8 +2,8 @@
 
 import asyncio
 
-from harnessed import AgentHandle as Agent
 from harnessed import Harness, Inject, ModelChunk, Plugin, ReviewToolResult, ToolCall
+from harnessed import Session as Agent
 from harnessed.core.session.events import ToolReturned
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm

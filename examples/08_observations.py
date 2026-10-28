@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from harnessed import (
-    AgentHandle as Agent,
-)
-from harnessed import (
     Bundle,
     Context,
     Harness,
@@ -20,6 +17,7 @@ from harnessed import (
     hook,
     plugin,
 )
+from harnessed import Session as Agent
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
 from harnessed.testing import ScriptedLLM

@@ -8,18 +8,16 @@ if TYPE_CHECKING:
     from harnessed.core.budget import ContextBudget as ContextBudget
     from harnessed.core.budget import ContextBudgetExceeded as ContextBudgetExceeded
     from harnessed.core.hooks import ApprovalRequest as ApprovalRequest
-    from harnessed.core.loop import Agent as Agent
-    from harnessed.core.loop import AgentFactory as AgentFactory
-    from harnessed.core.loop import AgentHandle as AgentHandle
-    from harnessed.core.loop import AgentOptions as AgentOptions
-    from harnessed.core.loop import RunResult as RunResult
     from harnessed.core.plugin import Bundle as Bundle
     from harnessed.core.plugin import Plugin as Plugin
     from harnessed.core.prompt.system_prompt import SystemPrompt as SystemPrompt
+    from harnessed.core.runtime.agent_loop import AgentFactory
+    from harnessed.core.runtime.options import AgentOptions
+    from harnessed.core.runtime.result import RunResult
+    from harnessed.core.runtime.session import Session as Session
     from harnessed.core.session.control import RunControl as RunControl
     from harnessed.core.session.events import AgentControlChanged as AgentControlChanged
     from harnessed.core.session.inbox import Inbox as Inbox
-    from harnessed.core.session.session import Session as Session
     from harnessed.core.session.session import derive_messages as derive_messages
     from harnessed.core.session.session import derive_requests as derive_requests
     from harnessed.core.session.store import SessionPersistence as SessionPersistence
@@ -41,15 +39,13 @@ _EXPORTS = {
     "Step": ("harnessed.core.session.turns", "Step"),
     "Turn": ("harnessed.core.session.turns", "Turn"),
     "derive_turns": ("harnessed.core.session.turns", "derive_turns"),
-    "Agent": ("harnessed.core.loop", "Agent"),
-    "AgentOptions": ("harnessed.core.loop", "AgentOptions"),
-    "AgentFactory": ("harnessed.core.loop", "AgentFactory"),
-    "AgentHandle": ("harnessed.core.loop", "AgentHandle"),
-    "RunResult": ("harnessed.core.loop", "RunResult"),
+    "AgentOptions": ("harnessed.core.runtime.options", "AgentOptions"),
+    "AgentFactory": ("harnessed.core.runtime.agent_loop", "AgentFactory"),
+    "RunResult": ("harnessed.core.runtime.result", "RunResult"),
     "Bundle": ("harnessed.core.plugin", "Bundle"),
     "Plugin": ("harnessed.core.plugin", "Plugin"),
     "tool": ("harnessed.core.tools.decorator", "tool"),
-    "Session": ("harnessed.core.session.session", "Session"),
+    "Session": ("harnessed.core.runtime.session", "Session"),
     "SessionPersistence": ("harnessed.core.session.store", "SessionPersistence"),
     "derive_messages": ("harnessed.core.session.session", "derive_messages"),
     "derive_requests": ("harnessed.core.session.session", "derive_requests"),
@@ -69,10 +65,8 @@ __all__ = [
     "Step",
     "Turn",
     "derive_turns",
-    "Agent",
     "AgentOptions",
     "AgentFactory",
-    "AgentHandle",
     "RunResult",
     "Bundle",
     "Plugin",

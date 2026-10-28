@@ -6,7 +6,7 @@ import pytest
 
 from harnessed import Agent
 from harnessed.core.session.events import TurnEnd, TurnStart
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins import Approvals, Filesystem, Shell
 from harnessed.plugins.filesystem import FS, LocalFS
 from harnessed.testing import (

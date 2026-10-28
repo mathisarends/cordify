@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from harnessed import ApprovalAnswer, Bundle, ModelChunk, Session, ToolCall, user
+from harnessed import ApprovalAnswer, Bundle, ModelChunk, ToolCall, user
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,
@@ -18,6 +18,7 @@ from harnessed.core.session.events import (
     LogTailRecovered,
     ToolReturned,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.permissions.approval import approval_gate
 from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
 from harnessed.presets import minimal
@@ -148,21 +149,19 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
             ],
         )
         async with harness.session("crash") as agent:
-            assert agent.session.events[: len(original)] == original
-            assert not agent.session.approvals.pending
+            assert agent.log.events[: len(original)] == original
+            assert not agent.log.approvals.pending
             if phase == "tool":
-                assert len(agent.session.approvals.grants) == 1
+                assert len(agent.log.approvals.grants) == 1
                 interrupted = [
-                    e
-                    for e in agent.session.events
-                    if isinstance(e, ToolReturned) and e.result.is_error
+                    e for e in agent.log.events if isinstance(e, ToolReturned) and e.result.is_error
                 ]
                 assert (
                     len(interrupted) == 1 and "outcome is unknown" in interrupted[0].result.content
                 )
             elif phase == "approval":
-                assert agent.session.approvals.records[-1].resolution.status == "interrupted"
-                assert not agent.session.approvals.grants
+                assert agent.log.approvals.records[-1].resolution.status == "interrupted"
+                assert not agent.log.approvals.grants
             await agent.when_idle()
             if phase == "idle":
                 assert model.requests == [] and len(agent.inbox.pending) == 1
@@ -182,9 +181,9 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
             assert len(before) == (2 if phase == "tool" else 0)
             await agent.run("fresh tool call")
             assert len(called) == (0 if phase == "tool" else 1)
-            repaired = agent.session.events
-            await agent.session.repair_interrupted()
-            assert agent.session.events == repaired
+            repaired = agent.log.events
+            await agent.log.repair_interrupted()
+            assert agent.log.events == repaired
 
     asyncio.run(resume())
     assert path.read_bytes().startswith(prefix)
@@ -311,9 +310,9 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     async with minimal(
         ScriptedLLM([]), plugins=[session_jsonl(tmp_path, fsync=True, recover_tail=True)]
     ).session("answer") as agent:
-        assert not agent.session.approvals.pending and not agent.session.approvals.grants
-        assert agent.session.approvals.records[0].resolution.status == "interrupted"
-        recovery = next(e for e in agent.session.events if isinstance(e, LogTailRecovered))
+        assert not agent.log.approvals.pending and not agent.log.approvals.grants
+        assert agent.log.approvals.records[0].resolution.status == "interrupted"
+        recovery = next(e for e in agent.log.events if isinstance(e, LogTailRecovered))
         assert await asyncio.to_thread(Path(recovery.archive).read_bytes) == tail
 
 

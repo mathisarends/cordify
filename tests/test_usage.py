@@ -4,7 +4,7 @@ from harnessed import Agent
 from harnessed.core.model import ModelChunk, ModelUsage, sum_usage
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ModelUsageRecorded
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.testing import ScriptedModel
 
 

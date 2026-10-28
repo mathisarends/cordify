@@ -19,7 +19,7 @@ from harnessed.core.errors import (
 from harnessed.core.messages import ImagePart, Message, TextPart
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.models import PydanticAIModel
 
 

@@ -4,18 +4,15 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import (
-    AgentHandle as Agent,
-)
-from harnessed import (
     ApprovalAnswer,
     Bundle,
     Inject,
     ModelChunk,
-    Session,
     SessionPersistence,
     ToolCall,
     plugin,
 )
+from harnessed import Session as Agent
 from harnessed.core.approvals import ApprovalState
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
@@ -28,6 +25,7 @@ from harnessed.core.session.events import (
     ToolPolicyApplied,
     ToolReturned,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.permissions.approval import approval_gate, callback_approver
 from harnessed.plugins.sessions import session_jsonl
 from harnessed.presets import minimal
@@ -44,8 +42,8 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
 
     @tools.tool
     async def work(agent: Inject[Agent]) -> str:
-        assert isinstance(agent.session.events[-1], ToolExecutionStarted)
-        assert agent.session.approvals.records[-1].decision is ApprovalAnswer.ALWAYS
+        assert isinstance(agent.log.events[-1], ToolExecutionStarted)
+        assert agent.log.approvals.records[-1].decision is ApprovalAnswer.ALWAYS
         executed.append(True)
         return "ok"
 
@@ -61,28 +59,28 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
 
     async with harness().session("same-session") as agent:
         await agent.run("first")
-        grant = agent.session.approvals.grants[0]
-        prefix = agent.session.events
-        fork = agent.session.fork("new-session")
+        grant = agent.log.approvals.grants[0]
+        prefix = agent.log.events
+        fork = agent.log.fork("new-session")
         assert fork.events[: len(prefix)] == prefix and not fork.approvals.grants
-        assert agent.session.fork("trusted", inherit_approvals=True).approvals.grants == (grant,)
+        assert agent.log.fork("trusted", inherit_approvals=True).approvals.grants == (grant,)
         with pytest.raises(FrozenInstanceError):
             grant.revoked = True
     async with harness().session("same-session") as resumed:
-        assert resumed.session.approvals.grants == (grant,)
+        assert resumed.log.approvals.grants == (grant,)
         await resumed.run("second")
-        cached = resumed.session.approvals.records[-1]
+        cached = resumed.log.approvals.records[-1]
         assert cached.request.grant_id == grant.request_id and not cached.is_grant
         assert len(asked) == 1 and len(executed) == 2
         await resumed.revoke_approval(grant.request_id)
-        after_revocation = resumed.session.events
+        after_revocation = resumed.log.events
         await resumed.revoke_approval(grant.request_id)
-        assert resumed.session.events == after_revocation and not resumed.session.approvals.grants
+        assert resumed.log.events == after_revocation and not resumed.log.approvals.grants
     async with harness().session("same-session") as resumed:
         await resumed.run("third")
         assert len(asked) == 2 and len(executed) == 3
-        events = tuple(decode_event(encode_event(event)) for event in resumed.session.events)
-        assert ApprovalState(events) == resumed.session.approvals
+        events = tuple(decode_event(encode_event(event)) for event in resumed.log.events)
+        assert ApprovalState(events) == resumed.log.approvals
 
 
 @pytest.mark.parametrize("decision", [ApprovalAnswer.ALLOW, ApprovalAnswer.DENY])
@@ -108,11 +106,9 @@ async def test_single_call_answers_are_logged_without_becoming_persistent_grants
         )
         async with harness.session("single-use") as agent:
             await agent.run("task")
-            assert not agent.session.approvals.grants
-            assert agent.session.approvals.records[-1].decision is decision
-            policy = next(
-                e for e in reversed(agent.session.events) if isinstance(e, ToolPolicyApplied)
-            )
+            assert not agent.log.approvals.grants
+            assert agent.log.approvals.records[-1].decision is decision
+            policy = next(e for e in reversed(agent.log.events) if isinstance(e, ToolPolicyApplied))
         assert policy.decision is PolicyDecision(decision.value)
     assert len(asked) == 2
     assert len(executed) == (2 if decision is ApprovalAnswer.ALLOW else 0)
@@ -164,7 +160,7 @@ async def test_tool_policy_ask_uses_the_same_durable_approval_path(tmp_path):
             tool_model(), plugins=[tools, callback_approver(answer), session_jsonl(tmp_path)]
         ).session("policy-ask") as agent:
             await agent.run("task")
-            assert agent.session.approvals.grant_for("work", scope="tool-policy") is not None
+            assert agent.log.approvals.grant_for("work", scope="tool-policy") is not None
     assert len(asked) == 1
 
 
@@ -185,12 +181,12 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
     ).session("cancel-approval") as agent:
         await agent.followup("task")
         await asked.wait()
-        assert len(agent.session.approvals.pending) == 1
+        assert len(agent.log.approvals.pending) == 1
         await agent.cancel()
-        assert not agent.session.approvals.pending and not agent.session.approvals.grants
-        assert agent.session.approvals.records[-1].resolution.status == "interrupted"
-        assert not any(isinstance(e, ToolExecutionStarted) for e in agent.session.events)
-        assert any(isinstance(e, ToolReturned) and e.result.is_error for e in agent.session.events)
+        assert not agent.log.approvals.pending and not agent.log.approvals.grants
+        assert agent.log.approvals.records[-1].resolution.status == "interrupted"
+        assert not any(isinstance(e, ToolExecutionStarted) for e in agent.log.events)
+        assert any(isinstance(e, ToolReturned) and e.result.is_error for e in agent.log.events)
 
 
 async def test_uncommitted_approval_answer_cannot_start_execution():
@@ -225,8 +221,8 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
         ],
     ).session("failed-answer") as agent:
         await agent.run("task")
-        assert not agent.session.approvals.pending and not agent.session.approvals.grants
-        assert not any(isinstance(e, ToolExecutionStarted) for e in agent.session.events)
+        assert not agent.log.approvals.pending and not agent.log.approvals.grants
+        assert not any(isinstance(e, ToolExecutionStarted) for e in agent.log.events)
 
 
 @pytest.mark.parametrize(

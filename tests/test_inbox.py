@@ -3,9 +3,10 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from harnessed import Inbox, ModelChunk, Session, system, user
+from harnessed import Inbox, ModelChunk, system, user
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import InboxAdded, InboxRemoved, UserMessage
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.sessions import JsonlPersistence, session_jsonl
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
@@ -95,11 +96,11 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
             assert len(model.requests) == 1 and len(agent.inbox.pending) == 1
             assert agent.status == "idle" and not agent.inbox.has_wakeup
             await agent.run("next task")
-            assert [len(turn.steps) for turn in agent.session.turns] == [1, 1]
+            assert [len(turn.steps) for turn in agent.log.turns] == [1, 1]
             assert any(m.text == "external context" for m in model.requests[-1].messages)
         else:
             assert len(model.requests) == 2
-            assert [len(turn.steps) for turn in agent.session.turns] == [2]
+            assert [len(turn.steps) for turn in agent.log.turns] == [2]
             assert any(m.text == "focus" for m in model.requests[-1].messages)
         assert agent.inbox.pending == ()
 
@@ -110,12 +111,12 @@ async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent(
         await agent.inject(system("door opened"))
         snapshot = agent.inbox
         await agent.when_idle()
-        assert agent.status == "idle" and model.requests == [] and agent.session.turns == ()
+        assert agent.status == "idle" and model.requests == [] and agent.log.turns == ()
         await agent.steer("check the door")
         await agent.when_idle()
         assert snapshot.pending and not agent.inbox.pending
         assert [m.text for m in model.requests[0].messages] == ["door opened", "check the door"]
-        assert [len(turn.steps) for turn in agent.session.turns] == [1]
+        assert [len(turn.steps) for turn in agent.log.turns] == [1]
 
 
 @pytest.mark.parametrize("mode", ["followup", "steer", "inject"])

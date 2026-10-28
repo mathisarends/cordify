@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from harnessed import Harness, Message, ModelRequest, Session, ToolCall, ToolDefinition, ToolResult
+from harnessed import Harness, Message, ModelRequest, ToolCall, ToolDefinition, ToolResult
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -15,6 +15,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.session import derive_messages
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
@@ -27,9 +28,9 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
     harness = Harness([agent_loop(), llm(model), session_jsonl(tmp_path)])
     async with harness.session("resume") as agent:
         await agent.run("first")
-        prefix = agent.session.events
+        prefix = agent.log.events
     async with harness.session("resume") as resumed:
-        assert resumed.session.events == prefix
+        assert resumed.log.events == prefix
         await resumed.run("second")
         assert [m.content for m in model.requests[-1].messages] == [
             "first",
@@ -106,9 +107,9 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     await persistence.aclose()
     harness = Harness([agent_loop(), llm(ScriptedLLM(["recovered"])), session_jsonl(tmp_path)])
     async with harness.session("interrupted") as agent:
-        assert isinstance(agent.session.events[-1], TurnEnd)
-        assert agent.session.events[-1].reason == "interrupted"
-        results = [e for e in agent.session.events if isinstance(e, ToolReturned)]
+        assert isinstance(agent.log.events[-1], TurnEnd)
+        assert agent.log.events[-1].reason == "interrupted"
+        results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
         assert len(results) == 1 and results[0].call_id == "call-1"
         assert (await agent.run("continue")).text == "recovered"
 

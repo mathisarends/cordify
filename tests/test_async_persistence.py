@@ -5,7 +5,7 @@ import pytest
 
 from harnessed.core.messages import Message
 from harnessed.core.session.events import UserMessage
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins.sessions import JsonlPersistence
 
 

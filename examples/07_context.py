@@ -23,9 +23,7 @@ from harnessed import (
     plugin,
     system,
 )
-from harnessed import (
-    AgentHandle as Agent,
-)
+from harnessed import Session as Agent
 from harnessed.core.session.events import ContextMessage
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.filesystem import fs_local
@@ -132,7 +130,7 @@ async def main():
             )
             print(
                 "Task context in durable log:",
-                any(isinstance(e, ContextMessage) for e in agent.session.events),
+                any(isinstance(e, ContextMessage) for e in agent.log.events),
             )
 
 

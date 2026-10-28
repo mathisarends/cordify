@@ -7,12 +7,12 @@ from harnessed import (
     ContextBudgetExceeded,
     ContextBudgetGuard,
     PeriodicCompaction,
-    Session,
     SlidingWindowCompaction,
     SystemPrompt,
     ThresholdCompaction,
 )
 from harnessed.core.session.events import CompactionApplied
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -33,11 +33,11 @@ async def compare(name, policy):
     async with harness.session(name) as agent:
         agent.ctx[SystemPrompt].section("rules", "Keep the goal and recent work accurate.")
         await agent.run("GOAL: keep the public API stable. " + "detail " * 160)
-        goal = next(message for message in agent.session.messages if message.role == "user")
-        prefix = agent.session.events
+        goal = next(message for message in agent.log.messages if message.role == "user")
+        prefix = agent.log.events
         for index in range(1, 6):
             await agent.run(f"task {index}: " + "detail " * 160)
-        applied = [event for event in agent.session.events if isinstance(event, CompactionApplied)]
+        applied = [event for event in agent.log.events if isinstance(event, CompactionApplied)]
         print(f"{name}: {len(applied)} compactions")
         for event in applied:
             print(
@@ -45,9 +45,9 @@ async def compare(name, policy):
                 f"tokens; {len(event.preserve_turns)} verbatim turn(s)"
             )
         assert goal in model.requests[-1].messages
-        assert agent.session.events[: len(prefix)] == prefix
-        assert Session("replay", seed=agent.session.events).messages == agent.session.messages
-        assert agent.session.fork("fork").messages == agent.session.messages
+        assert agent.log.events[: len(prefix)] == prefix
+        assert Session("replay", seed=agent.log.events).messages == agent.log.messages
+        assert agent.log.fork("fork").messages == agent.log.messages
         print("  Goal kept verbatim; original log, replay and fork verified.")
 
 

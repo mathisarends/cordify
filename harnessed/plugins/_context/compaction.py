@@ -8,8 +8,8 @@ from harnessed.core.budget import ContextBudget, truncate
 from harnessed.core.compaction import compact_request, plan_compaction
 from harnessed.core.errors import ConfigError
 from harnessed.core.hooks import PrepareRequest
-from harnessed.core.loop import Agent
 from harnessed.core.plugin import Plugin
+from harnessed.core.runtime.session import Session as Agent
 from harnessed.core.session.events import CompactionApplied, StepStart
 from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.core.tracing import span
@@ -56,17 +56,17 @@ class _Compaction(Plugin):
         agent: Inject[Agent],
     ):
         request = await next_()
-        if agent.session.closed_turn_count < self._retry_after_turns:
+        if agent.log.closed_turn_count < self._retry_after_turns:
             return request
-        step_offset = agent.session.last_offset(StepStart)
+        step_offset = agent.log.last_offset(StepStart)
         start = step_offset if step_offset is not None else -1
-        last_compaction = agent.session.last_offset(CompactionApplied)
+        last_compaction = agent.log.last_offset(CompactionApplied)
         if last_compaction is not None and last_compaction > start:
             return request
-        if not await self._due(request, agent, counter, agent.session.uncompacted_turn_count):
+        if not await self._due(request, agent, counter, agent.log.uncompacted_turn_count):
             return request
         plan = plan_compaction(
-            agent.session,
+            agent.log,
             keep_turns=self.keep_turns,
             keep_first_turns=self.keep_first_turns,
             preserve_turns=self.preserve_turns,
@@ -80,8 +80,8 @@ class _Compaction(Plugin):
         summary = truncate(summary, self.summary_tokens, counter)
         if not summary.strip():
             raise ValueError("Compactor produced no content within the summary budget")
-        events = agent.session.events
-        last_compaction = agent.session.last_offset(CompactionApplied)
+        events = agent.log.events
+        last_compaction = agent.log.last_offset(CompactionApplied)
         if last_compaction is not None and last_compaction > start:
             return request
         applied = CompactionApplied(
@@ -95,7 +95,7 @@ class _Compaction(Plugin):
         before = await count_request(counter, request)
         after = await count_request(counter, compacted)
         if after >= before:
-            self._retry_after_turns = agent.session.closed_turn_count + 2
+            self._retry_after_turns = agent.log.closed_turn_count + 2
             log.warning(
                 "%s did not reduce context (%s -> %s tokens); retry after two more turns",
                 type(self).__name__,
@@ -104,7 +104,7 @@ class _Compaction(Plugin):
             )
             return request
         applied = replace(applied, before_tokens=before, after_tokens=after)
-        await agent.session.append(applied)
+        await agent.log.append(applied)
         return compacted
 
 

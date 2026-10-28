@@ -3,9 +3,6 @@
 import asyncio
 
 from harnessed import (
-    AgentHandle as Agent,
-)
-from harnessed import (
     Bundle,
     Harness,
     Inject,
@@ -19,6 +16,7 @@ from harnessed import (
     user,
     when,
 )
+from harnessed import Session as Agent
 from harnessed.core.session.events import InboxAdded, ToolReturned
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm

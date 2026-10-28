@@ -12,8 +12,8 @@ from harnessed.core.session.events import ApprovalRequested, SessionEvent, UserM
 from harnessed.kernel.events import Bail, Emit, Waterfall
 
 if TYPE_CHECKING:
-    from harnessed.core.loop import Agent
-    from harnessed.core.session.session import Session
+    from harnessed.core.runtime.session import Session as Agent
+    from harnessed.core.session.session import SessionLog as Session
 
 type Next[R] = Callable[[], Awaitable[R]]
 
@@ -43,7 +43,7 @@ class PreStep(Waterfall[StepDecision]):
         for message in reversed(self.messages):
             if message.role == "user":
                 return message.text
-        event = self.agent.session.last(UserMessage)
+        event = self.agent.log.last(UserMessage)
         return event.message.text if event is not None else ""
 
 
@@ -99,6 +99,6 @@ class ApprovalRequest(Bail[ApprovalAnswer]):
 
 @dataclass(frozen=True)
 class SessionAppended(Emit):
-    session: Session
+    log: Session
     event: SessionEvent
     seq: int

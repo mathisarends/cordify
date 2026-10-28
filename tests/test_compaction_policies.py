@@ -11,7 +11,6 @@ from harnessed import (
     Message,
     ModelChunk,
     PeriodicCompaction,
-    Session,
     SlidingWindowCompaction,
     ThresholdCompaction,
     ToolCall,
@@ -27,6 +26,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.plugins._context.providers import compactor
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
@@ -61,13 +61,13 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
         ],
     ).session("retention") as agent:
         await agent.run("FIRST GOAL " + "a" * 800)
-        first_turn = agent.session.turns[0]
-        first_messages = agent.session.messages
-        prefix = agent.session.events
+        first_turn = agent.log.turns[0]
+        first_messages = agent.log.messages
+        prefix = agent.log.events
         await agent.run("SECOND " + "b" * 800)
         await agent.run("THIRD " + "c" * 800)
         await agent.run("CURRENT")
-        events = agent.session.events
+        events = agent.log.events
         applied = [e for e in events if isinstance(e, CompactionApplied)]
         assert len(applied) == 1 and applied[0].preserve_turns == (first_turn.id,)
         assert applied[0].policy == "SlidingWindowCompaction"
@@ -80,8 +80,8 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
         assert any(m.role == "tool" and m.text == "exact result" for m in request.messages)
         assert all(not m.text.startswith("FIRST GOAL") for m in summaries.sources[0])
         replayed = tuple(decode_event(json.loads(json.dumps(encode_event(e)))) for e in events)
-        assert Session("replay", seed=replayed).messages == agent.session.messages
-        assert agent.session.fork("fork").messages == agent.session.messages
+        assert Session("replay", seed=replayed).messages == agent.log.messages
+        assert agent.log.fork("fork").messages == agent.log.messages
         assert events[: len(prefix)] == prefix
 
 
@@ -98,10 +98,10 @@ async def test_periodic_compaction_counts_new_closed_turns_since_last_event():
         counts = []
         for index in range(6):
             await agent.run(f"task {index} " + "x" * 500)
-            counts.append(sum(isinstance(e, CompactionApplied) for e in agent.session.events))
+            counts.append(sum(isinstance(e, CompactionApplied) for e in agent.log.events))
         assert counts == [0, 0, 1, 1, 2, 2]
         assert any(m.text == "Conversation summary:\nsummary 1" for m in summaries.sources[1])
-        assert sum(m.id.startswith("compaction:") for m in agent.session.messages) == 1
+        assert sum(m.id.startswith("compaction:") for m in agent.log.messages) == 1
 
 
 async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input():
@@ -109,7 +109,7 @@ async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input(
     model = ScriptedLLM(["answer"] * 4)
     async with minimal(model, plugins=[compactor(summaries)]).session("pin") as agent:
         await agent.run("PINNED " + "a" * 400)
-        pinned = agent.session.turns[0]
+        pinned = agent.log.turns[0]
         await agent.run("OLD " + "b" * 800)
         await agent.ctx.plugin(
             SlidingWindowCompaction(keep_turns=0, preserve_turns=[pinned.id], summary_tokens=32)
@@ -118,7 +118,7 @@ async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input(
         assert any(m.text.startswith("PINNED ") for m in model.requests[-1].messages)
         assert not any(m.text.startswith("PINNED ") for m in summaries.sources[0])
         await agent.run("next")
-        applied = [e for e in agent.session.events if isinstance(e, CompactionApplied)]
+        applied = [e for e in agent.log.events if isinstance(e, CompactionApplied)]
         assert all(pinned.id in event.preserve_turns for event in applied)
 
 
@@ -144,7 +144,7 @@ async def test_compaction_preserves_request_hook_context_and_combines_triggers_o
         await agent.run("x" * 2000)
         await agent.run("current")
         assert len(summaries.sources) == 1
-        assert sum(isinstance(e, CompactionApplied) for e in agent.session.events) == 1
+        assert sum(isinstance(e, CompactionApplied) for e in agent.log.events) == 1
         assert any(m.text == "HOOK CONTEXT" for m in model.requests[-1].messages)
 
 
@@ -168,10 +168,10 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
         await agent.inject("NEXT STEP CONTEXT")
         release.set()
         await agent.when_idle()
-        event = next(e for e in agent.session.events if isinstance(e, CompactionApplied))
+        event = next(e for e in agent.log.events if isinstance(e, CompactionApplied))
         summary = next(m for m in model.requests[-1].messages if m.id.startswith("compaction:"))
         assert summary.id == f"compaction:{event.id}"
-        assert summary in agent.session.messages
+        assert summary in agent.log.messages
         assert len(agent.inbox.pending) == 1
 
 
@@ -210,7 +210,7 @@ async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
             await agent.run("small")
         assert error.value.limit == 100 and error.value.reserve_tokens == 20
         assert model.requests == []
-        assert agent.session.turns[-1].reason == "interrupted"
+        assert agent.log.turns[-1].reason == "interrupted"
 
 
 async def test_threshold_uses_guard_limit_and_reserved_output_budget():
@@ -245,8 +245,8 @@ async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_b
         with pytest.raises(ContextBudgetExceeded):
             await agent.run("current task")
         assert model.requests == []
-        assert not any(isinstance(e, CompactionApplied) for e in agent.session.events)
-        assert any(m.text == "current task" for m in agent.session.messages)
+        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
+        assert any(m.text == "current task" for m in agent.log.messages)
 
 
 async def test_unknown_turn_pins_are_reported_before_the_provider_call():

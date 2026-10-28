@@ -10,7 +10,6 @@ from harnessed import (
     Message,
     ModelChunk,
     PolicyDecision,
-    Session,
     ToolCall,
     ToolContext,
     plugin,
@@ -27,6 +26,7 @@ from harnessed.core.session.events import (
     ToolReturned,
     TurnStart,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins.filesystem import LocalFS, fs_tools
 from harnessed.presets import minimal
@@ -72,7 +72,7 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
                 event.set()
             await agent.when_idle()
         assert finished == [2, 1, 0] and reviews == [0, 1, 2]
-        events = agent.session.events
+        events = agent.log.events
         assert [e.call.id for e in events if isinstance(e, ToolCalled)] == [c.id for c in calls]
         assert [e.call_id for e in events if isinstance(e, ToolReturned)] == [c.id for c in calls]
         assert [e.text for e in events if isinstance(e, ToolProgress)] == [
@@ -84,7 +84,7 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
             c.id for c in calls
         ]
         restored = tuple(decode_event(encode_event(event)) for event in events)
-        assert Session("replay", seed=restored).messages == agent.session.messages
+        assert Session("replay", seed=restored).messages == agent.log.messages
 
 
 async def test_resource_dependencies_are_fifo_and_do_not_hold_slots_while_waiting_for_review():
@@ -121,9 +121,7 @@ async def test_resource_dependencies_are_fifo_and_do_not_hold_slots_while_waitin
             release.set()
         await asyncio.wait_for(running, 2)
         assert order.index(0) < order.index(1) < order.index(4)
-        assert all(
-            not e.result.is_error for e in agent.session.events if isinstance(e, ToolReturned)
-        )
+        assert all(not e.result.is_error for e in agent.log.events if isinstance(e, ToolReturned))
 
 
 async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_aliases(tmp_path):
@@ -191,7 +189,7 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
             release_reads.set()
             release_write.set()
         await asyncio.wait_for(running, 2)
-        results = [e for e in agent.session.events if isinstance(e, ToolReturned)]
+        results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
         assert all(not event.result.is_error for event in results)
         assert results[-1].result.content == "SECOND"
         assert writes == ["FIRST", "SECOND"]
@@ -219,7 +217,7 @@ async def test_global_parallel_limit_bounds_execution_and_can_force_serial_mode(
     ) as agent:
         await agent.run("go")
         assert peak == limit
-        assert [e.call_id for e in agent.session.events if isinstance(e, ToolReturned)] == [
+        assert [e.call_id for e in agent.log.events if isinstance(e, ToolReturned)] == [
             c.id for c in calls
         ]
 
@@ -250,7 +248,7 @@ async def test_tool_errors_and_denials_do_not_cancel_independent_calls():
     model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools]).session("errors") as agent:
         await agent.run("go")
-        results = [e.result for e in agent.session.events if isinstance(e, ToolReturned)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
         assert [result.status for result in results] == ["error", "denied", "ok"]
         assert executed == [0, 2] and reviewed == [0, 2]
 
@@ -277,7 +275,7 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
         await asyncio.wait_for(started.wait(), 2)
         await agent.cancel()
         assert sorted(cleaned) == [0, 1, 2] and all(call.signal.is_set() for call in contexts)
-        results = [e for e in agent.session.events if isinstance(e, ToolReturned)]
+        results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
         assert [event.call_id for event in results] == [call.id for call in calls]
         assert all(event.result.is_error for event in results)
         assert not any(
@@ -346,7 +344,7 @@ async def test_sync_timeout_keeps_resource_until_the_worker_finishes():
             release.set()
         await asyncio.wait_for(running, 2)
         assert order == ["first-enter", "first-exit", "second-enter"]
-        results = [e.result for e in agent.session.events if isinstance(e, ToolReturned)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
         assert "TimeoutError" in results[0].content and not results[1].is_error
 
 
@@ -360,7 +358,7 @@ async def test_invalid_resource_resolver_is_a_bounded_tool_error():
     model = ScriptedLLM([[ModelChunk(tool_call=ToolCall("invalid"))], "done"])
     async with minimal(model, plugins=[tools]).session("invalid") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert result.is_error and result.content == "invalid failed: ValueError"
 
 
@@ -393,7 +391,7 @@ async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadat
     model = ScriptedLLM([[ModelChunk(tool_call=call) for call in calls], "done"])
     async with minimal(model, plugins=[tools]).session("replacement") as agent:
         await agent.run("go")
-        results = [e.result for e in agent.session.events if isinstance(e, ToolReturned)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
         assert executed == []
         assert all(
             result.is_error and "registration changed" in result.content for result in results

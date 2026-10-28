@@ -8,16 +8,15 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from harnessed.core.approvals import Approvals
-from harnessed.core.errors import PluginConflict
-from harnessed.core.loop import Agent as LiveSession
-from harnessed.core.loop import AgentFactory
+from harnessed.core.errors import ConfigError, PluginConflict
 from harnessed.core.model import Model
 from harnessed.core.plugin import Service
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.instructions import Instructions
 from harnessed.core.prompt.values import InstructionValues, PromptPlan
-from harnessed.core.runtime.agent_loop import AgentLoop
-from harnessed.core.session.session import Session as SessionLog
+from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
+from harnessed.core.runtime.session import Session as LiveSession
+from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import MemorySessions, SessionPersistence, SessionStore
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tracing import NoopTracer
@@ -84,22 +83,42 @@ class Agent:
         self.plugins = tuple(defaults)
 
     @asynccontextmanager
-    async def session(self, session_id: str | None = None):
+    async def session(self, session_id: str | SessionLog | None = None):
         """Open or resume a conversation; omit its ID to create a new one."""
         async with Context() as ctx:
             await ctx.install(self.plugins, settle=True)
-            selected_id = session_id if session_id is not None else uuid4().hex
+            branch = session_id if isinstance(session_id, SessionLog) else None
+            if branch is not None:
+                selected_id = branch.id
+            elif session_id is None:
+                selected_id = uuid4().hex
+            elif isinstance(session_id, str):
+                selected_id = session_id
+            else:
+                raise ConfigError("session_id must be a string, forked log or None")
             lease = ctx[SessionStore].open(selected_id)
             persistence = await lease.__aenter__()
             ctx.effect(lambda: lease.__aexit__(None, None, None))
             ctx.provide(SessionPersistence, persistence)
             seed = await persistence.load(selected_id)
+            if branch is not None:
+                if seed:
+                    raise ConfigError(f"Fork destination {selected_id!r} already contains a log")
+                seed = branch.events
+                for seq, event in enumerate(seed):
+                    await persistence.append(selected_id, seq, event)
+                await persistence.flush()
             log = SessionLog(selected_id, ctx=ctx, seed=seed, persistence=persistence)
+            ctx.effect(log.finish_subscriptions)
             await log.repair_interrupted()
             runtime = ctx[AgentFactory].create(ctx, log)
             try:
                 await ctx.install(
-                    [Service(LiveSession, runtime), Service(DynamicContext, runtime.context)]
+                    [
+                        Service(SessionLog, log),
+                        Service(LiveSession, runtime),
+                        Service(DynamicContext, runtime.context),
+                    ]
                 )
             except BaseException:
                 await runtime.aclose()

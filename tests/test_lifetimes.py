@@ -5,9 +5,6 @@ import pytest
 from pydantic import PydanticSchemaGenerationError
 
 from harnessed import (
-    AgentHandle as Agent,
-)
-from harnessed import (
     Context,
     Emit,
     Plugin,
@@ -18,6 +15,7 @@ from harnessed import (
     plugin,
     tool,
 )
+from harnessed import Session as Agent
 from harnessed.plugins.services import system_prompt, tools
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM

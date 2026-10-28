@@ -4,7 +4,7 @@ from typing import ClassVar
 
 import pytest
 
-from harnessed import Bundle, Message, ModelChunk, Session, ToolCall, ToolResult
+from harnessed import Bundle, Message, ModelChunk, ToolCall, ToolResult
 from harnessed.core.hooks import PrepareRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -20,6 +20,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.session import derive_messages, derive_requests
 from harnessed.core.stream import TextDelta
 from harnessed.plugins.sessions import session_jsonl
@@ -43,13 +44,13 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
 
         @agent.on(TextDelta)
         def observe(event):
-            assert event not in agent.session.events
+            assert event not in agent.log.events
             records = (tmp_path / "durable-chunks.jsonl").read_text().splitlines()
             assert all(record["type"] != AssistantChunk.type for record in map(json.loads, records))
             observed.append(event)
 
         live = [event async for event in agent.stream("hello")]
-        log = agent.session.events
+        log = agent.log.events
         assert not any(isinstance(event, AssistantChunk) for event in log)
         chunks = tuple(observed)
         assert len(chunks) == 3
@@ -57,9 +58,9 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
         final = next(event for event in log if isinstance(event, AssistantMessage))
         assert {chunk.message_id for chunk in chunks} == {final.message.id}
         assert final.message.text == "hello world" and final.message.reasoning_content == "think"
-        assert [m.text for m in agent.session.messages] == ["hello", "hello world"]
+        assert [m.text for m in agent.log.messages] == ["hello", "hello world"]
         replay = Session("replayed", seed=roundtrip(log))
-        assert replay.messages == agent.session.messages
+        assert replay.messages == agent.log.messages
         assert replay.requests == tuple(model.requests) == derive_requests(log)
         assert replay.fork("fork").events == log
 
@@ -79,7 +80,7 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
     )
     async with minimal(model, plugins=[features]).session("prefixes") as agent:
         await agent.run("Add", context={"ticket": "one"})
-        log = agent.session.events
+        log = agent.log.events
         restored = roundtrip(log)
         for offset in range(len(log) + 1):
             prefix = log[:offset]
@@ -90,7 +91,7 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
         for seq, event in enumerate(log):
             if isinstance(event, ModelRequested):
                 assert event.request.messages == derive_messages(log[:seq])
-        assert tuple(model.requests) == agent.session.requests
+        assert tuple(model.requests) == agent.log.requests
 
 
 async def test_exact_requests_include_request_hook_changes_without_rerunning_the_hook():
@@ -106,7 +107,7 @@ async def test_exact_requests_include_request_hook_changes_without_rerunning_the
 
     async with harness.session("request-snapshot") as agent:
         await agent.run("hello")
-        replay = Session("replayed", seed=roundtrip(agent.session.events))
+        replay = Session("replayed", seed=roundtrip(agent.log.events))
         assert replay.requests == tuple(model.requests)
         assert replay.requests[0].messages[-1].text == "request context"
         assert invocations == [True]
@@ -133,14 +134,14 @@ async def test_resume_repairs_a_crash_after_persisted_chunks_without_repeating_m
     await persistence.aclose()
     model = ScriptedLLM([])
     async with minimal(model, plugins=[session_jsonl(tmp_path)]).session("crashed") as resumed:
-        assert resumed.session.events[: len(prefix)] == prefix
-        final = next(e for e in resumed.session.events if isinstance(e, AssistantMessage))
+        assert resumed.log.events[: len(prefix)] == prefix
+        final = next(e for e in resumed.log.events if isinstance(e, AssistantMessage))
         assert final.interrupted and final.message == partial and final.message.id == "reply"
-        assert [m.text for m in resumed.session.messages] == ["hello", "partial"]
-        assert isinstance(resumed.session.events[-1], TurnEnd)
-        repaired = resumed.session.events
-        await resumed.session.repair_interrupted()
-        assert resumed.session.events == repaired and model.requests == []
+        assert [m.text for m in resumed.log.messages] == ["hello", "partial"]
+        assert isinstance(resumed.log.events[-1], TurnEnd)
+        repaired = resumed.log.events
+        await resumed.log.repair_interrupted()
+        assert resumed.log.events == repaired and model.requests == []
 
 
 async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
@@ -187,10 +188,8 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
                 live.append(event)
         assert any(isinstance(e, TextDelta) for e in live)
         assert not any(isinstance(e, AssistantMessage) for e in live)
-        assert not any(
-            isinstance(e, AssistantChunk | AssistantMessage) for e in agent.session.events
-        )
-        assert [message.text for message in agent.session.messages] == ["hello"]
+        assert not any(isinstance(e, AssistantChunk | AssistantMessage) for e in agent.log.events)
+        assert [message.text for message in agent.log.messages] == ["hello"]
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from harnessed.kernel.events import Emit
 
 if TYPE_CHECKING:
-    from harnessed.core.session.session import Session
+    from harnessed.core.session.session import SessionLog as Session
 
 
 class TransientEvent(Emit):
@@ -22,5 +22,5 @@ class TextDelta(TransientEvent):
 
 @dataclass(frozen=True, slots=True)
 class SessionPublished(Emit):
-    session: "Session"
+    log: "Session"
     event: TransientEvent

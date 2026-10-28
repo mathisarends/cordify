@@ -18,7 +18,7 @@ from harnessed import (
 from harnessed.adapters.spill import LocalSpillStore
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolReturned
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolError
 from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.filesystem import fs_local, fs_tools
@@ -64,13 +64,13 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         "bounded"
     ) as agent:
         await agent.run("inspect")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) == 32_000
         assert result.content.startswith("HEAD") and result.content.endswith("TAIL ERROR")
         assert model.requests[1].messages[-1].text == result.content
         assert result.truncation.original_chars == len(source)
-        restored = tuple(decode_event(encode_event(e)) for e in agent.session.events)
-        assert Session("replay", seed=restored).messages == agent.session.messages
+        restored = tuple(decode_event(encode_event(e)) for e in agent.log.events)
+        assert Session("replay", seed=restored).messages == agent.log.messages
         replayed = next(e.result for e in restored if isinstance(e, ToolReturned))
         assert replayed == result and replayed.exit_code == 3
     # Completion journal, ordered result and model request retain only bounded copies.
@@ -98,7 +98,7 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
         "enriched"
     ) as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) <= 512 and result.truncation is not None
         assert (result.status == "error") == (stage == "error")
         assert decode_event(
@@ -118,7 +118,7 @@ async def test_session_can_override_the_harness_output_budget():
     harness = minimal(model, plugins=[features], tool_output_limit=ToolOutputLimit(4096))
     async with harness.session("small-budget", tool_output_limit=ToolOutputLimit(512)) as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) == 512
 
 
@@ -138,7 +138,7 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
         tool_output_limit=ToolOutputLimit(4096),
     ).session("spill-budget") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert result.spill is not None and len(result.content) <= 4096
         assert (
             await asyncio.to_thread(Path(result.spill.path).read_text, encoding="utf-8") == original
@@ -198,7 +198,7 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
         tool_output_limit=ToolOutputLimit(1024),
     ).session("shell-budget") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
         assert len(result.content) == 1024 and "TAIL_ERROR" in result.content
         assert result.status == "error" and result.exit_code == 3
         assert 500_000 < result.truncation.original_chars < 1_048_576

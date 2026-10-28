@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from harnessed.core.hooks import PreStep
 from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import ContextValueChanged
-from harnessed.core.session.session import Session
+from harnessed.core.session.session import SessionLog as Session
 from harnessed.kernel import Inject, hook
 
 
@@ -15,7 +15,7 @@ class DynamicContext:
     """Append changed values once; hosts await writes before the next step."""
 
     def __init__(self, session: Session):
-        self.session = session
+        self.log = session
         self._values: dict[str, str] = {}
         self._lock = asyncio.Lock()
         for event in session.events:
@@ -40,9 +40,9 @@ class DynamicContext:
             # The state record and the visible contribution are one durable event.
             event = ContextValueChanged(name, value)
             try:
-                await self.session.append(event)
+                await self.log.append(event)
             finally:
-                if self.session.last(ContextValueChanged) is event:
+                if self.log.last(ContextValueChanged) is event:
                     if value is None:
                         self._values.pop(name, None)
                     else:
