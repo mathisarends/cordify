@@ -5,7 +5,7 @@ from typing import Any, overload
 from pydantic import BaseModel, ConfigDict
 
 from harnessed.core.prompt.values import Section
-from harnessed.core.tools.registry import ToolSpec
+from harnessed.core.tools.registry import ToolRegistry, ToolSpec
 from harnessed.core.tools.scheduling import ResourceSpec, resource_spec
 from harnessed.kernel import Context, Key
 from harnessed.kernel.declarations import Bundle as KernelBundle
@@ -22,6 +22,52 @@ class _DefaultGuidance:
 
 
 _DEFAULT_GUIDANCE = _DefaultGuidance()
+
+
+class PluginContext(Context):
+    """The kernel scope with owned agent-tool declarations for plugin authors."""
+
+    @overload
+    def tool[F: Callable[..., Any]](self, fn: F, /) -> F: ...
+
+    @overload
+    def tool[F: Callable[..., Any]](
+        self,
+        *,
+        name: str | None = None,
+        timeout: float | None = None,
+        parallel: bool = False,
+        resources: ResourceSpec = (),
+        readonly: bool = False,
+        override: bool = False,
+    ) -> Callable[[F], F]: ...
+
+    def tool(
+        self,
+        fn=None,
+        /,
+        *,
+        name=None,
+        timeout=None,
+        parallel=False,
+        resources=(),
+        readonly=False,
+        override=False,
+    ):
+        def register(callback):
+            self[ToolRegistry].register(
+                callback,
+                name=name,
+                timeout=timeout,
+                parallel=parallel,
+                resources=resources,
+                readonly=readonly,
+                override=override,
+                owner=self,
+            )
+            return callback
+
+        return register(fn) if fn is not None else register
 
 
 class Bundle(KernelBundle):

@@ -2,57 +2,42 @@
 
 import asyncio
 
-from harnessed import Harness, Inject, ModelChunk, Plugin, ReviewToolResult, ToolCall
-from harnessed import Session as Agent
-from harnessed.core.session.events import ToolReturned
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.services import llm
-from harnessed.testing import ScriptedLLM
+from harnessed import Agent, Context, Inject, ToolResult, plugin
+from harnessed.core.session.session import SessionLog
+from harnessed.core.tools.registry import ToolRegistry
+from harnessed.hooks import Next, ReviewToolResult
+from harnessed.testing import ScriptedModel, call
 
 
-async def echo(text: str) -> str:
-    """Return the supplied text."""
-    return text
+@plugin(needs=[ToolRegistry])
+async def echo_tools(ctx: Context, *, name: str = "echo", prefix: str = ""):
+    """A small function plugin owns both its tool and result hook."""
 
+    @ctx.tool(name=name, readonly=True)
+    async def echo(text: str) -> str:
+        """Return the supplied text."""
+        return prefix + text
 
-async def annotate(event, next_, agent: Inject[Agent]):
-    result = await next_()
-    print(f"Review in session {agent.id}")
-    return result.with_note("Reviewed by an explicitly registered hook.")
+    @ctx.hook(ReviewToolResult)
+    async def annotate(event: ReviewToolResult, next_: Next[ToolResult], log: Inject[SessionLog]):
+        result = await next_()
+        print(f"Review in session {log.id}: {event.call.name}")
+        return result.with_note("Reviewed by an owned hook.")
+
+    yield
+    print(f"Removed {name} and its hook.")
 
 
 async def main():
-    explicit = Plugin(
-        name="explicit-echo",
-        tools=[echo],
-        hooks=[(ReviewToolResult, annotate)],
-    )
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(
-                ScriptedLLM(
-                    [
-                        [ModelChunk(tool_call=ToolCall("echo", {"text": "Hello"}))],
-                        "Done.",
-                    ]
-                )
-            ),
-            explicit,
-        ]
-    )
-
-    # Host integrations can register recipes imperatively before opening a session.
-    def log_result(event: ToolReturned):
-        print(f"Committed result: {event.result.content}")
-
-    harness.add_hook(ToolReturned, log_result)
-    harness.add_tool(echo, name="echo_alias", timeout=5)
-
-    async with harness.session("explicit") as agent:
-        # Live registration is also possible and belongs to this session.
-        agent.add_tool(echo, name="temporary_echo")
-        print((await agent.run("Echo Hello.")).text)
+    model = ScriptedModel([call("echo", text="Hello"), "Done."])
+    agent = Agent(model=model, plugins=[echo_tools(prefix="Echo: ")])
+    async with agent.session("functional") as session:
+        print((await session.run("Echo Hello.")).text)
+        # Runtime registrations use the same ownership and disposal mechanism.
+        handle = await session.use(echo_tools(name="temporary_echo"))
+        assert "temporary_echo" in {t.name for t in session.ctx[ToolRegistry].definitions}
+        await handle.aclose()
+        assert "temporary_echo" not in {t.name for t in session.ctx[ToolRegistry].definitions}
 
 
 if __name__ == "__main__":

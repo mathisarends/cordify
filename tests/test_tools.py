@@ -3,7 +3,7 @@ from typing import Annotated, Protocol
 
 import pytest
 
-from harnessed import Agent, Bundle, Context, Inject, Plugin, ToolCall, ToolRegistry, tool
+from harnessed import Agent, Bundle, Context, Inject, Plugin, ToolCall, ToolRegistry, plugin, tool
 from harnessed.core.messages import ToolResult
 from harnessed.core.model import ModelChunk
 from harnessed.core.prompt.context import DynamicContext
@@ -180,3 +180,56 @@ async def test_tool_context_exposes_log_inbox_and_progress_without_the_driver():
     async with Agent(model=model, plugins=[Inspect()]).session("tool-context") as session:
         await session.run("Inspect")
         assert any("The workspace changed." in m.text for m in model.requests[-1].messages)
+
+
+async def test_functional_context_tools_follow_explicit_needs_and_temporal_restarts():
+    @plugin(needs=[ToolRegistry, Backend])
+    async def tools(ctx: Context):
+        @ctx.tool(readonly=True)
+        async def read(*, backend: Inject[Backend]) -> str:
+            return await backend.read()
+
+        yield
+
+    async with Context() as ctx:
+        registry = ToolRegistry(ctx)
+        ctx.provide(ToolRegistry, registry)
+        handle = await ctx.plugin(tools())
+        assert handle.status == "waiting"
+        first = ctx.provide(Backend, MemoryBackend("first"))
+        await ctx.settle()
+        assert handle.status == "active"
+        assert (await registry.execute(ToolCall("read"))).content == "first"
+        await first()
+        await ctx.settle()
+        assert handle.status == "waiting" and not registry.definitions
+        ctx.provide(Backend, MemoryBackend("second"))
+        await ctx.settle()
+        assert (await registry.execute(ToolCall("read"))).content == "second"
+        await handle.aclose()
+        assert not registry.definitions
+
+
+async def test_keyword_only_tool_context_is_implicit_and_never_exposed_in_the_schema():
+    seen = []
+
+    class Tools(Plugin):
+        @tool(readonly=True)
+        async def inspect(self, value: int, *, call: ToolContext) -> int:
+            seen.append(call)
+            return value
+
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("inspect", {"value": 42}))], "done"])
+    async with Agent(model=model, plugins=[Tools()]).session() as session:
+        await session.run("inspect")
+        assert list(model.requests[0].tools[0].parameters["properties"]) == ["value"]
+        assert len(seen) == 1 and seen[0].session.id == session.id
+        assert not seen[0].cancelled
+
+
+def test_unmarked_positional_tool_context_requires_the_explicit_marker():
+    async def bad(call: ToolContext) -> str:
+        return "bad"
+
+    with pytest.raises(TypeError, match="keyword-only"):
+        ToolRegistry(Context()).register(bad)

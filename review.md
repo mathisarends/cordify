@@ -48,11 +48,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 - Replace remaining duplicated hand-written option validators with declarative
   constraints. Put FS/range limits in the tool's JSON schema.
 
-### P1-9 — Tool declarations and context
-
-- Document cooperative cancellation of sync tools; keep resources and stable
-  result ordering. Preserve explicit ownership and override=True conflicts.
-
 ### P1-10 — Finish the PydanticAI migration
 
 - Use upstream context-window metadata when available and explicit overrides;

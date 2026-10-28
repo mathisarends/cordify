@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from harnessed.core.model import ToolDefinition as ToolDefinition
     from harnessed.core.plugin import Bundle as Bundle
     from harnessed.core.plugin import Plugin as Plugin
+    from harnessed.core.plugin import PluginContext as Context
     from harnessed.core.prompt.system_prompt import SystemPrompt as SystemPrompt
     from harnessed.core.prompt.values import Section as Section
     from harnessed.core.runtime.agent_loop import AgentFactory
@@ -68,7 +69,6 @@ if TYPE_CHECKING:
     from harnessed.core.tools.output_limit import ToolOutputLimit as ToolOutputLimit
     from harnessed.core.tools.registry import ToolError as ToolError
     from harnessed.core.tools.registry import ToolRegistry as ToolRegistry
-    from harnessed.kernel.context import Context as Context
     from harnessed.kernel.context import ContextClosed as ContextClosed
     from harnessed.kernel.context import MissingService as MissingService
     from harnessed.kernel.di import Inject as Inject
@@ -139,7 +139,7 @@ _EXPORTS = {
     "File": ("harnessed.core.attachments", "File"),
     "Image": ("harnessed.core.attachments", "Image"),
     "Bail": ("harnessed.kernel.events", "Bail"),
-    "Context": ("harnessed.kernel.context", "Context"),
+    "Context": ("harnessed.core.plugin", "PluginContext"),
     "ContextClosed": ("harnessed.kernel.context", "ContextClosed"),
     "Emit": ("harnessed.kernel.events", "Emit"),
     "Event": ("harnessed.kernel.events", "Event"),

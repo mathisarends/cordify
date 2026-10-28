@@ -10,7 +10,7 @@ from uuid import uuid4
 from harnessed.core.approvals import Approvals
 from harnessed.core.errors import ConfigError, PluginConflict
 from harnessed.core.model import Model
-from harnessed.core.plugin import Service
+from harnessed.core.plugin import PluginContext, Service
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.instructions import Instructions
 from harnessed.core.prompt.values import InstructionValues, PromptPlan
@@ -20,7 +20,7 @@ from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import MemorySessions, SessionPersistence, SessionStore
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tracing import NoopTracer
-from harnessed.kernel import Context, PluginLike
+from harnessed.kernel import PluginLike
 from harnessed.kernel.plugin import as_plugin_spec
 from harnessed.models.pydantic_ai import PydanticAIModel
 
@@ -85,7 +85,7 @@ class Agent:
     @asynccontextmanager
     async def session(self, session_id: str | SessionLog | None = None):
         """Open or resume a conversation; omit its ID to create a new one."""
-        async with Context() as ctx:
+        async with PluginContext() as ctx:
             await ctx.install(self.plugins, settle=True)
             branch = session_id if isinstance(session_id, SessionLog) else None
             if branch is not None:

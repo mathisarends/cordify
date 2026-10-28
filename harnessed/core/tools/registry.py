@@ -2,8 +2,9 @@ import asyncio
 import inspect
 import logging
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
+from types import MappingProxyType
 from typing import Any, cast, overload
 
 from pydantic import ValidationError
@@ -14,7 +15,7 @@ from harnessed.core.tools.arguments import ToolArguments, tool_result_content
 from harnessed.core.tools.context import ToolContext, ToolContexts
 from harnessed.core.tools.scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
 from harnessed.kernel.context import Context
-from harnessed.kernel.di import BindingPlan, binding_plan
+from harnessed.kernel.di import BindingPlan, Dependency, binding_plan
 from harnessed.kernel.effects import Disposer, run_sync
 
 log = logging.getLogger(__name__)
@@ -179,6 +180,14 @@ class ToolRegistry:
         if timeout is not None and timeout <= 0:
             raise ValueError("Tool timeout must be positive")
         plan = binding_plan(callback)
+        implicit = {}
+        for parameter, annotation in plan.hints.items():
+            if annotation is ToolContext and parameter != "return":
+                if plan.signature.parameters[parameter].kind is not inspect.Parameter.KEYWORD_ONLY:
+                    raise TypeError("Unmarked ToolContext parameters must be keyword-only")
+                implicit[parameter] = Dependency(ToolContext)
+        if implicit:
+            plan = replace(plan, dependencies=MappingProxyType({**plan.dependencies, **implicit}))
         tool_name = name or getattr(callback, "__name__", type(callback).__name__)
         existing = self._tools.get(tool_name, ())
         if existing and not override:
