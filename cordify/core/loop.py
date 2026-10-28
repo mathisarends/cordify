@@ -115,6 +115,7 @@ class Agent:
         self._closing = False
         self._canceling = False
         self._ready = False
+        self._finishing = False
         self._control_changed = asyncio.Event()
         self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
@@ -248,18 +249,27 @@ class Agent:
         if _driving.get() is self:
             raise RuntimeError("A driver hook cannot wait for its own pause boundary")
         while True:
-            if self.session.control.state == "paused":
-                return
             if self._error is not None:
                 raise self._error
+            if self.session.control.state == "paused":
+                return
             if self.session.control.state != "pausing":
                 raise RuntimeError("The agent has no pending pause request")
             await self._control_changed.wait()
 
     async def resume(self) -> None:
         self._check_control()
+        finishing = (
+            self._runner is not None
+            and not self._runner.done()
+            and (self._finishing or self._error is not None)
+        )
+        if finishing and _driving.get() is not self:
+            await asyncio.shield(self._runner)
         if self.session.control.state != "active":
             await self.session.append(AgentControlChanged("active"))
+        if finishing and _driving.get() is self:
+            self._runner.add_done_callback(lambda _: self._wake())
         self._wake()
 
     async def _checkpoint(self) -> None:
@@ -459,6 +469,7 @@ class Agent:
 
     async def _drive(self):
         token = _driving.set(self)
+        self._finishing = False
         try:
             while self.inbox.has_wakeup or self._open_turn() is not None:
                 await self._checkpoint()
@@ -478,6 +489,7 @@ class Agent:
                     "Driver and session repair failed", [exc, repair_error]
                 )
         finally:
+            self._finishing = True
             if self.session.control.state == "pausing":
                 try:
                     await self.session.append(AgentControlChanged("paused"))

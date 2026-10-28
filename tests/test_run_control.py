@@ -24,7 +24,9 @@ from cordify.core.events import (
     AssistantMessage,
     InboxAdded,
     ModelRequested,
+    PreStep,
     ReviewToolResult,
+    StepDecision,
     StepStart,
     ToolReturned,
     TurnStart,
@@ -402,6 +404,61 @@ async def test_stream_stays_open_during_pause_and_reports_control_changes_until_
             if not stream.done():
                 await agent.stop()
                 await stream
+
+
+async def test_a_failed_step_reports_its_error_and_can_resume_after_pause_repair():
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    class Model:
+        def __init__(self):
+            self.calls = 0
+
+        async def stream(self, request):
+            self.calls += 1
+            if self.calls == 1:
+                ready.set()
+                await release.wait()
+                raise ValueError("provider failed")
+            yield ModelChunk(text="recovered")
+
+    async with minimal(Model()).session("failure") as agent:
+        await agent.followup("task")
+        await asyncio.wait_for(ready.wait(), 2)
+        await agent.pause()
+        release.set()
+        with pytest.raises(ValueError, match="provider failed"):
+            await asyncio.wait_for(agent.when_paused(), 2)
+        await agent.resume()
+        await asyncio.wait_for(agent.when_idle(), 2)
+        assert agent.session.messages[-1].text == "recovered"
+        assert len(agent.session.turns[-1].steps) == 2
+
+
+async def test_resume_from_a_pause_acknowledged_as_the_driver_exits_does_not_lose_wakeup():
+    tools, calls = Bundle("reject-once"), []
+    resumed = asyncio.Event()
+
+    @tools.on(PreStep)
+    async def reject_once(event, next_):
+        calls.append(True)
+        if len(calls) == 1:
+            await event.agent.pause()
+            return StepDecision.reject()
+        return await next_()
+
+    @tools.on(AgentControlChanged)
+    async def resume_on_ack(event, agent: Inject[Agent]):
+        if event.state == "paused":
+            await agent.resume()
+            resumed.set()
+
+    model = ScriptedLLM(["accepted"])
+    async with minimal(model, plugins=[tools]).session("exit-race") as agent:
+        await agent.followup("task")
+        await asyncio.wait_for(resumed.wait(), 2)
+        await asyncio.sleep(0)
+        await asyncio.wait_for(agent.when_idle(), 2)
+        assert model.requests and agent.session.messages[-1].text == "accepted"
 
 
 @pytest.mark.parametrize("state, keep_inbox", [("unknown", False), ("paused", True), ("active", 1)])
