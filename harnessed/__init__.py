@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from harnessed.adapters.compaction import LLMCompactor as LLMCompactor
     from harnessed.adapters.spill import LocalSpillStore as LocalSpillStore
     from harnessed.adapters.tokens import ApproximateTokenCounter as ApproximateTokenCounter
+    from harnessed.app import Agent as Agent
+    from harnessed.app import PluginConflict as PluginConflict
     from harnessed.core.approvals import Approval as Approval
     from harnessed.core.approvals import Approvals as Approvals
     from harnessed.core.attachments import File as File
@@ -29,7 +31,7 @@ if TYPE_CHECKING:
     from harnessed.core.features import Plugin as Plugin
     from harnessed.core.features import tool as tool
     from harnessed.core.inbox import Inbox as Inbox
-    from harnessed.core.loop import Agent as Agent
+    from harnessed.core.instructions import Section as Section
     from harnessed.core.loop import AgentFactory as AgentFactory
     from harnessed.core.loop import AgentHandle as AgentHandle
     from harnessed.core.loop import AgentOptions as AgentOptions
@@ -40,6 +42,8 @@ if TYPE_CHECKING:
     from harnessed.core.session import SessionPersistence as SessionPersistence
     from harnessed.core.session import derive_messages as derive_messages
     from harnessed.core.session import derive_requests as derive_requests
+    from harnessed.core.stream import TextDelta as TextDelta
+    from harnessed.core.tools import ToolError as ToolError
     from harnessed.core.tools import ToolRegistry as ToolRegistry
     from harnessed.core.turns import Step as Step
     from harnessed.core.turns import Turn as Turn
@@ -59,16 +63,16 @@ if TYPE_CHECKING:
     from harnessed.kernel.plugin import PluginSpec as PluginSpec
     from harnessed.kernel.plugin import hook as hook
     from harnessed.kernel.plugin import plugin as plugin
-    from harnessed.plugins.context.compaction import ContextBudgetGuard as ContextBudgetGuard
-    from harnessed.plugins.context.compaction import PeriodicCompaction as PeriodicCompaction
-    from harnessed.plugins.context.compaction import (
+    from harnessed.plugins._context.compaction import ContextBudgetGuard as ContextBudgetGuard
+    from harnessed.plugins._context.compaction import PeriodicCompaction as PeriodicCompaction
+    from harnessed.plugins._context.compaction import (
         SlidingWindowCompaction as SlidingWindowCompaction,
     )
-    from harnessed.plugins.context.compaction import ThresholdCompaction as ThresholdCompaction
-    from harnessed.plugins.context.observations import (
+    from harnessed.plugins._context.compaction import ThresholdCompaction as ThresholdCompaction
+    from harnessed.plugins._context.observations import (
         LatestObservationOnly as LatestObservationOnly,
     )
-    from harnessed.plugins.context.spill import SpillLargeResults as SpillLargeResults
+    from harnessed.plugins._context.spill import SpillLargeResults as SpillLargeResults
     from harnessed.plugins.observe.cache import CacheBreakpoints as CacheBreakpoints
     from harnessed.plugins.permissions.rules import Rule as Rule
     from harnessed.plugins.permissions.rules import Rules as Rules
@@ -99,6 +103,10 @@ if TYPE_CHECKING:
     from harnessed.seams.spill import SpillStore as SpillStore
     from harnessed.seams.tokens import TokenCounter as TokenCounter
 _EXPORTS = {
+    "Section": ("harnessed.core.instructions", "Section"),
+    "ToolError": ("harnessed.core.tools", "ToolError"),
+    "PluginConflict": ("harnessed.app", "PluginConflict"),
+    "TextDelta": ("harnessed.core.stream", "TextDelta"),
     "RunControl": ("harnessed.core.control", "RunControl"),
     "AgentControlChanged": ("harnessed.core.events", "AgentControlChanged"),
     "ApprovalRequest": ("harnessed.core.events", "ApprovalRequest"),
@@ -107,16 +115,16 @@ _EXPORTS = {
     "Approvals": ("harnessed.core.approvals", "Approvals"),
     "ContextBudget": ("harnessed.core.budget", "ContextBudget"),
     "ContextBudgetExceeded": ("harnessed.core.budget", "ContextBudgetExceeded"),
-    "ContextBudgetGuard": ("harnessed.plugins.context.compaction", "ContextBudgetGuard"),
-    "PeriodicCompaction": ("harnessed.plugins.context.compaction", "PeriodicCompaction"),
-    "SlidingWindowCompaction": ("harnessed.plugins.context.compaction", "SlidingWindowCompaction"),
+    "ContextBudgetGuard": ("harnessed.plugins._context.compaction", "ContextBudgetGuard"),
+    "PeriodicCompaction": ("harnessed.plugins._context.compaction", "PeriodicCompaction"),
+    "SlidingWindowCompaction": ("harnessed.plugins._context.compaction", "SlidingWindowCompaction"),
     "ToolOutputLimit": ("harnessed.core.outputs", "ToolOutputLimit"),
     "OutputTruncation": ("harnessed.seams.models", "OutputTruncation"),
     "Step": ("harnessed.core.turns", "Step"),
     "Turn": ("harnessed.core.turns", "Turn"),
     "derive_turns": ("harnessed.core.turns", "derive_turns"),
     "RetryPolicy": ("harnessed.adapters.base", "RetryPolicy"),
-    "Agent": ("harnessed.core.loop", "Agent"),
+    "Agent": ("harnessed.app", "Agent"),
     "AgentFactory": ("harnessed.core.loop", "AgentFactory"),
     "AgentHandle": ("harnessed.core.loop", "AgentHandle"),
     "AgentOptions": ("harnessed.core.loop", "AgentOptions"),
@@ -182,13 +190,17 @@ _EXPORTS = {
     "LocalSpillStore": ("harnessed.adapters.spill", "LocalSpillStore"),
     "SpillStore": ("harnessed.seams.spill", "SpillStore"),
     "CacheBreakpoints": ("harnessed.plugins.observe.cache", "CacheBreakpoints"),
-    "LatestObservationOnly": ("harnessed.plugins.context.observations", "LatestObservationOnly"),
-    "SpillLargeResults": ("harnessed.plugins.context.spill", "SpillLargeResults"),
-    "ThresholdCompaction": ("harnessed.plugins.context.compaction", "ThresholdCompaction"),
+    "LatestObservationOnly": ("harnessed.plugins._context.observations", "LatestObservationOnly"),
+    "SpillLargeResults": ("harnessed.plugins._context.spill", "SpillLargeResults"),
+    "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
     "ToolRegistry": ("harnessed.core.tools", "ToolRegistry"),
     "Key": ("harnessed.kernel.keys", "Key"),
 }
 __all__ = [
+    "Section",
+    "ToolError",
+    "PluginConflict",
+    "TextDelta",
     "RunControl",
     "AgentControlChanged",
     "ApprovalRequest",

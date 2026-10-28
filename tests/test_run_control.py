@@ -4,7 +4,6 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import (
-    Agent,
     AgentControlChanged,
     ApprovalRequest,
     Bundle,
@@ -17,6 +16,9 @@ from harnessed import (
     ToolCall,
     ToolCallContext,
     system,
+)
+from harnessed import (
+    AgentHandle as Agent,
 )
 from harnessed.adapters.persistence import JsonlPersistence
 from harnessed.core.events import (

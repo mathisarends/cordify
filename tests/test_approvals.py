@@ -4,7 +4,9 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import (
-    Agent,
+    AgentHandle as Agent,
+)
+from harnessed import (
     Approvals,
     Bundle,
     Decision,

@@ -9,14 +9,18 @@
 - P0-2: resolved — `Session.publish(TextDelta)` is transient; the model buffer commits one completed/interrupted `AssistantMessage`. Legacy chunk logs remain readable for resume.
 - P0-3: resolved — serialized off-thread JSONL I/O, explicit durability/flush/close, write errors retained, cancellation drains acknowledged writes before projection commit.
 - P1-5: resolved — explicit registration owners plus debug logging, ambient ownership remains the documented fallback.
-- P1-11: resolved — direct sync section evaluation, explicit overrides, invalidation and fixed-duration caching.
+- P1-11 (partial, updated Option C): the application facade now fixes instructions plus plugin guidance once per session, exposes origins, supports guidance placement/replacement/omission, and keeps dynamic context durable and separate. Runtime guidance follows plugin teardown/restarts; latest context survives compaction. Legacy Harness presets still use their original section API and need migration.
 - P0-5 (partial): exception redaction and `ToolError`; configurable `agent_loop(error_formatter=...)`. P1-9 (partial): `ToolNameConflict`, explicit overrides.
 - P1-4 (partial): ParamSpec-preserving factories, class plugin `Config` validation, shared client/lock configuration, mutable mount state in `setup`, proper built-in base initialization. Legacy clone overrides remain compatible.
-- P2-1: resolved — public consumer `assert_type` checks are part of ty CI; plugin status is a Literal. P2-3: resolved — public Context constructor, direct-listener disposers, named priorities, failure-effect regression tests.
+- P2-1 (partial): public consumer `assert_type` checks are part of ty CI; plugin status is a Literal. Typed event/continuation signatures for hooks remain open. P2-3: resolved — public Context constructor, direct-listener disposers, named priorities, failure-effect regression tests.
 - P0-4 (partial): library NullHandler, registration/tool logs and immediate `PluginFailed` reporting; Tracer seam remains open.
 - Target decisions: MCP and the OTel exporter remain deferred according to `api-target.md`; existing functional/Bundle registration stays supported.
 - P1-2 (partial): concurrent runs/streams are bound to durable input IDs and end with their own turn; `RunResult` now contains usage, stop reason, turn ID, messages and tool/result pairs. Stable UI stream types and structured output remain open.
 - P0-6 (partial): model stop reasons now survive in the core log/results; usage exposes neutral input/output/total properties.
+- P0-7 / 3.1 (partial): `Agent(llm=..., instructions=..., plugins=...)` is available, with explicit slot replacement/conflict checks and an ephemeral `run`. It uses the same public plugins as the expanded composition. Low-level runtime imports are explicit `AgentHandle` imports; the broad compatibility exports remain.
+- P0-5 (partial): the application Agent defaults to read-only ALLOW / side-effect ASK; no approval responder yields unavailable. `Approvals(trust="all")` is the explicit opt-out. Legacy presets and shell hardening remain open.
+- P0-1 (partial): event snapshots are cached; exact-kind `last` and `since` indexes avoid repeated backward scans. Full incremental projection reducers remain open.
+- P2-9: first examples now show the application facade and its expanded plugin composition; the previous lifecycle example remains as example 23.
 - Remaining findings: open; implementation and verification are in progress.
 
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
@@ -67,7 +71,7 @@ Harnessed ist technisch sehr sorgfältig gebaut. Der Kernel ist sauber, die Schi
 | Temporale `needs` (waiting → active → stopping) | Cordis `inject` | `_Runtime`-Reconcile plus `ctx.settle()` | ✅ `settle()` als explizite Barriere ist eine gute Python-Übersetzung. |
 | Event-Semantik emit/bail/waterfall/parallel | Cordis | `Emit`, `Bail[R]`, `Waterfall[R]`, `Parallel` | ✅ Besser als das Original: Die Semantik hängt am Event-Typ, nicht an der Aufrufstelle. |
 | Append-only Log, alles andere als Projektion | DSH | `core/session.py` | ✅ Das richtige Fundament für Resume, Fork und Audit. |
-| Inbox-Modi followup/steer/inject, pause/resume/stop | DSH | `core/inbox.py`, `core/control.py` | ✅ Treu portiert und durable. |
+| Inbox-Modi followup/steer/inject, pause/resume/stop | DSH | `core/inbox.py`, `core/control.py` | ✅ Treu portiert und durable. **→ Entscheidung:** `followup` entfällt, `run()` wartet stattdessen. `steer` bleibt. `inject` wird `session.context.set()`. `cancel` wird `abort` (P1-1). |
 | Approvals mit ALWAYS-Grants | DSH | `core/approvals.py` | ✅ Inklusive Revoke und Fork. |
 | Output-Limit, Spill, Compaction, Rules, Observations | DSH | `plugins/context/*`, `plugins/permissions/rules.py` | ⚠️ Funktional portiert, aber als Top-Level-Features exportiert. **→ Empfehlung:** `ToolOutputLimit` bleibt Core und ist per Default an. Spill wird ein eingebauter, session-gebundener Store mit Retention (in `coding` an). Compaction wird *eine* Klasse `Compaction(trigger=…, summarizer=…)` mit dem Mechanismus im Core. `Rules` wandern nach `harnessed.plugins` und persistieren nur noch bei Triggern. Observations werden ein Opt-in-Plugin. Begründung in 4.2 und 4.3. |
 
@@ -247,7 +251,7 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
   - Optional `env=`-Allowlist und `cwd`-Jail.
 ~~- **Exception-Texte gehen ans Modell:** `ToolResult.error(f"{type(exc).__name__}: {exc}")` (`core/tools.py:203`, `core/loop.py:678`). Das leakt Pfade, Connection-Strings und Secrets in den Prompt, ins Log und zum Provider.~~
   **→ Empfehlung:**
-  - Ein `error_formatter` als Option des Loop-Plugins (`agent_loop(error_formatter=...)`). Der Default ist `"{tool} failed: {ExceptionType}"`.
+  - Ein `error_formatter` als Option des Loop-Plugins (`AgentLoop(error_formatter=...)`). Der Default ist `"{tool} failed: {ExceptionType}"`.
   - Mit `ToolError("message for the model")` kann ein Tool bewusst eine Nachricht ans Modell geben.
   - Die volle Exception geht ins Logging (P0-4).
 - **Falsche Attribution:** `"User declined this action"` (`core/loop.py:673`) steht auch dann, wenn eine *Policy* abgelehnt hat.
@@ -306,7 +310,8 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
 - **Nach außen:** `session.status` wird ein `SessionStatus`-`StrEnum` (`IDLE`, `RUNNING`, `PAUSED`, `STOPPING`, `CLOSED`) mit festen Übergängen statt eines String-Literals.
 - **Run-Control:** `pause`, `resume`, `stop` (graceful) und `abort` (sofort). `cancel` wird zu `abort`, weil es neben `stop` nicht unterscheidbar ist. Alle vier sind idempotent. Wer auf `run()` wartet, bekommt bei `stop`/`abort` keine Exception, sondern ein `RunResult` mit `stop_reason`.
 - `when_idle()` wird zu `wait_until_idle()`: Es wartet auf `IDLE` und eine leere Inbox, und der Timeout kommt von außen über `asyncio.timeout`.
-- Die genaue Semantik steht in [`api-target.md`](api-target.md), Abschnitte 8.2 und 8.3.
+- **Nachrichten während eines Turns:** `followup()` entfällt. `run()`/`stream()` warten, wenn die Session beschäftigt ist, und bekommen einen eigenen Turn (wie die Queue bei Codex, Claude Code und LangGraph). Es gibt kein `SessionBusy`. `steer()` bleibt und geht in den laufenden Turn (wie pi und Codex `turn/steer`). `inject()` entfällt zugunsten von `session.context.set()`; `Rules` setzt dafür einen benannten Kontexteintrag. Ein entfernter oder verworfener gestellter Turn liefert `stop_reason=StopReason.DISCARDED`. `interrupt` wird bewusst nicht verwendet, weil es je nach SDK abbrechen oder HITL-Pause bedeutet.
+- Die genaue Semantik steht in [`api-target.md`](api-target.md), Abschnitte 8.1 bis 8.3.
 
 #### P1-2 · `RunResult` und `stream()` sind für Anwender zu roh
 - `RunResult(text, events)` enthält weder Usage, Kosten, `stop_reason`, `turn_id` noch Structured Output.
@@ -353,6 +358,8 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
 
 Factory-Funktionen, die Instanzen zurückgeben, werden auf einen der beiden Stile umgestellt.
 
+**Entscheidung zur Benennung:** Alle mitgelieferten Plugins werden Klassen (Stil 2) und heißen damit in CapWords: `AgentLoop`, `MemorySessions`, `JsonlSessions`, `Subagent`, `Service` (statt `provide`), `ContextValue`, `Instructions` und `NoopTracer`. Heute bestimmt die Bauart die Schreibweise (`agent_loop` klein, `Rules` groß). Ein Umbau von Funktion zu Klasse wäre dann ein Breaking Change am öffentlichen Namen. Der funktionale Stil (Stil 1) bleibt für Nutzer. Kleinbuchstaben in `plugins=[...]` heißen dann: selbst geschrieben. Offen ist nur der Name des LLM-Plugins, weil `LLM` schon das Protocol ist ([`api-target.md`](api-target.md), Abschnitt 19).
+
 #### ~~P1-5 · Ambient-Owner-Auflösung über `Context.current()`~~
 
 **Resolved:** Tool, prompt, and agent hook registrations accept an explicit owner. Debug logs identify registration ownership. The ambient fallback and teardown visibility are documented in README.
@@ -365,7 +372,7 @@ Factory-Funktionen, die Instanzen zurückgeben, werden auf einen der beiden Stil
 
 #### P1-6 · Presets: Duplikation und zwei Fehler
 - Dieselben sieben Optionen stehen fünfmal da: `Harness.__init__`, `Harness.session`, `minimal`, `coding` und `headless`.
-  **→ Empfehlung:** Die Optionen werden die Pydantic-Config des Loop-Plugins (`agent_loop(max_steps=..., tool_timeout=...)`, P1-8). Presets sind Funktionen, die einen `Agent` mit einer Plugin-Liste zurückgeben, und reichen keine Optionen mehr durch (3.1).
+  **→ Empfehlung:** Die Optionen werden die Pydantic-Config des Loop-Plugins (`AgentLoop(max_steps=..., tool_timeout=...)`, P1-8). Presets sind Funktionen, die einen `Agent` mit einer Plugin-Liste zurückgeben, und reichen keine Optionen mehr durch (3.1).
 - **`headless` ist identisch mit `minimal`** (`presets.py:175-193`).
   **→ Empfehlung:** Entfernen.
 ~~- **`ctx.effect(agent.aclose)` wird zweimal registriert** (`presets.py:108`, `:111`).~~
@@ -398,7 +405,7 @@ Heute steckt Pydantic nur in den Tool-Args und im DeepSeek-Wire. Überall sonst 
 | Wo | Was | Warum |
 |---|---|---|
 | **Plugin-Configs** | `class Config(BaseModel)` pro Plugin (P1-4) | Validierung, JSON-Schema, Doku und YAML/ENV-Konfiguration auf einen Schlag; ersetzt Cordis' `Schema` |
-| **Options** | Loop-Config (`agent_loop`), `RetryPolicy`, `ContextBudget`, `ToolOutputLimit`, `Compaction`-Config als `BaseModel(frozen=True)` | Ersetzt die `__post_init__`-Checks; `PositiveInt`, `Field(ge=, le=)` und `Literal` sagen dasselbe deklarativ |
+| **Options** | Loop-Config (`AgentLoop`), `RetryPolicy`, `ContextBudget`, `ToolOutputLimit`, `Compaction`-Config als `BaseModel(frozen=True)` | Ersetzt die `__post_init__`-Checks; `PositiveInt`, `Field(ge=, le=)` und `Literal` sagen dasselbe deklarativ |
 | **Log-Codec** | Ein `TypeAdapter` über die Discriminated Union aller Log-Events (`Field(discriminator="type")`) | Ersetzt den Hand-Dispatch in `encode_event`/`decode_event`; Migrationen bekommen einen festen Platz |
 | **Built-in-Tool-Parameter** | `offset: Annotated[int, Field(ge=1)]`, `limit: Annotated[int, Field(le=16_000)]` | Die Grenze steht im JSON-Schema, das Modell *sieht* sie; heute validiert `read_file` von Hand (`plugins/tools/fs.py:23-24`) |
 | **Provider-Wire** | wie heute im DeepSeek-Adapter | bleibt |
@@ -511,7 +518,7 @@ Zielbild: [`api-target.md`](api-target.md), Abschnitt 4.
         tools.md               # @tool, validation, readonly/side_effects, parallelism
         sessions.md            # persistence, resume, fork
         streaming.md           # StreamEvent, UIs
-        inbox-and-control.md   # followup/steer/inject, pause/resume/stop/abort, SessionStatus
+        inbox-and-control.md   # run (queued), steer, context.set, pause/resume/stop/abort, SessionStatus
         approvals.md
         context-management.md  # output limit, spill, compaction
         providers.md           # openai-compatible, deepseek, anthropic, custom adapters
@@ -589,10 +596,10 @@ async with agent.session("calc") as session:
 Ein Import für den Normalfall. Ein Plugin, das nur Tools enthält, ist die einfachste Plugin-Form und braucht weder Context noch Hooks. Hooks und Inject sind die *zweite* Ebene, für alle, die das Verhalten des Loops ändern wollen.
 
 **Die Fassade ist Zucker über Plugins, kein zweites System.** Damit bleibt das Cordis/DSH-Prinzip „everything is a plugin“ erhalten:
-1. **`Agent` hat genau drei Parameter:** `llm`, `instructions` und `plugins`. Alles andere ist ein Plugin in `plugins=[...]`, also Tools, Persistenz, Approvals, Compaction, Spill, Subagents und Services (`provide(T, obj)`). Es gibt keine Parameter wie `tools=`, `compaction=` oder `services=`.
+1. **`Agent` hat genau drei Parameter:** `llm`, `instructions` und `plugins`. Alles andere ist ein Plugin in `plugins=[...]`, also Tools, Persistenz, Approvals, Compaction, Spill, Subagents und Services (`Service(T, obj)`). Es gibt keine Parameter wie `tools=`, `compaction=` oder `services=`.
 2. **Tools leben immer in Plugins**, als `@tool`-Methoden einer `Plugin`-Klasse (oder `@ctx.tool` im funktionalen Stil). Lose Funktionen als Tools gibt es nicht. Ein Plugin bündelt so zusammengehörige Tools mit ihrem Zustand, ihrer Config und ihrem Lebenszyklus, und es gibt genau einen Registrierungsweg. Ein eigenes `Toolset`-Konzept ist damit überflüssig.
 3. **Jeder Parameter entspricht 1:1 einem öffentlichen Plugin.** Ein Test sichert ab, dass `Agent(llm=x, instructions=s)` exakt `Agent(plugins=[llm(x), instructions(s)])` ergibt.
-4. **Defaults sind normale Plugins mit Slot:** `agent_loop`, `memory_sessions`, `ToolOutputLimit`, `Approvals()` und der No-op-Tracer. Ein Plugin mit demselben Slot ersetzt den Default. Ein doppelter Slot in `plugins=` ist ein `PluginConflict`.
+4. **Defaults sind normale Plugins mit Slot:** `AgentLoop()`, `MemorySessions()`, `ToolOutputLimit()`, `Approvals()` und `NoopTracer()`. Ein Plugin mit demselben Slot ersetzt den Default. Ein doppelter Slot in `plugins=` ist ein `PluginConflict`.
 5. **Built-ins nutzen nur öffentliche API** (vgl. `ctx._install_ready` in P1-6).
 6. **`agent.plugins` zeigt die aufgelöste Zusammensetzung.** Auch Presets sind damit keine Black Box.
 
@@ -658,7 +665,7 @@ Defaults und `PolicyDecision`/`ApprovalAnswer` stehen in P0-5 und P0-6.
 | `harnessed.llms` | LLM-Adapter als Klassen `<Provider>LLM`: `OpenAICompatibleLLM`, `DeepSeekLLM`, `AnthropicLLM` (Extra), Basisklasse `StreamingLLM`. Der Name sagt, dass es ein LLM ist, und kollidiert nicht mit `import anthropic`. |
 | `harnessed.events` | Log-Events (persistierbar) |
 | `harnessed.hooks` | Hook-Events (`PrepareRequest`, `ToolPolicy`, …) |
-| `harnessed.plugins` | **Alle** mitgelieferten Plugins an einem Ort: Defaults (`agent_loop`, `memory_sessions`, `ToolOutputLimit`, `Approvals`) und Opt-ins (`jsonl_sessions`, `Compaction`, `Spill`, `Rules`, `LatestObservationOnly`, `provide`) |
+| `harnessed.plugins` | **Alle** mitgelieferten Plugins an einem Ort: Defaults (`AgentLoop`, `MemorySessions`, `ToolOutputLimit`, `Approvals`, `NoopTracer`) und Opt-ins (`JsonlSessions`, `Compaction`, `Spill`, `Rules`, `LatestObservationOnly`, `Service`, `Subagent`, `ContextValue`). Alle sind Klassen in CapWords (P1-4). |
 | `harnessed.kernel` | `Context`, `Inject`, `Key`, `needs`, Effects (für Framework-Autoren) |
 | `harnessed.seams` | Protocols für eigene Adapter, `ProviderError`-Hierarchie |
 | `harnessed.integrations` | später: `otel` und `mcp` als Extras, beides Plugins |
@@ -792,7 +799,7 @@ Damit das strenge Urteil nicht falsch ankommt: Diese Dinge macht Harnessed besse
 
 - **Everything is a plugin.** Auch Loop, LLM und Persistenz sind austauschbare Plugins. Die neue Fassade ändert daran nichts (3.1).
 - **Das append-only Log als Single Source of Truth** mit Fork, Resume, Crash-Repair und Tail-Recovery.
-- **Durable Inbox und Run-Control.** Steer und Inject während eines laufenden Turns sind ein echtes Differenzierungsmerkmal.
+- **Durable Inbox und Run-Control.** Steer und Kontext während eines laufenden Turns sind ein echtes Differenzierungsmerkmal.
 - **Temporale Plugin-Lebenszyklen mit reversiblen Effects.** Hot-Swapping von Services ist sauber gelöst.
 - **Event-Semantik am Typ** (Emit, Bail, Waterfall, Parallel).
 - **Parallele Tool-Ausführung mit Ressourcen-Keys** (`core/scheduling.py`), korrekt in der Commit-Reihenfolge.

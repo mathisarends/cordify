@@ -11,6 +11,7 @@ log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .context import Context
+    from .plugin import PluginHandle
 
 
 class Event[R]:
@@ -35,6 +36,13 @@ class PluginFailed(Emit):
 
     plugin: str
     error: Exception
+
+
+@dataclass(frozen=True)
+class PluginActivated(Emit):
+    """A retained recipe became active, including after dependency replacement."""
+
+    handle: "PluginHandle"
 
 
 class Bail[R](Event[R | None]):

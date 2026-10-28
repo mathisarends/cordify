@@ -82,6 +82,12 @@ class Plugin:
     """Agent-independent lifecycle with extensible registration recipes."""
 
     needs: tuple[Any, ...] = ()
+    slot: str | None = None
+
+    def __init_subclass__(cls, *, slot: str | None = None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if slot is not None:
+            cls.slot = slot
 
     def __init__(
         self,
@@ -162,7 +168,13 @@ class Plugin:
                 await resolve(instance.teardown(*bound.args, **bound.kwargs))
 
         return PluginSpec(
-            getattr(self, "name", type(self).__name__), mount, tuple(dict.fromkeys(needs)), (), {}
+            getattr(self, "name", type(self).__name__),
+            mount,
+            tuple(dict.fromkeys(needs)),
+            (),
+            {},
+            self.slot,
+            getattr(self, "guidance", None),
         )
 
 

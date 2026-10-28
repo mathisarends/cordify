@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from harnessed import (
-    Agent,
+    AgentHandle as Agent,
+)
+from harnessed import (
     Bundle,
     Context,
     Harness,

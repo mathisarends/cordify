@@ -11,8 +11,16 @@ from harnessed.kernel.declarations import Plugin as KernelPlugin
 from harnessed.kernel.events import on as hook
 from harnessed.kernel.plugin import PluginLike
 
+from .instructions import Section
 from .scheduling import ResourceSpec, resource_spec
 from .tools import ToolRegistry
+
+
+class _DefaultGuidance:
+    pass
+
+
+_DEFAULT_GUIDANCE = _DefaultGuidance()
 
 
 @dataclass(frozen=True)
@@ -155,6 +163,8 @@ class Plugin(KernelPlugin):
             hide_input_in_errors=True,
         )
 
+    guidance: str | Section | None = None
+
     def __init__(
         self,
         *,
@@ -163,10 +173,13 @@ class Plugin(KernelPlugin):
         tools: Iterable[Callable] = (),
         needs: Iterable | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
+        guidance: str | Section | None | _DefaultGuidance = _DEFAULT_GUIDANCE,
         **configuration: Any,
     ):
         super().__init__(name=name, hooks=hooks, needs=needs, registrations=registrations)
         self.tools = tuple(tools)
+        if not isinstance(guidance, _DefaultGuidance):
+            self.guidance = guidance
         self.config = self.Config.model_validate(configuration)
 
     def _registration_entries(self):

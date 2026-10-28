@@ -32,6 +32,15 @@ class SystemPrompt:
     def __init__(self, ctx: Context):
         self._ctx = ctx
         self._sections: list[_Section] = []
+        self._fixed: list[tuple[str, Context]] = []
+
+    def fixed(self, text: str, *, owner: Context | None = None) -> Disposer:
+        """Own one immutable prompt snapshot for a session, reversibly."""
+        owner = owner if owner is not None else Context.current() or self._ctx
+        owner._check_open()
+        binding = (text, owner)
+        self._fixed.append(binding)
+        return owner.effect(lambda: self._fixed.remove(binding))
 
     def section(
         self,
@@ -46,6 +55,10 @@ class SystemPrompt:
     ) -> Disposer:
         owner = owner if owner is not None else Context.current() or self._ctx
         owner._check_open()
+        if self._fixed:
+            raise RuntimeError(
+                "This session has fixed instructions; contribute plugin guidance instead"
+            )
         if any(section.name == name for section in self._sections) and not override:
             raise PromptSectionConflict(f"Section {name!r} already exists; use override=True")
         ttl = None if stable_for is None else stable_for.total_seconds()
@@ -72,6 +85,9 @@ class SystemPrompt:
             raise KeyError(name)
 
     async def render(self) -> str:
+        for text, owner in reversed(self._fixed):
+            if owner._registrations_active():
+                return text
         visible = {
             section.name: section
             for section in self._sections

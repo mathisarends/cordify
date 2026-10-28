@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
+from uuid import uuid4
 
 from harnessed.kernel.events import Bail, Emit, Waterfall
 from harnessed.seams.models import (
@@ -301,6 +302,14 @@ class ContextMessage(SessionEvent):
 
 
 @dataclass(frozen=True)
+class ContextValueChanged(SessionEvent):
+    type: ClassVar[str] = "context/value-changed"
+    name: str
+    value: str | None
+    id: str = field(default_factory=lambda: uuid4().hex)
+
+
+@dataclass(frozen=True)
 class ObservationRecorded(SessionEvent):
     type: ClassVar[str] = "agent/observation"
     observation: Observation
@@ -475,6 +484,7 @@ SESSION_EVENT_TYPES = {
         SystemMessage,
         UserMessage,
         ContextMessage,
+        ContextValueChanged,
         ObservationRecorded,
         ModelRequested,
         ModelUsageRecorded,

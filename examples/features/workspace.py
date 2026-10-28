@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from harnessed import FS, Agent, Bundle, Inject, Plugin, ReviewToolResult, ToolCallContext, hook
+from harnessed import FS, Bundle, Inject, Plugin, ReviewToolResult, ToolCallContext, hook
+from harnessed import AgentHandle as Agent
 
 workspace_tools = Bundle("workspace-tools")
 

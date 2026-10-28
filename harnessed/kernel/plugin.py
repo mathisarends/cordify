@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, overload
 
 from .declarations import Bundle, Plugin
 from .di import bind_injected, injections
-from .events import PluginFailed
+from .events import PluginActivated, PluginFailed
 from .events import on as hook
 from .keys import ServiceKey
 
@@ -214,6 +214,7 @@ class PluginHandle:
                 self._failed_signature = None
                 self.error = None
                 self.status = "active"
+                await self._mount.dispatch(PluginActivated(self))
                 self._mount._scope.runtime.changed()
             except BaseException as exc:
                 cancelled = isinstance(exc, asyncio.CancelledError)
@@ -280,6 +281,8 @@ class PluginSpec:
     needs: tuple[ServiceKey[Any], ...]
     args: tuple[Any, ...]
     kwargs: Mapping[str, Any]
+    slot: str | None = None
+    guidance: Any = None
 
     def __post_init__(self):
         object.__setattr__(self, "kwargs", MappingProxyType(dict(self.kwargs)))
@@ -296,12 +299,20 @@ def plugin[**P](
     *,
     needs: Iterable[ServiceKey[Any]] = (),
     name: str | None = None,
+    slot: str | None = None,
 ) -> Callable[
     [Callable[Concatenate[Any, P], AsyncGenerator[None, None]]], Callable[P, PluginSpec]
 ]: ...
 
 
-def plugin(fn=None, /, *, needs: Iterable[ServiceKey[Any]] = (), name: str | None = None):
+def plugin(
+    fn=None,
+    /,
+    *,
+    needs: Iterable[ServiceKey[Any]] = (),
+    name: str | None = None,
+    slot: str | None = None,
+):
     """Turn an async-generator function into a configured plugin factory."""
 
     def decorate(factory):
@@ -312,7 +323,7 @@ def plugin(fn=None, /, *, needs: Iterable[ServiceKey[Any]] = (), name: str | Non
             dependencies = tuple(
                 dict.fromkeys((*needs, *injections(factory, required_only=True).values()))
             )
-            return PluginSpec(name or factory.__name__, factory, dependencies, args, kwargs)
+            return PluginSpec(name or factory.__name__, factory, dependencies, args, kwargs, slot)
 
         vars(configure)["_harnessed_plugin"] = True
         return configure

@@ -5,7 +5,9 @@ import pytest
 from pydantic import PydanticSchemaGenerationError
 
 from harnessed import (
-    Agent,
+    AgentHandle as Agent,
+)
+from harnessed import (
     Context,
     Emit,
     Plugin,

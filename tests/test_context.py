@@ -3,7 +3,6 @@ from pathlib import Path
 
 from harnessed import (
     FS,
-    Agent,
     Bundle,
     File,
     Harness,
@@ -20,6 +19,9 @@ from harnessed import (
     hook,
     system,
     user,
+)
+from harnessed import (
+    AgentHandle as Agent,
 )
 from harnessed.core.events import ContextMessage, ModelRequested, ObservationRecorded
 from harnessed.core.session import Session, decode_event, encode_event

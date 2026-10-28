@@ -1,57 +1,30 @@
-"""Run with: uv run python -m examples.01_tool_agent"""
+"""Run with: uv run python -m examples.01_tool_agent (offline)."""
 
 import asyncio
 
-from harnessed import Context, Harness, ModelChunk, ToolCall, ToolRegistry, plugin
-from harnessed.core.events import ToolCalled, ToolReturned
-from harnessed.core.stream import TextDelta
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.context.instructions import persona
-from harnessed.plugins.services import llm
+from harnessed import Agent, ModelChunk, Plugin, ToolCall, tool
 from harnessed.testing import ScriptedLLM
 
 
-@plugin(needs=[ToolRegistry])
-async def calculator(ctx: Context):
-    @ctx[ToolRegistry].tool
-    async def add(a: int, b: int) -> int:
+class Calculator(Plugin):
+    @tool(readonly=True)
+    async def add(self, a: int, b: int) -> int:
         """Add two integers."""
         return a + b
 
-    yield
-
 
 async def main():
-    model = ScriptedLLM(
+    llm = ScriptedLLM(
         [
             [ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))],
-            [ModelChunk(text="The result "), ModelChunk(text="is 42.")],
-            "I added 19 and 23 using the add tool.",
+            "The result is 42.",
         ]
     )
-    harness = Harness(
-        [
-            agent_loop(),
-            llm(model),
-            calculator(),
-            persona("Keep your answers concise and in English."),
-        ]
-    )
-
-    async with harness.session("calculator") as agent:
-        async for event in agent.stream("What is 19 + 23?"):
-            match event:
-                case TextDelta(text=text):
-                    print(text, end="", flush=True)
-                case ToolCalled(call=call):
-                    print(f"-> {call.name}({dict(call.arguments)})")
-                case ToolReturned(result=result):
-                    print(f"<- {result.content}")
-        print()
-
-        result = await agent.run("How did you calculate that?")
+    agent = Agent(llm=llm, instructions="Keep answers concise.", plugins=[Calculator()])
+    async with agent.session("calculator") as session:
+        result = await session.run("What is 19 + 23?")
         print(result.text)
-        print(f"{len(agent.session.events)} events, {len(model.requests)} model calls")
+        print("Turn:", result.turn_id, "Stop:", result.stop_reason)
 
 
 if __name__ == "__main__":

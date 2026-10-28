@@ -8,7 +8,6 @@ from typing import Protocol
 
 from harnessed import (
     FS,
-    Agent,
     Bundle,
     Context,
     File,
@@ -23,6 +22,9 @@ from harnessed import (
     hook,
     plugin,
     system,
+)
+from harnessed import (
+    AgentHandle as Agent,
 )
 from harnessed.core.events import ContextMessage
 from harnessed.plugins.agents.loop import agent_loop

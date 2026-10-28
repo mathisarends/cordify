@@ -19,7 +19,7 @@ from harnessed.adapters.spill import LocalSpillStore
 from harnessed.core.events import ToolReturned
 from harnessed.core.session import Session, decode_event, encode_event
 from harnessed.core.tools import ToolError
-from harnessed.plugins.context.providers import spill_store
+from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.plugins.tools.fs import fs_local, fs_tools
 from harnessed.plugins.tools.shell import shell_local, shell_tools

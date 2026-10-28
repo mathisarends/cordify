@@ -3,7 +3,9 @@ import asyncio
 import pytest
 
 from harnessed import (
-    Agent,
+    AgentHandle as Agent,
+)
+from harnessed import (
     Bundle,
     Decision,
     ExecuteTool,

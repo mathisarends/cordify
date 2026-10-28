@@ -4,7 +4,9 @@ import asyncio
 from tempfile import TemporaryDirectory
 
 from harnessed import (
-    Agent,
+    AgentHandle as Agent,
+)
+from harnessed import (
     Bundle,
     CacheBreakpoints,
     Harness,
@@ -22,8 +24,8 @@ from harnessed import (
     hook,
 )
 from harnessed.core.events import CacheMetrics, CompactionApplied, SpillCreated
+from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.context.providers import spill_store
 from harnessed.plugins.services import llm
 from harnessed.testing import ScriptedLLM
 

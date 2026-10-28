@@ -16,7 +16,7 @@ async def fs_local(ctx: Context, root: str | Path = "."):
 async def fs_tools(ctx: Context):
     registry = ctx[ToolRegistry]
 
-    @registry.tool(parallel=True)
+    @registry.tool(parallel=True, readonly=True)
     async def read_file(path: str, limit: int = 8000, offset: int = 0, *, fs: Inject[FS]) -> str:
         """Read a UTF-8 character range: offset >= 0, limit 1-16000 (default 8000)."""
         if offset < 0 or not 1 <= limit <= 16_000:

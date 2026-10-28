@@ -26,7 +26,8 @@ async def test_coding_composes_project_tools_and_optional_shell(tmp_path, shell)
 
 
 async def test_session_installs_waiting_plugins_once_and_disposes_agent_once(monkeypatch):
-    from harnessed import Agent, Context, Harness, plugin
+    from harnessed import AgentHandle as Agent
+    from harnessed import Context, Harness, plugin
     from harnessed.plugins.agents.loop import agent_loop
     from harnessed.plugins.services import llm
 
@@ -53,7 +54,8 @@ async def test_session_installs_waiting_plugins_once_and_disposes_agent_once(mon
 
 
 async def test_agent_service_remains_available_during_dependent_teardown():
-    from harnessed import Agent, Inject, Plugin
+    from harnessed import AgentHandle as Agent
+    from harnessed import Inject, Plugin
 
     seen = []
 

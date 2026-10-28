@@ -2,7 +2,18 @@ from .context import Context, ContextClosed, Key, MissingService
 from .declarations import Bundle, Plugin, Registration
 from .di import Inject, InjectMarker
 from .effects import Disposer, effect
-from .events import Bail, Emit, Event, EventBus, Parallel, PluginFailed, Priority, Waterfall, on
+from .events import (
+    Bail,
+    Emit,
+    Event,
+    EventBus,
+    Parallel,
+    PluginActivated,
+    PluginFailed,
+    Priority,
+    Waterfall,
+    on,
+)
 from .plugin import PluginHandle, PluginLike, PluginSpec, hook, plugin
 
 __all__ = [
@@ -23,6 +34,7 @@ __all__ = [
     "EventBus",
     "Parallel",
     "PluginFailed",
+    "PluginActivated",
     "Priority",
     "Waterfall",
     "on",

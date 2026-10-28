@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .core.approvals import validate_approval_timeout
+from .core.context import DynamicContext
 from .core.features import Bundle
 from .core.loop import Agent, AgentFactory, AgentOptions
 from .core.outputs import ToolOutputLimit
@@ -18,6 +19,7 @@ __all__ = ["Harness", "minimal", "coding", "headless"]
 async def _agent_service(ctx: Context, agent: Agent):
     """Make teardown ordering follow the same needs graph as plugin startup."""
     ctx.provide(Agent, agent)
+    ctx.provide(DynamicContext, agent.context)
     yield
 
 
@@ -72,7 +74,7 @@ class Harness:
         max_parallel_tools: int | None = None,
         approval_timeout: float | None = None,
     ):
-        from .plugins.context.providers import compactor, spill_store
+        from .plugins._context.providers import compactor, spill_store
         from .plugins.observe.tokens import token_counter
         from .plugins.services import system_prompt, tools
 
@@ -160,7 +162,7 @@ def coding(
     max_parallel_tools: int = 4,
     approval_timeout: float = 300.0,
 ) -> Harness:
-    from .plugins.context.instructions import agents_md
+    from .plugins._context.instructions import agents_md
     from .plugins.tools.fs import fs_local, fs_tools
     from .plugins.tools.shell import shell_local, shell_tools
 

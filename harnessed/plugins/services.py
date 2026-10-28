@@ -16,7 +16,7 @@ async def system_prompt(ctx: Context):
     yield
 
 
-@plugin()
+@plugin(slot="llm")
 async def llm(ctx: Context, implementation: LLM):
     ctx.provide(LLM, implementation)
     yield

@@ -32,7 +32,7 @@ harnessed/
     attachments.py, execution.py, budget.py, compaction.py, outputs.py, turns.py, control.py
     validation.py        Pydantic argument models, JSON schemas, result serialization
   plugins/
-    context/             Instructions, observations, compaction, spill
+    _context/            Instructions, observations, compaction, spill
     tools/               File and shell tools
     permissions/         Approvals and rules
     agents/              Default loop registration
@@ -103,7 +103,7 @@ concrete implementations from their respective layers:
 ```python
 from harnessed.kernel import Context, Key, plugin
 from harnessed.adapters.deepseek import DeepSeekLLM
-from harnessed.plugins.context.compaction import ThresholdCompaction
+from harnessed.plugins._context.compaction import ThresholdCompaction
 from harnessed.presets import minimal, coding, headless
 
 agent = minimal(DeepSeekLLM(model="deepseek-flash"))
@@ -567,12 +567,12 @@ and model history.
 **4. Push context before a step**, such as memory:
 
 ```python
-from harnessed import Agent, Inject, Plugin, PreStep, hook, system
+from harnessed import AgentHandle, Inject, Plugin, PreStep, hook, system
 
 
 class RelevantMemories(Plugin):
     @hook(PreStep)
-    async def recall(self, ev, next_, memory: Inject[Memory], agent: Inject[Agent]):
+    async def recall(self, ev, next_, memory: Inject[Memory], agent: Inject[AgentHandle]):
         if ev.is_turn_start:
             hits = await memory.search(ev.latest_user_text, k=3)
             if hits:
@@ -604,12 +604,12 @@ a runnable implementation with a `Memory` service.
 ## Observations for browsers and other live state
 
 ```python
-from harnessed import Agent, Inject, Observation, Plugin, PreStep, hook
+from harnessed import AgentHandle, Inject, Observation, Plugin, PreStep, hook
 
 
 class BrowserObserver(Plugin):
     @hook(PreStep)
-    async def observe(self, ev, next_, browser: Inject[Browser], agent: Inject[Agent]):
+    async def observe(self, ev, next_, browser: Inject[Browser], agent: Inject[AgentHandle]):
         state = await browser.snapshot()
         agent.observe(
             Observation(
@@ -825,13 +825,13 @@ tool parameters come from the model. In hooks, the event and `next_` remain
 ordinary parameters. The agent is injected per session:
 
 ```python
-from harnessed import Agent, Bundle, Inject, ReviewToolResult
+from harnessed import AgentHandle, Bundle, Inject, ReviewToolResult
 
 safety = Bundle("safety")
 
 
 @safety.on(ReviewToolResult)
-async def nudge(event, next_, agent: Inject[Agent]):
+async def nudge(event, next_, agent: Inject[AgentHandle]):
     result = await next_()
     if result.is_error:
         await agent.inject("Read the error before retrying.")
@@ -1623,7 +1623,7 @@ Semantic summaries can be enabled explicitly:
 
 ```python
 from harnessed import LLMCompactor, LocalSpillStore
-from harnessed.plugins.context.providers import compactor, spill_store
+from harnessed.plugins._context.providers import compactor, spill_store
 from harnessed.plugins.observe.tokens import token_counter
 
 # Add to the Harness plugins:
@@ -1687,3 +1687,53 @@ continues to wait for the entire driver. `RunResult` exposes `text`, `usage`
 `ModelChunk(stop_reason=...)`; the value survives replay in `AssistantMessage`.
 Missing provider stop metadata falls back to the turn outcome. Costs are not
 estimated without provider pricing information.
+
+## Application API and fixed instructions
+
+```python
+from harnessed import Agent, Plugin, tool
+from harnessed.llms import deepseek
+
+class Calculator(Plugin):
+    guidance = "Use add for arithmetic."
+
+    @tool(readonly=True)
+    async def add(self, a: int, b: int) -> int:
+        """Add two integers."""
+        return a + b
+
+agent = Agent(
+    llm=deepseek(model="deepseek-chat"),
+    instructions="Keep answers concise.",
+    plugins=[Calculator()],
+)
+result = await agent.run("What is 19 + 23?")
+print(result.text, result.usage.total_tokens, result.stop_reason)
+```
+
+`Agent` is reusable configuration. Its only constructor arguments are `llm`,
+`instructions`, and `plugins`. `agent.plugins` exposes the resolved recipes.
+`Agent(plugins=[llm(client), instructions(text), Calculator()])` uses the same
+public plugins. Slots replace defaults; duplicate explicit slots raise
+`PluginConflict`. The application defaults to read-only ALLOW and side-effect
+ASK. Configure `harnessed.plugins.Approvals` to approve, trust or deny tools.
+Without an approval responder, a side-effect call returns unavailable.
+
+The system prompt follows one rule: instructions first, then plugin guidance in
+plugin order, literally, with blank lines between sections. `Section.from_file`
+reads once per session. Printing `agent.prompt` shows each section's origin;
+`await session.prompt.render()` returns the exact fixed text. Place a plugin's
+guidance in instructions to position it explicitly, or use `guidance=None` /
+`guidance="replacement"` on the plugin. No order numbers are needed.
+
+Dynamic facts use `harnessed.plugins.context(name, provider)` or
+`await session.context.set(name, text)` / `remove(name)`. Only changes append a
+`ContextValueChanged` event, which projects to a user context block. Removal is
+explicit in the log and model history. Current facts survive compaction and
+resume. `await session.use(plugin)` returns a `PluginHandle`; runtime guidance
+is context, not a system-prompt edit, and follows the plugin's temporal lifetime.
+
+Legacy `Harness` and `minimal` composition remain available. The runtime object
+is imported explicitly as `AgentHandle` for service injection; `Agent` now names
+the application configuration. See examples 01 and 02 for the application API,
+and example 23 for the lower-level lifecycle and service composition.

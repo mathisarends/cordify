@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
+from harnessed.kernel.events import PluginActivated
 from harnessed.seams.approver import ApprovalUnavailable, Approver
 from harnessed.seams.llm import LLM
 from harnessed.seams.models import (
@@ -24,6 +25,7 @@ from harnessed.seams.tokens import TokenCounter
 from .approvals import validate_approval_timeout
 from .attachments import Attachment, prepare_input
 from .budget import ContextBudget
+from .context import DynamicContext
 from .events import (
     AgentControlChanged,
     ApprovalRequest,
@@ -131,6 +133,8 @@ class Agent:
     def __init__(self, ctx: Context, session: Session, options: AgentOptions):
         self.ctx, self.session, self.options = ctx, session, options
         self.id = session.id
+        self.context = DynamicContext(session)
+        self._runtime_guidance = {}
         self.status: Literal[
             "idle", "running", "pausing", "paused", "stopping", "stopped", "disposed"
         ] = "idle"
@@ -146,10 +150,51 @@ class Agent:
         self._observations: dict[str, Observation] = {}
         ctx.on(SessionAppended, self._session_event)
         ctx.on(SessionPublished, self._stream_event)
+        ctx.on(PluginActivated, self._plugin_activated)
 
     @property
     def inbox(self):
         return self.session.inbox
+
+    @property
+    def prompt(self) -> SystemPrompt:
+        return self.ctx[SystemPrompt]
+
+    @property
+    def events(self) -> tuple[SessionEvent, ...]:
+        return self.session.events
+
+    @property
+    def messages(self) -> tuple[Message, ...]:
+        return self.session.messages
+
+    @property
+    def turns(self):
+        return self.session.turns
+
+    def last(self, kind):
+        return self.session.last(kind)
+
+    async def use(self, plugin):
+        """Mount a recipe at runtime; its guidance is context, never system text."""
+        handle = await self.ctx.plugin(plugin)
+        await self.ctx.settle()
+        self._runtime_guidance[handle] = f"plugin:{handle.name}:{id(handle):x}"
+        if handle.status == "active":
+            await self._plugin_activated(PluginActivated(handle))
+        return handle
+
+    async def _plugin_activated(self, event: PluginActivated):
+        from .instructions import Section
+
+        handle = event.handle
+        name = self._runtime_guidance.get(handle)
+        guidance = handle.spec.guidance
+        if name is None or guidance is None:
+            return
+        text = await guidance.render() if isinstance(guidance, Section) else guidance
+        await self.context.set(name, text)
+        handle.ctx.effect(lambda: self.context.remove(name))
 
     def on(self, event, fn=None, *, prepend: bool = False, priority: int = 0, owner=None):
         owner = owner if owner is not None else Context.current() or self.ctx

@@ -3,7 +3,9 @@
 import asyncio
 
 from harnessed import (
-    Agent,
+    AgentHandle as Agent,
+)
+from harnessed import (
     Bundle,
     Harness,
     Inject,

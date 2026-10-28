@@ -28,7 +28,7 @@ from harnessed.core.events import (
     UserMessage,
 )
 from harnessed.core.session import decode_event, encode_event
-from harnessed.plugins.context.providers import compactor
+from harnessed.plugins._context.providers import compactor
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 

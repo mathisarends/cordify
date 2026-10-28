@@ -1,94 +1,35 @@
-"""Run with: uv run python -m examples.02_plugins"""
+"""Run with: uv run python -m examples.02_plugins (offline, explicit composition)."""
 
 import asyncio
-from dataclasses import dataclass
-from typing import Protocol
 
-from harnessed import Context, Harness, ModelChunk, SystemPrompt, ToolCall, ToolRegistry, plugin
-from harnessed.core.events import ExecuteTool, SessionAppended
-from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.permissions.approval import approval_gate
-from harnessed.plugins.services import llm
+from harnessed import Agent, ModelChunk, Plugin, ToolCall, tool
+from harnessed.plugins import instructions, llm
 from harnessed.testing import ScriptedLLM
 
 
-class Notes(Protocol):
-    async def save(self, text: str) -> str: ...
+class Calculator(Plugin):
+    guidance = "Use add for arithmetic."
 
-
-class MemoryNotes:
-    def __init__(self):
-        self.entries: list[str] = []
-
-    async def save(self, text: str) -> str:
-        self.entries.append(text)
-        return f"Saved note {len(self.entries)}"
-
-
-@plugin()
-async def notes_backend(ctx: Context):
-    ctx.provide(Notes, MemoryNotes())
-    yield
-
-
-@dataclass(frozen=True)
-class NotesConfig:
-    instruction: str = "Use save_note to save notes."
-
-
-@plugin(needs=[Notes, ToolRegistry, SystemPrompt])
-async def notes_tools(ctx: Context, config: NotesConfig):
-    notes = ctx[Notes]
-    ctx[SystemPrompt].section("notes", config.instruction, order=20)
-
-    @ctx[ToolRegistry].tool
-    async def save_note(text: str) -> str:
-        """Save a note."""
-        return await notes.save(text)
-
-    yield
-    print("Notes plugin stopped; tools and prompt sections are removed automatically.")
-
-
-@plugin()
-async def trace(ctx: Context):
-    @ctx.on(ExecuteTool)
-    async def around_tool(event, next_):
-        print(f"before {event.call.name}")
-        result = await next_()
-        print(f"after {event.call.name}: {result.status}")
-        return result
-
-    @ctx.on(SessionAppended)
-    def record(event):
-        if event.event.type == "turn/end":
-            print(f"{event.session.id}: turn ended at event {event.seq}")
-
-    yield
+    @tool(readonly=True)
+    async def add(self, a: int, b: int) -> int:
+        """Add two integers."""
+        return a + b
 
 
 async def main():
-    harness = Harness(
+    model = ScriptedLLM(
         [
-            agent_loop(),
-            llm(
-                ScriptedLLM(
-                    [
-                        [ModelChunk(tool_call=ToolCall("save_note", {"text": "Try Harnessed"}))],
-                        "The note has been saved.",
-                    ]
-                )
-            ),
-            notes_tools(NotesConfig()),  # Dependencies are resolved before setup.
-            notes_backend(),
-            trace(),
-            approval_gate(risky={"save_note"}, ask=lambda call: True),
+            [ModelChunk(tool_call=ToolCall("add", {"a": 19, "b": 23}))],
+            "The result is 42.",
         ]
     )
-
-    async with harness.session("notes") as agent:
-        print((await agent.run("Save a note.")).text)
-        print(agent.ctx[Notes].entries)
+    # Exactly the same services and behavior as llm=... and instructions=... .
+    agent = Agent(plugins=[llm(model), instructions("Keep answers concise."), Calculator()])
+    print("Composition:", [spec.slot or spec.name for spec in agent.plugins])
+    print(agent.prompt)
+    async with agent.session("explicit-calculator") as session:
+        print((await session.run("What is 19 + 23?")).text)
+        print("Exact prompt:", await session.prompt.render())
 
 
 if __name__ == "__main__":

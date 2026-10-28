@@ -3,7 +3,8 @@ import math
 from collections.abc import Iterable
 from dataclasses import fields, is_dataclass
 from types import MappingProxyType
-from typing import Protocol
+from typing import Protocol, cast
+from xml.sax.saxutils import escape, quoteattr
 
 from harnessed.kernel.context import Context
 from harnessed.seams.models import (
@@ -33,6 +34,7 @@ from .events import (
     CacheMetrics,
     CompactionApplied,
     ContextMessage,
+    ContextValueChanged,
     InboxAdded,
     InboxRemoved,
     ModelRequested,
@@ -190,6 +192,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
 
     turn_offsets = {}
     current_turn = None
+    current_context: dict[str, tuple[int, Message]] = {}
     for seq, event in enumerate(events):
         if isinstance(event, TurnStart):
             current_turn = event.turn_id
@@ -208,6 +211,18 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
             case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
                 if lifetime == "session" or turn_id == active_turn:
                     add(seq, message)
+            case ContextValueChanged(name=name, value=value):
+                content = (
+                    f'<context name={quoteattr(name)} removed="true"/>'
+                    if value is None
+                    else f"<context name={quoteattr(name)}>{escape(value)}</context>"
+                )
+                message = Message("user", content, id=f"context:{event.id}")
+                add(seq, message)
+                if value is None:
+                    current_context.pop(name, None)
+                else:
+                    current_context[name] = (seq, message)
             case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
                 content = (
                     observation.full if active_step == (turn_id, step) else observation.summary
@@ -241,6 +256,18 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     if offset < through
                     and turn_offsets.get(offset) in preserved
                     and offset not in retained_offsets
+                )
+                # Latest dynamic facts survive compaction, independently of summaries.
+                entries = [
+                    (offset, message)
+                    for offset, message in entries
+                    if offset >= through or not message.id.startswith("context:")
+                ]
+                retained_offsets = {offset for offset, _ in entries}
+                entries.extend(
+                    (offset, message)
+                    for offset, message in current_context.values()
+                    if offset not in retained_offsets
                 )
                 entries.sort(key=lambda item: -1 if item[1].id == "system" else item[0])
                 position = 1 if entries and entries[0][1].id == "system" else 0
@@ -291,6 +318,10 @@ class Session:
         self.id = session_id
         self.ctx = ctx
         self._events = list(seed)
+        self._snapshot: tuple[SessionEvent, ...] | None = None
+        self._last: dict[type[SessionEvent], tuple[int, SessionEvent]] = {
+            type(event): (seq, event) for seq, event in enumerate(self._events)
+        }
         self._persistence = persistence
         self._lock = asyncio.Lock()
         for event in self._events:
@@ -303,7 +334,22 @@ class Session:
 
     @property
     def events(self) -> tuple[SessionEvent, ...]:
-        return tuple(self._events)
+        if self._snapshot is None:
+            self._snapshot = tuple(self._events)
+        return self._snapshot
+
+    def __len__(self) -> int:
+        return len(self._events)
+
+    def last[E: SessionEvent](self, kind: type[E]) -> E | None:
+        """Return the last event of an exact registered kind in constant time."""
+        indexed = self._last.get(kind)
+        return cast(E, indexed[1]) if indexed is not None else None
+
+    def since[E: SessionEvent](self, kind: type[E]) -> tuple[SessionEvent, ...]:
+        """Return the suffix after the last event of this exact kind."""
+        indexed = self._last.get(kind)
+        return tuple(self._events[indexed[0] + 1 if indexed is not None else 0 :])
 
     @property
     def messages(self) -> tuple[Message, ...]:
@@ -356,6 +402,8 @@ class Session:
                         cancelled = True
                 write.result()
             self._events.append(event)
+            self._last[type(event)] = (seq, event)
+            self._snapshot = None
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
             await self.ctx.dispatch(event)

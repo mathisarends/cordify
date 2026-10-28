@@ -30,6 +30,7 @@ import pytest
         "examples.20_pause_resume_stop",
         "examples.21_validated_forms",
         "examples.22_builtin_tool_lifetimes",
+        "examples.23_plugin_lifecycle",
     ],
 )
 def test_offline_sdk_example_runs(module):

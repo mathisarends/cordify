@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from harnessed import (
-    Agent,
+    AgentHandle as Agent,
+)
+from harnessed import (
     Bundle,
     CacheBreakpoints,
     Harness,
@@ -39,8 +41,8 @@ from harnessed.core.events import (
     UserMessage,
 )
 from harnessed.core.session import Session, decode_event, encode_event
+from harnessed.plugins._context.providers import compactor, spill_store
 from harnessed.plugins.agents.loop import agent_loop
-from harnessed.plugins.context.providers import compactor, spill_store
 from harnessed.plugins.persistence import session_jsonl
 from harnessed.plugins.services import llm
 from harnessed.testing import ScriptedLLM
