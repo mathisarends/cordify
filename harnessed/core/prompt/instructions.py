@@ -1,5 +1,3 @@
-"""The public owner of fixed instructions and ordered plugin guidance."""
-
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import InstructionValues, PromptPlan
@@ -18,4 +16,4 @@ class Instructions(Plugin, slot="instructions"):
 
     async def setup(self, ctx: Context):
         plan = self.plan if self.plan is not None else PromptPlan(self.values)
-        ctx[SystemPrompt].fixed(await plan.render(), owner=ctx)
+        ctx[SystemPrompt].fixed(await plan.render(ctx), owner=ctx)

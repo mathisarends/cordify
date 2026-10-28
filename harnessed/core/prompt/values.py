@@ -1,9 +1,10 @@
-"""Ordered, inspectable instructions and plugin guidance, fixed per session."""
-
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Self
+
+from harnessed.kernel import Context
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,13 +16,26 @@ class Section:
     override: bool = False
     _file: Path | None = field(default=None, repr=False)
     _missing_ok: bool = field(default=False, repr=False)
+    _factory: Callable[[Context], Awaitable[str]] | None = field(default=None, repr=False)
+    description: str = ""
 
     @classmethod
-    def from_file(cls, path: str | Path, *, missing_ok: bool = False) -> "Section":
+    def from_file(cls, path: str | Path, *, missing_ok: bool = False) -> Self:
         path = Path(path)
         return cls(str(path), _file=path, _missing_ok=missing_ok)
 
-    async def render(self) -> str:
+    @classmethod
+    def from_factory(
+        cls, name: str, factory: Callable[[Context], Awaitable[str]], *, description: str = ""
+    ) -> Self:
+        """Render session-scoped guidance once through its ordinary plugin context."""
+        return cls(name, _factory=factory, description=description)
+
+    async def render(self, ctx: Context | None = None) -> str:
+        if self._factory is not None:
+            if ctx is None:
+                raise ValueError(f"Section {self.name!r} requires a session context")
+            return await self._factory(ctx)
         if self._file is None:
             return self.text
         try:
@@ -54,7 +68,11 @@ class PromptPlan:
         values = (instructions,) if isinstance(instructions, str) else tuple(instructions)
         entries: dict[str, PromptEntry] = {}
         literal_values = {value for value in values if isinstance(value, str)}
-        literal_values.update(value.text for value in values if isinstance(value, Section))
+        literal_values.update(
+            value.text
+            for value in values
+            if isinstance(value, Section) and value._file is None and value._factory is None
+        )
 
         def add(value: str | Section, origin: str):
             section = value if isinstance(value, Section) else Section(origin, value)
@@ -75,21 +93,32 @@ class PromptPlan:
                 continue
             if not isinstance(guidance, str | Section):
                 raise TypeError("Plugin guidance must be a string, Section or None")
-            if (guidance.text if isinstance(guidance, Section) else guidance) in literal_values:
+            literal = (
+                guidance
+                if isinstance(guidance, str)
+                else (
+                    guidance.text if guidance._file is None and guidance._factory is None else None
+                )
+            )
+            if literal is not None and literal in literal_values:
                 continue
             label = getattr(spec, "name", type(spec).__name__)
             add(guidance, f"{label}.guidance (plugins[{index}])")
         self.entries = tuple(entries.values())
 
-    async def render(self) -> str:
+    async def render(self, ctx: Context | None = None) -> str:
         return "\n\n".join(
-            [text for entry in self.entries if (text := await entry.section.render())]
+            [text for entry in self.entries if (text := await entry.section.render(ctx))]
         )
 
     def __str__(self) -> str:
         lines = [f"System prompt ({len(self.entries)} sections)"]
         for index, entry in enumerate(self.entries, 1):
-            preview = str(entry.section._file) if entry.section._file else entry.section.text[:80]
+            preview = (
+                entry.section.description or str(entry.section._file)
+                if entry.section._file
+                else entry.section.description or entry.section.text[:80]
+            )
             lines.append(f"  {index}. {entry.section.name}: {preview!r} - {entry.origin}")
         if self.context_entries:
             lines.append("Context (dynamic, outside the system prompt)")

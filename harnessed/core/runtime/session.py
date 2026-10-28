@@ -148,7 +148,7 @@ class Session:
         guidance = handle.spec.guidance
         if name is None or guidance is None:
             return
-        text = await guidance.render() if isinstance(guidance, Section) else guidance
+        text = await guidance.render(handle.ctx) if isinstance(guidance, Section) else guidance
         await self.context.set(name, text)
         handle.ctx.effect(lambda: self.context.remove(name))
 
