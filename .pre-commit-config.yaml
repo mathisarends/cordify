@@ -1,0 +1,40 @@
+minimum_pre_commit_version: "4.0.0"
+default_install_hook_types: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # Project tools use uv.lock instead of separate hook environments and versions.
+  - repo: local
+    hooks:
+      - id: uv-lock
+        name: uv lockfile
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock|\.python-version)$
+      - id: ruff-check
+        name: Ruff lint
+        entry: uv run --locked --no-sync ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run --locked --no-sync ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+      - id: ty
+        name: ty type check
+        entry: uv run --locked --no-sync ty check --error-on-warning
+        language: system
+        pass_filenames: false
+        always_run: true

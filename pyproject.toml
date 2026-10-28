@@ -17,7 +17,16 @@ dependencies = ["pydantic>=2.12,<3"]
 
 [project.optional-dependencies]
 deepseek = ["httpx>=0.27,<1"]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27,<1", "ruff>=0.9"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27,<1",
+    "pre-commit>=4,<5",
+    "pytest>=8,<10",
+    "pytest-asyncio>=1,<2",
+    "ruff>=0.17.3,<1",
+    "ty>=0.0.93,<0.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -30,6 +39,8 @@ cordify = ["py.typed"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
 
 [tool.ruff]
 target-version = "py312"
@@ -39,3 +50,10 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 # Shell's public timeout parameter is implemented with asyncio.timeout internally.
 ignore = ["ASYNC109"]
+
+[tool.ty.environment]
+python-version = "3.12"
+python-platform = "all"
+
+[tool.ty.src]
+include = ["cordify", "examples", "scripts"]
