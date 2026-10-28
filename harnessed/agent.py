@@ -19,6 +19,7 @@ from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
 from harnessed.core.runtime.options import RunOptions
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session as LiveSession
+from harnessed.core.session.artifacts import copy_artifacts
 from harnessed.core.session.events import TurnStart
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.repository import SessionRepository
@@ -114,15 +115,18 @@ class Agent:
             ctx.effect(lambda: lease.__aexit__(None, None, None))
             ctx.provide(SessionPersistence, persistence)
             seed = await persistence.load(selected_id)
-            ctx.provide(SessionFiles, ctx[SessionStore].files(selected_id))
+            files = ctx[SessionStore].files(selected_id)
+            ctx.provide(SessionFiles, files)
             if branch is not None:
-                if seed:
+                if seed or await files.entries():
                     raise ConfigError(f"Fork destination {selected_id!r} already contains a log")
                 seed = branch.events
+                missing = await copy_artifacts(seed, branch._fork_files, files)
+                seed = (*seed, *missing)
                 for seq, event in enumerate(seed):
                     await persistence.append(selected_id, seq, event)
                 await persistence.flush()
-            log = SessionLog(selected_id, ctx=ctx, seed=seed, persistence=persistence)
+            log = SessionLog(selected_id, ctx=ctx, seed=seed, persistence=persistence, files=files)
             ctx.effect(log.finish_subscriptions)
             await log.repair_interrupted()
             schemas = [item.output_schema for item in log.inbox.pending]

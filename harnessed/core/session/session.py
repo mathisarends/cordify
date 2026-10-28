@@ -44,6 +44,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
+from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.history import MessageProjection
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.store import SessionPersistence, validate_session_id
@@ -241,6 +242,7 @@ class SessionLog:
         ctx: Context | None = None,
         seed: Iterable[SessionEvent] = (),
         persistence: SessionPersistence | None = None,
+        files: SessionFiles | None = None,
     ):
         self.id = validate_session_id(session_id)
         self.ctx = ctx
@@ -250,6 +252,8 @@ class SessionLog:
             type(event): (seq, event) for seq, event in enumerate(self._events)
         }
         self._persistence = persistence
+        self._files = files
+        self._fork_files: SessionFiles | None = None
         self._usage: ModelUsage | None = None
         self._observers: dict[asyncio.Queue, bool] = {}
         self._subscriptions_closed = False
@@ -578,6 +582,8 @@ class SessionLog:
         self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
     ) -> "SessionLog":
         """Copy an event prefix ending at a closed turn; ``at`` is an exclusive offset."""
+        if session_id == self.id:
+            raise ValueError("A fork requires a distinct session ID")
         if at is not None and (type(at) is not int or not 0 <= at <= len(self._events)):
             raise ValueError("Fork offset must lie inside the session log")
         seed = self._events[:at]
@@ -595,4 +601,6 @@ class SessionLog:
         )
         if not inherit_approvals:
             seed.extend(ApprovalRevoked(item.request_id, "fork") for item in approvals.grants)
-        return SessionLog(session_id, seed=seed)
+        branch = SessionLog(session_id, seed=seed)
+        branch._fork_files = self._files if self._files is not None else self._fork_files
+        return branch
