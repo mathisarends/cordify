@@ -40,7 +40,7 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 ### P1-8 — Boundary validation
 
-- Replace the remaining legacy compaction and rule option validators with
+- Replace the remaining legacy compaction option validators with
   declarative constraints as those feature plugins migrate.
 
 ### P1-10 — Finish the PydanticAI migration

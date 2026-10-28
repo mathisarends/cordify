@@ -3,8 +3,8 @@ from typing import Annotated
 from pydantic import Field
 
 from harnessed.core.plugin import Plugin, PluginConfig
-from harnessed.core.runtime.session import Session as Agent
 from harnessed.core.session.events import ObservationPolicyApplied
+from harnessed.core.session.session import SessionLog
 from harnessed.kernel import Inject
 
 
@@ -19,10 +19,10 @@ class LatestObservationOnly(Plugin):
     def __init__(self, *, max_summaries: int = 8):
         super().__init__(max_summaries=max_summaries)
 
-    async def setup(self, agent: Inject[Agent]):
-        previous = agent.log.last(ObservationPolicyApplied)
+    async def setup(self, session: Inject[SessionLog]):
+        previous = session.last(ObservationPolicyApplied)
         self._previous = previous.max_summaries if previous is not None else None
-        await agent.log.append(ObservationPolicyApplied(self.config.max_summaries))
+        await session.append(ObservationPolicyApplied(self.config.max_summaries))
 
-    async def teardown(self, agent: Inject[Agent]):
-        await agent.log.append(ObservationPolicyApplied(self._previous))
+    async def teardown(self, session: Inject[SessionLog]):
+        await session.append(ObservationPolicyApplied(self._previous))

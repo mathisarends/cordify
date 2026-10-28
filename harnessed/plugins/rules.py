@@ -1,30 +1,61 @@
+import inspect
 import json
 from collections import Counter
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
+from dataclasses import replace
+from typing import Annotated, Literal
+
+from pydantic import AfterValidator, ConfigDict, Field, StringConstraints, TypeAdapter
+from pydantic.dataclasses import dataclass
 
 from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.messages import ToolCall, ToolResult, to_dict, user
 from harnessed.core.plugin import Plugin
-from harnessed.core.runtime.session import Session as Agent
+from harnessed.core.prompt.context import DynamicContext
+from harnessed.core.runtime.inbox import SessionInbox
 from harnessed.core.session.events import RuleEvaluated, RuleTriggered, ToolCalled, ToolReturned
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter, count_content
 from harnessed.kernel import Inject, hook
 
 
-@dataclass(frozen=True)
-class Rule:
-    tools: tuple[str, ...] = ()
-    command_contains: str | None = None
-    exit_code: int | Callable[[int], bool] | None = None
-    repeated: int = 1
-    result_tokens_over: int | None = None
-    predicate: Callable[[ToolCall, ToolResult], bool] | None = None
-    actions: tuple[tuple[str, str], ...] = ()
+def _synchronous(callback):
+    if inspect.iscoroutinefunction(callback) or inspect.iscoroutinefunction(
+        type(callback).__call__
+    ):
+        raise ValueError("Rule conditions must be synchronous")
+    return callback
 
-    def _action(self, kind: str, text: str) -> "Rule":
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("Rule actions require non-empty text")
+
+type ActionKind = Literal["note", "context", "steer"]
+type RuleText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
+type ExitCondition = Annotated[Callable[[int], bool], AfterValidator(_synchronous)]
+type ResultCondition = Annotated[
+    Callable[[ToolCall, ToolResult], bool], AfterValidator(_synchronous)
+]
+_CONFIG = ConfigDict(strict=True, extra="forbid", allow_inf_nan=False, hide_input_in_errors=True)
+_BOOL = TypeAdapter(bool, config=ConfigDict(strict=True, hide_input_in_errors=True))
+
+
+def _condition(callback, *args) -> bool:
+    result = callback(*args)
+    if inspect.iscoroutine(result):
+        result.close()
+    return _BOOL.validate_python(result)
+
+
+@dataclass(frozen=True, config=_CONFIG)
+class Rule:
+    __hash__ = None
+    tools: tuple[RuleText, ...] = ()
+    command_contains: str | None = None
+    exit_code: int | ExitCondition | None = None
+    repeated: Annotated[int, Field(ge=1)] = 1
+    result_tokens_over: Annotated[int, Field(ge=0)] | None = None
+    predicate: ResultCondition | None = None
+    actions: tuple[tuple[ActionKind, RuleText], ...] = ()
+
+    def _action(self, kind: ActionKind, text: str) -> "Rule":
         return replace(self, actions=(*self.actions, (kind, text)))
 
     def note(self, text: str) -> "Rule":
@@ -44,7 +75,7 @@ class Rule:
             if result.exit_code is None:
                 return False
             if callable(self.exit_code):
-                if not self.exit_code(result.exit_code):
+                if not _condition(self.exit_code, result.exit_code):
                     return False
             elif result.exit_code != self.exit_code:
                 return False
@@ -53,7 +84,7 @@ class Rule:
             and count_content(counter, result.content) <= self.result_tokens_over
         ):
             return False
-        return self.predicate is None or self.predicate(call, result)
+        return self.predicate is None or _condition(self.predicate, call, result)
 
 
 def when(
@@ -65,15 +96,7 @@ def when(
     result_tokens_over: int | None = None,
     predicate: Callable[[ToolCall, ToolResult], bool] | None = None,
 ) -> Rule:
-    if type(repeated) is not int or repeated < 1:
-        raise ValueError("repeated must be a positive integer")
-    if result_tokens_over is not None and (
-        type(result_tokens_over) is not int or result_tokens_over < 0
-    ):
-        raise ValueError("result_tokens_over must be a non-negative integer")
     tools = () if tool is None else (tool,) if isinstance(tool, str) else tuple(tool)
-    if any(not isinstance(name, str) or not name for name in tools):
-        raise ValueError("Tool names must be non-empty strings")
     return Rule(tools, command_contains, exit_code, repeated, result_tokens_over, predicate)
 
 
@@ -104,14 +127,19 @@ class Rules(Plugin):
         self._last_counts[index] = self._counts[key]
         return key, self._counts[key]
 
-    async def setup(self, agent: Inject[Agent], counter: Inject[TokenCounter]):
+    async def setup(
+        self,
+        session: Inject[SessionLog],
+        context: Inject[DynamicContext],
+        counter: Inject[TokenCounter],
+    ):
         self._counts: Counter = Counter()
         self._last_counts = {}
         # Legacy per-evaluation records are read only during migration. New logs
         # keep match bits with the canonical result, surviving notes/spill/limits.
         stored = [
             event
-            for event in agent.log.events
+            for event in session.events
             if isinstance(event, RuleEvaluated) and event.rule.startswith(f"{self.name}:")
         ]
         for index in range(len(self.rules)):
@@ -120,7 +148,7 @@ class Rules(Plugin):
                     self._counts[(index, event.key)] = event.occurrence
                     self._last_counts[index] = event.occurrence
         calls = {}
-        for event in agent.log.events:
+        for event in session.events:
             if isinstance(event, ToolCalled):
                 calls[event.call.id] = event.call
             elif isinstance(event, ToolReturned) and event.call_id in calls:
@@ -141,10 +169,18 @@ class Rules(Plugin):
         for index, rule in enumerate(self.rules):
             for kind, text in rule.actions:
                 if kind == "context" and self._last_counts.get(index, 0) >= rule.repeated:
-                    await agent.context.set(f"rule:{self.name}:{index}", text)
+                    await context.set(f"rule:{self.name}:{index}", text)
 
     @hook(ReviewToolResult)
-    async def review(self, event, next_, agent: Inject[Agent], counter: Inject[TokenCounter]):
+    async def review(
+        self,
+        event,
+        next_,
+        session: Inject[SessionLog],
+        context: Inject[DynamicContext],
+        inbox: Inject[SessionInbox],
+        counter: Inject[TokenCounter],
+    ):
         result = await next_()
         matches = list(result.rule_matches)
         for index, rule in enumerate(self.rules):
@@ -160,9 +196,9 @@ class Rules(Plugin):
                     and count == 0
                     and any(kind == "context" for kind, _ in rule.actions)
                 ):
-                    await agent.context.remove(f"rule:{self.name}:{index}")
+                    await context.remove(f"rule:{self.name}:{index}")
                 continue
-            await agent.log.append(
+            await session.append(
                 RuleTriggered(
                     f"{self.name}:{index}",
                     event.call.id,
@@ -174,12 +210,12 @@ class Rules(Plugin):
                 if kind == "note":
                     result = result.with_note(text)
                 elif kind == "context":
-                    await agent.context.set(f"rule:{self.name}:{index}", text)
+                    await context.set(f"rule:{self.name}:{index}", text)
                 else:
-                    await agent.steer(user(text))
+                    await inbox.steer(user(text))
         return replace(result, rule_matches=tuple(matches))
 
-    async def teardown(self, agent: Inject[Agent]):
+    async def teardown(self, context: Inject[DynamicContext]):
         for index, rule in enumerate(self.rules):
             if any(kind == "context" for kind, _ in rule.actions):
-                await agent.context.remove(f"rule:{self.name}:{index}")
+                await context.remove(f"rule:{self.name}:{index}")

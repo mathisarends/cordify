@@ -264,3 +264,61 @@ def test_rules_are_immutable_and_require_actions():
     assert condition.actions == ()
     assert condition.note("a").actions == (("note", "a"),)
     assert condition.steer("b").actions == (("steer", "b"),)
+
+
+@pytest.mark.parametrize(
+    "options", [{"tool": ""}, {"tool": ["valid", " "]}, {"repeated": "2"}, {"exit_code": True}]
+)
+def test_rule_option_constraints_reject_ambiguous_values(options):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        when(**options)
+
+
+def test_rule_conditions_are_sync_and_must_return_booleans():
+    from pydantic import ValidationError
+
+    from harnessed.core.tokens import ApproximateTokenCounter
+
+    async def async_exit(code):
+        return code != 0
+
+    async def async_result(call, result):
+        return True
+
+    with pytest.raises(ValidationError, match="synchronous"):
+        when(exit_code=async_exit)
+    with pytest.raises(ValidationError, match="synchronous"):
+        when(predicate=async_result)
+    with pytest.raises(ValidationError):
+        when(predicate=lambda call, result: "truthy").matches(
+            ToolCall("test"), ToolResult("text"), ApproximateTokenCounter()
+        )
+    with pytest.raises(ValidationError):
+        when().note(" ")
+
+
+async def test_rule_and_observation_policies_mount_with_narrow_services_without_a_driver():
+    from harnessed.core.prompt.context import DynamicContext
+    from harnessed.core.runtime.control import SessionControl
+    from harnessed.core.runtime.inbox import SessionInbox
+    from harnessed.core.session.session import SessionLog
+    from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
+    from harnessed.kernel import Context
+    from harnessed.plugins import LatestObservationOnly
+
+    async def unused_driver():
+        pytest.fail("Mounting a policy started the driver")
+
+    async with Context() as ctx:
+        log = SessionLog("policy", ctx=ctx)
+        control = SessionControl(log, unused_driver, lambda: False)
+        ctx.provide(SessionLog, log)
+        ctx.provide(DynamicContext, DynamicContext(log))
+        ctx.provide(SessionInbox, SessionInbox(log, control))
+        ctx.provide(TokenCounter, ApproximateTokenCounter())
+        handles = await ctx.install(
+            [Rules([when(tool="test").context("fact")]), LatestObservationOnly()], settle=True
+        )
+        assert all(handle.status == "active" for handle in handles)
