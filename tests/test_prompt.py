@@ -17,10 +17,10 @@ async def test_plugin_unload_restores_shadowed_tools_and_prompt_sections():
 
     @plugin
     async def override(ctx, registry: Inject[ToolRegistry], prompt: Inject[SystemPrompt]):
-        prompt.section("persona", "override", order=10)
+        prompt.section("persona", "override", order=10, override=True)
         prompt.section("project", "rules", order=20)
 
-        @registry.tool
+        @registry.tool(override=True)
         async def greet() -> str:
             return "override"
 

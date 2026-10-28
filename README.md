@@ -1653,3 +1653,26 @@ sync at each append, or `"buffered"` for explicit barriers. Tools flush their
 start record before execution, closed turns flush, and adapter close flushes.
 `await session.flush()` provides an explicit barrier for hosts. A buffered event
 can be lost on abrupt process termination before a barrier.
+
+### Registration ownership, overrides, and safe errors
+
+`ToolRegistry.register`, `registry.tool`, and `SystemPrompt.section` accept
+`owner=ctx`. Agent `on`/`add_hook` accept the same option. If omitted, the current
+plugin context owns the registration; outside an activated plugin, the registry
+or agent context owns it. Registrations stay hidden during plugin setup, become
+visible when activation completes, and disappear before asynchronous teardown
+finishes. Teardown may still resolve its stopping providers until cleanup ends.
+Debug logging records owner assignment.
+
+Duplicate tool names raise `ToolNameConflict`; duplicate section names raise
+`PromptSectionConflict`. Use `override=True` deliberately. Disposing an override
+restores the previous registration. `prompt.invalidate(name)` clears cached
+section values; `stable_for=timedelta(...)` sets a fixed cache duration. Sync
+section functions should be fast; use an async function for I/O.
+
+Tools may raise `harnessed.core.tools.ToolError("Safe message for the model")`.
+Unexpected exceptions become `"tool_name failed: ExceptionType"`; full tracebacks
+go to the library logger. Schema errors retain field validation guidance without
+input values. Customize this with `agent_loop(error_formatter=callback)` where
+`callback(call, exception)` returns the message. Tools may declare `readonly=True`;
+this metadata is available to approval policies.

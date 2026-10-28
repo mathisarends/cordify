@@ -1,6 +1,9 @@
+import logging
 from typing import TYPE_CHECKING
 
 from ._exports import exported
+
+logging.getLogger("harnessed").addHandler(logging.NullHandler())
 
 if TYPE_CHECKING:
     from harnessed.adapters.base import RetryPolicy as RetryPolicy

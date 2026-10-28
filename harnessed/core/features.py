@@ -19,6 +19,8 @@ class ToolRegistration:
     timeout: float | None = None
     parallel: bool = False
     resources: ResourceSpec = ()
+    readonly: bool = False
+    override: bool = False
     needs: ClassVar[tuple] = (ToolRegistry,)
 
     def mount(self, ctx: Context, callback: Callable):
@@ -28,6 +30,9 @@ class ToolRegistration:
             timeout=self.timeout,
             parallel=self.parallel,
             resources=self.resources,
+            readonly=self.readonly,
+            override=self.override,
+            owner=ctx,
         )
 
 
@@ -42,6 +47,8 @@ def tool[F: Callable[..., Any]](
     timeout: float | None = None,
     parallel: bool = False,
     resources: ResourceSpec = (),
+    readonly: bool = False,
+    override: bool = False,
 ) -> Callable[[F], F]: ...
 
 
@@ -53,6 +60,8 @@ def tool(
     timeout: float | None = None,
     parallel: bool = False,
     resources: ResourceSpec = (),
+    readonly: bool = False,
+    override: bool = False,
 ):
     resources = resource_spec(resources)
 
@@ -62,10 +71,12 @@ def tool(
             "timeout": timeout,
             "parallel": parallel,
             "resources": resources,
+            "readonly": readonly,
+            "override": override,
         }
         callback._harnessed_registrations = [
             *getattr(callback, "_harnessed_registrations", ()),
-            ToolRegistration(name, timeout, parallel, resources),
+            ToolRegistration(name, timeout, parallel, resources, readonly, override),
         ]
         return callback
 
@@ -81,9 +92,12 @@ class Bundle(KernelBundle):
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
+        readonly: bool = False,
+        override: bool = False,
     ):
         return self.add_registration(
-            ToolRegistration(name, timeout, parallel, resource_spec(resources)), callback
+            ToolRegistration(name, timeout, parallel, resource_spec(resources), readonly, override),
+            callback,
         )
 
     @overload
@@ -97,6 +111,8 @@ class Bundle(KernelBundle):
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
+        readonly: bool = False,
+        override: bool = False,
     ) -> Callable[[F], F]: ...
 
     def tool(
@@ -108,10 +124,18 @@ class Bundle(KernelBundle):
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
+        readonly: bool = False,
+        override: bool = False,
     ):
         def register(callback):
             return self.add_tool(
-                callback, name=name, timeout=timeout, parallel=parallel, resources=resources
+                callback,
+                name=name,
+                timeout=timeout,
+                parallel=parallel,
+                resources=resources,
+                readonly=readonly,
+                override=override,
             )
 
         return register(fn) if fn is not None else register

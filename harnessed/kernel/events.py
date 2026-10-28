@@ -1,9 +1,12 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from .di import BindingPlan, binding_plan
 from .effects import Disposer, resolve
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .context import Context
@@ -51,6 +54,9 @@ class EventBus:
         if type(priority) is not int:
             raise TypeError("Listener priority must be an integer")
         listener = _Listener(event, callback, owner, binding_plan(callback), priority)
+        log.debug(
+            "Registered %s listener with owner %r at priority %d", event.__name__, owner, priority
+        )
         if prepend:
             self.listeners.insert(0, listener)
         else:

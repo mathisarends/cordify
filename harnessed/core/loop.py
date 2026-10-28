@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AsyncExitStack
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
@@ -65,7 +65,7 @@ from .prompt import SystemPrompt
 from .scheduling import ToolPlan, ToolScheduler, ToolScheduling
 from .session import Session
 from .stream import SessionPublished, TextDelta, TransientEvent
-from .tools import ToolRegistry
+from .tools import ErrorFormatter, ToolRegistry, format_tool_error
 
 type AgentEvent = SessionEvent | TransientEvent
 _preparing: ContextVar["Agent | None"] = ContextVar("harnessed_preparing", default=None)
@@ -81,6 +81,7 @@ class AgentOptions:
     tool_output_limit: ToolOutputLimit = field(default_factory=ToolOutputLimit)
     max_parallel_tools: int = 4
     approval_timeout: float = 300.0
+    error_formatter: ErrorFormatter | None = None
 
     def __post_init__(self):
         if not self.model:
@@ -134,16 +135,18 @@ class Agent:
     def inbox(self):
         return self.session.inbox
 
-    def on(self, event, fn=None, *, prepend: bool = False, priority: int = 0):
-        owner = Context.current() or self.ctx
+    def on(self, event, fn=None, *, prepend: bool = False, priority: int = 0, owner=None):
+        owner = owner if owner is not None else Context.current() or self.ctx
         return owner.on(event, fn, prepend=prepend, priority=priority)
 
     @property
     def tool(self):
         return self.ctx[ToolRegistry].tool
 
-    def add_hook(self, event, callback, *, prepend: bool = False, priority: int = 0) -> Disposer:
-        owner = Context.current() or self.ctx
+    def add_hook(
+        self, event, callback, *, prepend: bool = False, priority: int = 0, owner=None
+    ) -> Disposer:
+        owner = owner if owner is not None else Context.current() or self.ctx
         return owner.add_listener(event, callback, prepend=prepend, priority=priority)
 
     def add_tool(self, callback, **options) -> Disposer:
@@ -636,7 +639,11 @@ class Agent:
             except Exception as exc:
                 plans.append(
                     ToolPlan(
-                        call, ToolScheduling(), ToolResult.error(f"{type(exc).__name__}: {exc}")
+                        call,
+                        ToolScheduling(),
+                        ToolResult.error(
+                            format_tool_error(call, exc, self.options.error_formatter)
+                        ),
                     )
                 )
         scheduler = ToolScheduler(self.options.max_parallel_tools)
@@ -690,7 +697,7 @@ class Agent:
             await self.session.append(ToolPolicyApplied(call.id, Decision.DENY))
             return ToolResult.unavailable(str(exc))
         except Exception as exc:
-            return ToolResult.error(f"{type(exc).__name__}: {exc}")
+            return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
 
     async def _invoke_tool(self, plan: ToolPlan) -> tuple[ToolResult, bool]:
         call = plan.call
@@ -705,6 +712,7 @@ class Agent:
                     ctx=self.ctx,
                     call_context=execution,
                     _expected=plan.binding,
+                    error_formatter=self.options.error_formatter,
                 ),
             )
             if not isinstance(result, ToolResult):
@@ -714,7 +722,9 @@ class Agent:
             execution.signal.set()
             raise
         except Exception as exc:
-            return ToolResult.error(f"{type(exc).__name__}: {exc}"), False
+            return ToolResult.error(
+                format_tool_error(call, exc, self.options.error_formatter)
+            ), False
 
     async def _review_tool(self, call: ToolCall, result: ToolResult) -> ToolResult:
         try:
@@ -726,7 +736,7 @@ class Agent:
                 raise TypeError("Tool hooks must return a ToolResult")
             return result
         except Exception as exc:
-            return ToolResult.error(f"{type(exc).__name__}: {exc}")
+            return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
 
     async def _respond(self, request: ModelRequest) -> Message:
         message_id, calls = uuid4().hex, []
@@ -769,7 +779,12 @@ class Agent:
 
 
 class ReactLoopFactory:
+    def __init__(self, *, error_formatter: ErrorFormatter | None = None):
+        self.error_formatter = error_formatter
+
     def create(self, ctx: Context, session: Session, options: AgentOptions) -> Agent:
+        if self.error_formatter is not None:
+            options = replace(options, error_formatter=self.error_formatter)
         return Agent(ctx, session, options)
 
 

@@ -362,7 +362,7 @@ async def test_invalid_resource_resolver_is_a_bounded_tool_error():
     async with minimal(model, plugins=[tools]).session("invalid") as agent:
         await agent.run("go")
         result = next(e.result for e in agent.session.events if isinstance(e, ToolReturned))
-        assert result.is_error and "Resource names" in result.content
+        assert result.is_error and result.content == "invalid failed: ValueError"
 
 
 async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadata():
@@ -387,7 +387,7 @@ async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadat
         nonlocal replaced
         if not replaced:
             replaced = True
-            event.agent.ctx[ToolRegistry].register(replacement, name="work")
+            event.agent.ctx[ToolRegistry].register(replacement, name="work", override=True)
         return await next_()
 
     calls = (ToolCall("work"), ToolCall("work"))

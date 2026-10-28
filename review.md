@@ -8,6 +8,9 @@
 - P1-4 (partial): immutable plugin keyword configuration. P1-9 (partial): cached tool schemas and redundant validation removed.
 - P0-2: resolved — `Session.publish(TextDelta)` is transient; the model buffer commits one completed/interrupted `AssistantMessage`. Legacy chunk logs remain readable for resume.
 - P0-3: resolved — serialized off-thread JSONL I/O, explicit durability/flush/close, write errors retained, cancellation drains acknowledged writes before projection commit.
+- P1-5: resolved — explicit registration owners plus debug logging, ambient ownership remains the documented fallback.
+- P1-11: resolved — direct sync section evaluation, explicit overrides, invalidation and fixed-duration caching.
+- P0-5 (partial): exception redaction and `ToolError`; configurable `agent_loop(error_formatter=...)`. P1-9 (partial): `ToolNameConflict`, explicit overrides.
 - Remaining findings: open; implementation and verification are in progress.
 
 **Stand:** 2026-10-28 · Commit `c78d4fd` plus lokal gestagte CI-Änderungen (pre-commit, ty, uv.lock)
@@ -87,7 +90,7 @@ Harnessed ist technisch sehr sorgfältig gebaut. Der Kernel ist sauber, die Schi
 | Structured Output | ❌ | 3.3 |
 | Multimodale Tool-Results (Computer Use, Screenshots) | ❌ `ToolResult.content: str` | P0-6 |
 | Subagents / Handoffs | ❌ | 4.3 |
-| MCP | ❌ | 4.3 |
+| MCP | ❌ (bewusst später) | 4.3 |
 | Logging / Tracing / OTel | ❌ kein einziges `logging` | P0-4 |
 | Mehr als ein Provider | ❌ nur DeepSeek plus `ScriptedLLM` | P1-10 |
 | Sichere Defaults | ❌ `ToolPolicy` per Default `ALLOW` | P0-5 |
@@ -236,7 +239,7 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
   - stdout und stderr inkrementell lesen und nach `max_output_bytes` (Default 1 MB) abschneiden, mit einem Truncation-Marker.
   - `LocalShell(max_timeout=600)` begrenzt den vom Modell gewählten Wert.
   - Optional `env=`-Allowlist und `cwd`-Jail.
-- **Exception-Texte gehen ans Modell:** `ToolResult.error(f"{type(exc).__name__}: {exc}")` (`core/tools.py:203`, `core/loop.py:678`). Das leakt Pfade, Connection-Strings und Secrets in den Prompt, ins Log und zum Provider.
+~~- **Exception-Texte gehen ans Modell:** `ToolResult.error(f"{type(exc).__name__}: {exc}")` (`core/tools.py:203`, `core/loop.py:678`). Das leakt Pfade, Connection-Strings und Secrets in den Prompt, ins Log und zum Provider.~~
   **→ Empfehlung:**
   - Ein `error_formatter` als Option des Loop-Plugins (`agent_loop(error_formatter=...)`). Der Default ist `"{tool} failed: {ExceptionType}"`.
   - Mit `ToolError("message for the model")` kann ein Tool bewusst eine Nachricht ans Modell geben.
@@ -340,7 +343,9 @@ Zusätzlich gibt es ein öffentliches Event `PluginFailed(plugin, error)`, auf d
 
 Factory-Funktionen, die Instanzen zurückgeben, werden auf einen der beiden Stile umgestellt.
 
-#### P1-5 · Ambient-Owner-Auflösung über `Context.current()`
+#### ~~P1-5 · Ambient-Owner-Auflösung über `Context.current()`~~
+
+**Resolved:** Tool, prompt, and agent hook registrations accept an explicit owner. Debug logs identify registration ownership. The ambient fallback and teardown visibility are documented in README.
 `ToolRegistry.register` (`core/tools.py:78`), `SystemPrompt.section` (`core/prompt.py:34`), `Agent.on` und `add_hook` bestimmen den Owner über die contextvar. Ob ein Tool beim Dispose eines Plugins verschwindet, hängt also davon ab, *von wo* es registriert wurde. Dazu kommt die Sichtbarkeitsregel in `_binding` (`current._closed and handle.status == "stopping"`).
 
 **→ Empfehlung:**
@@ -392,13 +397,13 @@ Heute steckt Pydantic nur in den Tool-Args und im DeepSeek-Wire. Überall sonst 
 Regel für Contributor: *„Kommt der Wert von außen (User-Config, Datei, Netzwerk, Modell)? Dann Pydantic. Ist er intern erzeugt? Dann Dataclass.“* Diese Regel gehört in `CONTRIBUTING.md`.
 
 #### P1-9 · Tool-System
-- **Shadowing ohne Warnung:** Ein zweites Tool mit gleichem Namen verdeckt das erste (`core/tools.py:106-107`, `_visible` nimmt das letzte). Gedacht ist das für Overrides, es versteckt aber Bugs, etwa wenn zwei Plugins oder später zwei MCP-Server zufällig ein `search` mitbringen.
+~~- **Shadowing ohne Warnung:** Ein zweites Tool mit gleichem Namen verdeckt das erste (`core/tools.py:106-107`, `_visible` nimmt das letzte). Gedacht ist das für Overrides, es versteckt aber Bugs, etwa wenn zwei Plugins oder später zwei MCP-Server zufällig ein `search` mitbringen.~~
   **→ Empfehlung: Standardmäßig failen.**
   - `register` wirft `ToolNameConflict` mit beiden Ownern in der Meldung. Der Fehler schlägt im `setup` des Plugins auf, wird nach P0-4 sofort geloggt, und das Plugin startet nicht.
   - Gewollte Overrides deklarieren das mit `@tool(override=True)` bzw. `register(..., override=True)`.
   - Kein Warning als Zwischenstufe, denn Warnings gehen im Log unter. Vor 1.0 kostet ein harter Fehler nichts, und ein falsches Tool ist eine stille Fehlfunktion, die sich zur Laufzeit kaum findet.
   - Die Owner-Logik bleibt erhalten: Wird das überschreibende Plugin disposed, ist das ursprüngliche Tool wieder sichtbar.
-  - Für MCP gibt es optional ein Präfix (`mcp(server, prefix="github")` → `github.search`), damit Konflikte gar nicht erst entstehen.
+  - Ein späterer MCP-Client bekommt optional ein Präfix (`github.search`), damit Konflikte gar nicht erst entstehen.
 - **Drei `tool`-Decorators mit kopierten Overloads** (`ToolRegistry.tool`, `features.tool`, `Bundle.tool`) und zwei Metadaten-Attribute (`_harnessed_tool`, `_harnessed_registrations`).
   **→ Empfehlung:** Ein `harnessed.tool`, der ein `ToolSpec` an die Funktion hängt. Registry und Bundle konsumieren dieses Spec.
 - **Sync-Tools laufen in Threads und sind nicht abbrechbar.** `asyncio.timeout` lässt den Thread weiterlaufen.
@@ -433,15 +438,16 @@ Regel für Contributor: *„Kommt der Wert von außen (User-Config, Datei, Netzw
 - **Doppelte Namen überschreiben still:** Ein zweites `persona(...)` ersetzt das erste.
 - **Sync-Callables laufen per `asyncio.to_thread`** (`core/prompt.py:62`), obwohl sie meist triviale String-Funktionen sind.
 
-**→ Empfehlung:** Den System-Prompt explizit machen und von dynamischem Kontext trennen.
-1. **`instructions=` ist der komplette System-Prompt** als geordnete Liste aus `str` und `Section(name, text)`. Er wird wörtlich übernommen, in Listenreihenfolge, getrennt durch Leerzeilen. Es gibt keine Order-Zahlen und kein `stable`-Flag.
-2. **Plugins schreiben nicht selbst in den Prompt**, sie bieten Text als Wert an (`GitHub.guidance`), den die App in die Liste setzt. Der Text bleibt beim Plugin, die Platzierung ist sichtbar.
-3. **Der System-Prompt ist pro Session fest.** `agents_md()` wird `Section.from_file("AGENTS.md")`, einmal beim Start der Session gelesen.
-4. **Was sich ändert, ist Kontext:** `context(name, fn)` als Plugin bzw. `session.context.set(...)`. Das Modell bekommt ihn als `<context name="…">`-User-Message vor der neuen Nachricht, nur bei Änderung. Das vorhandene `ContextMessage`-Event trägt das bereits.
-5. **`agent.prompt`** zeigt die Komposition mit Herkunft jeder Section, den aktuellen Kontext und angebotene, aber ungenutzte `guidance`.
-6. **Doppelte Section-Namen sind ein Fehler**, außer mit `override=True` (wie bei Tools, P1-9). Sync-Callables für Kontext werden direkt aufgerufen.
+**→ Empfehlung:** Eine feste Regel statt Order-Zahlen, und dynamischer Kontext getrennt vom System-Prompt.
+1. **Eine Regel in einem Satz:** Der System-Prompt besteht aus den `instructions` (`str` oder Liste aus `str`/`Section`), gefolgt von der `guidance` jedes Plugins in der Reihenfolge von `plugins=`. Alles wird wörtlich übernommen und durch Leerzeilen getrennt. Es gibt keine Order-Zahlen und kein `stable`-Flag.
+2. **Colocation ohne Prompt-API:** Ein Plugin deklariert nur ein Attribut `guidance = "..."`. Es ruft keine `section(...)`-API auf. Gerendert wird allein vom `instructions`-Plugin.
+3. **Überschreibbar ohne Hook:** Steht `plugin.guidance` in `instructions`, erscheint die Guidance dort und wird nicht doppelt angehängt. `guidance=None` lässt sie weg, `guidance="..."` ersetzt sie.
+4. **Der System-Prompt ist pro Session fest.** `agents_md()` wird zu `Section.from_file("AGENTS.md")` und wird einmal beim Start der Session gelesen. Plugins, die erst per `session.use(...)` dazukommen, liefern ihre Guidance als Kontext.
+5. **Was sich ändert, ist Kontext:** `context(name, fn)` als Plugin bzw. `session.context.set(...)`. Das Modell bekommt ihn als `<context name="…">`-User-Message vor der neuen Nachricht, und nur bei Änderung. Das vorhandene `ContextMessage`-Event trägt das bereits.
+6. **`agent.prompt`** zeigt jede Zeile mit Herkunft (`instructions[1]`, `GitHub.guidance (plugins[0])`) und den aktuellen Kontext.
+7. **Doppelte Section-Namen sind ein Fehler**, außer mit `override=True` (wie bei Tools, P1-9). Sync-Callables für Kontext werden direkt aufgerufen.
 
-DSH löst das anders: Plugins registrieren Sections selbst, und eine zentrale Tabelle vergibt Order-Zahlen (`SECTION_ORDERS` in `packages/core/system-prompt`). Das funktioniert für eine geschlossene App mit bekannten Plugins und eigener UI. In einem SDK mit Plugins von Dritten kollidieren die Zahlen, und die Platzierung bleibt unsichtbar. Die Trennung in Sections und Kontext übernehmen wir dagegen von DSH.
+Bei DSH liefern Plugins ihre Sections ebenfalls selbst. Die Position bestimmt dort aber eine zentrale Tabelle mit Order-Zahlen (`SECTION_ORDERS` in `packages/core/system-prompt`). Das funktioniert für eine geschlossene App mit bekannten Plugins. In einem SDK mit Plugins von Dritten kollidieren die Zahlen. Wir übernehmen deshalb die Colocation und die Trennung von Sections und Kontext, ersetzen die Zahlen aber durch die Reihenfolge von `plugins=`.
 
 Zielbild: [`api-target.md`](api-target.md), Abschnitt 4.
 
@@ -457,6 +463,7 @@ Zielbild: [`api-target.md`](api-target.md), Abschnitt 4.
 - **P2-1 · Typing-Tiefe.** `ty --error-on-warning` läuft in CI, das ist gut. Ob die *öffentliche* API so typisiert ist, wie Nutzer sie erleben, prüft aber noch nichts (z. B. ParamSpec-Verlust in P1-4). Dazu kommt `PluginHandle.status` (`kernel/plugin.py:91`) als `str` statt `Literal`.
   **→ Empfehlung:**
   - Ein `tests/typing/`-Ordner mit `assert_type`-Fällen für die wichtigsten Signaturen (`tool`, `plugin`, `Inject`, `run`), den ty mitprüft.
+  - **Hooks typisieren.** Heute sind `event` und `next_` in allen Beispielen untypisiert. `next_` ist ein lokales `async def` in `kernel/events.py:103`, für das es keinen öffentlichen Typ gibt. Vorschlag: `type Next[R] = Callable[[], Awaitable[R]]` im Kernel, exportiert über `harnessed.hooks`. `hook`/`ctx.hook` werden generisch, sodass ein Waterfall-Hook `async def f(event: E, next_: Next[R]) -> R` heißt und der Typechecker einen falschen Rückgabetyp meldet. Für emit gilt `(event: E) -> None`, für bail `(event: E) -> R | None`. README und Beispiele zeigen ausschließlich typisierte Hooks.
   - Statusfelder als `Literal` oder `Enum`.
 - **P2-2 · Lokale Imports als Zyklus-Workaround** (`presets.py:67-69`, `129-130`, `154-158`; `plugins/permissions/approval.py:49`; `kernel/plugin.py`).
   **→ Empfehlung:** Zyklen über die Aufteilung in P1-1 und P1-9 auflösen. Danach verbietet Ruff mit `PLC0415` (import-outside-toplevel) neue lokale Imports.
@@ -572,7 +579,7 @@ async with agent.session("calc") as session:
 Ein Import für den Normalfall. Ein Plugin, das nur Tools enthält, ist die einfachste Plugin-Form und braucht weder Context noch Hooks. Hooks und Inject sind die *zweite* Ebene, für alle, die das Verhalten des Loops ändern wollen.
 
 **Die Fassade ist Zucker über Plugins, kein zweites System.** Damit bleibt das Cordis/DSH-Prinzip „everything is a plugin“ erhalten:
-1. **`Agent` hat genau drei Parameter:** `llm`, `instructions` und `plugins`. Alles andere ist ein Plugin in `plugins=[...]`, also Tools, Persistenz, Approvals, Compaction, Spill, MCP und Services (`provide(T, obj)`). Es gibt keine Parameter wie `tools=`, `compaction=` oder `services=`.
+1. **`Agent` hat genau drei Parameter:** `llm`, `instructions` und `plugins`. Alles andere ist ein Plugin in `plugins=[...]`, also Tools, Persistenz, Approvals, Compaction, Spill, Subagents und Services (`provide(T, obj)`). Es gibt keine Parameter wie `tools=`, `compaction=` oder `services=`.
 2. **Tools leben immer in Plugins**, als `@tool`-Methoden einer `Plugin`-Klasse (oder `@ctx.tool` im funktionalen Stil). Lose Funktionen als Tools gibt es nicht. Ein Plugin bündelt so zusammengehörige Tools mit ihrem Zustand, ihrer Config und ihrem Lebenszyklus, und es gibt genau einen Registrierungsweg. Ein eigenes `Toolset`-Konzept ist damit überflüssig.
 3. **Jeder Parameter entspricht 1:1 einem öffentlichen Plugin.** Ein Test sichert ab, dass `Agent(llm=x, instructions=s)` exakt `Agent(plugins=[llm(x), instructions(s)])` ergibt.
 4. **Defaults sind normale Plugins mit Slot:** `agent_loop`, `memory_sessions`, `ToolOutputLimit`, `Approvals()` und der No-op-Tracer. Ein Plugin mit demselben Slot ersetzt den Default. Ein doppelter Slot in `plugins=` ist ein `PluginConflict`.
@@ -644,7 +651,7 @@ Defaults und `PolicyDecision`/`ApprovalAnswer` stehen in P0-5 und P0-6.
 | `harnessed.plugins` | **Alle** mitgelieferten Plugins an einem Ort: Defaults (`agent_loop`, `memory_sessions`, `ToolOutputLimit`, `Approvals`) und Opt-ins (`jsonl_sessions`, `Compaction`, `Spill`, `Rules`, `LatestObservationOnly`, `provide`) |
 | `harnessed.kernel` | `Context`, `Inject`, `Key`, `needs`, Effects (für Framework-Autoren) |
 | `harnessed.seams` | Protocols für eigene Adapter, `ProviderError`-Hierarchie |
-| `harnessed.integrations` | `mcp` (Extra), später `otel`; beides Plugins |
+| `harnessed.integrations` | später: `otel` und `mcp` als Extras, beides Plugins |
 | `harnessed.testing` | `ScriptedLLM`, Fakes, Fixtures, Assertions |
 
 ---
@@ -659,7 +666,7 @@ Quer dazu gilt: **Alles Optionale ist ein Plugin**, und Built-ins haben keinen p
 
 1. **Core (immer da):** alles, was **Log-Format, Projektionen oder Durability** berührt. Das kann ein Nutzer von außen nicht korrekt nachbauen.
 2. **Built-in Policy (mitgeliefert, opt-in, *eine* gute Variante):** Entscheidungslogik, die fast jeder braucht und die man leicht falsch macht.
-3. **Extras (`harnessed[anthropic]`, `harnessed[mcp]`, `harnessed[otel]`):** Integrationen mit fremden Dependencies.
+3. **Extras (`harnessed[anthropic]`, später `harnessed[otel]` und `harnessed[mcp]`):** Integrationen mit fremden Dependencies.
 4. **Rezepte in `/docs`, nicht im Paket:** DSH-Heuristiken, die eine *Meinung* über Agent-Verhalten sind und keine Infrastruktur.
 5. **Nicht mitliefern:** Spielzeug-Defaults, die produktionsreif *aussehen*. Sie sind schlimmer als gar keine.
 
@@ -690,11 +697,11 @@ Quer dazu gilt: **Alles Optionale ist ein Plugin**, und Built-ins haben keinen p
 | `CacheBreakpoints`, `CacheMetrics` | **Entfernen** | No-op (1.2). |
 | `Rules` / `when()` | **Opt-in in `harnessed.plugins`**, nur noch `RuleTriggered` persistieren (P1-12) | DSH-Heuristik, eine Meinung, keine Infrastruktur. |
 | Observations, `LatestObservationOnly` | **Opt-in in `harnessed.plugins`.** Der Core behält `ObservationRecorded`. | Nischig. |
-| `persona`, `agents_md` | `instructions=` als Agent-Parameter; `agents_md` wird `Section.from_file("AGENTS.md")` in der `instructions`-Liste des `coding`-Presets (P1-11) | Ein Plugin für einen String ist zu viel Zeremonie, und der Prompt soll explizit komponiert sein. |
+| `persona`, `agents_md` | `instructions=` als Agent-Parameter; `agents_md` wird `Section.from_file("AGENTS.md")` in der `instructions`-Liste des `coding`-Presets (P1-11) | Ein Plugin für einen String ist zu viel Zeremonie. Die Komposition folgt einer festen, sichtbaren Regel. |
 | FS- und Shell-Tools, `coding`-Preset | **Entweder richtig oder als Beispiel.** Richtig heißt: `list_dir`, `glob`, `grep`, `edit`, eine gehärtete Shell (P0-5) und `ASK` als Default. | Die Preset-Qualität ist der erste Eindruck. |
 | Token-Counting, Kontextfenster | Approximation als Fallback, ansonsten liefert der Adapter Counter und `ModelInfo` (P0-6) | 128k global ist für die meisten Modelle falsch. |
 | Provider | **OpenAI-kompatibel als Basis, DeepSeek als Subklasse, Anthropic als Extra** (P1-10) | Ein Provider ist zu wenig. |
-| MCP-Client | **Extra `harnessed[mcp]`.** MCP-Tools werden normale Tools. | Ohne MCP keine Tool-Ökosysteme. |
+| MCP-Client | **Später als Extra `harnessed[mcp]`.** MCP-Tools würden normale Tools aus einem Plugin. | Nicht im ersten Release. Weil Tools ohnehin aus Plugins kommen, braucht es dafür keinen Breaking Change. |
 | Subagents / Agent-as-Tool | **Core-Mechanismus:** eine Kind-Session als eigenes Log mit Parent-Referenz, das Ergebnis als `ToolResult` | Das meistgenutzte Muster moderner Agents. Das Log-Design eignet sich ideal dafür. |
 | Structured Output | **Core** (3.3) | |
 | Tracing | **Seam im Core jetzt, OTel-Exporter später als Extra** (P0-4) | Der Seam verhindert einen späteren Breaking Change, der Exporter ist eine Erweiterung. |
@@ -703,7 +710,7 @@ Quer dazu gilt: **Alles Optionale ist ein Plugin**, und Built-ins haben keinen p
 
 **Ergebnis:** Das Paket wird nicht größer, sondern schärfer.
 - **Raus:** `CacheBreakpoints`, `CacheMetrics`, der implizite `ExtractiveCompactor`, 3 von 4 Compaction-Klassen, `headless`, `AgentHandle` sowie Rules und Observations aus dem Top-Level.
-- **Rein:** Structured Output, typisierter Stream, Subagents, MCP, der OpenAI-kompatible Adapter, Logging und der Tracer-Seam. OTel folgt später.
+- **Rein:** Structured Output, typisierter Stream, Subagents, der OpenAI-kompatible Adapter, Logging und der Tracer-Seam. OTel und MCP folgen später.
 
 ---
 
@@ -737,7 +744,7 @@ harnessed/
     compaction.py, approvals.py, inbox.py, ...
   llms/                # _base.py (StreamingLLM), openai_compatible, deepseek, anthropic
   plugins/             # opt-in policies
-  integrations/        # mcp (extra), otel later
+  integrations/        # later: otel, mcp (extras)
   testing/             # fakes, fixtures, assertions, pytest plugin
 ```
 
@@ -760,11 +767,12 @@ harnessed/
 
 **Phase 3: Feature-Parität mit modernen Agents**
 10. OpenAI-kompatibler Basis-Adapter, Anthropic, typisierte Provider-Fehler (P1-10).
-11. MCP (Extra) und Subagents (4.3).
+11. Subagents (4.3).
 12. Compaction-Umbau inklusive reaktiver Compaction (4.2).
 13. `coding`-Preset vollwertig machen oder zum Beispiel degradieren (4.3).
 14. `harnessed.testing` ausbauen (P2-6).
 15. OTel-Exporter als Extra `harnessed[otel]` (P0-4).
+16. MCP-Client als Extra `harnessed[mcp]` (4.3).
 
 ---
 

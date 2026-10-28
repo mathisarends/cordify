@@ -1,9 +1,12 @@
 import asyncio
 import inspect
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast, overload
+
+from pydantic import ValidationError
 
 from harnessed.kernel.context import Context
 from harnessed.kernel.di import BindingPlan, binding_plan
@@ -15,7 +18,31 @@ from .execution import ToolCallContext
 from .scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
 from .validation import ToolArguments, tool_result_content
 
+log = logging.getLogger(__name__)
+
 _UNSPECIFIED = object()
+
+
+class ToolNameConflict(ValueError):
+    """Two live registrations claim the same name without an explicit override."""
+
+
+class ToolError(Exception):
+    """An intentional, safe error message that may be shown to the model."""
+
+
+type ErrorFormatter = Callable[[ToolCall, Exception], str]
+
+
+def format_tool_error(call: ToolCall, error: Exception, formatter: ErrorFormatter | None = None):
+    log.error("Tool %s failed", call.name, exc_info=error)
+    if formatter is not None:
+        return formatter(call, error)
+    if isinstance(error, ToolError):
+        return str(error)
+    if isinstance(error, ValidationError):
+        return f"ValidationError: Invalid arguments for {call.name}: " + str(error)
+    return f"{call.name} failed: {type(error).__name__}"
 
 
 @dataclass(eq=False)
@@ -28,6 +55,7 @@ class _Tool:
     parallel: bool
     resources: ResourceSpec
     arguments: ToolArguments
+    readonly: bool = False
 
 
 class ToolRegistry:
@@ -46,6 +74,9 @@ class ToolRegistry:
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
+        readonly: bool = False,
+        override: bool = False,
+        owner: Context | None = None,
     ) -> Callable[[F], F]: ...
 
     def tool(
@@ -57,10 +88,20 @@ class ToolRegistry:
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
+        readonly: bool = False,
+        override: bool = False,
+        owner: Context | None = None,
     ):
         def register(callback):
             self.register(
-                callback, name=name, timeout=timeout, parallel=parallel, resources=resources
+                callback,
+                name=name,
+                timeout=timeout,
+                parallel=parallel,
+                resources=resources,
+                readonly=readonly,
+                override=override,
+                owner=owner,
             )
             return callback
 
@@ -74,8 +115,11 @@ class ToolRegistry:
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
+        readonly: bool = False,
+        override: bool = False,
+        owner: Context | None = None,
     ) -> Disposer:
-        owner = Context.current() or self._ctx
+        owner = owner if owner is not None else Context.current() or self._ctx
         owner._check_open()
         ToolScheduling(parallel)
         resources = resource_spec(resources)
@@ -83,6 +127,13 @@ class ToolRegistry:
             raise ValueError("Tool timeout must be positive")
         plan = binding_plan(callback)
         tool_name = name or getattr(callback, "__name__", type(callback).__name__)
+        existing = self._tools.get(tool_name, ())
+        if existing and not override:
+            previous = existing[-1].owner
+            raise ToolNameConflict(
+                f"Tool {tool_name!r} is already registered by {self._owner_name(previous)}; "
+                f"{self._owner_name(owner)} must declare override=True"
+            )
         arguments = ToolArguments.from_signature(
             tool_name, plan.signature, plan.hints, plan.dependencies
         )
@@ -100,9 +151,11 @@ class ToolRegistry:
             parallel,
             resources,
             arguments,
+            readonly,
         )
         entries = self._tools.setdefault(definition.name, [])
         entries.append(entry)
+        log.debug("Registered tool %s with owner %s", tool_name, self._owner_name(owner))
 
         def remove():
             entries.remove(entry)
@@ -110,6 +163,14 @@ class ToolRegistry:
                 del self._tools[definition.name]
 
         return owner.effect(remove)
+
+    @staticmethod
+    def _owner_name(owner: Context) -> str:
+        return owner._handle.name if owner._handle is not None else f"Context@{id(owner):x}"
+
+    def is_readonly(self, name: str) -> bool:
+        tool = self._visible(self._tools.get(name, []))
+        return tool is not None and tool.readonly
 
     @property
     def definitions(self) -> tuple[ToolDefinition, ...]:
@@ -157,6 +218,7 @@ class ToolRegistry:
         ctx: Context | None = None,
         call_context: ToolCallContext | None = None,
         _expected: object = _UNSPECIFIED,
+        error_formatter: ErrorFormatter | None = None,
     ) -> ToolResult:
         tool = self._visible(self._tools.get(call.name, []))
         if _expected is not _UNSPECIFIED and tool is not _expected:
@@ -205,4 +267,4 @@ class ToolRegistry:
                 call_context.signal.set()
             raise
         except Exception as exc:
-            return ToolResult.error(f"{type(exc).__name__}: {exc}")
+            return ToolResult.error(format_tool_error(call, exc, error_formatter))

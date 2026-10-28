@@ -54,8 +54,8 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
             [
                 ctx.provide(str, "override"),
                 ctx.add_listener(Ping, lambda event: seen.append("override")),
-                ctx[ToolRegistry].register(override, name="read"),
-                ctx[SystemPrompt].section("persona", "override"),
+                ctx[ToolRegistry].register(override, name="read", override=True),
+                ctx[SystemPrompt].section("persona", "override", override=True),
             ]
         )
         yield
@@ -94,11 +94,11 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
 
     @plugin(needs=[ToolRegistry, SystemPrompt])
     async def feature(ctx):
-        @ctx[ToolRegistry].tool(name="read")
+        @ctx[ToolRegistry].tool(name="read", override=True)
         async def override() -> str:
             return "override"
 
-        ctx[SystemPrompt].section("persona", "override")
+        ctx[SystemPrompt].section("persona", "override", override=True)
         ctx.on(Ping, lambda event: seen.append("override"))
         starting.set()
         await ready.wait()
