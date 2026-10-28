@@ -1,7 +1,3 @@
-"""Provider-independent model contract; the optional integrations live in models/."""
-
-from __future__ import annotations
-
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
