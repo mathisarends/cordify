@@ -189,7 +189,7 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
         await started.wait()
         await agent.inject("NEXT STEP CONTEXT")
         release.set()
-        await agent.when_idle()
+        await agent.control.join()
         event = next(e for e in agent.log.events if isinstance(e, CompactionApplied))
         summary = next(m for m in model.requests[-1].messages if m.id.startswith("compaction:"))
         assert summary.id == f"compaction:{event.id}"

@@ -177,7 +177,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
                     agent.log.approvals.records[-1].resolution.status == ApprovalStatus.INTERRUPTED
                 )
                 assert not agent.log.approvals.grants
-            await agent.when_idle()
+            await agent.control.join()
             if phase == "idle":
                 assert model.requests == [] and len(agent.inbox.pending) == 1
                 await agent.run("wake up")

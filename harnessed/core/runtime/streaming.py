@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from harnessed.core.attachments import Attachment
-from harnessed.core.errors import ApprovalUnavailable, SessionClosed
+from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import ApprovalRequest, SessionAppended
-from harnessed.core.messages import Message
+from harnessed.core.messages import ToolCall
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.approvals import _PendingApproval
 from harnessed.core.runtime.control import SessionStatus
+from harnessed.core.runtime.result import RunResults
 from harnessed.core.session.events import (
     AgentControlChanged,
     ApprovalResolved,
@@ -19,8 +18,6 @@ from harnessed.core.session.events import (
     ControlState,
     DurableEvent,
     InboxAdded,
-    InboxMode,
-    InboxRemoved,
     OutputValidated,
     OutputValidationFailed,
     SessionEvent,
@@ -29,7 +26,6 @@ from harnessed.core.session.events import (
     ToolCalled,
     ToolProgress,
     ToolReturned,
-    TurnEnd,
     TurnStart,
 )
 from harnessed.core.stream import (
@@ -114,107 +110,56 @@ class StreamApprovals:
         self.pending.clear()
 
 
-async def ui_events(
-    session: Session, raw: AsyncGenerator[AgentEvent, None], *, schema: OutputSchema | None = None
+def _stream_status(event: TurnStart | AgentControlChanged) -> SessionStatus:
+    match event:
+        case AgentControlChanged(state=ControlState.PAUSED):
+            return SessionStatus.PAUSED
+        case AgentControlChanged(
+            state=ControlState.STOPPING | ControlState.ABORTING | ControlState.STOPPED
+        ):
+            return SessionStatus.STOPPING
+        case _:
+            return SessionStatus.RUNNING
+
+
+async def project_stream_events(
+    raw: AsyncGenerator[AgentEvent, None],
+    *,
+    results: RunResults,
+    schema: OutputSchema | None = None,
 ) -> AsyncGenerator[EventStream[Any], None]:
-    """Expose UI notifications and declared extensions, with one terminal result."""
+    """Project raw events into stream notifications and exactly one terminal result."""
     events: list[SessionEvent] = []
-    calls = {}
+    calls: dict[str, ToolCall] = {}
     control_calls: set[str] = set()
-    previous_status = None
+    previous_status: SessionStatus | None = None
     try:
         async for event in raw:
             if isinstance(event, SessionEvent):
                 events.append(event)
-            if isinstance(event, OutputValidated | OutputValidationFailed):
-                if event.call_id is not None:
-                    control_calls.add(event.call_id)
-            elif isinstance(event, TextDelta | ReasoningDelta | ApprovalNeeded):
-                yield event
-            elif isinstance(event, CompactionApplied | SpillCreated | SpillExpired):
-                yield event
-            elif isinstance(event, DurableEvent | CustomTransientEvent):
-                yield event
-            elif isinstance(event, ToolCalled) and event.call.id not in control_calls:
-                calls[event.call.id] = event.call
-                yield ToolStarted(event.call)
-            elif isinstance(event, ToolProgress) and event.call_id in calls:
-                yield event
-            elif isinstance(event, ToolReturned) and event.call_id in calls:
-                yield ToolFinished(calls[event.call_id], event.result)
-            elif isinstance(event, TurnStart | AgentControlChanged):
-                # Status is session-wide. Completion of this turn need not mean idle:
-                # another queued turn may already be running when the consumer resumes.
-                status = (
-                    SessionStatus.RUNNING
-                    if isinstance(event, TurnStart)
-                    else SessionStatus.PAUSED
-                    if event.state == ControlState.PAUSED
-                    else SessionStatus.STOPPING
-                    if event.state
-                    in (ControlState.STOPPING, ControlState.ABORTING, ControlState.STOPPED)
-                    else SessionStatus.RUNNING
-                )
-                if status != previous_status:
-                    previous_status = status
-                    yield StatusChanged(status)
-        yield TurnFinished(session._result(tuple(events), schema=schema))
+            match event:
+                case OutputValidated(call_id=call_id) | OutputValidationFailed(call_id=call_id):
+                    if call_id is not None:
+                        control_calls.add(call_id)
+                case TextDelta() | ReasoningDelta() | ApprovalNeeded():
+                    yield event
+                case CompactionApplied() | SpillCreated() | SpillExpired():
+                    yield event
+                case DurableEvent() | CustomTransientEvent():
+                    yield event
+                case ToolCalled(call=call) if call.id not in control_calls:
+                    calls[call.id] = call
+                    yield ToolStarted(call)
+                case ToolProgress(call_id=call_id) if call_id in calls:
+                    yield event
+                case ToolReturned(call_id=call_id, result=result) if call_id in calls:
+                    yield ToolFinished(calls[call_id], result)
+                case TurnStart() | AgentControlChanged():
+                    # A subsequent turn may already be running when this consumer resumes.
+                    status = _stream_status(event)
+                    if status != previous_status:
+                        previous_status = status
+                        yield StatusChanged(status)
+        yield TurnFinished(results.build(tuple(events), schema=schema))
     finally:
         await raw.aclose()
-
-
-async def stream_turn(
-    self: Session,
-    content: str | Message,
-    *,
-    attachments: Iterable[Attachment] = (),
-    context: Mapping[str, Any] | None = None,
-    settings: Mapping[str, Any] | None = None,
-    output_schema: OutputSchema | None = None,
-    prepared: Callable[[InboxAdded], None] | None = None,
-) -> AsyncGenerator[AgentEvent, None]:
-    queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
-    self._subscribers.add(queue)
-    try:
-        item = await self.inbox._send(
-            content,
-            InboxMode.FOLLOWUP,
-            attachments=attachments,
-            context=context,
-            settings=settings,
-            output_schema=output_schema,
-            prepared=prepared,
-        )
-        input_id = item.id
-        turn_id = None
-        while True:
-            event = await queue.get()
-            if event is None:
-                if self.control.error is not None:
-                    raise self.control.error
-                if self.control.closing or self.status is SessionStatus.CLOSED:
-                    raise SessionClosed(
-                        "This handle closed before the turn finished; "
-                        "reopen the session to continue"
-                    )
-                if any(item.id == input_id for item in self.inbox.pending):
-                    self._wake()
-                    continue
-                return
-            if isinstance(event, TurnStart):
-                if event.input_id == input_id:
-                    turn_id = event.turn_id
-            if turn_id is None:
-                if isinstance(event, InboxAdded) and event.message.id == input_id:
-                    yield event
-                if isinstance(event, InboxRemoved) and event.message_id == input_id:
-                    yield event
-                    return
-                continue
-            yield event
-            if isinstance(event, TurnEnd) and event.turn_id == turn_id:
-                if self.control.error is not None:
-                    raise self.control.error
-                return
-    finally:
-        self._subscribers.discard(queue)

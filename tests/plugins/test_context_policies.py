@@ -220,7 +220,7 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
         await agent.run("x" * 1000)
         await agent.followup("next")
         await started.wait()
-        await agent.cancel()
+        await agent.abort()
         assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
         assert "x" * 1000 in "\n".join(m.text for m in agent.log.messages)
 

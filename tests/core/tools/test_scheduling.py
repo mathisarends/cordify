@@ -69,7 +69,7 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
         finally:
             for event in release:
                 event.set()
-            await agent.when_idle()
+            await agent.control.join()
         assert finished == [2, 1, 0] and reviews == [0, 1, 2]
         events = agent.log.events
         assert [e.call.id for e in events if isinstance(e, ToolCalled)] == [c.id for c in calls]
@@ -303,7 +303,7 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
     ).session("cancel") as agent:
         await agent.followup("go")
         await asyncio.wait_for(started.wait(), 2)
-        await agent.cancel()
+        await agent.abort()
         assert sorted(cleaned) == [0, 1, 2] and all(call.signal.is_set() for call in contexts)
         results = [e for e in agent.log.events if isinstance(e, ToolReturned)]
         assert [event.call_id for event in results] == [call.id for call in calls]

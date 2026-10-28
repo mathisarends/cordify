@@ -11,7 +11,8 @@ from harnessed.core.messages import (
     ToolResult,
     to_dict,
 )
-from harnessed.core.model import ModelUsage, StopReason, sum_usage
+from harnessed.core.model import ModelUsage, OutputSchema, StopReason, sum_usage
+from harnessed.core.outputs import OutputTypes, OutputValues
 from harnessed.core.session.codec import CURRENT_VERSION, decode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -23,6 +24,7 @@ from harnessed.core.session.events import (
     ToolReturned,
     TurnEnd,
     TurnOutcome,
+    TurnStart,
 )
 from harnessed.core.session.history import derive_messages
 
@@ -127,3 +129,35 @@ def result_from_events(events: tuple[SessionEvent, ...], *, output: Any = None) 
         derive_messages(events),
         _output=output,
     )
+
+
+class RunResults:
+    """Materialize durable answers using the application's registered output contracts."""
+
+    def __init__(self, outputs: OutputTypes, values: OutputValues) -> None:
+        self.outputs = outputs
+        self.values = values
+
+    def build(
+        self, events: tuple[SessionEvent, ...], *, schema: OutputSchema | None = None
+    ) -> RunResult[Any]:
+        start = next((e for e in events if isinstance(e, TurnStart)), None)
+        schema = start.output_schema if start is not None else schema
+        value = _NO_OUTPUT if schema is not None else None
+        final = next((e for e in reversed(events) if isinstance(e, AssistantMessage)), None)
+        proof = next(
+            (
+                e
+                for e in reversed(events)
+                if isinstance(e, OutputValidated)
+                and final is not None
+                and e.message_id == final.message.id
+            ),
+            None,
+        )
+        if proof is not None and schema is not None:
+            if proof.id in self.values:
+                value = self.values.pop(proof.id)
+            else:
+                value, _ = self.outputs.resolve(schema).parse(dict(proof.data))
+        return result_from_events(events, output=value)

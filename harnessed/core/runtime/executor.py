@@ -17,6 +17,7 @@ from harnessed.core.messages import (
     ToolCall,
     ToolResult,
 )
+from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
     PolicySource,
     ToolCalled,
@@ -25,164 +26,176 @@ from harnessed.core.session.events import (
     ToolPolicyApplied,
     ToolReturned,
 )
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.context import ToolContexts
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.core.tools.registry import ToolRegistry, format_tool_error
 from harnessed.core.tools.scheduling import PreparedToolCall, ToolScheduler, ToolScheduling
 from harnessed.core.tracing import span
+from harnessed.kernel import Context
 
 if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session
 
 
-async def run_tools(
-    self: Session, calls: tuple[ToolCall, ...], *, results: Mapping[str, ToolResult] | None = None
-) -> None:
-    if not calls:
-        return
-    plans = []
-    registry = self.ctx[ToolRegistry]
-    for call in calls:
-        await self.log.append(ToolCalled(call))
-        if results is not None and call.id in results:
-            plans.append(PreparedToolCall(call, ToolScheduling(), results[call.id]))
-            continue
+class ToolExecutor:
+    def __init__(
+        self, ctx: Context, log: SessionLog, options: AgentOptions, session: Session
+    ) -> None:
+        self.ctx = ctx
+        self.log = log
+        self.options = options
+        self.session = session
+
+    async def run(
+        self, calls: tuple[ToolCall, ...], *, results: Mapping[str, ToolResult] | None = None
+    ) -> None:
+        if not calls:
+            return
+        plans: list[PreparedToolCall] = []
+        registry = self.ctx[ToolRegistry]
+        for call in calls:
+            await self.log.append(ToolCalled(call))
+            if results is not None and call.id in results:
+                plans.append(PreparedToolCall(call, ToolScheduling(), results[call.id]))
+                continue
+            try:
+                plans.append(registry.plan(call))
+            except Exception as exc:
+                plans.append(
+                    PreparedToolCall(
+                        call,
+                        ToolScheduling(),
+                        ToolResult.error(
+                            format_tool_error(call, exc, self.options.error_formatter)
+                        ),
+                    )
+                )
+        scheduler = ToolScheduler(self.options.max_parallel_tools)
+        for group in scheduler.groups(plans):
+            await self.run_group(group, scheduler)
+
+    async def run_group(
+        self, plans: tuple[PreparedToolCall, ...], scheduler: ToolScheduler
+    ) -> None:
+        authorizations = [
+            plan.error if plan.error is not None else await self.authorize(plan.call)
+            for plan in plans
+        ]
+        reviewed = [asyncio.Event() for _ in plans]
+
+        async def worker(index: int, plan: PreparedToolCall) -> ToolResult:
+            try:
+                result = authorizations[index]
+                reviewable = result is None
+                if result is None:
+                    async with scheduler.slots:
+                        result, reviewable = await self.invoke(plan)
+                if index:
+                    await reviewed[index - 1].wait()
+                if reviewable:
+                    result = await self.review(plan.call, result, output_limit=plan.output_limit)
+                if plan.output_limit is not None:
+                    limit = (
+                        self.options.tool_output_limit
+                        if isinstance(plan.output_limit, OutputLimit)
+                        else ToolOutputLimit(plan.output_limit)
+                    )
+                    result = limit.apply(result)
+                await self.log.append(ToolCompleted(plan.call.id, result))
+                return result
+            finally:
+                reviewed[index].set()
+
+        async def commit(call: ToolCall, result: ToolResult):
+            await self.log.append(ToolReturned(call.id, result))
+
+        await scheduler.run(plans, worker, commit)
+
+    async def authorize(self, call: ToolCall) -> ToolResult | None:
         try:
-            plans.append(registry.plan(call))
+            previous = self.log.latest_approval(call.id)
+            decision = await self.ctx.dispatch(
+                ToolPolicy(call, self.session),
+                default=lambda: PolicyDecision.ALLOW,
+            )
+            if not isinstance(decision, PolicyDecision):
+                raise TypeError("ToolPolicy hooks must return PolicyDecision")
+            if decision is PolicyDecision.ASK:
+                answer = await self.session.request_approval(call, "Tool policy requested approval")
+                decision = (
+                    PolicyDecision.DENY if answer is ApprovalAnswer.DENY else PolicyDecision.ALLOW
+                )
+            record = self.log.latest_approval(call.id)
+            answered = record is not None and record is not previous
+            source = (
+                PolicySource.APPROVAL
+                if answered
+                and (decision is PolicyDecision.ALLOW or record.decision is ApprovalAnswer.DENY)
+                else PolicySource.POLICY
+            )
+            await self.log.append(ToolPolicyApplied(call.id, decision, source))
+            if decision is PolicyDecision.DENY:
+                if answered and record.decision is ApprovalAnswer.DENY:
+                    return ToolResult.denied("User declined this action", source=DenialSource.USER)
+                return ToolResult.denied("Denied by policy", source=DenialSource.POLICY)
+            return None
+        except ApprovalUnavailable as exc:
+            await self.log.append(
+                ToolPolicyApplied(call.id, PolicyDecision.DENY, PolicySource.UNAVAILABLE)
+            )
+            return ToolResult.unavailable(str(exc))
         except Exception as exc:
-            plans.append(
-                PreparedToolCall(
-                    call,
-                    ToolScheduling(),
-                    ToolResult.error(format_tool_error(call, exc, self.options.error_formatter)),
-                )
-            )
-    scheduler = ToolScheduler(self.options.max_parallel_tools)
-    for group in scheduler.groups(plans):
-        await run_tool_group(self, group, scheduler)
+            return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
 
+    async def invoke(self, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
+        with span(
+            self.ctx, "tool", session_id=self.log.id, tool=plan.call.name, call_id=plan.call.id
+        ):
+            return await self.execute(plan)
 
-async def run_tool_group(
-    self: Session, plans: tuple[PreparedToolCall, ...], scheduler: ToolScheduler
-) -> None:
-    authorizations = [
-        plan.error if plan.error is not None else await authorize_tool(self, plan.call)
-        for plan in plans
-    ]
-    reviewed = [asyncio.Event() for _ in plans]
-
-    async def worker(index: int, plan: PreparedToolCall) -> ToolResult:
+    async def execute(self, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
+        call = plan.call
+        execution = self.ctx[ToolContexts].create(call)
         try:
-            result = authorizations[index]
-            reviewable = result is None
-            if result is None:
-                async with scheduler.slots:
-                    result, reviewable = await invoke_tool(self, plan)
-            if index:
-                await reviewed[index - 1].wait()
-            if reviewable:
-                result = await review_tool(self, plan.call, result, output_limit=plan.output_limit)
-            if plan.output_limit is not None:
-                limit = (
-                    self.options.tool_output_limit
-                    if isinstance(plan.output_limit, OutputLimit)
-                    else ToolOutputLimit(plan.output_limit)
-                )
-                result = limit.apply(result)
-            await self.log.append(ToolCompleted(plan.call.id, result))
-            return result
-        finally:
-            reviewed[index].set()
-
-    async def commit(call: ToolCall, result: ToolResult):
-        await self.log.append(ToolReturned(call.id, result))
-
-    await scheduler.run(plans, worker, commit)
-
-
-async def authorize_tool(self: Session, call: ToolCall) -> ToolResult | None:
-    try:
-        previous = self.log.latest_approval(call.id)
-        decision = await self.ctx.dispatch(
-            ToolPolicy(call, self),
-            default=lambda: PolicyDecision.ALLOW,
-        )
-        if not isinstance(decision, PolicyDecision):
-            raise TypeError("ToolPolicy hooks must return PolicyDecision")
-        if decision is PolicyDecision.ASK:
-            answer = await self.request_approval(call, "Tool policy requested approval")
-            decision = (
-                PolicyDecision.DENY if answer is ApprovalAnswer.DENY else PolicyDecision.ALLOW
+            await self.log.append(ToolExecutionStarted(call.id))
+            await self.log.flush()
+            result = await self.ctx.dispatch(
+                ExecuteTool(call, self.session),
+                default=lambda: self.ctx[ToolRegistry].execute(
+                    call,
+                    ctx=self.ctx,
+                    call_context=execution,
+                    _expected=plan.binding,
+                    error_formatter=self.options.error_formatter,
+                ),
             )
-        record = self.log.latest_approval(call.id)
-        answered = record is not None and record is not previous
-        source = (
-            PolicySource.APPROVAL
-            if answered
-            and (decision is PolicyDecision.ALLOW or record.decision is ApprovalAnswer.DENY)
-            else PolicySource.POLICY
-        )
-        await self.log.append(ToolPolicyApplied(call.id, decision, source))
-        if decision is PolicyDecision.DENY:
-            if answered and record.decision is ApprovalAnswer.DENY:
-                return ToolResult.denied("User declined this action", source=DenialSource.USER)
-            return ToolResult.denied("Denied by policy", source=DenialSource.POLICY)
-        return None
-    except ApprovalUnavailable as exc:
-        await self.log.append(
-            ToolPolicyApplied(call.id, PolicyDecision.DENY, PolicySource.UNAVAILABLE)
-        )
-        return ToolResult.unavailable(str(exc))
-    except Exception as exc:
-        return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
+            if not isinstance(result, ToolResult):
+                raise TypeError("Tool hooks must return a ToolResult")
+            return result, True
+        except asyncio.CancelledError:
+            execution.signal.set()
+            raise
+        except Exception as exc:
+            return ToolResult.error(
+                format_tool_error(call, exc, self.options.error_formatter)
+            ), False
 
-
-async def invoke_tool(self: Session, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
-    with span(self.ctx, "tool", session_id=self.id, tool=plan.call.name, call_id=plan.call.id):
-        return await execute_tool(self, plan)
-
-
-async def execute_tool(self: Session, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
-    call = plan.call
-    execution = self.ctx[ToolContexts].create(call)
-    try:
-        await self.log.append(ToolExecutionStarted(call.id))
-        await self.log.flush()
-        result = await self.ctx.dispatch(
-            ExecuteTool(call, self),
-            default=lambda: self.ctx[ToolRegistry].execute(
-                call,
-                ctx=self.ctx,
-                call_context=execution,
-                _expected=plan.binding,
-                error_formatter=self.options.error_formatter,
-            ),
-        )
-        if not isinstance(result, ToolResult):
-            raise TypeError("Tool hooks must return a ToolResult")
-        return result, True
-    except asyncio.CancelledError:
-        execution.signal.set()
-        raise
-    except Exception as exc:
-        return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter)), False
-
-
-async def review_tool(
-    self: Session,
-    call: ToolCall,
-    result: ToolResult,
-    *,
-    output_limit: OutputLimitSetting = OutputLimit.INHERIT,
-) -> ToolResult:
-    try:
-        result = await self.ctx.dispatch(
-            ReviewToolResult(call, result, self, output_limit=output_limit),
-            default=lambda: result,
-        )
-        if not isinstance(result, ToolResult):
-            raise TypeError("Tool hooks must return a ToolResult")
-        return result
-    except Exception as exc:
-        return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
+    async def review(
+        self,
+        call: ToolCall,
+        result: ToolResult,
+        *,
+        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
+    ) -> ToolResult:
+        try:
+            result = await self.ctx.dispatch(
+                ReviewToolResult(call, result, self.session, output_limit=output_limit),
+                default=lambda: result,
+            )
+            if not isinstance(result, ToolResult):
+                raise TypeError("Tool hooks must return a ToolResult")
+            return result
+        except Exception as exc:
+            return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))

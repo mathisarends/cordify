@@ -83,7 +83,7 @@ async def test_inject_stays_idle_steering_enters_next_step_followup_gets_own_tur
         await agent.inject("context")
         await agent.followup("second")
         model.release.set()
-        await agent.when_idle()
+        await agent.control.join()
         users = [[m.content for m in r.messages if m.role == Role.USER] for r in model.requests]
         assert users == [
             ["first", "quiet"],
@@ -278,11 +278,11 @@ async def test_pre_step_rejection_keeps_input_until_another_wake():
             return StepDecision.reject() if reject else await next_()
 
         await agent.followup("first")
-        await agent.when_idle()
+        await agent.control.join()
         assert not model.requests and len(agent.log.inbox.next_turn) == 1
         reject = False
         await agent.followup("second")
-        await agent.when_idle()
+        await agent.control.join()
         assert len(model.requests) == 2 and (not agent.inbox.pending)
 
 
@@ -292,7 +292,7 @@ async def test_cancel_before_driver_starts_and_reuse_agent():
         "cancel-before-start"
     ) as agent:
         await agent.followup("discard")
-        await agent.cancel()
+        await agent.abort()
         assert agent.status == "idle" and (not agent.inbox.pending)
         assert (await agent.run("new")).text == "after cancel"
 
@@ -314,7 +314,7 @@ async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
     ).session("partial") as agent:
         await agent.followup("go")
         await started.wait()
-        await agent.cancel()
+        await agent.abort()
         partial = next(e for e in agent.log.events if isinstance(e, AssistantMessage))
         assert partial.interrupted and partial.message.content == "visible prefix"
         assert isinstance(agent.log.last(TurnEnd), TurnEnd)
@@ -341,7 +341,7 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
     ).session("cancel-tool") as agent:
         await agent.followup("go")
         await started.wait()
-        await agent.cancel()
+        await agent.abort()
         assert calls[0].signal.is_set()
         results = [e.result for e in agent.log.events if isinstance(e, ToolReturned)]
         assert len(results) == 1 and results[0].is_error
@@ -437,8 +437,8 @@ async def test_canceling_when_idle_waiter_does_not_cancel_the_agent():
         await agent.followup("go")
         await model.started.wait()
         with pytest.raises(TimeoutError):
-            await asyncio.wait_for(agent.when_idle(), timeout=0.01)
+            await asyncio.wait_for(agent.control.join(), timeout=0.01)
         assert agent.status == "running"
         model.release.set()
-        await agent.when_idle()
+        await agent.control.join()
         assert agent.log.messages[-1].content == "response 1"

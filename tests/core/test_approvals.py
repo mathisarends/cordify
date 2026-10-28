@@ -215,7 +215,7 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
         await agent.followup("task")
         await asked.wait()
         assert len(agent.log.approvals.pending) == 1
-        await agent.cancel()
+        await agent.abort()
         assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
         assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.INTERRUPTED
         assert not any(isinstance(e, ToolExecutionStarted) for e in agent.log.events)

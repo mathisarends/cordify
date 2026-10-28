@@ -54,7 +54,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         await agent.followup("second task")
         assert len(model.requests) == 1
         release.set()
-        await agent.when_idle()
+        await agent.control.join()
         turns = agent.log.turns
         assert [len(turn.steps) for turn in turns] == [2, 1]
         assert [[step.number for step in turn.steps] for turn in turns] == [[1, 2], [1]]
@@ -88,7 +88,7 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
             return StepDecision.reject()
 
         await agent.followup("task")
-        await agent.when_idle()
+        await agent.control.join()
         turn = agent.log.turns[-1]
         assert turn.closed and turn.reason == TurnOutcome.REJECTED and (turn.steps == ())
         assert model.requests == [] and len(agent.log.inbox.next_turn) == 1
@@ -111,7 +111,7 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
     ).session("canceled-turn") as agent:
         await agent.followup("task")
         await started.wait()
-        await agent.cancel()
+        await agent.abort()
         turn = agent.log.turns[-1]
         assert turn.closed and turn.reason == TurnOutcome.ABORTED
         assert turn.steps[-1].closed and turn.steps[-1].reason == StepOutcome.ABORTED

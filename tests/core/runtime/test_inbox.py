@@ -100,7 +100,7 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
             system("external context") if mode == InboxMode.INJECT else user("focus")
         )
         model.release.set()
-        await agent.when_idle()
+        await agent.control.join()
         assert model.requests[0] == first_snapshot
         assert not any(m.text in ("external context", "focus") for m in first_snapshot.messages)
         if mode == InboxMode.INJECT:
@@ -123,10 +123,10 @@ async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent(
     ) as agent:
         await agent.inject(system("door opened"))
         snapshot = agent.inbox.pending
-        await agent.when_idle()
+        await agent.control.join()
         assert agent.status == "idle" and model.requests == [] and (agent.log.turns == ())
         await agent.steer("check the door")
-        await agent.when_idle()
+        await agent.control.join()
         assert snapshot and (not agent.inbox.pending)
         assert [m.text for m in model.requests[0].messages] == ["door opened", "check the door"]
         assert [len(turn.steps) for turn in agent.log.turns] == [1]
@@ -144,7 +144,7 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
     ).session("pending") as agent:
-        await agent.when_idle()
+        await agent.control.join()
         if mode == InboxMode.INJECT:
             assert model.requests == [] and agent.log.inbox.pending == (event,)
             await agent.run("wake up")

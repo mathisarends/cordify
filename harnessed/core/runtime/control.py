@@ -229,6 +229,14 @@ class SessionControl:
             await self.log.append(AgentControlChanged(ControlState.PAUSED))
         self.synchronize()
 
+    async def join(self) -> None:
+        """Wait for the current driver, including when it leaves deferred inputs pending."""
+        self._check_external()
+        while self.task is not None and not self.task.done():
+            await asyncio.shield(self.task)
+        if self.error is not None:
+            raise self.error
+
     async def wait_until_idle(self) -> None:
         self._check_external()
         while True:

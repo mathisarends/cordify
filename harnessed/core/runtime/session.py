@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import asyncio
-from collections.abc import AsyncGenerator, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from contextvars import ContextVar
 from typing import Any, Unpack, overload
 
@@ -21,28 +23,30 @@ from harnessed.core.outputs import OutputTypes, OutputValues
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
-from harnessed.core.runtime.approvals import SessionApprovals, request_approval, revoke_approval
+from harnessed.core.runtime.approvals import SessionApprovals
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
+from harnessed.core.runtime.executor import ToolExecutor
 from harnessed.core.runtime.handles import RunHandle, SubmittedRun
 from harnessed.core.runtime.inbox import InboxItem, SessionInbox
 from harnessed.core.runtime.options import AgentOptions, RunOptions
-from harnessed.core.runtime.result import _NO_OUTPUT, RunResult, result_from_events
-from harnessed.core.runtime.streaming import StreamApprovals, stream_turn, ui_events
-from harnessed.core.runtime.turns import run_turn
+from harnessed.core.runtime.output import OutputHandler
+from harnessed.core.runtime.respond import ModelResponder
+from harnessed.core.runtime.result import RunResult, RunResults
+from harnessed.core.runtime.stepper import StepRunner
+from harnessed.core.runtime.streaming import StreamApprovals, project_stream_events
+from harnessed.core.runtime.turns import TurnRunner
 from harnessed.core.session.events import (
     AgentControlChanged,
-    AssistantMessage,
     CompactionApplied,
-    ControlState,
     InboxAdded,
     InboxMode,
     InboxRemoved,
-    OutputValidated,
     SessionEvent,
     TurnEnd,
     TurnStart,
 )
 from harnessed.core.session.session import SessionLog
+from harnessed.core.session.turns import Turn
 from harnessed.core.stream import (
     EventStream,
     SessionPublished,
@@ -54,11 +58,10 @@ from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
 from harnessed.kernel.events import PluginActivated
 from harnessed.kernel.hooks import HookFactory, ListenerFactory
-from harnessed.kernel.plugin import PluginStatus
+from harnessed.kernel.plugin import PluginHandle, PluginStatus
 
 type AgentEvent = SessionEvent | TransientEvent
-_preparing: ContextVar["Session | None"] = ContextVar("harnessed_preparing", default=None)
-_driving: ContextVar["Session | None"] = ContextVar("harnessed_driving", default=None)
+_driving: ContextVar[Session | None] = ContextVar("harnessed_driving", default=None)
 
 
 class Session:
@@ -70,22 +73,33 @@ class Session:
         self.options = options
         self.id = session.id
         self.context = DynamicContext(session)
-        self.approvals = SessionApprovals(self)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
-        self._runtime_guidance = {}
+        self._runtime_guidance: dict[PluginHandle, str] = {}
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
+        self.approvals = SessionApprovals(ctx, session, self.control, options, self)
         self.inbox = SessionInbox(session, self.control)
         ctx.provide(SessionControl, self.control)
         ctx.provide(SessionInbox, self.inbox)
         ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox))
-        self._subscribers: set[asyncio.Queue] = set()
+        self._subscribers: set[asyncio.Queue[AgentEvent | None]] = set()
         self._submissions: dict[str, SubmittedRun] = {}
         self._submitted_turns: dict[str, SubmittedRun] = {}
-        self._step_push: list[InboxAdded] = []
-        self._observations: dict[str, Observation] = {}
         self._output_values = OutputValues()
         if OutputTypes not in ctx:
             ctx.provide(OutputTypes, OutputTypes())
+        self._results = RunResults(ctx[OutputTypes], self._output_values)
+        self._steps = StepRunner(
+            ctx,
+            session,
+            options,
+            self.control,
+            self._compaction,
+            OutputHandler(ctx, session, options, self._output_values),
+            ToolExecutor(ctx, session, options, self),
+            ModelResponder(ctx, session),
+            self,
+        )
+        self._runner = TurnRunner(ctx, session, options, self.control, self._steps, self)
         ctx.on(SessionAppended, self._session_event)
         ctx.on(SessionPublished, self._stream_event)
         ctx.on(PluginActivated, self._plugin_activated)
@@ -107,13 +121,15 @@ class Session:
         return self.log.usage
 
     @property
-    def turns(self):
+    def turns(self) -> tuple[Turn, ...]:
         return self.log.turns
 
-    def last(self, kind):
+    def last[E: SessionEvent](self, kind: type[E]) -> E | None:
         return self.log.last(kind)
 
-    def fork(self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False):
+    def fork(
+        self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
+    ) -> SessionLog:
         """Create a branch from a closed log prefix; pass it to Agent.session()."""
         return self.log.fork(session_id, at=at, inherit_approvals=inherit_approvals)
 
@@ -141,7 +157,7 @@ class Session:
             await self._plugin_activated(PluginActivated(handle))
         return handle
 
-    async def _plugin_activated(self, event: PluginActivated):
+    async def _plugin_activated(self, event: PluginActivated) -> None:
 
         handle = event.handle
         name = self._runtime_guidance.get(handle)
@@ -186,19 +202,19 @@ class Session:
 
     def observe(self, observation: Observation) -> None:
         self.control.check_open()
-        self._observations[observation.source] = observation
+        self._steps.observe(observation)
 
     @property
     def status(self) -> SessionStatus:
         return self.control.status
 
-    def start(self):
+    def start(self) -> None:
         self.control.start()
 
-    def _wake(self):
+    def _wake(self) -> None:
         self.control.wake()
 
-    def _session_event(self, event: SessionAppended):
+    def _session_event(self, event: SessionAppended) -> None:
         if event.log is self.log:
             self._submission_event(event.event, event.seq)
             if isinstance(event.event, AgentControlChanged):
@@ -229,7 +245,7 @@ class Session:
             return
         if submitted is not None:
             try:
-                value = self.control.error or self._result(records, schema=submitted.schema)
+                value = self.control.error or self._results.build(records, schema=submitted.schema)
             except Exception as error:
                 value = error
             self._finish_submission(submitted, value)
@@ -243,7 +259,7 @@ class Session:
         submitted.handle._finish(value)
         submitted.expectation.__exit__(None, None, None)
 
-    def _publish(self, event: AgentEvent | None):
+    def _publish(self, event: AgentEvent | None) -> None:
         if event is None:
             failure = self.control.error
             if failure is None and (self.control.closing or self.status is SessionStatus.CLOSED):
@@ -256,7 +272,7 @@ class Session:
         for queue in self._subscribers:
             queue.put_nowait(event)
 
-    def _stream_event(self, event: SessionPublished):
+    def _stream_event(self, event: SessionPublished) -> None:
         if event.log is self.log:
             self._publish(event.event)
 
@@ -270,8 +286,7 @@ class Session:
         settings: Mapping[str, Any] | None = None,
     ) -> str:
         def prepared(item: InboxAdded):
-            if mode == InboxMode.INJECT and _preparing.get() is self:
-                self._step_push.append(item)
+            self._steps.prepare_input(item)
 
         item = await self.inbox._send(
             content,
@@ -309,22 +324,9 @@ class Session:
         """Wait until the current model call and all its tools are committed."""
         await self.control.pause()
 
-    async def when_paused(self) -> None:
-        """Wait for a previously requested pause (legacy observer helper)."""
-        self.control._check_external()
-        while self.log.control.state == ControlState.PAUSING:
-            if self.control.error is not None:
-                raise self.control.error
-            await self.control._changed.wait()
-        if self.log.control.state != ControlState.PAUSED:
-            raise RuntimeError("The session has no pending pause request")
-
     async def resume(self) -> None:
         """Resume a paused conversation; safe to call repeatedly."""
         await self.control.resume()
-
-    async def _checkpoint(self) -> None:
-        await self.control.checkpoint()
 
     async def request_approval(
         self,
@@ -335,12 +337,12 @@ class Session:
         approver: Approver | None = None,
         timeout: float | None = None,
     ) -> ApprovalAnswer:
-        return await request_approval(
-            self, call, reason, scope=scope, approver=approver, timeout=timeout
+        return await self.approvals.request(
+            call, reason, scope=scope, approver=approver, timeout=timeout
         )
 
     async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
-        await revoke_approval(self, request_id, reason=reason)
+        await self.approvals.revoke(request_id, reason=reason)
 
     async def wait_until_idle(self) -> None:
         """Wait for the session to become idle with an empty inbox."""
@@ -357,13 +359,6 @@ class Session:
             )
             applied, _ = await self._compaction.compact(request)
             return applied
-
-    async def when_idle(self) -> None:
-        """Legacy wait for the current runner; use wait_until_idle()."""
-        while self.control.task is not None and not self.control.task.done():
-            await asyncio.shield(self.control.task)
-        if self.control.error is not None:
-            raise self.control.error
 
     @overload
     async def run[T](
@@ -442,30 +437,6 @@ class Session:
         assert submitted is not None
         return submitted.handle
 
-    def _result(
-        self, events: tuple[SessionEvent, ...], *, schema: OutputSchema | None = None
-    ) -> RunResult[Any]:
-        start = next((e for e in events if isinstance(e, TurnStart)), None)
-        schema = start.output_schema if start is not None else schema
-        value = _NO_OUTPUT if schema is not None else None
-        final = next((e for e in reversed(events) if isinstance(e, AssistantMessage)), None)
-        proof = next(
-            (
-                e
-                for e in reversed(events)
-                if isinstance(e, OutputValidated)
-                and final is not None
-                and e.message_id == final.message.id
-            ),
-            None,
-        )
-        if proof is not None and schema is not None:
-            if proof.id in self._output_values:
-                value = self._output_values.pop(proof.id)
-            else:
-                value, _ = self.ctx[OutputTypes].resolve(schema).parse(dict(proof.data))
-        return result_from_events(events, output=value)
-
     @overload
     def stream[T](
         self, content: str | Message, *, output: type[T], **options: Unpack[RunOptions]
@@ -489,8 +460,7 @@ class Session:
         schema = compiled.definition if compiled is not None else None
         with self._output_values.expect(schema):
             async with StreamApprovals(self) as approvals:
-                raw = stream_turn(
-                    self,
+                raw = self._stream_turn(
                     content,
                     attachments=attachments,
                     context=context,
@@ -498,16 +468,12 @@ class Session:
                     output_schema=schema,
                     prepared=approvals.prepared,
                 )
-                ui = ui_events(self, raw, schema=schema)
+                projected = project_stream_events(raw, results=self._results, schema=schema)
                 try:
-                    async for event in ui:
+                    async for event in projected:
                         yield event
                 finally:
-                    await ui.aclose()
-
-    async def cancel(self, *, keep_inbox: bool = False) -> None:
-        """Legacy spelling for immediate abort."""
-        await self.abort(keep_inbox=keep_inbox)
+                    await projected.aclose()
 
     async def stop(self, *, keep_inbox: bool = False) -> None:
         """Finish the current step, end its turn and return to idle."""
@@ -523,12 +489,12 @@ class Session:
         finally:
             self._publish(None)
 
-    async def _drive(self):
+    async def _drive(self) -> None:
         token = _driving.set(self)
         try:
             while self.log.has_wakeup or self.log.open_turn is not None:
-                await self._checkpoint()
-                if not await run_turn(self, _preparing):
+                await self.control.checkpoint()
+                if not await self._runner.run():
                     break
         except (StopAtBoundary, asyncio.CancelledError):
             try:
@@ -550,3 +516,59 @@ class Session:
                 self.control.error = exc
             _driving.reset(token)
             self._publish(None)
+
+    async def _stream_turn(
+        self,
+        content: str | Message,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+        settings: Mapping[str, Any] | None = None,
+        output_schema: OutputSchema | None = None,
+        prepared: Callable[[InboxAdded], None] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
+        self._subscribers.add(queue)
+        try:
+            item = await self.inbox._send(
+                content,
+                InboxMode.FOLLOWUP,
+                attachments=attachments,
+                context=context,
+                settings=settings,
+                output_schema=output_schema,
+                prepared=prepared,
+            )
+            input_id = item.id
+            turn_id = None
+            while True:
+                event = await queue.get()
+                if event is None:
+                    if self.control.error is not None:
+                        raise self.control.error
+                    if self.control.closing or self.status is SessionStatus.CLOSED:
+                        raise SessionClosed(
+                            "This handle closed before the turn finished; "
+                            "reopen the session to continue"
+                        )
+                    if any(item.id == input_id for item in self.inbox.pending):
+                        self._wake()
+                        continue
+                    return
+                if isinstance(event, TurnStart):
+                    if event.input_id == input_id:
+                        turn_id = event.turn_id
+                if turn_id is None:
+                    if isinstance(event, InboxAdded) and event.message.id == input_id:
+                        yield event
+                    if isinstance(event, InboxRemoved) and event.message_id == input_id:
+                        yield event
+                        return
+                    continue
+                yield event
+                if isinstance(event, TurnEnd) and event.turn_id == turn_id:
+                    if self.control.error is not None:
+                        raise self.control.error
+                    return
+        finally:
+            self._subscribers.discard(queue)

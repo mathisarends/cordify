@@ -13,16 +13,21 @@ from harnessed.core.approvals import (
 )
 from harnessed.core.hooks import ApprovalRequest
 from harnessed.core.messages import ApprovalAnswer, ToolCall
+from harnessed.core.runtime.control import SessionControl
+from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
     ApprovalRevoked,
     ApprovalStatus,
 )
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tracing import span
+from harnessed.kernel import Context
 
 if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session
+
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,9 @@ class _PendingApproval:
     """A live approval handle; answer() waits for its decision's durable acknowledgement."""
 
     def __init__(self, request: ApprovalRequested) -> None:
-        self.request_id, self.call, self.reason = request.request_id, request.call, request.reason
+        self.request_id = request.request_id
+        self.call = request.call
+        self.reason = request.reason
         loop = asyncio.get_running_loop()
         self._decision: asyncio.Future[ApprovalAnswer | None] = loop.create_future()
         self._ack: asyncio.Future[Exception | None] = loop.create_future()
@@ -60,34 +67,45 @@ class _PendingApproval:
 class SessionApprovals:
     """Approval snapshots and acknowledged responses addressed by durable request ID."""
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    def __init__(
+        self,
+        ctx: Context,
+        log: SessionLog,
+        control: SessionControl,
+        options: AgentOptions,
+        session: Session,
+    ) -> None:
+        self.ctx = ctx
+        self.log = log
+        self.control = control
+        self.options = options
+        self.session = session
         self._live: dict[str, _PendingApproval] = {}
 
     @property
     def records(self) -> tuple[Approval, ...]:
-        return self._session.log.approvals.records
+        return self.log.approvals.records
 
     @property
     def pending(self) -> tuple[Approval, ...]:
-        return self._session.log.approvals.pending
+        return self.log.approvals.pending
 
     @property
     def grants(self) -> tuple[Approval, ...]:
-        return self._session.log.approvals.grants
+        return self.log.approvals.grants
 
     def grant_for(self, tool: str, *, scope: str) -> Approval | None:
-        return self._session.log.approvals.grant_for(tool, scope=scope)
+        return self.log.approvals.grant_for(tool, scope=scope)
 
     async def answer(self, request_id: str, decision: ApprovalAnswer) -> None:
-        self._session.control.check_open()
+        self.control.check_open()
         if not isinstance(decision, ApprovalAnswer):
             raise TypeError("Approval answers must be ALLOW, DENY or ALWAYS")
         pending = self._live.get(request_id)
         if pending is not None:
             await pending.answer(decision)
             return
-        record = self._session.log.approval(request_id)
+        record = self.log.approval(request_id)
         if (
             record is not None
             and record.resolution is not None
@@ -97,9 +115,6 @@ class SessionApprovals:
                 raise ValueError("An approval cannot change its submitted decision")
             return
         raise ApprovalUnavailable("This approval is no longer pending")
-
-    async def revoke(self, request_id: str, *, reason: str = "revoked") -> None:
-        await revoke_approval(self._session, request_id, reason=reason)
 
     def _open(self, request: ApprovalRequested) -> _PendingApproval:
         pending = _PendingApproval(request)
@@ -111,93 +126,91 @@ class SessionApprovals:
         if pending is not None:
             pending._finish(failure)
 
-
-async def request_approval(
-    self: Session,
-    call: ToolCall,
-    reason: str,
-    *,
-    scope: str = "tool-policy",
-    approver: Approver | None = None,
-    timeout: float | None = None,
-) -> ApprovalAnswer:
-    self.control.check_open()
-    grant = self.log.approval_grant(call.name, scope=scope)
-    request = ApprovalRequested(
-        uuid4().hex, call, reason, scope, grant.request_id if grant else None
-    )
-    await self.log.append(request)
-    try:
-        if grant is not None:
-            decision = ApprovalAnswer.ALWAYS
-        else:
-            decision = await _approval_answer(self, request, approver, timeout=timeout)
-        await self.log.append(ApprovalResolved(request.request_id, decision))
-        return decision
-    except BaseException as exc:
-        record = self.log.approval(request.request_id)
-        if record is not None and record.pending:
-            await self.log.append(
-                ApprovalResolved(
-                    request.request_id,
-                    status=ApprovalStatus.UNAVAILABLE
-                    if isinstance(exc, ApprovalUnavailable)
-                    else ApprovalStatus.INTERRUPTED,
-                    reason=str(exc) if isinstance(exc, ApprovalUnavailable) else None,
-                )
-            )
-        raise
-
-
-async def _approval_answer(
-    self: Session,
-    request: ApprovalRequested,
-    approver: Approver | None,
-    *,
-    timeout: float | None = None,
-) -> ApprovalAnswer:
-    with span(self.ctx, "approval_wait", session_id=self.id, tool=request.call.name):
-        return await _wait_for_approval(self, request, approver, timeout=timeout)
-
-
-async def _wait_for_approval(
-    self: Session,
-    request: ApprovalRequested,
-    approver: Approver | None,
-    *,
-    timeout: float | None = None,
-) -> ApprovalAnswer:
-    timeout = self.options.approval_timeout if timeout is None else timeout
-    validate_approval_timeout(timeout)
-    try:
-        async with asyncio.timeout(timeout):
-            selected = (
-                approver
-                if approver is not None
-                else (self.ctx[Approver] if Approver in self.ctx else None)
-            )
-            if selected is not None:
-                decision = await selected.ask(request)
+    async def request(
+        self,
+        call: ToolCall,
+        reason: str,
+        *,
+        scope: str = "tool-policy",
+        approver: Approver | None = None,
+        timeout: float | None = None,
+    ) -> ApprovalAnswer:
+        self.control.check_open()
+        grant = self.log.approval_grant(call.name, scope=scope)
+        request = ApprovalRequested(
+            uuid4().hex, call, reason, scope, grant.request_id if grant else None
+        )
+        await self.log.append(request)
+        try:
+            if grant is not None:
+                decision = ApprovalAnswer.ALWAYS
             else:
-                decision = await self.ctx.dispatch(ApprovalRequest(request, self))
-        if decision is None:
-            raise ApprovalUnavailable("No approval responder answered the request")
-        if not isinstance(decision, ApprovalAnswer):
-            raise TypeError("Approvers must return ALLOW, DENY or ALWAYS")
-        return decision
-    except ApprovalUnavailable:
-        raise
-    except TimeoutError as exc:
-        raise ApprovalUnavailable(f"Approval response timed out after {timeout:g} seconds") from exc
-    except Exception as exc:
-        logger.exception("Approval responder failed for %s", request.call.name)
-        raise ApprovalUnavailable(f"Approval responder failed: {type(exc).__name__}") from exc
+                decision = await self._answer_request(request, approver, timeout=timeout)
+            await self.log.append(ApprovalResolved(request.request_id, decision))
+            return decision
+        except BaseException as exc:
+            record = self.log.approval(request.request_id)
+            if record is not None and record.pending:
+                await self.log.append(
+                    ApprovalResolved(
+                        request.request_id,
+                        status=ApprovalStatus.UNAVAILABLE
+                        if isinstance(exc, ApprovalUnavailable)
+                        else ApprovalStatus.INTERRUPTED,
+                        reason=str(exc) if isinstance(exc, ApprovalUnavailable) else None,
+                    )
+                )
+            raise
 
+    async def _answer_request(
+        self,
+        request: ApprovalRequested,
+        approver: Approver | None,
+        *,
+        timeout: float | None = None,
+    ) -> ApprovalAnswer:
+        with span(self.ctx, "approval_wait", session_id=self.log.id, tool=request.call.name):
+            return await self._wait(request, approver, timeout=timeout)
 
-async def revoke_approval(self: Session, request_id: str, *, reason: str = "revoked") -> None:
-    self.control.check_open()
-    record = self.log.approval(request_id)
-    if record is None:
-        raise KeyError(request_id)
-    if not record.revoked:
-        await self.log.append(ApprovalRevoked(request_id, reason))
+    async def _wait(
+        self,
+        request: ApprovalRequested,
+        approver: Approver | None,
+        *,
+        timeout: float | None = None,
+    ) -> ApprovalAnswer:
+        timeout = self.options.approval_timeout if timeout is None else timeout
+        validate_approval_timeout(timeout)
+        try:
+            async with asyncio.timeout(timeout):
+                selected = (
+                    approver
+                    if approver is not None
+                    else (self.ctx[Approver] if Approver in self.ctx else None)
+                )
+                if selected is not None:
+                    decision = await selected.ask(request)
+                else:
+                    decision = await self.ctx.dispatch(ApprovalRequest(request, self.session))
+            if decision is None:
+                raise ApprovalUnavailable("No approval responder answered the request")
+            if not isinstance(decision, ApprovalAnswer):
+                raise TypeError("Approvers must return ALLOW, DENY or ALWAYS")
+            return decision
+        except ApprovalUnavailable:
+            raise
+        except TimeoutError as exc:
+            raise ApprovalUnavailable(
+                f"Approval response timed out after {timeout:g} seconds"
+            ) from exc
+        except Exception as exc:
+            logger.exception("Approval responder failed for %s", request.call.name)
+            raise ApprovalUnavailable(f"Approval responder failed: {type(exc).__name__}") from exc
+
+    async def revoke(self, request_id: str, *, reason: str = "revoked") -> None:
+        self.control.check_open()
+        record = self.log.approval(request_id)
+        if record is None:
+            raise KeyError(request_id)
+        if not record.revoked:
+            await self.log.append(ApprovalRevoked(request_id, reason))

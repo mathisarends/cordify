@@ -72,7 +72,7 @@ async def test_system_injection_survives_prompt_updates_and_typed_user_steering(
     ) as agent:
         await agent.inject(system("External change"))
         await agent.steer(user("Check auth"))
-        await agent.when_idle()
+        await agent.control.join()
         assert [(m.role, m.text) for m in model.requests[0].messages] == [
             ("system", "External change"),
             ("user", "Check auth"),

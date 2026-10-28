@@ -80,7 +80,7 @@ async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
             assert events[-1].result.text == "reply 1"
         finally:
             model.release[1].set()
-        await session.when_idle()
+        await session.control.join()
 
 
 async def test_public_max_token_policies_return_typed_stop_reasons_or_fail():

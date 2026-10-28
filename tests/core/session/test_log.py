@@ -137,7 +137,7 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
     )
     async with harness.session("pending") as agent:
-        await agent.when_idle()
+        await agent.control.join()
         assert model.requests[0].messages[0].content == "queued"
         assert not agent.inbox.pending
 
