@@ -41,38 +41,18 @@ class Approval:
 class Approvals:
     records: tuple[Approval, ...]
 
+    @classmethod
+    def from_records(cls, records: Iterable[Approval]) -> "Approvals":
+        snapshot = object.__new__(cls)
+        object.__setattr__(snapshot, "records", tuple(records))
+        return snapshot
+
     def __init__(self, events: Iterable[SessionEvent]):
         records: dict[str, Approval] = {}
         for event in events:
-            if isinstance(event, ApprovalRequested):
-                if event.request_id in records:
-                    raise ValueError("Duplicate approval request_id")
-                if event.grant_id is not None:
-                    grant = records.get(event.grant_id)
-                    if (
-                        grant is None
-                        or not grant.is_grant
-                        or grant.request.scope != event.scope
-                        or grant.request.call.name != event.call.name
-                    ):
-                        raise ValueError(
-                            "Cached approval must reference an active grant for its tool and scope"
-                        )
-                records[event.request_id] = Approval(event)
-            elif isinstance(event, ApprovalResolved):
-                record = records.get(event.request_id)
-                if record is None or not record.pending:
-                    raise ValueError("Approval resolution requires a pending request")
-                if record.request.grant_id is not None and event.status == "answered":
-                    grant = records[record.request.grant_id]
-                    if not grant.is_grant or event.decision is not Decision.ALWAYS:
-                        raise ValueError("Cached approval grant is no longer active")
-                records[event.request_id] = replace(record, resolution=event)
-            elif isinstance(event, ApprovalRevoked):
-                record = records.get(event.request_id)
-                if record is None or not record.is_grant:
-                    raise ValueError("Approval revocation requires an active ALWAYS grant")
-                records[event.request_id] = replace(record, revoked=True)
+            record = approval_transition(records, event)
+            if record is not None:
+                records[record.request_id] = record
         object.__setattr__(self, "records", tuple(records.values()))
 
     @property
@@ -92,3 +72,36 @@ class Approvals:
             ),
             None,
         )
+
+
+def approval_transition(records, event: SessionEvent) -> Approval | None:
+    if isinstance(event, ApprovalRequested):
+        if event.request_id in records:
+            raise ValueError("Duplicate approval request_id")
+        if event.grant_id is not None:
+            grant = records.get(event.grant_id)
+            if (
+                grant is None
+                or not grant.is_grant
+                or grant.request.scope != event.scope
+                or grant.request.call.name != event.call.name
+            ):
+                raise ValueError(
+                    "Cached approval must reference an active grant for its tool and scope"
+                )
+        return Approval(event)
+    elif isinstance(event, ApprovalResolved):
+        record = records.get(event.request_id)
+        if record is None or not record.pending:
+            raise ValueError("Approval resolution requires a pending request")
+        if record.request.grant_id is not None and event.status == "answered":
+            grant = records[record.request.grant_id]
+            if not grant.is_grant or event.decision is not Decision.ALWAYS:
+                raise ValueError("Cached approval grant is no longer active")
+        return replace(record, resolution=event)
+    elif isinstance(event, ApprovalRevoked):
+        record = records.get(event.request_id)
+        if record is None or not record.is_grant:
+            raise ValueError("Approval revocation requires an active ALWAYS grant")
+        return replace(record, revoked=True)
+    return None

@@ -224,8 +224,7 @@ class Agent:
         self._wake()
 
     def _open_turn(self):
-        turns = self.session.turns
-        return turns[-1] if turns and not turns[-1].closed else None
+        return self.session.open_turn
 
     def _update_status(self):
         control = self.session.control
@@ -240,7 +239,7 @@ class Agent:
             and not self._closing
             and not self._canceling
             and self.session.control.state == "active"
-            and (self.inbox.has_wakeup or self._open_turn() is not None)
+            and (self.session.has_wakeup or self._open_turn() is not None)
             and (self._runner is None or self._runner.done())
         ):
             self._error = None
@@ -372,7 +371,7 @@ class Agent:
     ) -> Decision:
         if self._closing or self._canceling:
             raise RuntimeError("Agent is being cancelled or disposed")
-        grant = self.session.approvals.grant_for(call.name, scope=scope)
+        grant = self.session.approval_grant(call.name, scope=scope)
         request = ApprovalRequested(
             uuid4().hex, call, reason, scope, grant.request_id if grant else None
         )
@@ -385,9 +384,8 @@ class Agent:
             await self.session.append(ApprovalResolved(request.request_id, decision))
             return decision
         except BaseException as exc:
-            if any(
-                item.request_id == request.request_id for item in self.session.approvals.pending
-            ):
+            record = self.session.approval(request.request_id)
+            if record is not None and record.pending:
                 await self.session.append(
                     ApprovalResolved(
                         request.request_id,
@@ -432,9 +430,7 @@ class Agent:
     async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
         if self._closing or self._canceling:
             raise RuntimeError("Agent is being cancelled or disposed")
-        record = next(
-            (item for item in self.session.approvals.records if item.request_id == request_id), None
-        )
+        record = self.session.approval(request_id)
         if record is None:
             raise KeyError(request_id)
         if not record.revoked:
@@ -599,7 +595,7 @@ class Agent:
         token = _driving.set(self)
         self._finishing = False
         try:
-            while self.inbox.has_wakeup or self._open_turn() is not None:
+            while self.session.has_wakeup or self._open_turn() is not None:
                 await self._checkpoint()
                 if not await self._turn():
                     break
@@ -719,7 +715,9 @@ class Agent:
             await self._run_tools(response.tool_calls)
             await self.session.append(StepEnd(turn, step))
             await self._checkpoint()
-            if await self._continue_turn(self.session.turns[-1].steps[-1]):
+            current = self.session.open_turn
+            assert current is not None
+            if await self._continue_turn(current.steps[-1]):
                 continue
             await self.session.append(TurnEnd(turn))
             return True
@@ -735,11 +733,11 @@ class Agent:
             step.reason == "interrupted"
             or response is None
             or response.message.tool_calls
-            or self.inbox.has_step_wakeup
+            or self.session.has_step_wakeup
         ):
             return True
         continuation = await self.ctx.dispatch(TurnStopping(self))
-        return bool(continuation or self.inbox.has_step_wakeup)
+        return bool(continuation or self.session.has_step_wakeup)
 
     async def _run_tools(self, calls: tuple[ToolCall, ...]) -> None:
         if not calls:

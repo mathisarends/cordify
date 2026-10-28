@@ -21,7 +21,7 @@ from harnessed.seams.models import (
     tool_result_from_dict,
 )
 
-from .approvals import Approvals
+from .approvals import Approval, Approvals, approval_transition
 from .control import RunControl
 from .events import (
     SESSION_EVENT_TYPES,
@@ -57,7 +57,7 @@ from .events import (
 )
 from .inbox import Inbox
 from .stream import SessionPublished, TransientEvent
-from .turns import Turn, derive_turns
+from .turns import Turn, TurnProjection
 
 
 class SessionPersistence(Protocol):
@@ -326,8 +326,25 @@ class Session:
         self._lock = asyncio.Lock()
         for event in self._events:
             _validate_event(event)
-        Inbox(self._events)
-        Approvals(self._events)
+        self._inbox: Inbox | None = Inbox(self._events)
+        self._pending = {item.message.id: item for item in self._inbox.pending}
+        self._wakeups = {key for key, item in self._pending.items() if item.wakeup}
+        self._step_wakeups = {
+            key for key, item in self._pending.items() if item.wakeup and item.target == "next-step"
+        }
+        self._approvals: Approvals | None = Approvals(self._events)
+        self._approval_records = {record.request_id: record for record in self._approvals.records}
+        self._approvals_by_call: dict[str, dict[str, Approval]] = {}
+        self._grants: dict[tuple[str, str], dict[str, Approval]] = {}
+        for record in self._approval_records.values():
+            self._index_grant(record)
+            self._approvals_by_call.setdefault(record.request.call.id, {})[record.request_id] = (
+                record
+            )
+        self._control = RunControl(self._events)
+        self._requests = list(derive_requests(self._events))
+        self._request_snapshot: tuple[ModelRequest, ...] | None = None
+        self._turns = TurnProjection(self._events)
         for seq, event in enumerate(self._events):
             if isinstance(event, CompactionApplied):
                 _validate_compaction(self._events, event, seq)
@@ -357,32 +374,70 @@ class Session:
 
     @property
     def requests(self) -> tuple[ModelRequest, ...]:
-        return derive_requests(self._events)
+        if self._request_snapshot is None:
+            self._request_snapshot = tuple(self._requests)
+        return self._request_snapshot
 
     @property
     def turns(self) -> tuple[Turn, ...]:
-        return derive_turns(self._events)
+        return self._turns.snapshot
+
+    @property
+    def open_turn(self) -> Turn | None:
+        return self._turns.open_turn
 
     @property
     def inbox(self) -> Inbox:
-        return Inbox(self._events)
+        if self._inbox is None:
+            self._inbox = Inbox.from_pending(self._pending.values())
+        return self._inbox
+
+    @property
+    def has_wakeup(self) -> bool:
+        return bool(self._wakeups)
+
+    @property
+    def has_step_wakeup(self) -> bool:
+        return bool(self._step_wakeups)
 
     @property
     def approvals(self) -> Approvals:
-        return Approvals(self._events)
+        if self._approvals is None:
+            self._approvals = Approvals.from_records(self._approval_records.values())
+        return self._approvals
 
     @property
     def control(self) -> RunControl:
-        return RunControl(self._events)
+        return self._control
+
+    def approval(self, request_id: str) -> Approval | None:
+        return self._approval_records.get(request_id)
+
+    def approval_grant(self, tool: str, *, scope: str) -> Approval | None:
+        grants = self._grants.get((scope, tool), {})
+        return next(reversed(grants.values()), None)
+
+    def latest_approval(self, call_id: str) -> Approval | None:
+        return next(reversed(self._approvals_by_call.get(call_id, {}).values()), None)
+
+    def _index_grant(self, record: Approval) -> None:
+        key = (record.request.scope, record.request.call.name)
+        grants = self._grants.setdefault(key, {})
+        if record.is_grant:
+            grants[record.request_id] = record
+        else:
+            grants.pop(record.request_id, None)
 
     async def append(self, event: SessionEvent) -> None:
         _validate_event(event)
         cancelled = False
         async with self._lock:
-            if isinstance(event, InboxAdded | InboxRemoved):
-                Inbox((*self._events, event))
-            if isinstance(event, ApprovalRequested | ApprovalResolved | ApprovalRevoked):
-                Approvals((*self._events, event))
+            if isinstance(event, InboxAdded) and event.message.id in self._pending:
+                raise ValueError(f"Duplicate pending message id: {event.message.id}")
+            if isinstance(event, InboxRemoved) and event.message_id not in self._pending:
+                raise ValueError(f"Removing unknown inbox message: {event.message_id}")
+            approval = approval_transition(self._approval_records, event)
+            self._turns.validate(event)
             seq = len(self._events)
             if isinstance(event, CompactionApplied):
                 _validate_compaction(self._events, event, seq)
@@ -404,6 +459,36 @@ class Session:
             self._events.append(event)
             self._last[type(event)] = (seq, event)
             self._snapshot = None
+            self._turns.apply(event)
+            if isinstance(event, InboxAdded):
+                self._pending[event.message.id] = event
+                if event.wakeup:
+                    self._wakeups.add(event.message.id)
+                    if event.target == "next-step":
+                        self._step_wakeups.add(event.message.id)
+                self._inbox = None
+            elif isinstance(event, InboxRemoved):
+                del self._pending[event.message_id]
+                self._wakeups.discard(event.message_id)
+                self._step_wakeups.discard(event.message_id)
+                self._inbox = None
+            elif isinstance(event, UserMessage | ContextMessage):
+                if self._pending.pop(event.message.id, None) is not None:
+                    self._wakeups.discard(event.message.id)
+                    self._step_wakeups.discard(event.message.id)
+                    self._inbox = None
+            if approval is not None:
+                self._approval_records[approval.request_id] = approval
+                self._index_grant(approval)
+                self._approvals_by_call.setdefault(approval.request.call.id, {})[
+                    approval.request_id
+                ] = approval
+                self._approvals = None
+            if isinstance(event, AgentControlChanged):
+                self._control = RunControl((event,))
+            if isinstance(event, ModelRequested):
+                self._requests.append(event.request)
+                self._request_snapshot = None
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
             await self.ctx.dispatch(event)

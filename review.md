@@ -19,7 +19,7 @@
 - P0-6 (partial): model stop reasons now survive in the core log/results; usage exposes neutral input/output/total properties.
 - P0-7 / 3.1 (partial): `Agent(llm=..., instructions=..., plugins=...)` is available, with explicit slot replacement/conflict checks and an ephemeral `run`. It uses the same public plugins as the expanded composition. Low-level runtime imports are explicit `AgentHandle` imports; the broad compatibility exports remain.
 - P0-5 (partial): the application Agent defaults to read-only ALLOW / side-effect ASK; no approval responder yields unavailable. `Approvals(trust="all")` is the explicit opt-out. Legacy presets and shell hardening remain open.
-- P0-1 (partial): event snapshots are cached; exact-kind `last` and `since` indexes avoid repeated backward scans. Full incremental projection reducers remain open.
+- P0-1 (partial): inbox, approvals, control, requests and turns now advance on append. Immutable snapshots are cached; approval/grant and wakeup indexes avoid history scans, and `last`/`since` index exact event kinds. Generated valid logs compare every state against full-fold oracles. Message history and compaction/rule scans remain open.
 - P1-10 (partial): pooled owned HTTP clients with explicit close and shared session leases; borrowed clients stay open. HTTP failures have typed neutral errors and readable bodies; Retry-After wins over full-jitter backoff. Provider stop reasons reach the log. Generic/Anthropic adapters and the legacy constructor's default model remain open.
 - P2-9: first examples now show the application facade and its expanded plugin composition; the previous lifecycle example remains as example 23.
 - Remaining findings: open; implementation and verification are in progress.
@@ -117,6 +117,8 @@ Harnessed ist technisch sehr sorgfältig gebaut. Der Kernel ist sauber, die Schi
 ### P0: vor jeder öffentlichen 1.0 beheben (Breaking oder Betriebsrisiko)
 
 #### P0-1 · Projektionen sind O(n) pro Zugriff, also O(n²) pro Session
+
+**Partial resolution:** Inbox/approval validation no longer folds the log on append. Control/request/turn state advances incrementally; old immutable snapshots stay unchanged. Snapshot materialization still costs the size of the requested tuple, but repeated reads reuse it. Message history and some policy scans still need work.
 - `session.messages`, `.inbox`, `.turns`, `.control` und `Approvals(...)` falten bei *jedem* Zugriff das komplette Log neu.
 - `Session.append` baut zur Validierung von Inbox- und Approval-Events `Inbox(...)` und `Approvals(...)` über das ganze Log neu auf.
 - Plugins scannen zusätzlich `agent.session.events`: `PreStep.latest_user_text`, Compaction (`plugins/context/compaction.py:51-60`), `CacheBreakpoints` und `Rules.setup`.

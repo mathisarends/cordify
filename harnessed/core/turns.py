@@ -81,3 +81,86 @@ def derive_turns(events: Iterable[SessionEvent]) -> tuple[Turn, ...]:
             steps.append(Step(turn_id, step_number, events[step_start:]))
         turns.append(Turn(turn_id, events[turn_start:], tuple(steps)))
     return tuple(turns)
+
+
+class TurnProjection:
+    """Incremental builder; immutable snapshots never reference its mutable buffers."""
+
+    def __init__(self, events: Iterable[SessionEvent] = ()):
+        self._closed: list[Turn] = []
+        self._turn: str | None = None
+        self._events: list[SessionEvent] = []
+        self._steps: list[Step] = []
+        self._step: list[SessionEvent] | None = None
+        self._requests = 0
+        self._open_snapshot: Turn | None = None
+        self._snapshot: tuple[Turn, ...] | None = None
+        for event in events:
+            self.validate(event)
+            self.apply(event)
+
+    def validate(self, event: SessionEvent) -> None:
+        if isinstance(event, TurnStart):
+            if self._turn is not None:
+                raise ValueError("A turn cannot start inside an open turn")
+        elif isinstance(event, StepStart):
+            if self._turn is None or event.turn_id != self._turn or self._step is not None:
+                raise ValueError("A step must start inside its turn, after the previous step")
+            if type(event.step) is not int or event.step != len(self._steps) + 1:
+                raise ValueError("Steps must be numbered consecutively from one within each turn")
+        elif isinstance(event, StepEnd):
+            if self._step is None or (event.turn_id, event.step) != (
+                self._turn,
+                len(self._steps) + 1,
+            ):
+                raise ValueError("StepEnd must close the current step")
+            if event.reason == "completed" and self._requests != 1:
+                raise ValueError("A completed step must contain exactly one model request")
+        elif isinstance(event, TurnEnd):
+            if self._turn is None or event.turn_id != self._turn or self._step is not None:
+                raise ValueError("TurnEnd must close the current turn after its last step")
+        elif isinstance(event, ModelRequested) and self._step is not None and self._requests:
+            raise ValueError("A completed step must contain exactly one model request")
+
+    def apply(self, event: SessionEvent) -> None:
+        if isinstance(event, TurnStart):
+            self._turn, self._events, self._steps = event.turn_id, [], []
+        if self._turn is None:
+            return
+        self._snapshot = self._open_snapshot = None
+        self._events.append(event)
+        if isinstance(event, StepStart):
+            self._step, self._requests = [], 0
+        if self._step is not None:
+            self._step.append(event)
+            if isinstance(event, ModelRequested):
+                self._requests += 1
+        if isinstance(event, StepEnd):
+            assert self._step is not None
+            self._steps.append(Step(self._turn, event.step, tuple(self._step), event.reason))
+            self._step = None
+        if isinstance(event, TurnEnd):
+            self._closed.append(
+                Turn(self._turn, tuple(self._events), tuple(self._steps), event.reason)
+            )
+            self._turn, self._events, self._steps = None, [], []
+
+    @property
+    def open_turn(self) -> Turn | None:
+        if self._turn is None:
+            return None
+        if self._open_snapshot is None:
+            steps = tuple(self._steps)
+            if self._step is not None:
+                steps = (*steps, Step(self._turn, len(steps) + 1, tuple(self._step)))
+            self._open_snapshot = Turn(self._turn, tuple(self._events), steps)
+        return self._open_snapshot
+
+    @property
+    def snapshot(self) -> tuple[Turn, ...]:
+        if self._snapshot is None:
+            current = self.open_turn
+            self._snapshot = (
+                (*self._closed, current) if current is not None else tuple(self._closed)
+            )
+        return self._snapshot

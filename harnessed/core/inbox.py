@@ -8,6 +8,12 @@ from .events import ContextMessage, InboxAdded, InboxRemoved, SessionEvent, User
 class Inbox:
     pending: tuple[InboxAdded, ...]
 
+    @classmethod
+    def from_pending(cls, pending: Iterable[InboxAdded]) -> "Inbox":
+        snapshot = object.__new__(cls)
+        object.__setattr__(snapshot, "pending", tuple(pending))
+        return snapshot
+
     def __init__(self, events: Iterable[SessionEvent]):
         pending: dict[str, InboxAdded] = {}
         for event in events:

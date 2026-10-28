@@ -17,12 +17,9 @@ class _Callback:
         self.callback, self.agent = callback, agent
 
     async def ask(self, call: ToolCall, reason: str) -> Decision:
-        request = next(
-            record.request
-            for record in reversed(self.agent.session.approvals.pending)
-            if record.request.call.id == call.id
-        )
-        value = self.callback(request)
+        record = self.agent.session.latest_approval(call.id)
+        assert record is not None
+        value = self.callback(record.request)
         return await value if inspect.isawaitable(value) else value
 
 
