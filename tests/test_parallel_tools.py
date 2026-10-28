@@ -15,7 +15,6 @@ from harnessed import (
     ToolCallContext,
     plugin,
 )
-from harnessed.adapters.fs import LocalFS
 from harnessed.core.events import (
     AssistantMessage,
     ReviewToolResult,
@@ -29,7 +28,7 @@ from harnessed.core.events import (
 )
 from harnessed.core.session import decode_event, encode_event
 from harnessed.core.tools import ToolRegistry
-from harnessed.plugins.tools.fs import fs_tools
+from harnessed.plugins.filesystem import LocalFS, fs_tools
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
@@ -138,18 +137,18 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
     writer_active = False
 
     class ObservedFS(LocalFS):
-        async def read(self, path):
+        async def read(self, path, **ranges):
             if path.name in ("a.txt", "b.txt"):
                 reading.add(path.name)
                 if len(reading) == 2:
                     readers_started.set()
                 try:
                     await release_reads.wait()
-                    return await super().read(path)
+                    return await super().read(path, **ranges)
                 finally:
                     reading.remove(path.name)
             assert not writer_active
-            return await super().read(path)
+            return await super().read(path, **ranges)
 
         async def write(self, path, text):
             nonlocal writer_active

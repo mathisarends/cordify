@@ -26,8 +26,8 @@ from harnessed import (
 from harnessed.core.events import ContextMessage, ModelRequested, ObservationRecorded
 from harnessed.core.session import Session, decode_event, encode_event
 from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.services import llm
-from harnessed.plugins.tools.fs import fs_local
 from harnessed.testing import ScriptedLLM
 
 

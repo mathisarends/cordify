@@ -162,7 +162,7 @@ def coding(
     approval_timeout: float = 300.0,
 ) -> Harness:
     from .plugins._context.instructions import agents_md
-    from .plugins.tools.fs import fs_local, fs_tools
+    from .plugins.filesystem import fs_local, fs_tools
     from .plugins.tools.shell import shell_local, shell_tools
 
     workspace = Path(root).resolve()

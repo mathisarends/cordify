@@ -28,8 +28,8 @@ from harnessed import (
 )
 from harnessed.core.events import ContextMessage
 from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.filesystem import fs_local
 from harnessed.plugins.services import llm
-from harnessed.plugins.tools.fs import fs_local
 from harnessed.testing import ScriptedLLM
 
 

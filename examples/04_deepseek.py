@@ -10,8 +10,8 @@ from harnessed.core.events import ToolCalled
 from harnessed.core.stream import TextDelta
 from harnessed.plugins._context.instructions import agents_md, persona
 from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.filesystem import fs_local, fs_tools
 from harnessed.plugins.persistence import session_jsonl
-from harnessed.plugins.tools.fs import fs_local, fs_tools
 
 
 async def main():

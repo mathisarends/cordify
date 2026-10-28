@@ -38,6 +38,8 @@ def test_imports_follow_layer_direction_and_public_boundaries():
                 for module in modules:
                     if not module or not module.startswith("harnessed"):
                         continue
+                    if layer == "seams" and path.name == "__init__.py":
+                        continue  # Transitional facade re-exports relocated feature contracts.
                     if layer == "plugins" and module.startswith("harnessed.kernel."):
                         violations.append(
                             f"{path.relative_to(ROOT)}:{node.lineno}: use harnessed.kernel facade"

@@ -88,6 +88,7 @@ if TYPE_CHECKING:
         LatestObservationOnly as LatestObservationOnly,
     )
     from harnessed.plugins._context.spill import SpillLargeResults as SpillLargeResults
+    from harnessed.plugins.filesystem import FS as FS
     from harnessed.plugins.observe.cache import CacheBreakpoints as CacheBreakpoints
     from harnessed.plugins.permissions.rules import Rule as Rule
     from harnessed.plugins.permissions.rules import Rules as Rules
@@ -96,7 +97,6 @@ if TYPE_CHECKING:
     from harnessed.seams.approver import ApprovalUnavailable as ApprovalUnavailable
     from harnessed.seams.approver import Approver as Approver
     from harnessed.seams.compaction import Compactor as Compactor
-    from harnessed.seams.fs import FS as FS
     from harnessed.seams.llm import LLM as LLM
     from harnessed.seams.shell import ProcResult as ProcResult
     from harnessed.seams.shell import Shell as Shell
@@ -179,7 +179,7 @@ _EXPORTS = {
     "Rule": ("harnessed.plugins.permissions.rules", "Rule"),
     "Rules": ("harnessed.plugins.permissions.rules", "Rules"),
     "when": ("harnessed.plugins.permissions.rules", "when"),
-    "FS": ("harnessed.seams.fs", "FS"),
+    "FS": ("harnessed.plugins.filesystem", "FS"),
     "ProcResult": ("harnessed.seams.shell", "ProcResult"),
     "Shell": ("harnessed.seams.shell", "Shell"),
     "Inbox": ("harnessed.core.inbox", "Inbox"),

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from harnessed.plugins._context.prompt import instructions as instructions
     from harnessed.plugins._context.spill import SpillLargeResults as SpillLargeResults
     from harnessed.plugins.agents.loop import agent_loop as agent_loop
+    from harnessed.plugins.filesystem import Filesystem as Filesystem
     from harnessed.plugins.observe.cache import CacheBreakpoints as CacheBreakpoints
     from harnessed.plugins.permissions.defaults import Approvals as Approvals
     from harnessed.plugins.permissions.rules import Rules as Rules
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from harnessed.plugins.persistence import session_jsonl as jsonl_sessions
     from harnessed.plugins.services import llm as llm
 _EXPORTS = {
+    "Filesystem": ("harnessed.plugins.filesystem", "Filesystem"),
     "Service": ("harnessed.core.features", "Service"),
     "jsonl_sessions": ("harnessed.plugins.persistence", "session_jsonl"),
     "agent_loop": ("harnessed.plugins.agents.loop", "agent_loop"),
@@ -42,6 +44,7 @@ _EXPORTS = {
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
 }
 __all__ = [
+    "Filesystem",
     "Service",
     "jsonl_sessions",
     "agent_loop",

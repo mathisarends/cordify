@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from harnessed.adapters.fs import LocalFS
 from harnessed.adapters.shell import LocalShell
+from harnessed.plugins.filesystem import LocalFS
 
 
 async def test_local_fs_reads_writes_and_rejects_parent_paths(tmp_path):

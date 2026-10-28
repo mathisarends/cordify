@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from harnessed import FS, Context, Shell, ToolCall, ToolRegistry, plugin
+from harnessed.plugins.filesystem import fs_tools
 from harnessed.plugins.services import tools
-from harnessed.plugins.tools.fs import fs_tools
 from harnessed.plugins.tools.shell import shell_tools
 from harnessed.seams.shell import ProcResult
 
@@ -14,8 +14,8 @@ class MemoryFS:
     def __init__(self, label):
         self.label = label
 
-    async def read(self, path: Path) -> str:
-        return self.label
+    async def read(self, path: Path, *, offset: int = 0, limit: int | None = None) -> str:
+        return self.label[offset : None if limit is None else offset + limit]
 
     async def write(self, path: Path, text: str) -> None:
         pass

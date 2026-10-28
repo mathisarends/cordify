@@ -153,17 +153,18 @@ class Bundle(KernelBundle):
         return register(fn) if fn is not None else register
 
 
+class PluginConfig(BaseModel):
+    """Default external configuration policy; plugin schemas may extend it."""
+
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True, allow_inf_nan=False, hide_input_in_errors=True
+    )
+
+
 class Plugin(KernelPlugin):
     """A plugin recipe with validated configuration and state allocated in setup."""
 
-    class Config(BaseModel):
-        model_config = ConfigDict(
-            extra="forbid",
-            frozen=True,
-            strict=True,
-            allow_inf_nan=False,
-            hide_input_in_errors=True,
-        )
+    config: Any
 
     guidance: str | Section | None = None
 
@@ -182,7 +183,8 @@ class Plugin(KernelPlugin):
         self.tools = tuple(tools)
         if not isinstance(guidance, _DefaultGuidance):
             self.guidance = guidance
-        self.config = self.Config.model_validate(configuration)
+        configuration_type = getattr(type(self), "Config", PluginConfig)
+        self.config = configuration_type.model_validate(configuration)
 
     def _registration_entries(self):
         return (

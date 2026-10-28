@@ -31,10 +31,10 @@ if TYPE_CHECKING:
     from harnessed.core.model import ModelUsage as ModelUsage
     from harnessed.core.model import ToolDefinition as ToolDefinition
     from harnessed.core.model import request_from_dict as request_from_dict
+    from harnessed.plugins.filesystem import FS as FS
     from harnessed.seams.approver import ApprovalUnavailable as ApprovalUnavailable
     from harnessed.seams.approver import Approver as Approver
     from harnessed.seams.compaction import Compactor as Compactor
-    from harnessed.seams.fs import FS as FS
     from harnessed.seams.llm import LLM as LLM
     from harnessed.seams.shell import ProcResult as ProcResult
     from harnessed.seams.shell import Shell as Shell
@@ -72,7 +72,7 @@ _EXPORTS = {
     "tool_result_from_dict": ("harnessed.core.messages", "tool_result_from_dict"),
     "result_content": ("harnessed.core.messages", "result_content"),
     "ContentPart": ("harnessed.core.messages", "ContentPart"),
-    "FS": ("harnessed.seams.fs", "FS"),
+    "FS": ("harnessed.plugins.filesystem", "FS"),
     "Shell": ("harnessed.seams.shell", "Shell"),
     "ProcResult": ("harnessed.seams.shell", "ProcResult"),
     "TokenCounter": ("harnessed.seams.tokens", "TokenCounter"),

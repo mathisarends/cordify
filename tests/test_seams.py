@@ -9,8 +9,8 @@ from harnessed.core.loop import AgentFactory
 from harnessed.core.session import SessionPersistence
 from harnessed.kernel import Context
 from harnessed.plugins.agents.loop import agent_loop
+from harnessed.plugins.filesystem import fs_tools
 from harnessed.plugins.services import llm
-from harnessed.plugins.tools.fs import fs_tools
 from harnessed.plugins.tools.shell import shell_tools
 from harnessed.seams import (
     FS,
@@ -47,8 +47,8 @@ class ForeignFiles:
     def __init__(self):
         self.files = {}
 
-    async def read(self, path: Path) -> str:
-        return self.files[str(path)]
+    async def read(self, path: Path, *, offset: int = 0, limit: int | None = None) -> str:
+        return self.files[str(path)][offset : None if limit is None else offset + limit]
 
     async def write(self, path: Path, text: str) -> None:
         self.files[str(path)] = text

@@ -52,8 +52,8 @@ API calls have not been used for these checks.
   behavior with accept/continue/fail.
 - Support multimodal tool results and model history, including the output-limit,
   spill and token-counting paths. Preserve native provider response state.
-- Move feature contracts to their consumers; expand FS with ranged reads, list,
-  glob, stat/exists, delete and replace/edit. Use consistent path/sequence types.
+- Finish moving the remaining feature contracts to their consumers; FS is now
+  collocated with its implementation and bounded, schema-validated tools.
 - Allow asynchronous provider token counting, retaining a cheap approximation.
 
 ### P0-7 — Finish the public facade and remove duplicate paths

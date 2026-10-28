@@ -1,7 +1,7 @@
 from .context import Context, ContextClosed, Key, MissingService
 from .declarations import Bundle, PluginBase, Registration
 from .di import Inject, InjectMarker
-from .effects import Disposer, effect
+from .effects import Disposer, effect, run_sync
 from .events import (
     Bail,
     Emit,
@@ -28,6 +28,7 @@ __all__ = [
     "InjectMarker",
     "Disposer",
     "effect",
+    "run_sync",
     "Bail",
     "Emit",
     "Event",

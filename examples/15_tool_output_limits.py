@@ -15,7 +15,7 @@ from harnessed import (
     ToolResult,
 )
 from harnessed.core.events import ToolReturned
-from harnessed.plugins.tools.fs import fs_local, fs_tools
+from harnessed.plugins.filesystem import fs_local, fs_tools
 from harnessed.presets import minimal
 from harnessed.testing import ScriptedLLM
 
