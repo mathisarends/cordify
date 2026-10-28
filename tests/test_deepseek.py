@@ -144,9 +144,7 @@ async def test_stream_reports_provider_cache_usage_without_sending_custom_breakp
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         adapter = DeepSeekLLM(api_key="test", client=client)
-        request = ModelRequest(
-            "test", (Message("system", "rules"), Message("user", "hello")), cache_breakpoints=(1,)
-        )
+        request = ModelRequest("test", (Message("system", "rules"), Message("user", "hello")))
         chunks = [chunk async for chunk in adapter.stream(request)]
         usage = next(chunk.usage for chunk in chunks if chunk.usage is not None)
         assert usage.cache_hit_rate == 0.8

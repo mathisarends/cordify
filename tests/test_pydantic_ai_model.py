@@ -137,6 +137,7 @@ def _openai_sse(parts, finish):
 
 
 async def test_native_deepseek_provider_round_trip_with_mock_http_transport():
+    pytest.importorskip("openai")
     import httpx2
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.deepseek import DeepSeekProvider
@@ -255,6 +256,7 @@ def _anthropic_sse(*, tool_call):
 
 
 async def test_native_anthropic_provider_preserves_signed_thinking_across_tool_rounds():
+    pytest.importorskip("anthropic")
     import httpx2
     from pydantic_ai.models.anthropic import AnthropicModel
     from pydantic_ai.providers.anthropic import AnthropicProvider
@@ -273,10 +275,18 @@ async def test_native_anthropic_provider_preserves_signed_thinking_across_tool_r
         model = AnthropicModel(
             "claude-sonnet-5-5", provider=AnthropicProvider(api_key="test", http_client=client)
         )
-        result = await Agent(model=model, plugins=[Calculator()]).run("Add")
+        result = await Agent(model=model, instructions="Fixed rules.", plugins=[Calculator()]).run(
+            "Add",
+            settings={
+                "anthropic_cache_instructions": True,
+                "anthropic_cache_tool_definitions": True,
+            },
+        )
         assert result.text == "3" and not client.is_closed
     assistant = next(
         message for message in requests[1]["messages"] if message["role"] == "assistant"
     )
     thinking = next(part for part in assistant["content"] if part["type"] == "thinking")
     assert thinking["thinking"] == "plan" and thinking["signature"] == "opaque-signature"
+    assert requests[0]["system"][-1]["cache_control"]["type"] == "ephemeral"
+    assert requests[0]["tools"][-1]["cache_control"]["type"] == "ephemeral"

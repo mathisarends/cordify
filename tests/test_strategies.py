@@ -9,7 +9,6 @@ from harnessed import (
 )
 from harnessed import (
     Bundle,
-    CacheBreakpoints,
     Harness,
     Inject,
     LatestObservationOnly,
@@ -17,7 +16,6 @@ from harnessed import (
     LocalSpillStore,
     Message,
     ModelChunk,
-    ModelRequest,
     ModelUsage,
     Observation,
     Plugin,
@@ -30,7 +28,6 @@ from harnessed import (
 )
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    CacheMetrics,
     CompactionApplied,
     ModelUsageRecorded,
     ObservationPolicyApplied,
@@ -154,7 +151,6 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
             llm(model),
             tools,
             ThresholdCompaction(at=0.5, keep_turns=0, summary_tokens=24),
-            CacheBreakpoints(),
             session_jsonl(tmp_path),
         ],
         context_window=400,
@@ -170,7 +166,6 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
         assert "current task" in texts
         assert "Task context [ticket]:\npreserve current context" in texts
         assert "x" * 1200 not in "\n".join(texts)
-        assert request.cache_breakpoints and max(request.cache_breakpoints) <= len(request.messages)
         replay = Session("replay", seed=agent.session.events)
         assert replay.messages == agent.session.messages
         assert agent.session.fork("fork").messages == replay.messages
@@ -330,29 +325,14 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
     assert agent.session.events[-1].max_summaries is None
 
 
-async def test_cache_markers_exclude_current_observation_and_metrics_require_provider_usage():
-    class Observer(Plugin):
-        @hook(PreStep)
-        async def observe(self, event, next_, agent: Inject[Agent]):
-            agent.observe(Observation("browser", "FULL", "brief"))
-            return await next_()
-
+async def test_cache_usage_is_preserved_as_provider_reported_usage():
     usage = ModelUsage(100, 10, 80, 20)
-    model = ScriptedLLM(
-        [[ModelChunk(text="one", usage=usage)], [ModelChunk(text="two", usage=ModelUsage(5))]]
-    )
-    async with Harness([agent_loop(), llm(model), Observer(), CacheBreakpoints()]).session(
-        "cache"
-    ) as agent:
+    model = ScriptedLLM([[ModelChunk(text="one", usage=usage)]])
+    async with Harness([agent_loop(), llm(model)]).session("cache") as agent:
         await agent.run("one")
-        request = model.requests[0]
-        assert request.messages[request.cache_breakpoints[0]].text == "FULL"
-        metrics = [e for e in agent.session.events if isinstance(e, CacheMetrics)]
-        assert len(metrics) == 1 and metrics[0].hit_rate == 0.8
-        assert decode_event(encode_event(metrics[0])) == metrics[0]
-        await agent.run("two")
-        assert sum(isinstance(e, ModelUsageRecorded) for e in agent.session.events) == 2
-        assert sum(isinstance(e, CacheMetrics) for e in agent.session.events) == 1
+        event = agent.session.last(ModelUsageRecorded)
+        assert event.usage.cache_hit_rate == 0.8
+        assert decode_event(encode_event(event)) == event
 
 
 async def test_llm_compactor_uses_explicit_model_without_tools_and_closes_stream():
@@ -385,7 +365,6 @@ async def test_llm_compactor_keeps_tool_names_and_arguments_in_summary_input():
         lambda: ThresholdCompaction(keep_turns=-1),
         lambda: SpillLargeResults(0),
         lambda: LatestObservationOnly(max_summaries=-1),
-        lambda: ModelRequest("test", (), cache_breakpoints=(1,)),
         lambda: ModelUsage(-1),
     ],
 )

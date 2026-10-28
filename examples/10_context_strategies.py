@@ -8,7 +8,6 @@ from harnessed import (
 )
 from harnessed import (
     Bundle,
-    CacheBreakpoints,
     Harness,
     Inject,
     LatestObservationOnly,
@@ -23,7 +22,7 @@ from harnessed import (
     ToolCall,
     hook,
 )
-from harnessed.core.session.events import CacheMetrics, CompactionApplied, SpillCreated
+from harnessed.core.session.events import CompactionApplied, SpillCreated
 from harnessed.plugins._context.providers import spill_store
 from harnessed.plugins.agents.loop import agent_loop
 from harnessed.plugins.services import llm
@@ -80,7 +79,6 @@ async def main():
                 spill_store(LocalSpillStore(directory)),
                 SpillLargeResults(max_tokens=100, preview_tokens=8),
                 ThresholdCompaction(at=0.5, keep_turns=0, summary_tokens=32),
-                CacheBreakpoints(),
             ],
             context_window=1000,
         )
@@ -93,10 +91,6 @@ async def main():
                     print(f"Compacted event prefix [0, {event.through}): {event.summary[:100]}")
                 elif isinstance(event, SpillCreated):
                     print(f"Spilled {event.tokens} estimated tokens to {event.ref.path}")
-                elif isinstance(event, CacheMetrics):
-                    print(f"Cache hit rate reported by the scripted model: {event.hit_rate:.0%}")
-            for index, request in enumerate(model.requests, 1):
-                print(f"Request {index}: cache breakpoints={request.cache_breakpoints}")
             print("Current observation:", model.requests[-1].messages[-1].text)
 
 

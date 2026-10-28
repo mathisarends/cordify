@@ -91,9 +91,7 @@ class _Compaction(Plugin):
             policy=type(self).__name__,
             id=uuid4().hex,
         )
-        compacted = replace(
-            request, messages=compact_request(request, events, applied), cache_breakpoints=()
-        )
+        compacted = replace(request, messages=compact_request(request, events, applied))
         before = await count_request(counter, request)
         after = await count_request(counter, compacted)
         if after >= before:

@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from harnessed.plugins.observations import (
         LatestObservationOnly as LatestObservationOnly,
     )
-    from harnessed.plugins.observe.cache import CacheBreakpoints as CacheBreakpoints
     from harnessed.plugins.rules import Rules as Rules
     from harnessed.plugins.rules import when as when
     from harnessed.plugins.services import llm as llm
@@ -54,7 +53,6 @@ _EXPORTS = {
     "SlidingWindowCompaction": ("harnessed.plugins._context.compaction", "SlidingWindowCompaction"),
     "Rules": ("harnessed.plugins.rules", "Rules"),
     "when": ("harnessed.plugins.rules", "when"),
-    "CacheBreakpoints": ("harnessed.plugins.observe.cache", "CacheBreakpoints"),
     "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
     "SpillLargeResults": ("harnessed.plugins._context.spill", "SpillLargeResults"),
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
@@ -81,7 +79,6 @@ __all__ = [
     "SlidingWindowCompaction",
     "Rules",
     "when",
-    "CacheBreakpoints",
     "LatestObservationOnly",
     "SpillLargeResults",
     "ThresholdCompaction",

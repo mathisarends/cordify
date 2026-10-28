@@ -93,7 +93,6 @@ if TYPE_CHECKING:
     from harnessed.plugins.observations import (
         LatestObservationOnly as LatestObservationOnly,
     )
-    from harnessed.plugins.observe.cache import CacheBreakpoints as CacheBreakpoints
     from harnessed.plugins.rules import Rule as Rule
     from harnessed.plugins.rules import Rules as Rules
     from harnessed.plugins.rules import when as when
@@ -191,7 +190,6 @@ _EXPORTS = {
     "derive_requests": ("harnessed.core.session.session", "derive_requests"),
     "LocalSpillStore": ("harnessed.adapters.spill", "LocalSpillStore"),
     "SpillStore": ("harnessed.seams.spill", "SpillStore"),
-    "CacheBreakpoints": ("harnessed.plugins.observe.cache", "CacheBreakpoints"),
     "LatestObservationOnly": ("harnessed.plugins.observations", "LatestObservationOnly"),
     "SpillLargeResults": ("harnessed.plugins._context.spill", "SpillLargeResults"),
     "ThresholdCompaction": ("harnessed.plugins._context.compaction", "ThresholdCompaction"),
@@ -286,7 +284,6 @@ __all__ = [
     "derive_requests",
     "LocalSpillStore",
     "SpillStore",
-    "CacheBreakpoints",
     "LatestObservationOnly",
     "SpillLargeResults",
     "ThresholdCompaction",

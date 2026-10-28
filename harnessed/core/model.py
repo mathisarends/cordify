@@ -29,21 +29,12 @@ class ModelRequest:
     messages: tuple[Message, ...]
     tools: tuple[ToolDefinition, ...] = ()
     max_tokens: int | None = None
-    cache_breakpoints: tuple[int, ...] = ()
     settings: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
         object.__setattr__(self, "settings", freeze(self.settings))
-        points = tuple(self.cache_breakpoints)
-        if any(type(point) is not int or not 0 < point <= len(self.messages) for point in points):
-            raise ValueError(
-                "Cache breakpoints must be exclusive message offsets inside the request"
-            )
-        if tuple(sorted(set(points))) != points:
-            raise ValueError("Cache breakpoints must be unique and ordered")
-        object.__setattr__(self, "cache_breakpoints", points)
 
 
 @dataclass(frozen=True)
@@ -160,6 +151,5 @@ def request_from_dict(data: dict) -> ModelRequest:
         messages=tuple(message_from_dict(m) for m in data["messages"]),
         tools=tuple(ToolDefinition(**t) for t in data["tools"]),
         max_tokens=data["max_tokens"],
-        cache_breakpoints=tuple(data.get("cache_breakpoints", ())),
         settings=data.get("settings", {}),
     )

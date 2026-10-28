@@ -146,8 +146,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
   at_ratio/every_turns triggers, model summarization, pre-request side-effect
   boundaries and one reactive context-error retry.
 - Spill is session-owned, bounded by retention, with ranged reads and cleanup.
-- CacheBreakpoints must use actual native provider cache controls or be removed;
-  do not export an inert feature. Usage events already carry cache metrics.
 - Add the approved Subagent child-session/log mechanism and inherited approvals.
 - Add Skill/Skills with lazy discovery/load/read, safe path handling and optional
   YAML as specified in api-target.md. MCP, OTel, UI, RAG and eval systems remain

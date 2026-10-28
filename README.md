@@ -1544,7 +1544,6 @@ the guard before the provider call.
 
 ```python
 from harnessed import (
-    CacheBreakpoints,
     LatestObservationOnly,
     Rules,
     SpillLargeResults,
@@ -1573,7 +1572,6 @@ coding = Harness(
         rules,
         SpillLargeResults(max_tokens=8_000),
         ThresholdCompaction(at=0.8),
-        CacheBreakpoints(),
     ],
     context_window=128_000,
 )
@@ -1618,9 +1616,9 @@ its meaning, and use distinct names for independent Rules instances.
   last two by default. A successful replacement writes exactly one
   `CompactionApplied` event. Replay and fork derive the same history; active
   turns, inputs, and tool pairs are not split.
-- `CacheBreakpoints` marks the end of the prefix as an exclusive message position
-  in `ModelRequest.cache_breakpoints`; full current observations stay in the tail.
-  It writes `CacheMetrics` only from provider-reported usage.
+- Provider cache controls are passed through PydanticAI model settings, such as
+  `anthropic_cache_instructions=True`. Cache reads and writes are recorded in usage;
+  Harnessed does not add generic cache markers that a provider might ignore.
 
 `TokenCounter`, `Compactor`, and `SpillStore` are replaceable services.
 The default estimates tokens from UTF-8 bytes and uses an `ExtractiveCompactor`
