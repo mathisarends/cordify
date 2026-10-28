@@ -1,15 +1,9 @@
 from dataclasses import replace
 
-from ...core.events import (
-    CacheMetrics,
-    ConfigureRequest,
-    ModelUsageRecorded,
-    StepStart,
-)
-from ...core.features import Plugin
-from ...core.loop import Agent
-from ...kernel.di import Inject
-from ...kernel.plugin import hook
+from cordify.core.events import CacheMetrics, ConfigureRequest, ModelUsageRecorded, StepStart
+from cordify.core.features import Plugin
+from cordify.core.loop import Agent
+from cordify.kernel import Inject, hook
 
 
 class CacheBreakpoints(Plugin):

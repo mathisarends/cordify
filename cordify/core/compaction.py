@@ -1,7 +1,8 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from ..seams.models import Message, ModelRequest
+from cordify.seams.models import Message, ModelRequest
+
 from .events import CompactionApplied, SessionEvent, TurnEnd, TurnStart
 from .session import _derive_message_entries, derive_messages
 

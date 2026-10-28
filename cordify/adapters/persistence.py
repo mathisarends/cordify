@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 from uuid import uuid4
 
-from ..core.events import LogTailRecovered, SessionEvent
-from ..core.session import Session, decode_event, encode_event
+from cordify.core.events import LogTailRecovered, SessionEvent
+from cordify.core.session import Session, decode_event, encode_event
 
 
 class JsonlPersistence:

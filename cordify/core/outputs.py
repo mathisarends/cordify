@@ -1,6 +1,6 @@
 from dataclasses import dataclass, replace
 
-from ..seams.models import OutputTruncation, ToolResult
+from cordify.seams.models import OutputTruncation, ToolResult
 
 
 @dataclass(frozen=True)

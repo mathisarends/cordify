@@ -1,7 +1,8 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from ..seams.models import ModelRequest
+from cordify.seams.models import ModelRequest
+
 from .events import ModelRequested, SessionEvent, StepEnd, StepStart, TurnEnd, TurnStart
 
 

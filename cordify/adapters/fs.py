@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ..kernel.effects import run_sync
+from cordify.kernel.effects import run_sync
 
 
 class LocalFS:

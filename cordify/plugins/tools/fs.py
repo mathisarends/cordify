@@ -1,11 +1,9 @@
 from pathlib import Path
 
-from ...adapters.fs import LocalFS
-from ...core.tools import ToolRegistry
-from ...kernel.context import Context
-from ...kernel.di import Inject
-from ...kernel.plugin import plugin
-from ...seams.fs import FS
+from cordify.adapters.fs import LocalFS
+from cordify.core.tools import ToolRegistry
+from cordify.kernel import Context, Inject, plugin
+from cordify.seams.fs import FS
 
 
 @plugin()

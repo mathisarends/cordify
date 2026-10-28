@@ -2,7 +2,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..seams.models import ToolCall
+from cordify.seams.models import ToolCall
+
 from .events import ToolProgress
 
 if TYPE_CHECKING:

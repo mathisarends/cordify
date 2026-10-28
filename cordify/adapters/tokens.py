@@ -2,7 +2,7 @@ import json
 import math
 from collections.abc import Iterable
 
-from ..seams.models import ImagePart, Message, ModelRequest, to_dict
+from cordify.seams.models import ImagePart, Message, ModelRequest, to_dict
 
 
 class ApproximateTokenCounter:

@@ -1,9 +1,8 @@
-from ...core.loop import AgentFactory, ReactLoopFactory
-from ...core.prompt import SystemPrompt
-from ...core.tools import ToolRegistry
-from ...kernel.context import Context
-from ...kernel.plugin import plugin
-from ...seams.llm import LLM
+from cordify.core.loop import AgentFactory, ReactLoopFactory
+from cordify.core.prompt import SystemPrompt
+from cordify.core.tools import ToolRegistry
+from cordify.kernel import Context, plugin
+from cordify.seams.llm import LLM
 
 
 @plugin(needs=[LLM, ToolRegistry, SystemPrompt])

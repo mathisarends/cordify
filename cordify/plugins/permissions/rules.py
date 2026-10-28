@@ -3,13 +3,18 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 
-from ...core.events import ReviewToolResult, RuleEvaluated, RuleTriggered, ToolCalled, ToolReturned
-from ...core.features import Plugin
-from ...core.loop import Agent
-from ...kernel.di import Inject
-from ...kernel.plugin import hook
-from ...seams.models import ToolCall, ToolResult, system, to_dict, user
-from ...seams.tokens import TokenCounter
+from cordify.core.events import (
+    ReviewToolResult,
+    RuleEvaluated,
+    RuleTriggered,
+    ToolCalled,
+    ToolReturned,
+)
+from cordify.core.features import Plugin
+from cordify.core.loop import Agent
+from cordify.kernel import Inject, hook
+from cordify.seams.models import ToolCall, ToolResult, system, to_dict, user
+from cordify.seams.tokens import TokenCounter
 
 
 @dataclass(frozen=True)

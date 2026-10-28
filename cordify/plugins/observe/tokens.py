@@ -1,7 +1,6 @@
-from ...adapters.tokens import ApproximateTokenCounter
-from ...kernel.context import Context
-from ...kernel.plugin import plugin
-from ...seams.tokens import TokenCounter
+from cordify.adapters.tokens import ApproximateTokenCounter
+from cordify.kernel import Context, plugin
+from cordify.seams.tokens import TokenCounter
 
 
 @plugin

@@ -1,10 +1,9 @@
 from collections.abc import Callable, Iterable
 
-from ...core.events import ToolPolicy
-from ...kernel.context import Context
-from ...kernel.plugin import plugin
-from ...seams.approver import Approver
-from ...seams.models import Decision
+from cordify.core.events import ToolPolicy
+from cordify.kernel import Context, plugin
+from cordify.seams.approver import Approver
+from cordify.seams.models import Decision
 
 
 def approval_gate(

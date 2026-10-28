@@ -1,10 +1,8 @@
 import asyncio
 from pathlib import Path
 
-from ...core.prompt import SystemPrompt
-from ...kernel.context import Context
-from ...kernel.di import Inject
-from ...kernel.plugin import plugin
+from cordify.core.prompt import SystemPrompt
+from cordify.kernel import Context, Inject, plugin
 
 
 @plugin

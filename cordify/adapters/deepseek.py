@@ -3,12 +3,8 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 
-from ..seams.models import (
-    ModelChunk,
-    ModelRequest,
-    ModelUsage,
-    ToolCall,
-)
+from cordify.seams.models import ModelChunk, ModelRequest, ModelUsage, ToolCall
+
 from .base import LLM, RetryPolicy
 from .deepseek_models import (
     TOOL_ARGUMENTS,
@@ -161,8 +157,8 @@ class DeepSeekLLM(LLM):
 
 
 def deepseek(*, model: str | None = None, api_key: str | None = None, **kwargs):
-    from ..kernel import plugin
-    from ..seams.llm import LLM
+    from cordify.kernel import plugin
+    from cordify.seams.llm import LLM
 
     implementation = DeepSeekLLM(model=model, api_key=api_key, **kwargs)
 

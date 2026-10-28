@@ -1,12 +1,10 @@
 import asyncio
 from pathlib import Path
 
-from ...adapters.shell import LocalShell
-from ...core.tools import ToolRegistry
-from ...kernel.context import Context
-from ...kernel.di import Inject
-from ...kernel.plugin import plugin
-from ...seams.shell import ProcResult, Shell
+from cordify.adapters.shell import LocalShell
+from cordify.core.tools import ToolRegistry
+from cordify.kernel import Context, Inject, plugin
+from cordify.seams.shell import ProcResult, Shell
 
 
 @plugin()

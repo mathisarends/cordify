@@ -2,12 +2,13 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, ClassVar, overload
 
-from ..kernel import Context
-from ..kernel.declarations import Bundle as KernelBundle
-from ..kernel.declarations import HookEntry, Registration
-from ..kernel.declarations import Plugin as KernelPlugin
-from ..kernel.events import on as hook
-from ..kernel.plugin import PluginLike
+from cordify.kernel import Context
+from cordify.kernel.declarations import Bundle as KernelBundle
+from cordify.kernel.declarations import HookEntry, Registration
+from cordify.kernel.declarations import Plugin as KernelPlugin
+from cordify.kernel.events import on as hook
+from cordify.kernel.plugin import PluginLike
+
 from .scheduling import ResourceSpec, resource_spec
 from .tools import ToolRegistry
 

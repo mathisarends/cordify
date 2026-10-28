@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
-from ..seams.models import SpillRef
+from cordify.seams.models import SpillRef
 
 
 class LocalSpillStore:

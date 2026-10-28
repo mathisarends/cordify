@@ -1,16 +1,12 @@
 from dataclasses import replace
 
-from ...core.budget import truncate
-from ...core.events import (
-    ReviewToolResult,
-    SpillCreated,
-)
-from ...core.features import Plugin, tool
-from ...core.loop import Agent
-from ...kernel.di import Inject
-from ...kernel.plugin import hook
-from ...seams.spill import SpillStore
-from ...seams.tokens import TokenCounter
+from cordify.core.budget import truncate
+from cordify.core.events import ReviewToolResult, SpillCreated
+from cordify.core.features import Plugin, tool
+from cordify.core.loop import Agent
+from cordify.kernel import Inject, hook
+from cordify.seams.spill import SpillStore
+from cordify.seams.tokens import TokenCounter
 
 
 class SpillLargeResults(Plugin):

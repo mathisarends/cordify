@@ -7,7 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from ..seams.models import ContentPart, ImagePart, Message, TextPart, freeze, system, to_dict, user
+from cordify.seams.models import (
+    ContentPart,
+    ImagePart,
+    Message,
+    TextPart,
+    freeze,
+    system,
+    to_dict,
+    user,
+)
 
 
 @dataclass(frozen=True)

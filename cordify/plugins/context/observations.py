@@ -1,7 +1,7 @@
-from ...core.events import ObservationPolicyApplied
-from ...core.features import Plugin
-from ...core.loop import Agent
-from ...kernel.di import Inject
+from cordify.core.events import ObservationPolicyApplied
+from cordify.core.features import Plugin
+from cordify.core.loop import Agent
+from cordify.kernel import Inject
 
 
 class LatestObservationOnly(Plugin):

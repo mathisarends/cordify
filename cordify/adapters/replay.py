@@ -2,7 +2,7 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncIterator, Iterable
 
-from ..seams.models import ModelChunk, ModelRequest
+from cordify.seams.models import ModelChunk, ModelRequest
 
 
 class ScriptedLLM:

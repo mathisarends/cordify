@@ -3,7 +3,7 @@ import inspect
 from collections.abc import Awaitable, Callable, Iterable, Iterator
 from dataclasses import dataclass
 
-from ..seams.models import ToolCall, ToolResult
+from cordify.seams.models import ToolCall, ToolResult
 
 type ResourceSpec = tuple[str, ...] | Callable[[ToolCall], Iterable[str]]
 

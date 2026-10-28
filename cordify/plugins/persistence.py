@@ -1,9 +1,8 @@
 from pathlib import Path
 
-from ..adapters.persistence import JsonlPersistence
-from ..core.session import SessionPersistence
-from ..kernel.context import Context
-from ..kernel.plugin import plugin
+from cordify.adapters.persistence import JsonlPersistence
+from cordify.core.session import SessionPersistence
+from cordify.kernel import Context, plugin
 
 
 @plugin()

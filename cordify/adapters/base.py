@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
-from ..seams.models import ModelChunk, ModelRequest
+from cordify.seams.models import ModelChunk, ModelRequest
 
 
 @dataclass(frozen=True)

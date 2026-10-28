@@ -3,8 +3,8 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ..kernel.context import Context
-from ..kernel.effects import Disposer
+from cordify.kernel.context import Context
+from cordify.kernel.effects import Disposer
 
 
 @dataclass(eq=False)

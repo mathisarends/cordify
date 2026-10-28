@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from .._exports import exported
+from cordify._exports import exported
 
 if TYPE_CHECKING:
     from cordify.core.approvals import Approval as Approval

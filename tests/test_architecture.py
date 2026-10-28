@@ -13,7 +13,7 @@ PACKAGE = ROOT / "cordify"
 LAYERS = {"kernel": 0, "seams": 1, "core": 2, "plugins": 3, "adapters": 3}
 
 
-def test_imports_follow_the_layer_direction_and_never_use_legacy_facades():
+def test_imports_follow_layer_direction_and_public_boundaries():
     violations = []
     for layer, rank in LAYERS.items():
         for path in (PACKAGE / layer).rglob("*.py"):
@@ -35,6 +35,10 @@ def test_imports_follow_the_layer_direction_and_never_use_legacy_facades():
                 for module in modules:
                     if not module or not module.startswith("cordify"):
                         continue
+                    if layer == "plugins" and module.startswith("cordify.kernel."):
+                        violations.append(
+                            f"{path.relative_to(ROOT)}:{node.lineno}: use cordify.kernel facade"
+                        )
                     target = module.split(".")[1:2]
                     if target == ["_exports"]:
                         continue

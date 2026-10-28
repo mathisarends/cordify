@@ -8,7 +8,7 @@ from typing import Annotated, Any, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
-from ..seams.models import result_content, to_dict
+from cordify.seams.models import result_content, to_dict
 
 _CONFIG = ConfigDict(
     strict=True,

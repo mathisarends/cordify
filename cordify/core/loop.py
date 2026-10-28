@@ -6,12 +6,13 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
-from ..kernel.context import Context
-from ..kernel.effects import Disposer
-from ..seams.approver import ApprovalUnavailable, Approver
-from ..seams.llm import LLM
-from ..seams.models import Decision, Message, ModelRequest, Observation, ToolCall, ToolResult
-from ..seams.tokens import TokenCounter
+from cordify.kernel.context import Context
+from cordify.kernel.effects import Disposer
+from cordify.seams.approver import ApprovalUnavailable, Approver
+from cordify.seams.llm import LLM
+from cordify.seams.models import Decision, Message, ModelRequest, Observation, ToolCall, ToolResult
+from cordify.seams.tokens import TokenCounter
+
 from .approvals import validate_approval_timeout
 from .attachments import Attachment, prepare_input
 from .budget import ContextBudget

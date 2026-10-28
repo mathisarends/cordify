@@ -3,15 +3,14 @@ from collections.abc import Iterable
 from dataclasses import replace
 from uuid import uuid4
 
-from ...core.budget import ContextBudget, truncate
-from ...core.compaction import compact_request, plan_compaction
-from ...core.events import CompactionApplied, PrepareRequest, StepStart
-from ...core.features import Plugin
-from ...core.loop import Agent
-from ...kernel.di import Inject
-from ...kernel.plugin import hook
-from ...seams.compaction import Compactor
-from ...seams.tokens import TokenCounter
+from cordify.core.budget import ContextBudget, truncate
+from cordify.core.compaction import compact_request, plan_compaction
+from cordify.core.events import CompactionApplied, PrepareRequest, StepStart
+from cordify.core.features import Plugin
+from cordify.core.loop import Agent
+from cordify.kernel import Inject, hook
+from cordify.seams.compaction import Compactor
+from cordify.seams.tokens import TokenCounter
 
 
 class _Compaction(Plugin):

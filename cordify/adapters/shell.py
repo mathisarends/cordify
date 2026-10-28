@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 
-from ..seams.shell import ProcResult
+from cordify.seams.shell import ProcResult
 
 
 class LocalShell:

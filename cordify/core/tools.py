@@ -5,11 +5,12 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast, get_type_hints, overload
 
-from ..kernel.context import Context
-from ..kernel.di import bind_injected, injections
-from ..kernel.effects import Disposer, run_sync
-from ..seams.models import ToolCall, ToolDefinition, ToolResult, result_content, to_dict
-from ..seams.shell import ProcResult
+from cordify.kernel.context import Context
+from cordify.kernel.di import bind_injected, injections
+from cordify.kernel.effects import Disposer, run_sync
+from cordify.seams.models import ToolCall, ToolDefinition, ToolResult, result_content, to_dict
+from cordify.seams.shell import ProcResult
+
 from .execution import ToolCallContext
 from .scheduling import ResourceSpec, ToolPlan, ToolScheduling, resource_spec
 from .validation import ToolArguments, tool_result_content

@@ -2,7 +2,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from math import isfinite
 
-from ..seams.models import Decision
+from cordify.seams.models import Decision
+
 from .events import ApprovalRequested, ApprovalResolved, ApprovalRevoked, SessionEvent
 
 

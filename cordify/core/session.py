@@ -5,8 +5,8 @@ from dataclasses import fields, is_dataclass
 from types import MappingProxyType
 from typing import Protocol
 
-from ..kernel.context import Context
-from ..seams.models import (
+from cordify.kernel.context import Context
+from cordify.seams.models import (
     Message,
     ModelRequest,
     ModelUsage,
@@ -19,6 +19,7 @@ from ..seams.models import (
     to_dict,
     tool_result_from_dict,
 )
+
 from .approvals import Approvals
 from .control import RunControl
 from .events import (

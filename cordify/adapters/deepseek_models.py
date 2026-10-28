@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from ..seams.models import ImagePart, Message, ModelRequest, TextPart, to_dict
+from cordify.seams.models import ImagePart, Message, ModelRequest, TextPart, to_dict
 
 type NonEmpty = Annotated[str, Field(min_length=1, pattern=r"\S")]
 type Counter = Annotated[int, Field(ge=0)]

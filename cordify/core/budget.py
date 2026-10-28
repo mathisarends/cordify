@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from ..seams.models import ModelRequest
-from ..seams.tokens import TokenCounter
+from cordify.seams.models import ModelRequest
+from cordify.seams.tokens import TokenCounter
 
 
 def truncate(text: str, max_tokens: int, counter: TokenCounter) -> str:

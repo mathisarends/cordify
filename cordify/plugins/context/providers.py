@@ -1,11 +1,9 @@
-from ...adapters.compaction import ExtractiveCompactor
-from ...adapters.spill import LocalSpillStore
-from ...kernel.context import Context
-from ...kernel.di import Inject
-from ...kernel.plugin import plugin
-from ...seams.compaction import Compactor
-from ...seams.spill import SpillStore
-from ...seams.tokens import TokenCounter
+from cordify.adapters.compaction import ExtractiveCompactor
+from cordify.adapters.spill import LocalSpillStore
+from cordify.kernel import Context, Inject, plugin
+from cordify.seams.compaction import Compactor
+from cordify.seams.spill import SpillStore
+from cordify.seams.tokens import TokenCounter
 
 
 @plugin

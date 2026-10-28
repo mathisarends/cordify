@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from ..kernel.events import Bail, Emit, Waterfall
-from ..seams.models import (
+from cordify.kernel.events import Bail, Emit, Waterfall
+from cordify.seams.models import (
     Decision,
     Message,
     ModelRequest,
