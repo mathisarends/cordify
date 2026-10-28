@@ -3,7 +3,7 @@ from typing import Annotated, Protocol
 
 import pytest
 
-from harnessed import Agent, Context, Inject, Plugin, ToolCall, plugin
+from harnessed import Agent, Context, Inject, Plugin, ToolCall
 from harnessed.core.messages import ToolResult
 from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
@@ -89,8 +89,9 @@ async def test_decorators_preserve_original_functions_and_annotated_descriptions
         assert tool(original) is original
         assert tool()(original) is original
         bundle = Bundle("test")
-        assert bundle.tool(original) is original
-        assert bundle.tool(name="alias", timeout=1)(original) is original
+        assert not hasattr(bundle, "tool")
+        assert not hasattr(bundle, "add_tool")
+        assert not hasattr(ctx, "tool")
         assert await original(3) == 6
         schema = registry.definitions[0].parameters["properties"]["value"]
         assert schema["description"] == "An integer"
@@ -186,18 +187,17 @@ async def test_tool_context_exposes_log_inbox_and_progress_without_the_driver():
 
 
 async def test_functional_context_tools_follow_explicit_needs_and_temporal_restarts():
-    @plugin(needs=[ToolRegistry, Backend])
-    async def tools(ctx: Context):
-        @ctx.tool(readonly=True)
-        async def read(*, backend: Inject[Backend]) -> str:
-            return await backend.read()
+    class Tools(Plugin):
+        needs = (Backend,)
 
-        yield
+        @tool(readonly=True)
+        async def read(self, *, backend: Inject[Backend]) -> str:
+            return await backend.read()
 
     async with Context() as ctx:
         registry = ToolRegistry(ctx)
         ctx.provide(ToolRegistry, registry)
-        handle = await ctx.plugin(tools())
+        handle = await ctx.plugin(Tools())
         assert handle.status == "waiting"
         first = ctx.provide(Backend, MemoryBackend("first"))
         await ctx.settle()

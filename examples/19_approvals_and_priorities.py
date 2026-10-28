@@ -3,11 +3,11 @@
 import asyncio
 from time import perf_counter
 
-from harnessed import Agent, ApprovalAnswer, Context, Plugin, PolicyDecision, ToolCall, plugin, tool
+from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable
 from harnessed.core.session.events import ToolReturned
-from harnessed.core.tools.registry import ToolRegistry
 from harnessed.hooks import ApprovalRequest, ToolPolicy
+from harnessed.kernel import hook
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals
 from harnessed.testing import ScriptedModel
@@ -36,43 +36,40 @@ async def without_ui():
 async def listener_and_priorities():
     order = []
 
-    @plugin(needs=(ToolRegistry,))
-    async def approved_tools(ctx: Context):
-        @ctx.tool
-        async def publish() -> str:
+    class ApprovedTools(Plugin):
+        @tool
+        async def publish(self) -> str:
             order.append("execute")
             return "Artifact published by the offline example."
 
-        @ctx.hook(ToolPolicy, priority=0)
-        async def timing(event, next_):
+        @hook(ToolPolicy, priority=0)
+        async def timing(self, event, next_):
             order.append("timer")
             start = perf_counter()
             result = await next_()
             print(f"Downstream policy time: {(perf_counter() - start) * 1000:.1f} ms")
             return result
 
-        @ctx.hook(ToolPolicy, priority=100)
-        async def check(event, next_):
+        @hook(ToolPolicy, priority=100)
+        async def check(self, event, next_):
             order.append("policy")
             await asyncio.sleep(0.005)
             return await next_()
 
-        @ctx.on(ApprovalRequest)
-        async def answer(event):
+        @hook(ApprovalRequest)
+        async def answer(self, event):
             order.append("approval")
             start = perf_counter()
             await asyncio.sleep(0.025)
             print(f"Approval response time: {(perf_counter() - start) * 1000:.1f} ms")
             return ApprovalAnswer.ALLOW
 
-        yield
-
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("publish"))], "Published."])
     agent = Agent(
         model=model,
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
-            approved_tools(),
+            ApprovedTools(),
             ApprovalGate(risky={"publish"}, priority=-100),
         ],
     )

@@ -6,7 +6,7 @@ from typing import ClassVar
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import PolicyDecision, ToolCall, ToolResult
+from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
 from harnessed.core.hooks import PrepareRequest
 from harnessed.core.messages import System, User
 from harnessed.core.model import ModelChunk
@@ -76,11 +76,13 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
 
 
 async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
-    features = Bundle("math")
 
-    @features.tool
-    async def add(a: int, b: int) -> int:
-        return a + b
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def add(self, a: int, b: int) -> int:
+            return a + b
+
+    features = FeaturesPlugin(name="math")
 
     model = ScriptedModel(
         [

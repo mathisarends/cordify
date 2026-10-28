@@ -5,13 +5,12 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, Inject, ToolCall, plugin
+from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, plugin, tool
 from harnessed import Session as Agent
 from harnessed.core.approvals import ApprovalGate, ApprovalState, Approver, CallbackApprover
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,
@@ -24,6 +23,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.files import MemoryFiles
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.store import SessionStore
+from harnessed.kernel import hook
 from harnessed.plugins import Approvals, JsonlSessions, Service
 from harnessed.testing import ScriptedModel
 
@@ -33,15 +33,17 @@ def tool_model():
 
 
 async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_revoked(tmp_path):
-    tools = Bundle("work")
     asked, executed = ([], [])
 
-    @tools.tool
-    async def work(agent: Inject[Agent]) -> str:
-        assert isinstance(agent.log.events[-1], ToolExecutionStarted)
-        assert agent.log.approvals.records[-1].decision is ApprovalAnswer.ALWAYS
-        executed.append(True)
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self, agent: Inject[Agent]) -> str:
+            assert isinstance(agent.log.events[-1], ToolExecutionStarted)
+            assert agent.log.approvals.records[-1].decision is ApprovalAnswer.ALWAYS
+            executed.append(True)
+            return "ok"
+
+    tools = ToolsPlugin(name="work")
 
     def answer(request):
         call = request.call
@@ -89,13 +91,15 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
 async def test_single_call_answers_are_logged_without_becoming_persistent_grants(
     tmp_path, decision
 ):
-    tools = Bundle("work")
     asked, executed = ([], [])
 
-    @tools.tool
-    async def work() -> str:
-        executed.append(True)
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            executed.append(True)
+            return "ok"
+
+    tools = ToolsPlugin(name="work")
 
     def answer(request):
         call = request.call
@@ -123,12 +127,14 @@ async def test_single_call_answers_are_logged_without_becoming_persistent_grants
 
 
 async def test_gate_scopes_do_not_share_persistent_permissions(tmp_path):
-    tools = Bundle("work")
     asked = []
 
-    @tools.tool
-    async def work() -> str:
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            return "ok"
+
+    tools = ToolsPlugin(name="work")
 
     def answer(request):
         call = request.call
@@ -150,16 +156,18 @@ async def test_gate_scopes_do_not_share_persistent_permissions(tmp_path):
 
 
 async def test_tool_policy_ask_uses_the_same_durable_approval_path(tmp_path):
-    tools = Bundle("work")
     asked = []
 
-    @tools.tool
-    async def work() -> str:
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            return "ok"
 
-    @tools.on(ToolPolicy)
-    async def ask_policy(event, next_):
-        return PolicyDecision.ASK
+        @hook(ToolPolicy)
+        async def ask_policy(self, event, next_):
+            return PolicyDecision.ASK
+
+    tools = ToolsPlugin(name="work")
 
     def answer(request):
         call = request.call
@@ -182,12 +190,14 @@ async def test_tool_policy_ask_uses_the_same_durable_approval_path(tmp_path):
 
 
 async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_the_tool():
-    tools = Bundle("work")
     asked = asyncio.Event()
 
-    @tools.tool
-    async def work() -> str:
-        pytest.fail("Tool ran without an approval answer")
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            pytest.fail("Tool ran without an approval answer")
+
+    tools = ToolsPlugin(name="work")
 
     async def wait(call):
         asked.set()
@@ -243,11 +253,12 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
         ctx.provide(SessionStore, Store())
         yield
 
-    tools = Bundle("work")
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            pytest.fail("Uncommitted approval allowed a tool execution")
 
-    @tools.tool
-    async def work() -> str:
-        pytest.fail("Uncommitted approval allowed a tool execution")
+    tools = ToolsPlugin(name="work")
 
     async with Application(
         model=tool_model(),

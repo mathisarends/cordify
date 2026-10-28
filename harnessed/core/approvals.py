@@ -15,7 +15,7 @@ from harnessed.core.session.events import (
     ApprovalRevoked,
     SessionEvent,
 )
-from harnessed.core.tools.references import ToolSelector, tool_selector
+from harnessed.core.tools.references import ToolReference, ToolSelector, tool_selector
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context, Inject, Next, Priority, hook
 
@@ -48,6 +48,11 @@ class CallbackApprover:
 
 
 class ApprovalGateConfig(PluginConfig):
+    risky: Annotated[
+        tuple[Annotated[str, Field(min_length=1)] | Callable | ToolReference, ...],
+        Field(strict=False),
+    ]
+    ask: ApprovalCallback | None = None
     scope: Annotated[str, Field(min_length=1)] = "approval-gate"
     priority: int = Priority.GUARD
 
@@ -67,9 +72,9 @@ class ApprovalGate(Plugin):
         scope: str = "approval-gate",
         priority: int = Priority.GUARD,
     ):
-        super().__init__(scope=scope, priority=priority)
-        self.risky = tuple(tool_selector(item) for item in risky)
-        self.ask = ask
+        super().__init__(risky=risky, ask=ask, scope=scope, priority=priority)
+        self.risky = tuple(tool_selector(item) for item in self.config.risky)
+        self.ask = self.config.ask
 
     async def setup(self, ctx: Context, tools: Inject[ToolRegistry]):
         self.risky = tuple(tools.reference(item, owner=ctx) for item in self.risky)

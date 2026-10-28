@@ -4,16 +4,16 @@ import sys
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import PolicyDecision, ToolCall, ToolResult
+from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
 from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.model import ModelChunk
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolError, ToolRegistry
+from harnessed.kernel import hook
 from harnessed.plugins import Approvals, JsonlSessions, Service
 from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
 from harnessed.plugins.shell import LocalShell, ShellBackend, ShellTools
@@ -45,12 +45,14 @@ def test_invalid_output_limits_are_rejected(max_chars):
 
 
 async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default(tmp_path):
-    features = Bundle("large")
     source = "HEAD\n" + "x" * (2 * 1024 * 1024) + "\nTAIL ERROR"
 
-    @features.tool
-    async def cat() -> ToolResult:
-        return ToolResult(source, "error", exit_code=3)
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def cat(self) -> ToolResult:
+            return ToolResult(source, "error", exit_code=3)
+
+    features = FeaturesPlugin(name="large")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("cat"))], "done"])
     async with Application(
@@ -72,19 +74,21 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
 
 @pytest.mark.parametrize("stage", ["execution", "review", "error"])
 async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
-    features = Bundle("enrichment")
     text = "ä😀" * 100000
 
-    @features.tool
-    async def large() -> str:
-        if stage == "error":
-            raise ToolError(text)
-        return text if stage == "execution" else "small"
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def large(self) -> str:
+            if stage == "error":
+                raise ToolError(text)
+            return text if stage == "execution" else "small"
 
-    @features.on(ReviewToolResult)
-    async def review(event, next_):
-        result = await next_()
-        return result.with_note(text) if stage == "review" else result
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            result = await next_()
+            return result.with_note(text) if stage == "review" else result
+
+    features = FeaturesPlugin(name="enrichment")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     async with Application(
@@ -102,11 +106,13 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
 
 
 async def test_output_budget_is_configured_with_the_plugin_slot():
-    features = Bundle("budget")
 
-    @features.tool
-    async def large() -> str:
-        return "x" * 10000
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def large(self) -> str:
+            return "x" * 10000
+
+    features = FeaturesPlugin(name="budget")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     harness = Application(
@@ -120,12 +126,14 @@ async def test_output_budget_is_configured_with_the_plugin_slot():
 
 
 async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_path):
-    features = Bundle("spill")
     original = "full output\n" * 200000
 
-    @features.tool
-    async def large() -> str:
-        return original
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def large(self) -> str:
+            return original
+
+    features = FeaturesPlugin(name="spill")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     async with Application(

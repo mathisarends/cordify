@@ -3,16 +3,16 @@ import asyncio
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, ToolCall
+from harnessed import ApprovalAnswer, Plugin, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable, Approver, CallbackApprover
 from harnessed.core.hooks import ApprovalRequest, ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
-from harnessed.core.plugin import Bundle
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ApprovalResolved, ToolExecutionStarted, ToolReturned
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.kernel import hook
 from harnessed.plugins import AgentLoop, Approvals, JsonlSessions, Service
 from harnessed.testing import ScriptedModel
 
@@ -50,17 +50,19 @@ async def test_removing_an_approver_never_removes_the_scoped_guard():
 
 
 async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_calls():
-    tools = Bundle("headless")
     executed = []
 
-    @tools.tool
-    async def risky() -> str:
-        pytest.fail("Approval gate disappeared without a UI")
+    class ToolsPlugin(Plugin):
+        @tool
+        async def risky(self) -> str:
+            pytest.fail("Approval gate disappeared without a UI")
 
-    @tools.tool
-    async def safe() -> str:
-        executed.append("safe")
-        return "ok"
+        @tool
+        async def safe(self) -> str:
+            executed.append("safe")
+            return "ok"
+
+    tools = ToolsPlugin(name="headless")
 
     calls = [ToolCall("risky"), ToolCall("safe")]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
@@ -197,13 +199,15 @@ async def test_responder_abstention_invalid_answers_and_failures_are_unavailable
 
 
 async def test_gate_stays_active_after_approver_service_is_removed():
-    tools = Bundle("tools")
     executed = []
 
-    @tools.tool
-    async def work() -> str:
-        executed.append(True)
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            executed.append(True)
+            return "ok"
+
+    tools = ToolsPlugin(name="tools")
 
     class AllowOnce:
         async def ask(self, request):
@@ -265,26 +269,28 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
 
 @pytest.mark.parametrize("gate_first", [True, False])
 async def test_approval_priority_places_wait_outside_downstream_policy_timing(gate_first):
-    tools = Bundle("timing")
     clock, measured, order = ([0], [], [])
 
-    @tools.tool
-    async def work() -> str:
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            return "ok"
 
-    @tools.on(ToolPolicy, priority=0)
-    async def timing(event, next_):
-        order.append("timer")
-        before = clock[0]
-        result = await next_()
-        measured.append(clock[0] - before)
-        return result
+        @hook(ToolPolicy, priority=0)
+        async def timing(self, event, next_):
+            order.append("timer")
+            before = clock[0]
+            result = await next_()
+            measured.append(clock[0] - before)
+            return result
 
-    @tools.on(ToolPolicy, priority=100)
-    async def policy(event, next_):
-        order.append("policy")
-        clock[0] += 2
-        return await next_()
+        @hook(ToolPolicy, priority=100)
+        async def policy(self, event, next_):
+            order.append("policy")
+            clock[0] += 2
+            return await next_()
+
+    tools = ToolsPlugin(name="timing")
 
     async def answer(call):
         order.append("approval")

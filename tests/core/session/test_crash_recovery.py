@@ -10,11 +10,10 @@ from pathlib import Path
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, PolicyDecision, ToolCall
+from harnessed import ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate
 from harnessed.core.messages import user
 from harnessed.core.model import ModelChunk
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,
@@ -39,15 +38,13 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from harnessed.core.plugin import Bundle
-from harnessed import ApprovalAnswer, ToolCall
+from harnessed import ApprovalAnswer, ToolCall, Plugin, PolicyDecision, tool
 from harnessed.core.model import ModelChunk
 from harnessed.core.messages import system
 
 from harnessed.testing import ScriptedModel
 root, phase = (Path(sys.argv[1]), sys.argv[2])
 started = asyncio.Event()
-tools = Bundle('work')
 
 def effect():
     with (root / 'effects.txt').open('a', encoding='utf-8') as stream:
@@ -56,13 +53,16 @@ def effect():
         os.fsync(stream.fileno())
     return len((root / 'effects.txt').read_text().splitlines())
 
-@tools.tool
-async def work() -> str:
-    count = await asyncio.to_thread(effect)
-    if phase == 'tool' and count == 2:
-        started.set()
-        await asyncio.Event().wait()
-    return 'done'
+class Work(Plugin):
+    @tool
+    async def work(self) -> str:
+        count = await asyncio.to_thread(effect)
+        if phase == 'tool' and count == 2:
+            started.set()
+            await asyncio.Event().wait()
+        return 'done'
+
+tools = Work()
 
 async def answer(call):
     if phase == 'approval':
@@ -76,7 +76,7 @@ async def main():
         [ModelChunk(tool_call=ToolCall('work'))],
     ])
     harness = Application(model=model, plugins=[
-        Approvals(trust='all'), tools, ApprovalGate(risky={'work'}, ask=answer),
+        Approvals(default=PolicyDecision.ALLOW), tools, ApprovalGate(risky={'work'}, ask=answer),
         JsonlSessions(root, durability='fsync'),
     ])
     async with harness.session('crash') as agent:
@@ -128,19 +128,21 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
     prefix = path.read_bytes()
     original = tuple(decode_event(json.loads(line)) for line in prefix.splitlines())
     called = []
-    tools = Bundle("work")
 
     def effect():
         with (tmp_path / "effects.txt").open("a", encoding="utf-8") as stream:
             stream.write("work\n")
         return "done"
 
-    @tools.tool
-    async def work() -> str:
-        return await asyncio.to_thread(effect)
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            return await asyncio.to_thread(effect)
 
-    def answer(call):
-        called.append(call.id)
+    tools = ToolsPlugin(name="work")
+
+    def answer(request):
+        called.append(request.call.id)
         return ApprovalAnswer.ALWAYS
 
     async def resume():

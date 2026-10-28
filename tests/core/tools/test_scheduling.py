@@ -4,11 +4,10 @@ import threading
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Inject, ToolCall, ToolContext, plugin
+from harnessed import Inject, Plugin, ToolCall, ToolContext, plugin, tool
 from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.messages import Assistant, PolicyDecision
 from harnessed.core.model import ModelChunk
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -22,34 +21,37 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolRegistry
+from harnessed.kernel import hook
 from harnessed.plugins import AgentLoop, Approvals
 from harnessed.plugins.filesystem import FS, FilesystemTools, LocalFS
 from harnessed.testing import ScriptedModel
 
 
 async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_model_order():
-    tools = Bundle("parallel")
     started, finished = (set(), [])
     all_started = asyncio.Event()
     release = [asyncio.Event() for _ in range(3)]
     done = [asyncio.Event() for _ in range(3)]
     reviews = []
 
-    @tools.tool(parallel=True)
-    async def lookup(index: int, call: Inject[ToolContext]) -> str:
-        started.add(index)
-        if len(started) == 3:
-            all_started.set()
-        await release[index].wait()
-        finished.append(index)
-        await call.progress(f"finished {index}")
-        done[index].set()
-        return f"result {index}"
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True)
+        async def lookup(self, index: int, call: Inject[ToolContext]) -> str:
+            started.add(index)
+            if len(started) == 3:
+                all_started.set()
+            await release[index].wait()
+            finished.append(index)
+            await call.progress(f"finished {index}")
+            done[index].set()
+            return f"result {index}"
 
-    @tools.on(ReviewToolResult)
-    async def review(event, next_):
-        reviews.append(event.call.arguments["index"])
-        return await next_()
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            reviews.append(event.call.arguments["index"])
+            return await next_()
+
+    tools = ToolsPlugin(name="parallel")
 
     calls = tuple(ToolCall("lookup", {"index": index}) for index in range(3))
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
@@ -85,7 +87,6 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
 
 
 async def test_resource_dependencies_are_fifo_and_do_not_hold_slots_while_waiting_for_review():
-    tools = Bundle("resources")
     keys = {0: ("a",), 1: ("a", "b"), 2: ("c",), 3: ("d",), 4: ("b", "a")}
     active, order = (set(), [])
     first_started, independent_started, release = (
@@ -94,21 +95,24 @@ async def test_resource_dependencies_are_fifo_and_do_not_hold_slots_while_waitin
         asyncio.Event(),
     )
 
-    @tools.tool(parallel=True, resources=lambda call: keys[call.arguments["index"]])
-    async def work(index: int) -> str:
-        current = set(keys[index])
-        assert not active.intersection(current), "Conflicting resource calls overlapped"
-        active.update(current)
-        order.append(index)
-        try:
-            if index == 0:
-                first_started.set()
-                await release.wait()
-            if index == 3:
-                independent_started.set()
-            return str(index)
-        finally:
-            active.difference_update(current)
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True, resources=lambda call: keys[call.arguments["index"]])
+        async def work(self, index: int) -> str:
+            current = set(keys[index])
+            assert not active.intersection(current), "Conflicting resource calls overlapped"
+            active.update(current)
+            order.append(index)
+            try:
+                if index == 0:
+                    first_started.set()
+                    await release.wait()
+                if index == 3:
+                    independent_started.set()
+                return str(index)
+            finally:
+                active.difference_update(current)
+
+    tools = ToolsPlugin(name="resources")
 
     calls = tuple(ToolCall("work", {"index": index}) for index in range(5))
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
@@ -205,21 +209,23 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
 
 @pytest.mark.parametrize("limit", [1, 2, 4])
 async def test_global_parallel_limit_bounds_execution_and_can_force_serial_mode(limit):
-    tools = Bundle("limit")
     active = peak = 0
     release = asyncio.Event()
 
-    @tools.tool(parallel=True)
-    async def work(index: int) -> str:
-        nonlocal active, peak
-        active += 1
-        peak = max(peak, active)
-        if active == limit:
-            release.set()
-        await release.wait()
-        await asyncio.sleep(0)
-        active -= 1
-        return str(index)
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True)
+        async def work(self, index: int) -> str:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            if active == limit:
+                release.set()
+            await release.wait()
+            await asyncio.sleep(0)
+            active -= 1
+            return str(index)
+
+    tools = ToolsPlugin(name="limit")
 
     calls = [ToolCall("work", {"index": index}) for index in range(8)]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
@@ -241,24 +247,26 @@ async def test_global_parallel_limit_bounds_execution_and_can_force_serial_mode(
 async def test_tool_errors_and_denials_do_not_cancel_independent_calls():
     from harnessed.core.hooks import ToolPolicy
 
-    tools = Bundle("errors")
     executed, reviewed = ([], [])
 
-    @tools.tool(parallel=True)
-    async def work(index: int) -> str:
-        executed.append(index)
-        if index == 0:
-            raise ValueError("failed")
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True)
+        async def work(self, index: int) -> str:
+            executed.append(index)
+            if index == 0:
+                raise ValueError("failed")
+            return "ok"
 
-    @tools.on(ToolPolicy)
-    async def policy(event, next_):
-        return PolicyDecision.DENY if event.call.arguments["index"] == 1 else await next_()
+        @hook(ToolPolicy)
+        async def policy(self, event, next_):
+            return PolicyDecision.DENY if event.call.arguments["index"] == 1 else await next_()
 
-    @tools.on(ReviewToolResult)
-    async def review(event, next_):
-        reviewed.append(event.call.arguments["index"])
-        return await next_()
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            reviewed.append(event.call.arguments["index"])
+            return await next_()
+
+    tools = ToolsPlugin(name="errors")
 
     calls = [ToolCall("work", {"index": index}) for index in range(3)]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
@@ -272,19 +280,21 @@ async def test_tool_errors_and_denials_do_not_cancel_independent_calls():
 
 
 async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_model_order():
-    tools = Bundle("cancel")
     started, contexts, cleaned = (asyncio.Event(), [], [])
 
-    @tools.tool(parallel=True)
-    async def wait(index: int, call: Inject[ToolContext]) -> str:
-        contexts.append(call)
-        if len(contexts) == 3:
-            started.set()
-        try:
-            await asyncio.Event().wait()
-            return "never"
-        finally:
-            cleaned.append(index)
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True)
+        async def wait(self, index: int, call: Inject[ToolContext]) -> str:
+            contexts.append(call)
+            if len(contexts) == 3:
+                started.set()
+            try:
+                await asyncio.Event().wait()
+                return "never"
+            finally:
+                cleaned.append(index)
+
+    tools = ToolsPlugin(name="cancel")
 
     calls = [ToolCall("wait", {"index": index}) for index in range(3)]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls]])
@@ -333,24 +343,26 @@ async def test_resume_uses_durable_completions_without_reexecuting_tools():
 
 
 async def test_sync_timeout_keeps_resource_until_the_worker_finishes():
-    tools = Bundle("sync-timeout")
     entered, release = (threading.Event(), threading.Event())
     context, order = ([], [])
 
-    @tools.tool(parallel=True, resources=("file:x",), timeout=0.02)
-    def slow(call: Inject[ToolContext]) -> str:
-        context.append(call)
-        order.append("first-enter")
-        entered.set()
-        if not release.wait(5):
-            raise TimeoutError("test worker was not released")
-        order.append("first-exit")
-        return "done"
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True, resources=("file:x",), timeout=0.02)
+        def slow(self, call: Inject[ToolContext]) -> str:
+            context.append(call)
+            order.append("first-enter")
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("test worker was not released")
+            order.append("first-exit")
+            return "done"
 
-    @tools.tool(parallel=True, resources=("file:x",))
-    async def after() -> str:
-        order.append("second-enter")
-        return "done"
+        @tool(parallel=True, resources=("file:x",))
+        async def after(self) -> str:
+            order.append("second-enter")
+            return "done"
+
+    tools = ToolsPlugin(name="sync-timeout")
 
     calls = (ToolCall("slow"), ToolCall("after"))
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
@@ -372,11 +384,13 @@ async def test_sync_timeout_keeps_resource_until_the_worker_finishes():
 
 
 async def test_invalid_resource_resolver_is_a_bounded_tool_error():
-    tools = Bundle("bad-resource")
 
-    @tools.tool(parallel=True, resources=lambda call: ("",))
-    async def invalid() -> str:
-        pytest.fail("Tool with invalid resource scheduling ran")
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True, resources=lambda call: ("",))
+        async def invalid(self) -> str:
+            pytest.fail("Tool with invalid resource scheduling ran")
+
+    tools = ToolsPlugin(name="bad-resource")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("invalid"))], "done"])
     async with Application(
@@ -390,27 +404,29 @@ async def test_invalid_resource_resolver_is_a_bounded_tool_error():
 async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadata():
     from harnessed.core.hooks import ToolPolicy
 
-    tools = Bundle("replacement")
     executed = []
 
-    @tools.tool(parallel=True)
-    async def work() -> str:
-        executed.append("old")
-        return "old"
+    class ToolsPlugin(Plugin):
+        @tool(parallel=True)
+        async def work(self) -> str:
+            executed.append("old")
+            return "old"
+
+        @hook(ToolPolicy)
+        async def change(self, event, next_):
+            nonlocal replaced
+            if not replaced:
+                replaced = True
+                event.agent.ctx[ToolRegistry].register(replacement, name="work", override=True)
+            return await next_()
+
+    tools = ToolsPlugin(name="replacement")
 
     async def replacement() -> str:
         executed.append("new")
         return "new"
 
     replaced = False
-
-    @tools.on(ToolPolicy)
-    async def change(event, next_):
-        nonlocal replaced
-        if not replaced:
-            replaced = True
-            event.agent.ctx[ToolRegistry].register(replacement, name="work", override=True)
-        return await next_()
 
     calls = (ToolCall("work"), ToolCall("work"))
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])

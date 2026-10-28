@@ -3,10 +3,10 @@
 import asyncio
 from dataclasses import dataclass
 
-from harnessed import Context, ToolCall, plugin
+from harnessed import Plugin, ToolCall, tool
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.kernel import Emit
+from harnessed.kernel import Context, Emit, Inject
 from harnessed.plugins import AgentLoop
 
 
@@ -22,27 +22,29 @@ class PageChanged(Emit):
     pass
 
 
-@plugin(needs=[Browser, ToolRegistry, SystemPrompt])
-async def browser_tools(ctx: Context):
-    browser = ctx[Browser]
-    print(f"Setup with {browser.name}")
-    ctx[SystemPrompt].fixed(f"Current browser: {browser.name}")
-    ctx.on(PageChanged, lambda event: print(f"Listener with {browser.name}"))
-    ctx.effect(lambda: print(f"Custom effect cleaned for {browser.name}"))
+class BrowserTools(Plugin):
+    needs = (Browser, ToolRegistry, SystemPrompt)
 
-    @ctx[ToolRegistry].tool
-    async def title() -> str:
+    async def setup(self, ctx: Context, browser: Inject[Browser]):
+        self.browser = browser
+        print(f"Setup with {browser.name}")
+        ctx[SystemPrompt].fixed(f"Current browser: {browser.name}")
+        ctx.on(PageChanged, lambda event: print(f"Listener with {browser.name}"))
+        ctx.effect(lambda: print(f"Custom effect cleaned for {browser.name}"))
+
+    @tool(readonly=True)
+    async def title(self) -> str:
         """Read the current page title."""
-        return await browser.title()
+        return await self.browser.title()
 
-    yield
-    print(f"Teardown with {browser.name}")
+    async def teardown(self):
+        print(f"Teardown with {self.browser.name}")
 
 
 async def main():
     async with Context() as ctx:
         await ctx.install([AgentLoop()])
-        feature = await ctx.plugin(browser_tools())
+        feature = await ctx.plugin(BrowserTools())
         print("Before browser:", feature.status)
 
         remove = ctx.provide(Browser, Browser("local browser"))

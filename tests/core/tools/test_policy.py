@@ -1,42 +1,20 @@
 import pytest
 
-from harnessed import Agent, Context, Plugin, plugin, tool
-from harnessed.core.plugin import Bundle
-from harnessed.core.tools.registry import ToolRegistry
+from harnessed import Agent, Plugin, tool
 from harnessed.plugins import Spill, ToolOutputLimit
 from harnessed.testing import ScriptedModel, call
 
 
-@pytest.mark.parametrize("style", ["method", "functional", "bundle", "registry"])
 @pytest.mark.parametrize("limit", [None, 512])
-async def test_explicit_output_policy_is_shared_by_all_declaration_paths(style, limit):
+async def test_explicit_output_policy_on_tool_methods(limit):
     original = "complete instructions " * 1000
 
-    async def content() -> str:
-        return original
+    class Documentation(Plugin):
+        @tool(name="content", readonly=True, output_limit=limit)
+        async def instructions(self) -> str:
+            return original
 
-    if style == "method":
-
-        class Documentation(Plugin):
-            @tool(name="content", readonly=True, output_limit=limit)
-            async def instructions(self) -> str:
-                return original
-
-        recipe = Documentation()
-    elif style == "bundle":
-        recipe = Bundle("documentation")
-        recipe.add_tool(content, readonly=True, output_limit=limit)
-    else:
-
-        @plugin(needs=(ToolRegistry,))
-        async def configured(ctx: Context):
-            if style == "functional":
-                ctx.tool(content, readonly=True, output_limit=limit)
-            else:
-                ctx[ToolRegistry].tool(content, readonly=True, output_limit=limit)
-            yield
-
-        recipe = configured()
+    recipe = Documentation()
     plugins = [recipe, ToolOutputLimit(256)]
     if limit is None:
         plugins.append(Spill(threshold_tokens=1))

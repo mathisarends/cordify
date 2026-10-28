@@ -4,13 +4,12 @@ import json
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Inject, Observation, Plugin, PolicyDecision, ToolCall, ToolResult, hook
+from harnessed import Inject, Observation, Plugin, PolicyDecision, ToolCall, ToolResult, tool
 from harnessed import Session as Agent
 from harnessed.core.compaction import ModelSummarizer
 from harnessed.core.hooks import PreStep
 from harnessed.core.messages import Assistant, User
 from harnessed.core.model import ModelChunk, ModelUsage
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionApplied,
@@ -25,6 +24,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.registry import ToolError
+from harnessed.kernel import hook
 from harnessed.plugins import (
     AgentLoop,
     Approvals,
@@ -39,12 +39,14 @@ from harnessed.testing import ExtractiveSummarizer, ScriptedModel
 
 
 async def test_large_results_spill_to_session_files_and_keep_structured_metadata(tmp_path):
-    tools = Bundle("large")
     original = "output\n" * 4000
 
-    @tools.tool
-    async def large() -> ToolResult:
-        return ToolResult(original, "error", exit_code=3)
+    class ToolsPlugin(Plugin):
+        @tool
+        async def large(self) -> ToolResult:
+            return ToolResult(original, "error", exit_code=3)
+
+    tools = ToolsPlugin(name="large")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
     app = Application(
@@ -125,11 +127,13 @@ async def test_read_spill_tool_returns_bounded_ranges_without_respilling():
 
 
 async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path):
-    tools = Bundle("work")
 
-    @tools.tool
-    async def work() -> str:
-        return "ok"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            return "ok"
+
+    tools = ToolsPlugin(name="work")
 
     model = ScriptedModel(["initial reply", [ModelChunk(tool_call=ToolCall("work"))], "done"])
     harness = Application(

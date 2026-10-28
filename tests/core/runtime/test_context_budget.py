@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import PolicyDecision, ToolCall
+from harnessed import Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.budget import ContextBudget, ContextBudgetExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
 from harnessed.core.messages import Assistant, System, user
@@ -35,11 +35,13 @@ class RecordingCompactor:
 
 
 async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_verbatim():
-    tools = Bundle("work")
 
-    @tools.tool
-    async def work() -> str:
-        return "exact result"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            return "exact result"
+
+    tools = ToolsPlugin(name="work")
 
     model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("work"))], "FIRST ANSWER", "second", "third", "current"]
@@ -259,13 +261,13 @@ async def test_threshold_uses_guard_limit_and_reserved_output_budget():
 
 
 async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_budget():
-    tools = Bundle("large-schema")
+    class LargeSchema(Plugin):
+        @tool
+        async def example(self) -> str:
+            return "ok"
 
-    async def example() -> str:
-        return "ok"
-
-    example.__doc__ = "x" * 1000
-    tools.add_tool(example)
+    LargeSchema.example.__doc__ = "x" * 1000
+    tools = LargeSchema()
     model = ScriptedModel([])
     async with Application(
         model=model,

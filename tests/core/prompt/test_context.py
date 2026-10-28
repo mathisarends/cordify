@@ -2,27 +2,29 @@ import json
 from pathlib import Path
 
 from harnessed import Agent as Application
-from harnessed import File, Image, Inject, Observation, Plugin, PolicyDecision, ToolCall, hook
+from harnessed import File, Image, Inject, Observation, Plugin, PolicyDecision, ToolCall, tool
 from harnessed import Session as Agent
 from harnessed.core.hooks import PreStep
 from harnessed.core.messages import ImagePart, User, system, user
 from harnessed.core.model import ModelChunk
-from harnessed.core.plugin import Bundle
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.kernel import hook
 from harnessed.plugins import Approvals, Service
 from harnessed.plugins.filesystem import FS, LocalFS
 from harnessed.testing import ScriptedModel
 
 
 async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
-    tools = Bundle("continue")
 
-    @tools.tool
-    async def step() -> str:
-        return "done"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def step(self) -> str:
+            return "done"
+
+    tools = ToolsPlugin(name="continue")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("step"))], "first", "second"])
     async with Application(
@@ -131,7 +133,6 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
 
 
 async def test_observations_use_full_current_state_and_summaries_in_later_steps_and_replay():
-    tools = Bundle("browser")
     states = iter(["before", "after"])
 
     class BrowserObserver(Plugin):
@@ -141,9 +142,12 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
             agent.observe(Observation("browser", f"FULL {state} refs", f"SUMMARY {state}"))
             return await next_()
 
-    @tools.tool
-    async def click(ref: str) -> str:
-        return f"Clicked {ref}"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def click(self, ref: str) -> str:
+            return f"Clicked {ref}"
+
+    tools = ToolsPlugin(name="browser")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("click", {"ref": "button-1"}))], "done"])
     async with Application(

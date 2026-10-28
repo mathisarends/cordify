@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from harnessed import Agent as AppAgent
 from harnessed import Context as PluginContext
-from harnessed import ToolContext, tool
+from harnessed import Plugin, ToolContext, tool
 from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
@@ -85,12 +85,13 @@ async def functional_scope(ctx: Context) -> None:
 
 
 async def tool_scope(ctx: PluginContext) -> None:
-    @ctx.tool(readonly=True)
-    async def echo(value: str, *, call: ToolContext) -> str:
-        assert_type(call.cancelled, bool)
-        return value
+    class Echo(Plugin):
+        @tool(readonly=True)
+        async def echo(self, value: str, *, call: ToolContext) -> str:
+            assert_type(call.cancelled, bool)
+            return value
 
-    assert_type(await echo("value", call=ToolContext.__new__(ToolContext)), str)
+    assert_type(await Echo().echo("value", call=ToolContext.__new__(ToolContext)), str)
     assert_type(ctx.extend(), PluginContext)
 
 

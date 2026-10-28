@@ -1,9 +1,8 @@
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import PolicyDecision, ToolCall, ToolResult
+from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
 from harnessed.core.model import ModelChunk
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ContextValueChanged,
@@ -27,11 +26,13 @@ def scripted_commands(commands):
 
 
 async def test_rule_note_context_steer_order_and_structured_exit_code():
-    tools = Bundle("commands")
 
-    @tools.tool
-    async def bash(command: str) -> ToolResult:
-        return ToolResult("failed", exit_code=1)
+    class ToolsPlugin(Plugin):
+        @tool
+        async def bash(self, command: str) -> ToolResult:
+            return ToolResult("failed", exit_code=1)
+
+    tools = ToolsPlugin(name="commands")
 
     rules = Rules(
         [
@@ -60,12 +61,14 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
 
 
 async def test_repeated_failures_are_grouped_by_command_reset_on_success_and_fire_once():
-    tools = Bundle("commands")
     codes = iter([1, 1, 1, 0, 1, 1, 1, 1])
 
-    @tools.tool
-    async def bash(command: str) -> ToolResult:
-        return ToolResult("result", exit_code=next(codes))
+    class ToolsPlugin(Plugin):
+        @tool
+        async def bash(self, command: str) -> ToolResult:
+            return ToolResult("result", exit_code=next(codes))
+
+    tools = ToolsPlugin(name="commands")
 
     commands = [
         "pytest a",
@@ -92,11 +95,13 @@ async def test_repeated_failures_are_grouped_by_command_reset_on_success_and_fir
 
 
 async def test_repeat_state_recovers_from_log_without_replaying_actions(tmp_path):
-    tools = Bundle("commands")
 
-    @tools.tool
-    async def bash(command: str) -> ToolResult:
-        return ToolResult("failed", exit_code=1)
+    class ToolsPlugin(Plugin):
+        @tool
+        async def bash(self, command: str) -> ToolResult:
+            return ToolResult("failed", exit_code=1)
+
+    tools = ToolsPlugin(name="commands")
 
     model = ScriptedModel(
         [*scripted_commands(["pytest", "pytest"]), *scripted_commands(["pytest"])]
@@ -115,11 +120,13 @@ async def test_repeat_state_recovers_from_log_without_replaying_actions(tmp_path
 
 
 async def test_rules_have_independent_state_in_different_sessions():
-    tools = Bundle("commands")
 
-    @tools.tool
-    async def bash(command: str) -> str:
-        return "large output"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def bash(self, command: str) -> str:
+            return "large output"
+
+    tools = ToolsPlugin(name="commands")
 
     model = ScriptedModel([*scripted_commands(["same"]), *scripted_commands(["same"])])
     rules = Rules([when(tool="bash", repeated=2).note("twice")])
@@ -133,11 +140,13 @@ async def test_rules_have_independent_state_in_different_sessions():
 
 
 async def test_repeat_resume_uses_recorded_matches_even_when_notes_change_predicate(tmp_path):
-    tools = Bundle("commands")
 
-    @tools.tool
-    async def bash(command: str) -> str:
-        return "original"
+    class ToolsPlugin(Plugin):
+        @tool
+        async def bash(self, command: str) -> str:
+            return "original"
+
+    tools = ToolsPlugin(name="commands")
 
     rules = Rules(
         [
@@ -160,11 +169,13 @@ async def test_repeat_resume_uses_recorded_matches_even_when_notes_change_predic
 
 
 async def test_size_predicate_and_missing_exit_code_and_tool_filters():
-    tools = Bundle("read")
 
-    @tools.tool
-    async def read_file() -> str:
-        return "x" * 100
+    class ToolsPlugin(Plugin):
+        @tool
+        async def read_file(self) -> str:
+            return "x" * 100
+
+    tools = ToolsPlugin(name="read")
 
     rules = Rules(
         [
@@ -193,11 +204,12 @@ async def test_process_return_values_are_normalized_with_exit_codes():
         ctx[ToolRegistry].result_converter(ProcResult, proc_result)
         yield
 
-    tools = Bundle("process")
+    class ToolsPlugin(Plugin):
+        @tool
+        async def run_command(self, argv: list[str]) -> ProcResult:
+            return ProcResult(7, "out", "err")
 
-    @tools.tool
-    async def run_command(argv: list[str]) -> ProcResult:
-        return ProcResult(7, "out", "err")
+    tools = ToolsPlugin(name="process")
 
     model = ScriptedModel(
         [

@@ -3,13 +3,12 @@ import asyncio
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, ToolContext, hook, plugin
+from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, ToolContext, plugin, tool
 from harnessed import Session as Agent
 from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
 from harnessed.core.hooks import ExecuteTool, PreStep, ReviewToolResult, StepDecision, ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk, ModelInfo
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.events import (
     AssistantMessage,
     ModelRequested,
@@ -19,19 +18,21 @@ from harnessed.core.session.events import (
     TurnStart,
 )
 from harnessed.core.stream import TextDelta, ToolFinished
-from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
+from harnessed.kernel import hook
 from harnessed.plugins import AgentLoop, Approvals, Service
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
 async def test_streaming_tool_loop_and_exact_recorded_requests():
-    features = Bundle("math")
 
-    @features.tool
-    async def add(a: int, b: int, call: Inject[ToolContext]) -> int:
-        await call.progress("adding")
-        return a + b
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def add(self, a: int, b: int, call: Inject[ToolContext]) -> int:
+            await call.progress("adding")
+            return a + b
+
+    features = FeaturesPlugin(name="math")
 
     model = ScriptedModel(
         [
@@ -94,22 +95,24 @@ async def test_inject_stays_idle_steering_enters_next_step_followup_gets_own_tur
 
 async def test_denied_policy_never_enters_execution_or_review_regardless_of_order():
     stages = []
-    features = Bundle("policies")
 
-    @features.on(ReviewToolResult)
-    async def review(event, next_):
-        stages.append("review")
-        return await next_()
+    class FeaturesPlugin(Plugin):
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            stages.append("review")
+            return await next_()
 
-    @features.on(ExecuteTool)
-    async def execute(event, next_):
-        stages.append("execute")
-        return await next_()
+        @hook(ExecuteTool)
+        async def execute(self, event, next_):
+            stages.append("execute")
+            return await next_()
 
-    @features.tool
-    async def remove() -> str:
-        stages.append("tool")
-        return "removed"
+        @tool
+        async def remove(self) -> str:
+            stages.append("tool")
+            return "removed"
+
+    features = FeaturesPlugin(name="policies")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("remove"))], "Denied."])
     harness = Application(
@@ -129,26 +132,28 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
 
 async def test_approval_always_is_session_local_and_review_can_inject_nudges():
     asked, stages = ([], [])
-    features = Bundle("reviews")
 
-    @features.tool
-    async def work() -> str:
-        stages.append("tool")
-        return "done"
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def work(self) -> str:
+            stages.append("tool")
+            return "done"
 
-    @features.on(ToolPolicy)
-    async def policy(event, next_):
-        stages.append("policy")
-        return await next_()
+        @hook(ToolPolicy)
+        async def policy(self, event, next_):
+            stages.append("policy")
+            return await next_()
 
-    @features.on(ReviewToolResult)
-    async def review(event, next_, agent: Inject[Agent]):
-        stages.append("review")
-        await agent.inject("consider this")
-        return (await next_()).with_note("Reviewed")
+        @hook(ReviewToolResult)
+        async def review(self, event, next_, agent: Inject[Agent]):
+            stages.append("review")
+            await agent.inject("consider this")
+            return (await next_()).with_note("Reviewed")
 
-    def approve(call):
-        asked.append(call.name)
+    features = FeaturesPlugin(name="reviews")
+
+    def approve(request):
+        asked.append(request.call.name)
         return ApprovalAnswer.ALWAYS
 
     model = ScriptedModel(
@@ -226,31 +231,39 @@ async def test_function_plugin_can_inject_current_agent_and_implicit_dependencie
 
 
 async def test_explicit_and_live_registration():
-    extensions = Bundle("configured")
+    class Echo(Plugin):
+        @tool
+        async def echo(self, text: str) -> str:
+            return text
 
-    async def echo(text: str) -> str:
-        return text
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            return (await next_()).with_note("ok")
 
-    async def review(event, next_):
-        return (await next_()).with_note("ok")
+    class Alias(Plugin):
+        @tool
+        async def alias(self, text: str) -> str:
+            return text
+
+    class Live(Plugin):
+        @tool
+        async def live(self, text: str) -> str:
+            return text
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("echo", {"text": "hello"}))], "done"])
     harness = Application(
         model=model,
-        plugins=[
-            Approvals(default=PolicyDecision.ALLOW),
-            Plugin(name="explicit", tools=[echo], hooks=[(ReviewToolResult, review)]),
-            extensions,
-        ],
+        plugins=[Approvals(default=PolicyDecision.ALLOW), Echo(), Alias()],
     )
-    extensions.add_tool(echo, name="alias")
     async with harness.session("explicit") as agent:
-        agent.add_tool(echo, name="live")
+        handle = await agent.use(Live())
         seen = []
         agent.add_hook(ToolReturned, lambda event: seen.append(event.result.content))
         await agent.run("echo")
         assert seen == ["hello\n\nok"]
         assert {d.name for d in model.requests[0].tools} == {"echo", "alias", "live"}
+        await handle.aclose()
+        assert {d.name for d in agent.ctx[ToolRegistry].definitions} == {"echo", "alias"}
 
 
 async def test_pre_step_rejection_keeps_input_until_another_wake():
@@ -310,14 +323,16 @@ async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
 async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
     started = asyncio.Event()
     calls = []
-    bundle = Bundle("blocking")
 
-    @bundle.tool
-    async def wait(call: Inject[ToolContext]) -> str:
-        calls.append(call)
-        started.set()
-        await asyncio.Event().wait()
-        return "never"
+    class BundlePlugin(Plugin):
+        @tool
+        async def wait(self, call: Inject[ToolContext]) -> str:
+            calls.append(call)
+            started.set()
+            await asyncio.Event().wait()
+            return "never"
+
+    bundle = BundlePlugin(name="blocking")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("wait"))]])
     async with Application(
@@ -332,11 +347,13 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
 
 
 async def test_same_harness_rejects_two_live_writers_and_max_steps_bounds_the_loop():
-    bundle = Bundle("loop")
 
-    @bundle.tool
-    async def again() -> str:
-        return "again"
+    class BundlePlugin(Plugin):
+        @tool
+        async def again(self) -> str:
+            return "again"
+
+    bundle = BundlePlugin(name="loop")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("again"))]] * 2)
     harness = Application(
@@ -380,19 +397,21 @@ async def test_observer_failure_closes_model_iterator_before_run_returns():
 
 
 async def test_policy_ask_routes_to_approver_seam():
-    features = Bundle("ask")
     asked = []
 
-    @features.on(ToolPolicy)
-    async def policy(event, next_):
-        return PolicyDecision.ASK
+    class FeaturesPlugin(Plugin):
+        @hook(ToolPolicy)
+        async def policy(self, event, next_):
+            return PolicyDecision.ASK
 
-    @features.tool
-    async def approved() -> str:
-        return "allowed"
+        @tool
+        async def approved(self) -> str:
+            return "allowed"
 
-    def approve(call):
-        asked.append(call.name)
+    features = FeaturesPlugin(name="ask")
+
+    def approve(request):
+        asked.append(request.call.name)
         return ApprovalAnswer.ALLOW
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("approved"))], "done"])

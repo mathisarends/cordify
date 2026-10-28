@@ -1,13 +1,10 @@
 from collections.abc import Callable, Iterable
 from contextlib import AbstractAsyncContextManager
-from typing import Any, overload
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from harnessed.core.prompt.values import Section
-from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
-from harnessed.core.tools.registry import ToolRegistry, ToolSpec
-from harnessed.core.tools.scheduling import ResourceSpec, resource_spec
 from harnessed.kernel import Context, Key
 from harnessed.kernel.declarations import Bundle as KernelBundle
 from harnessed.kernel.declarations import HookEntry, Registration
@@ -26,116 +23,11 @@ _DEFAULT_GUIDANCE = _DefaultGuidance()
 
 
 class PluginContext(Context):
-    """The kernel scope with owned agent-tool declarations for plugin authors."""
-
-    @overload
-    def tool[F: Callable[..., Any]](self, fn: F, /) -> F: ...
-
-    @overload
-    def tool[F: Callable[..., Any]](
-        self,
-        *,
-        name: str | None = None,
-        timeout: float | None = None,
-        parallel: bool = False,
-        resources: ResourceSpec = (),
-        readonly: bool = False,
-        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
-        override: bool = False,
-    ) -> Callable[[F], F]: ...
-
-    def tool(
-        self,
-        fn=None,
-        /,
-        *,
-        name=None,
-        timeout=None,
-        parallel=False,
-        resources=(),
-        readonly=False,
-        output_limit=OutputLimit.INHERIT,
-        override=False,
-    ):
-        def register(callback):
-            self[ToolRegistry].register(
-                callback,
-                name=name,
-                timeout=timeout,
-                parallel=parallel,
-                resources=resources,
-                readonly=readonly,
-                output_limit=output_limit,
-                override=override,
-                owner=self,
-            )
-            return callback
-
-        return register(fn) if fn is not None else register
+    """An agent plugin scope; tools are declared on Plugin methods."""
 
 
 class Bundle(KernelBundle):
-    def add_tool(
-        self,
-        callback: Callable,
-        *,
-        name: str | None = None,
-        timeout: float | None = None,
-        parallel: bool = False,
-        resources: ResourceSpec = (),
-        readonly: bool = False,
-        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
-        override: bool = False,
-    ):
-        return self.add_registration(
-            ToolSpec(
-                name, timeout, parallel, resource_spec(resources), readonly, override, output_limit
-            ),
-            callback,
-        )
-
-    @overload
-    def tool[F: Callable[..., Any]](self, fn: F, /) -> F: ...
-
-    @overload
-    def tool[F: Callable[..., Any]](
-        self,
-        *,
-        name: str | None = None,
-        timeout: float | None = None,
-        parallel: bool = False,
-        resources: ResourceSpec = (),
-        readonly: bool = False,
-        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
-        override: bool = False,
-    ) -> Callable[[F], F]: ...
-
-    def tool(
-        self,
-        fn=None,
-        /,
-        *,
-        name: str | None = None,
-        timeout: float | None = None,
-        parallel: bool = False,
-        resources: ResourceSpec = (),
-        readonly: bool = False,
-        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
-        override: bool = False,
-    ):
-        def register(callback):
-            return self.add_tool(
-                callback,
-                name=name,
-                timeout=timeout,
-                parallel=parallel,
-                resources=resources,
-                readonly=readonly,
-                output_limit=output_limit,
-                override=override,
-            )
-
-        return register(fn) if fn is not None else register
+    """A collection of kernel hooks and registration recipes."""
 
 
 class PluginConfig(BaseModel):
@@ -158,27 +50,16 @@ class Plugin(KernelPlugin):
         *,
         name: str | None = None,
         hooks: Iterable[HookEntry] = (),
-        tools: Iterable[Callable] = (),
         needs: Iterable | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
         guidance: str | Section | None | _DefaultGuidance = _DEFAULT_GUIDANCE,
         **configuration: Any,
     ):
         super().__init__(name=name, hooks=hooks, needs=needs, registrations=registrations)
-        self.tools = tuple(tools)
         if not isinstance(guidance, _DefaultGuidance):
             self.guidance = guidance
         configuration_type = getattr(type(self), "Config", PluginConfig)
         self.config = configuration_type.model_validate(configuration)
-
-    def _registration_entries(self):
-        return (
-            *super()._registration_entries(),
-            *(
-                (getattr(callback, "_harnessed_tool", ToolSpec()), callback)
-                for callback in getattr(self, "tools", ())
-            ),
-        )
 
 
 class Service[T](Plugin):

@@ -4,10 +4,9 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import PolicyDecision, ToolCall
+from harnessed import Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.model import ModelChunk, ModelRequest
-from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ModelRequested,
@@ -27,13 +26,15 @@ from harnessed.testing import CallbackModel, ScriptedModel
 
 async def test_turns_group_model_requests_and_tools_while_followups_wait_for_their_turn():
     started, release = (asyncio.Event(), asyncio.Event())
-    features = Bundle("blocking-tool")
 
-    @features.tool
-    async def wait() -> str:
-        started.set()
-        await release.wait()
-        return "finished"
+    class FeaturesPlugin(Plugin):
+        @tool
+        async def wait(self) -> str:
+            started.set()
+            await release.wait()
+            return "finished"
+
+    features = FeaturesPlugin(name="blocking-tool")
 
     model = ScriptedModel(
         [[ModelChunk(tool_call=ToolCall("wait"))], "corrected answer", "followup answer"]

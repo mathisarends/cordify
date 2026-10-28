@@ -5,12 +5,11 @@ import pytest
 from pydantic import PydanticSchemaGenerationError
 
 from harnessed import Agent as Application
-from harnessed import Context, Plugin, PolicyDecision, ToolCall, hook, plugin
+from harnessed import Context, Plugin, PolicyDecision, ToolCall, hook, plugin, tool
 from harnessed import Session as Agent
 from harnessed.core.prompt.system_prompt import SystemPrompt
-from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.kernel import Emit
+from harnessed.kernel import Emit, Inject
 from harnessed.plugins import AgentLoop, Approvals
 from harnessed.testing import ScriptedModel
 
@@ -271,25 +270,22 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
 async def test_agent_registration_facade_uses_the_active_plugin_owner():
     seen = []
 
-    @plugin(needs=[Agent])
-    async def feature(ctx):
-        agent = ctx[Agent]
-        agent.add_hook(Ping, lambda event: seen.append("explicit"))
+    class Feature(Plugin):
+        async def setup(self, ctx, agent: Inject[Agent]):
+            agent.add_hook(Ping, lambda event: seen.append("explicit"))
 
-        @agent.on(Ping)
-        def listener(event):
-            seen.append("decorated")
+            @agent.on(Ping)
+            def listener(event):
+                seen.append("decorated")
 
-        @agent.tool
-        async def read() -> str:
+        @tool
+        async def read(self) -> str:
             return "plugin tool"
-
-        yield
 
     async with Application(
         model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
     ).session("plugin-effects") as agent:
-        handle = await agent.ctx.plugin(feature())
+        handle = await agent.ctx.plugin(Feature())
         assert [definition.name for definition in agent.ctx[ToolRegistry].definitions] == ["read"]
         await agent.ctx.dispatch(Ping())
         assert seen == ["explicit", "decorated"]

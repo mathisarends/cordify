@@ -161,18 +161,11 @@ class Session:
         owner = owner if owner is not None else Context.current() or self.ctx
         return owner.on(event, fn, prepend=prepend, priority=priority)
 
-    @property
-    def tool(self):
-        return self.ctx[ToolRegistry].tool
-
     def add_hook(
         self, event, callback, *, prepend: bool = False, priority: int = 0, owner=None
     ) -> Disposer:
         owner = owner if owner is not None else Context.current() or self.ctx
         return owner.add_listener(event, callback, prepend=prepend, priority=priority)
-
-    def add_tool(self, callback, **options) -> Disposer:
-        return self.ctx[ToolRegistry].register(callback, **options)
 
     def observe(self, observation: Observation) -> None:
         self.control.check_open()
