@@ -8,7 +8,7 @@ from harnessed.core.messages import ToolCall, ToolResult, to_dict, user
 from harnessed.core.plugin import Plugin
 from harnessed.core.runtime.session import Session as Agent
 from harnessed.core.session.events import RuleEvaluated, RuleTriggered, ToolCalled, ToolReturned
-from harnessed.core.tokens import TokenCounter
+from harnessed.core.tokens import TokenCounter, count_content
 from harnessed.kernel import Inject, hook
 
 
@@ -50,7 +50,7 @@ class Rule:
                 return False
         if (
             self.result_tokens_over is not None
-            and counter.count_text(result.content) <= self.result_tokens_over
+            and count_content(counter, result.content) <= self.result_tokens_over
         ):
             return False
         return self.predicate is None or self.predicate(call, result)

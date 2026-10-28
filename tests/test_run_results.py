@@ -73,3 +73,44 @@ async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
         finally:
             model.release[1].set()
         await session.when_idle()
+
+
+async def test_public_max_token_policies_return_typed_stop_reasons_or_fail():
+    import pytest
+
+    from harnessed import Agent, StopReason
+    from harnessed.core.messages import Assistant
+    from harnessed.core.model import ModelResponse
+    from harnessed.plugins import AgentLoop
+    from harnessed.testing import ScriptedModel
+
+    partial = ModelResponse(Assistant("partial"), stop_reason=StopReason.MAX_TOKENS)
+    for policy in ("accept", "continue", "fail"):
+        model = ScriptedModel([partial, "complete"])
+        async with Agent(
+            model=model, plugins=[AgentLoop(on_max_tokens=policy)]
+        ).session() as session:
+            if policy == "fail":
+                with pytest.raises(RuntimeError, match="output token limit"):
+                    await session.run("task")
+                assert session.turns[-1].closed
+            else:
+                result = await session.run("task")
+                expected = StopReason.MAX_TOKENS if policy == "accept" else StopReason.END
+                assert result.stop_reason is expected
+                assert result.text == ("partial" if policy == "accept" else "complete")
+                assert len(model.requests) == (1 if policy == "accept" else 2)
+
+
+async def test_step_limit_takes_precedence_over_the_last_model_finish_reason():
+    from harnessed import Agent, StopReason
+    from harnessed.core.messages import Assistant
+    from harnessed.core.model import ModelResponse
+    from harnessed.plugins import AgentLoop
+    from harnessed.testing import ScriptedModel
+
+    partial = ModelResponse(Assistant("partial"), stop_reason=StopReason.MAX_TOKENS)
+    result = await Agent(
+        model=ScriptedModel([partial]), plugins=[AgentLoop(max_steps=1, on_max_tokens="continue")]
+    ).run("task")
+    assert result.stop_reason is StopReason.MAX_STEPS

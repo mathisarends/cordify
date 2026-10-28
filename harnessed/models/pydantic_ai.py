@@ -16,7 +16,7 @@ from harnessed.core.errors import (
     ProviderUnavailable,
     RateLimited,
 )
-from harnessed.core.messages import Assistant, TextPart, ToolCall, to_dict
+from harnessed.core.messages import Assistant, ContentPart, TextPart, ToolCall, to_dict
 from harnessed.core.model import (
     ModelChunk,
     ModelInfo,
@@ -181,22 +181,32 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
                     [
                         native.ToolReturnPart(
                             calls.get(message.tool_call_id or "", "unknown_tool"),
-                            message.text,
+                            _content(message.content),
                             message.tool_call_id or "",
                         )
                     ]
                 )
             )
         else:
-            if isinstance(message.content, str):
-                content = message.content
-            else:
-                content = [
-                    part.text if isinstance(part, TextPart) else native.ImageUrl(part.url)
-                    for part in message.content
-                ]
+            content = _content(message.content)
             history.append(native.ModelRequest([native.UserPromptPart(content)]))
     return history
+
+
+def _content(content: str | tuple[ContentPart, ...]):
+    from pydantic_ai import messages as native
+
+    if isinstance(content, str):
+        return content
+    return [
+        part.text
+        if isinstance(part, TextPart)
+        else native.ImageUrl(
+            part.url,
+            vendor_metadata={"detail": "high" if part.detail == "original" else part.detail},
+        )
+        for part in content
+    ]
 
 
 def _parameters(request: ModelRequest) -> ModelRequestParameters:

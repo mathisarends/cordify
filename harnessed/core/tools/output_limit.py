@@ -27,7 +27,7 @@ class ToolOutputLimit(Plugin, slot="output_limit"):
         ctx.provide(ToolOutputLimit, self)
 
     def apply(self, result: ToolResult) -> ToolResult:
-        text = result.content
+        text = result.text
         if len(text) <= self.max_chars:
             return result
         notice = (
@@ -38,7 +38,6 @@ class ToolOutputLimit(Plugin, slot="output_limit"):
         head = retained * 3 // 4
         tail = retained - head
         return replace(
-            result,
-            content=text[:head] + notice + (text[-tail:] if tail else ""),
+            result.with_text(text[:head] + notice + (text[-tail:] if tail else "")),
             truncation=OutputTruncation(len(text), retained, self.max_chars),
         )

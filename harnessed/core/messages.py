@@ -1,5 +1,7 @@
 """Immutable conversation values and lossless JSON helpers."""
 
+from __future__ import annotations
+
 import json
 import math
 from collections.abc import Mapping
@@ -86,7 +88,7 @@ class OutputTruncation:
 
 @dataclass(frozen=True)
 class ToolResult:
-    content: str
+    content: str | tuple[ContentPart, ...]
     status: Literal["ok", "error", "denied", "unavailable"] = "ok"
     exit_code: int | None = None
     spill: SpillRef | None = None
@@ -95,6 +97,7 @@ class ToolResult:
     rule_matches: tuple[tuple[str, bool], ...] = ()
 
     def __post_init__(self):
+        object.__setattr__(self, "content", _content(self.content))
         matches = tuple(tuple(item) for item in self.rule_matches)
         if any(
             len(item) != 2 or not isinstance(item[0], str) or type(item[1]) is not bool
@@ -104,23 +107,45 @@ class ToolResult:
         object.__setattr__(self, "rule_matches", matches)
 
     @classmethod
-    def error(cls, content: str) -> "ToolResult":
+    def error(cls, content: str) -> ToolResult:
         return cls(content, "error")
 
     @classmethod
-    def denied(cls, content: str, *, source: Literal["policy", "user"] = "policy") -> "ToolResult":
+    def denied(cls, content: str, *, source: Literal["policy", "user"] = "policy") -> ToolResult:
         return cls(content, "denied", denied_by=source)
 
     @classmethod
-    def unavailable(cls, content: str) -> "ToolResult":
+    def unavailable(cls, content: str) -> ToolResult:
         return cls(content, "unavailable")
 
     @property
     def is_error(self) -> bool:
         return self.status != "ok" or self.exit_code not in (None, 0)
 
-    def with_note(self, text: str) -> "ToolResult":
-        return replace(self, content=f"{self.content}\n\n{text}")
+    def with_note(self, text: str) -> ToolResult:
+        if isinstance(self.content, str):
+            return self.with_text(f"{self.content}\n\n{text}")
+        return replace(self, content=(*self.content, TextPart(text)))
+
+    @property
+    def text(self) -> str:
+        return content_text(self.content)
+
+    def with_text(self, text: str) -> ToolResult:
+        """Replace textual content while retaining every image in its original order."""
+        if isinstance(self.content, str):
+            return replace(self, content=text)
+        parts, inserted = [], False
+        for part in self.content:
+            if isinstance(part, TextPart):
+                if not inserted:
+                    parts.append(TextPart(text))
+                    inserted = True
+            else:
+                parts.append(part)
+        if not inserted:
+            parts.insert(0, TextPart(text))
+        return replace(self, content=tuple(parts))
 
 
 class PolicyDecision(StrEnum):
@@ -151,6 +176,14 @@ class ImagePart:
 type ContentPart = TextPart | ImagePart
 
 
+def content_text(content: str | tuple[ContentPart, ...]) -> str:
+    return (
+        content
+        if isinstance(content, str)
+        else "\n".join(part.text for part in content if isinstance(part, TextPart))
+    )
+
+
 def _content(value: str | tuple[ContentPart, ...]) -> str | tuple[ContentPart, ...]:
     if isinstance(value, str):
         return value
@@ -167,9 +200,7 @@ class _MessageText:
 
     @property
     def text(self) -> str:
-        if isinstance(self.content, str):
-            return self.content
-        return "\n".join(part.text for part in self.content if isinstance(part, TextPart))
+        return content_text(self.content)
 
 
 class _PlainMessage(_MessageText):
@@ -314,6 +345,9 @@ def tool_result_from_dict(data: dict) -> ToolResult:
             OutputTruncation(**data["truncation"]) if data.get("truncation") is not None else None
         ),
     }
+    if not isinstance(payload["content"], str):
+        kinds = {"text": TextPart, "image_url": ImagePart}
+        payload["content"] = tuple(kinds[part["type"]](**part) for part in payload["content"])
     return ToolResult(**payload)
 
 

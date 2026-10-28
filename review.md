@@ -12,9 +12,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 
 - Finish the Model / ModelInfo / ModelResponse / ModelStream migration and remove
   all stream-only LLM compatibility paths.
-- Verify accept/continue/fail max-token behavior through the public result API.
-- Support multimodal tool results and model history, including the output-limit,
-  spill and token-counting paths. Preserve native provider response state.
 - Finish moving the remaining feature contracts to their consumers; FS is now
   collocated with its implementation and bounded, schema-validated tools.
 

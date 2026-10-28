@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from harnessed.core.messages import Assistant, User
+from harnessed.core.messages import Assistant, ToolCall, ToolReply, User
 
 pytest.importorskip("pydantic_ai")
 
@@ -424,3 +424,36 @@ async def test_unsigned_partial_reasoning_is_not_sent_back_to_a_native_provider(
     ]
     assert not any(isinstance(part, native.ThinkingPart) for part in parts)
     assert any(isinstance(part, native.TextPart) and part.content == partial.text for part in parts)
+
+
+async def test_multimodal_tool_returns_are_native_parts_with_preserved_image_detail():
+    received = []
+
+    def respond(messages, info):
+        received.extend(messages)
+        return native.ModelResponse([native.TextPart("seen")])
+
+    model = PydanticAIModel(FunctionModel(respond))
+    response = await model.request(
+        ModelRequest(
+            "fixture",
+            (
+                Assistant(tool_calls=(ToolCall("snapshot", id="call"),)),
+                ToolReply(
+                    (TextPart("page"), ImagePart("https://example.test/page.png", "original")),
+                    tool_call_id="call",
+                ),
+            ),
+        )
+    )
+    assert response.message.text == "seen"
+    returned = next(
+        part
+        for message in received
+        if isinstance(message, native.ModelRequest)
+        for part in message.parts
+        if isinstance(part, native.ToolReturnPart)
+    )
+    assert returned.content[0] == "page"
+    assert isinstance(returned.content[1], native.ImageUrl)
+    assert returned.content[1].vendor_metadata == {"detail": "high"}

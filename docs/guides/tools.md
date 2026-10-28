@@ -82,3 +82,22 @@ fixtures include expected failures and reject unused suppressions, so weakening
 a signature breaks those checks too. Equal priorities retain registration order;
 lower priorities run first. Use `Priority.GUARD` for approval/policy gates and
 `Priority.OBSERVE` for measurements around actual execution.
+
+## Multimodal results
+
+A tool may explicitly return `ToolResult((TextPart("Page state"), ImagePart(url)))`.
+The content sequence is frozen. Its `text` property projects only text; `with_note`
+preserves part order and `with_text` replaces text while retaining images. Exit
+codes, denial provenance, spill references and rule-match metadata survive both.
+
+The output limit bounds textual characters while retaining images. Spill stores
+large text and retains image parts alongside its preview. Request budgeting and
+size rules include an approximate allowance of 1024 tokens per image; a provider
+counter can replace the full request estimate. Images are not serialized into
+text or silently discarded by those policies. Their actual token use depends on
+the selected provider, image resolution and settings.
+
+PydanticAI receives native multimodal tool-return content and handles providers
+whose tool channel only accepts text. Image detail is forwarded; `original` maps
+to `high` on the native adapter. The current neutral content types cover text and
+images, not audio/video/documents.

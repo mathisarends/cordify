@@ -30,18 +30,18 @@ class SpillLargeResults(Plugin):
         agent: Inject[Agent],
     ):
         result = await next_()
-        tokens = counter.count_text(result.content)
+        tokens = counter.count_text(result.text)
         if tokens <= self.max_tokens or result.spill is not None or event.call.name == "read_spill":
             return result
-        ref = await files.put(result.content)
-        preview = truncate(result.content, min(self.preview_tokens, self.max_tokens), counter)
+        ref = await files.put(result.text)
+        preview = truncate(result.text, min(self.preview_tokens, self.max_tokens), counter)
         content = (
             f"Tool output stored at {ref.path} ({tokens} estimated tokens; sha256={ref.sha256}).\n"
             f"Preview:\n{preview}\n\n"
             "Use read_spill(path=..., offset=0, limit=4000) to read character ranges."
         )
         await agent.log.append(SpillCreated(event.call.id, ref, tokens))
-        return replace(result, content=content, spill=ref)
+        return replace(result.with_text(content), spill=ref)
 
     @tool
     async def read_spill(
