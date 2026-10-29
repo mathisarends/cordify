@@ -42,6 +42,7 @@ class Plugin(KernelPlugin):
     Allocate resources in setup and own their cleanup through Context effects.
     Class annotations name: Inject[T] resolve before setup; Inject[T | None]
     receives None if absent. provides=True publishes this mount as a service.
+    Declare lifetime dependencies with needs; Inject only binds their values.
     Ordinary assignments in setup are per-mount; constructor inputs are shared.
     create_instance may customize construction without changing registration.
     """

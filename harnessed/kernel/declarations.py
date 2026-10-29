@@ -62,14 +62,7 @@ class Bundle:
     def _as_plugin_spec(self) -> PluginSpec:
 
         hooks, registrations = tuple(self._hooks), tuple(self._registrations)
-        needs = [
-            *self.needs,
-            *(
-                key
-                for _, callback, _, _ in hooks
-                for key in injections(callback, required_only=True).values()
-            ),
-        ]
+        needs = list(self.needs)
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
         async def mount(ctx):
@@ -120,6 +113,7 @@ class PluginBase:
 
     Constructor inputs are shallow-copied; assignments in setup belong to that
     mount. Inject attributes resolve before setup and are unavailable on recipes.
+    Declare lifetime dependencies explicitly with needs; Inject only binds values.
     provides=True publishes the mount under the class declaring that option.
     """
 
@@ -202,25 +196,14 @@ class PluginBase:
         state_fields = tuple(
             dict.fromkeys(member for member in members.values() if isinstance(member, PluginState))
         )
-        hooks = list(_hooks(getattr(self, "hooks", ())))
         registrations = list(self._registration_entries())
         for name, member in members.items():
             if callable(member):
                 callback = getattr(self, name)
-                hooks.extend(
-                    (event, callback, priority)
-                    for event, _, priority in getattr(member, "_harnessed_hooks", ())
-                )
                 registrations.extend(
                     (recipe, callback) for recipe in getattr(member, "_harnessed_registrations", ())
                 )
-        needs = [*getattr(self, "needs", ()), *injections(self.setup, required_only=True).values()]
-        needs.extend(item.key for item in dependencies.values() if not item.optional)
-        needs.extend(
-            key
-            for _, callback, _ in hooks
-            for key in injections(callback, required_only=True).values()
-        )
+        needs = list(getattr(self, "needs", ()))
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
         async def mount(ctx):

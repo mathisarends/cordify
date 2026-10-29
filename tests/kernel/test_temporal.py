@@ -184,9 +184,7 @@ async def test_scope_isolation_and_permanent_disposal_of_waiting_plugin():
 
 
 async def test_class_and_bundle_explicit_needs_remove_tools_and_prompt_sections():
-    class FeaturePlugin(Plugin):
-        needs = (Backend,)
-
+    class FeaturePlugin(Plugin, needs=(Backend, SystemPrompt)):
         async def setup(self, ctx, prompt: Inject[SystemPrompt]):
             self.name = ctx[Backend].name
             self.calls = 0

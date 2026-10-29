@@ -58,7 +58,7 @@ class ApprovalGateConfig(PluginConfig):
     priority: int = Priority.GUARD
 
 
-class ApprovalGate(Plugin):
+class ApprovalGate(Plugin, needs=(ToolRegistry,)):
     """Keep a scoped guard active even when its optional approver is unavailable."""
 
     Config = ApprovalGateConfig
@@ -210,7 +210,7 @@ class ApprovalsConfig(PluginConfig):
     timeout: Annotated[float, Field(gt=0)] = 300.0
 
 
-class Approvals(Plugin, slot="approvals"):
+class Approvals(Plugin, slot="approvals", needs=(ToolRegistry,)):
     """Compose default decisions and explicit tool rules; required approval wins trust."""
 
     Config = ApprovalsConfig

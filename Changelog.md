@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- Plugin lifetime requirements now use explicit `needs=(...)` declarations.
+  `Inject[T]` binds attribute and parameter values without inferring composition
+  requirements from class attributes, setup, hooks or function plugins. Declare
+  dependencies such as `class Feature(Plugin, needs=(Actions,))` alongside
+  `actions: Inject[Actions]`; function plugins use `@plugin(needs=(Actions,))`
+  and bundles use `Bundle("name", needs=(Actions,))`. These declarations control
+  waiting, teardown and restart when providers disappear or change. Optional
+  injection remains optional unless its service is explicitly listed in `needs`.
+  Tool declarations retain their `ToolRegistry` registration requirement;
+  call-scoped values such as `ToolContext` do not belong in plugin `needs`.
+
 ## 0.2.0 (2026-10-29)
 
 This release introduces breaking event API and session storage changes from

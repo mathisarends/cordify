@@ -127,7 +127,7 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
 async def test_approval_always_is_session_local_and_review_can_steer_nudges():
     asked, stages = ([], [])
 
-    class FeaturesPlugin(Plugin):
+    class FeaturesPlugin(Plugin, needs=(Session,)):
         @tool
         async def work(self) -> str:
             stages.append("tool")
@@ -173,7 +173,7 @@ async def test_approval_always_is_session_local_and_review_can_steer_nudges():
 
 async def test_class_plugin_state_is_fresh_for_every_session_and_methods_support_di():
 
-    class Counter(Plugin):
+    class Counter(Plugin, needs=(Session,)):
         def __init__(self):
             self.count = 0
 
@@ -210,10 +210,10 @@ async def test_class_plugin_state_is_fresh_for_every_session_and_methods_support
     assert template.count == 0
 
 
-async def test_function_plugin_can_inject_current_agent_and_implicit_dependencies():
+async def test_function_plugin_can_inject_current_agent_with_explicit_needs():
     observed = []
 
-    @plugin
+    @plugin(needs=(Session, ToolRegistry))
     async def observer(ctx, agent: Inject[Session], registry: Inject[ToolRegistry]):
         observed.append((agent.id, registry))
         yield

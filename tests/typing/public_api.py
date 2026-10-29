@@ -37,7 +37,7 @@ async def configured(ctx: Context, root: str, *, enabled: bool = True) -> AsyncG
 assert_type(configured("workspace", enabled=False), PluginSpec)
 
 
-class EventObserver(Plugin):
+class EventObserver(Plugin, needs=(SessionLog,)):
     log: Inject[SessionLog]
 
     @hook(AssistantMessageEvent)
@@ -66,7 +66,7 @@ class EventObserver(Plugin):
         assert_type(event.reason, TurnOutcome)
 
 
-class CountingTools(Plugin):
+class CountingTools(Plugin, needs=(str,)):
     counts = PluginState[dict[str, int]](dict)
 
     @tool(readonly=True, output_limit=None, description="Count a value for the selected service.")

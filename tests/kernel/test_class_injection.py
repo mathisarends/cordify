@@ -4,7 +4,7 @@ from harnessed.kernel import Context, Inject, Key, PluginBase, PluginStatus
 from harnessed.kernel.plugin import as_plugin_spec
 
 
-class Feature(PluginBase, provides=True):
+class Feature(PluginBase, provides=True, needs=(str,)):
     backend: Inject[str]
     optional: Inject[int | None]
 
@@ -13,7 +13,7 @@ class Feature(PluginBase, provides=True):
         self.computed = self.backend.upper()
 
 
-class Consumer(PluginBase, provides=True):
+class Consumer(PluginBase, provides=True, needs=(Feature,)):
     feature: Inject[Feature]
 
 
@@ -38,13 +38,20 @@ async def test_class_injection_precedes_setup_and_is_isolated_between_mounts():
         _ = mounted.backend
 
 
-async def test_required_class_dependency_waits_and_restarts():
+async def test_explicit_class_dependency_waits_and_restarts():
     async with Context() as ctx:
         handle = await ctx.plugin(Feature())
         assert handle.status is PluginStatus.WAITING
         remove = ctx.provide(str, "one")
         await ctx.settle()
         previous = ctx[Feature]
+        restore = ctx.provide(str, "override")
+        await ctx.settle()
+        assert ctx[Feature] is not previous
+        assert ctx[Feature].backend == "override"
+        await restore()
+        await ctx.settle()
+        assert ctx[Feature].backend == "one"
         await remove()
         await ctx.settle()
         assert Feature not in ctx
@@ -73,7 +80,7 @@ async def test_inherited_provides_uses_declaring_class_and_named_keys():
 
 
 async def test_deferred_annotation_is_resolved_before_mount():
-    class Deferred(PluginBase):
+    class Deferred(PluginBase, needs=(str,)):
         backend: "Inject[str]"
 
     recipe = Deferred()
@@ -85,7 +92,7 @@ async def test_deferred_annotation_is_resolved_before_mount():
 
 
 async def test_private_deferred_injection_has_the_same_recipe_guard_and_mount_binding():
-    class Private(PluginBase, provides=True):
+    class Private(PluginBase, provides=True, needs=(str,)):
         _backend: "Inject[str]"
 
     recipe = Private()

@@ -12,7 +12,7 @@ class LatestObservationOnlyConfig(PluginConfig):
     max_summaries: Annotated[int, Field(ge=0)] = 8
 
 
-class LatestObservationOnly(Plugin):
+class LatestObservationOnly(Plugin, needs=(SessionLog,)):
     """Keep full state in the active step, with bounded summaries per source."""
 
     Config = LatestObservationOnlyConfig

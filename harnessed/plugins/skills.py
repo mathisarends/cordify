@@ -274,7 +274,7 @@ def _read_resource(root: Path, path: str) -> str:
         return stream.read()
 
 
-class Skills(Plugin, slot="skills"):
+class Skills(Plugin, slot="skills", needs=(SessionLog, DynamicContext)):
     """Discover explicit sources once per session, then load instructions and files on demand."""
 
     def __init__(self, *sources: str | Path | Skill | _DirectorySkill) -> None:

@@ -30,7 +30,7 @@ async def memory_backend(ctx: Context):
     yield
 
 
-class RelevantMemories(Plugin):
+class RelevantMemories(Plugin, needs=(Memory, Session)):
     @hook(PreStep)
     async def recall(self, event, next_, memory: Inject[Memory], agent: Inject[Session]):
         if event.is_turn_start:

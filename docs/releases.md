@@ -26,6 +26,14 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
+## Unreleased
+
+Plugin composition now requires explicit `needs=(...)` declarations. `Inject`
+binds values without inferring lifetime requirements. Add required services to
+the plugin class, `@plugin(needs=(...))` or `Bundle(..., needs=(...))` so missing
+providers suspend the plugin and provider changes restart it. See the
+[plugin guide](guides/plugins.md) for examples and optional injection behavior.
+
 ## 0.2.0 (2026-10-29)
 
 This minor release adds explicit event and request lifecycles, declarative plugin

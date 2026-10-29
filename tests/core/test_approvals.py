@@ -35,7 +35,7 @@ def tool_model():
 async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_revoked(tmp_path):
     asked, executed = ([], [])
 
-    class ToolsPlugin(Plugin):
+    class ToolsPlugin(Plugin, needs=(Session,)):
         @tool
         async def work(self, agent: Inject[Session]) -> str:
             assert isinstance(agent.log.events[-1], ToolExecutionStartedEvent)
