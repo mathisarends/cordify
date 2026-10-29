@@ -1,13 +1,14 @@
 import asyncio
 import inspect
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from functools import partial
-from types import MappingProxyType
+from types import MappingProxyType, MethodType
 from typing import Annotated, Any, cast, overload
 
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic.fields import FieldInfo
 
 from harnessed.core.messages import ToolCall, ToolResult
 from harnessed.core.model import ToolDefinition
@@ -44,6 +45,9 @@ class ToolError(Exception):
     """An intentional, safe error message that may be shown to the model."""
 
 
+type ParameterFields = Callable[[Any], Mapping[str, FieldInfo]]
+
+
 @dataclass(frozen=True)
 class ToolSpec:
     """A tool method declaration installed for one plugin lifetime."""
@@ -55,6 +59,7 @@ class ToolSpec:
     readonly: bool = False
     override: bool = False
     output_limit: OutputLimitSetting = OutputLimit.INHERIT
+    parameter_fields: ParameterFields | None = None
 
     def __post_init__(self) -> None:
         validate_output_limit(self.output_limit)
@@ -64,7 +69,12 @@ class ToolSpec:
         return (ToolRegistry,)
 
     def mount(self, ctx: Context, callback: Callable) -> Disposer:
-        return ctx[ToolRegistry].register(callback, spec=self, owner=ctx)
+        fields = None
+        if self.parameter_fields is not None:
+            if not isinstance(callback, MethodType):
+                raise TypeError("parameter_fields requires a bound @tool method")
+            fields = self.parameter_fields(callback.__self__)
+        return ctx[ToolRegistry].register(callback, spec=self, owner=ctx, parameter_fields=fields)
 
 
 type ErrorFormatter = Callable[[ToolCall, Exception], str]
@@ -223,6 +233,7 @@ class ToolRegistry:
         override: bool = False,
         owner: Context | None = None,
         spec: ToolSpec | None = None,
+        parameter_fields: Mapping[str, FieldInfo] | None = None,
     ) -> Disposer:
         spec = spec or ToolSpec(
             name, timeout, parallel, resources, readonly, override, output_limit
@@ -252,7 +263,7 @@ class ToolRegistry:
                 f"{self._owner_name(owner)} must declare override=True"
             )
         arguments = ToolArguments.from_signature(
-            tool_name, plan.signature, plan.hints, plan.dependencies
+            tool_name, plan.signature, plan.hints, plan.dependencies, parameter_fields
         )
         definition = ToolDefinition(
             tool_name,

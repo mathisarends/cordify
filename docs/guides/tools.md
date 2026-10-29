@@ -62,6 +62,13 @@ to finish before releasing its resources or closing the session.
 Shell commands use their requested timeout or `Shell(timeout=...)` default, up to
 `max_timeout` (at most 600 seconds). The shell tool explicitly overrides the generic
 `AgentLoop(tool_timeout=...)` deadline so longer commands can complete.
+Its argument schema and runtime validation both advertise the configured `max_timeout`.
+
+For configuration-dependent constraints, `@tool(parameter_fields=fields)` accepts
+an unbound method `fields(self) -> Mapping[str, FieldInfo]`. It runs once per mount
+after `setup` and adds Pydantic `Field` metadata to the named model parameters.
+For example, return `{"timeout": Field(le=self.config.max_timeout)}`. Annotations
+still supply the types and defaults; injected or unknown parameter names are rejected.
 
 Tools run sequentially unless `parallel=True`. Declare shared resource keys for
 parallel tools that touch the same file or external object; overlapping keys

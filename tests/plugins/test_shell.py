@@ -109,5 +109,36 @@ async def test_shell_command_deadline_overrides_the_generic_tool_timeout(tmp_pat
         assert not result.is_error and "finished" in result.content
         assert seen == [0.15 if explicit else 0.1]
         result = await registry.execute(ToolCall("run_command", {"argv": ["test"], "timeout": 0.3}))
-        assert result.is_error and "must not exceed 0.2" in result.content
+        assert result.is_error and "0.2" in result.content
         assert len(seen) == 1
+
+
+@pytest.mark.parametrize("maximum", [0.2, 60, 600])
+async def test_shell_schema_and_validation_use_each_mounts_timeout_limit(tmp_path, maximum):
+    class Backend:
+        async def run(self, argv, *, cwd, timeout):
+            return ProcResult(0, str(timeout), "")
+
+    shell = Shell(tmp_path, implementation=Backend(), timeout=min(30, maximum), max_timeout=maximum)
+    app = Agent(model=ScriptedModel([]), plugins=[shell])
+    async with app.session() as session:
+        registry = session.ctx[ToolRegistry]
+        definition = registry.definitions[0]
+        schema = definition.parameters["properties"]["timeout"]
+        assert schema["anyOf"][0]["maximum"] == maximum
+        assert schema["default"] is None
+        reference = registry.reference(shell.run_command, owner=session.ctx)
+        assert registry.matches(reference, "run_command")
+        accepted = await registry.execute(
+            ToolCall("run_command", {"argv": ["test"], "timeout": maximum})
+        )
+        assert not accepted.is_error
+        rejected = await registry.execute(
+            ToolCall("run_command", {"argv": ["test"], "timeout": maximum + 1})
+        )
+        assert rejected.is_error and "ValidationError" in rejected.text
+
+    # A second mount keeps its own constraints; neither mutates the declaration.
+    async with Agent(model=ScriptedModel([]), plugins=[Shell(tmp_path)]).session() as session:
+        schema = session.ctx[ToolRegistry].definitions[0].parameters["properties"]["timeout"]
+        assert schema["anyOf"][0]["maximum"] == 600

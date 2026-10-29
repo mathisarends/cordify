@@ -35,7 +35,12 @@ class ToolArguments:
         signature: inspect.Signature,
         hints: Mapping[str, Any],
         injected: Mapping[str, Dependency],
+        parameter_fields: Mapping[str, FieldInfo] | None = None,
     ) -> Self:
+        parameter_fields = parameter_fields or {}
+        unknown = parameter_fields.keys() - (signature.parameters.keys() - injected.keys())
+        if unknown:
+            raise ValueError(f"Unknown model parameters in parameter_fields: {sorted(unknown)}")
         # Pydantic accepts runtime type expressions as field definitions.
         fields: dict[str, Any] = {}
         names: dict[str, str] = {}
@@ -57,6 +62,8 @@ class ToolArguments:
                 descriptions = [item for item in metadata if isinstance(item, str)]
                 if descriptions:
                     annotation = Annotated[base, *metadata, Field(description=descriptions[0])]
+            if parameter.name in parameter_fields:
+                annotation = Annotated[annotation, parameter_fields[parameter.name]]
             default = parameter.default
             if isinstance(default, FieldInfo):
                 field = copy(default)

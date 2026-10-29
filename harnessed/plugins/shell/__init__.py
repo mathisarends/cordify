@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Protocol, Self
 
 from pydantic import Field, model_validator
+from pydantic.fields import FieldInfo
 
 from harnessed.core.messages import ToolResult, ToolStatus, result_content, to_dict
 from harnessed.core.plugin import Plugin, PluginConfig
@@ -222,7 +223,10 @@ class ShellTools(Plugin, needs=(ShellBackend, ToolRegistry)):
         self.cwd = await run_sync(self.config.cwd.resolve)
         ctx[ToolRegistry].result_converter(ProcResult, proc_result, owner=ctx)
 
-    @tool(timeout=600)
+    def _command_fields(self) -> Mapping[str, FieldInfo]:
+        return {"timeout": Field(le=self.config.max_timeout)}
+
+    @tool(timeout=600, parameter_fields=_command_fields)
     async def run_command(
         self,
         argv: Annotated[list[str], Field(min_length=1)],

@@ -7,8 +7,10 @@ from uuid import UUID
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
-from harnessed import Context, Inject, ToolCall
+from harnessed import Agent, Context, Inject, Plugin, ToolCall, tool
 from harnessed.core.tools.registry import ToolRegistry
+from harnessed.plugins import Service
+from harnessed.testing import ScriptedModel
 
 
 class Priority(StrEnum):
@@ -28,6 +30,21 @@ class Ticket(BaseModel):
     priority: Priority
     address: Address
     labels: list[str] = Field(default_factory=list, max_length=3)
+
+
+@pytest.mark.parametrize("parameter", ["missing", "service"])
+async def test_mount_constraints_reject_unknown_and_injected_parameters(parameter):
+    class Tools(Plugin):
+        def fields(self):
+            return {parameter: Field(le=5)}
+
+        @tool(parameter_fields=fields)
+        async def value(self, count: int, *, service: Inject[int]) -> int:
+            return count + service
+
+    with pytest.raises(ValueError, match="Unknown model parameters"):
+        async with Agent(model=ScriptedModel([]), plugins=[Tools(), Service(int, 1)]).session():
+            pytest.fail("Invalid parameter metadata was mounted")
 
 
 async def test_nested_form_models_are_validated_instantiated_and_serialized_as_json():
