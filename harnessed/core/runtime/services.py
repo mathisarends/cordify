@@ -2,7 +2,7 @@ from harnessed.core.budget import ContextBudget
 from harnessed.core.hooks import SessionAppended
 from harnessed.core.model import UsagePurpose
 from harnessed.core.plugin import Plugin
-from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.session.events import ModelRequestedEvent, ModelUsageRecordedEvent
 from harnessed.core.tokens import CalibratedTokenCounter, TokenCounter
 from harnessed.core.tools.registry import ToolRegistry
@@ -20,7 +20,7 @@ class RuntimeServices(Plugin):
     async def setup(self, ctx: Context) -> None:
         counter = CalibratedTokenCounter()
         ctx.provide(ToolRegistry, ToolRegistry(ctx))
-        ctx.provide(SystemPrompt, SystemPrompt(ctx))
+        ctx.provide(SystemPromptStore, SystemPromptStore(ctx))
         ctx.provide(TokenCounter, counter)
         ctx.provide(ContextBudget, ContextBudget())
 

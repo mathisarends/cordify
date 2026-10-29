@@ -10,6 +10,7 @@ from typing import Annotated, Protocol
 from pydantic import Field
 
 from harnessed.core.plugin import Plugin, PluginConfig
+from harnessed.core.prompt.values import SystemSection
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import Context, Inject, run_sync
@@ -194,9 +195,11 @@ class Filesystem(FilesystemTools, slot="filesystem"):
 
     config: FilesystemConfig
 
-    guidance = (
-        "File paths are relative to the workspace. Read a range before editing. "
-        "Use glob and grep to discover relevant files."
+    usage = SystemSection(
+        text=(
+            "File paths are relative to the workspace. Read a range before editing. "
+            "Use glob and grep to discover relevant files."
+        )
     )
 
     def __init__(

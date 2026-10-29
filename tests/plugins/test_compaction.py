@@ -37,7 +37,7 @@ async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_ins
     model = ScriptedModel(["first", "summary", "second"])
     async with Agent(
         model=model,
-        instructions="Fixed instructions.",
+        system_prompt="Fixed instructions.",
         plugins=[Compaction(trigger=every_turns(1), keep_turns=0, focus="Keep paths.")],
     ).session() as session:
         await session.run("x" * 4000)

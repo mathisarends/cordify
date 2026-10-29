@@ -21,7 +21,7 @@ from harnessed.core.hooks import SessionAppended
 from harnessed.core.messages import ToolStatus, freeze, to_dict
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.context import DynamicContext
-from harnessed.core.prompt.values import Section
+from harnessed.core.prompt.values import SystemSection
 from harnessed.core.session.events import (
     CompactionAppliedEvent,
     ToolCallFinishedEvent,
@@ -295,9 +295,9 @@ class Skills(Plugin, slot="skills", needs=(SessionLog, DynamicContext)):
             else str(source)
             for source in sources
         )
-        self.guidance = Section.from_factory(
-            "skills",
-            self._render_catalog,
+        self.catalog = SystemSection.from_factory(
+            factory=self._render_catalog,
+            title="Skills",
             description=f"Skills: {description}; earlier sources win; read at session startup",
         )
 

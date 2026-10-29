@@ -14,7 +14,7 @@ class _Snapshot:
     registration: RegistrationState
 
 
-class SystemPrompt:
+class SystemPromptStore:
     def __init__(self, ctx: Context) -> None:
         self._ctx = ctx
         self._snapshots: list[_Snapshot] = []

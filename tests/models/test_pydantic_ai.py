@@ -821,7 +821,7 @@ async def test_native_anthropic_provider_preserves_signed_thinking_across_tool_r
         model = AnthropicModel(
             "claude-sonnet-5-5", provider=AnthropicProvider(api_key="test", http_client=client)
         )
-        result = await Agent(model=model, instructions="Fixed rules.", plugins=[Calculator()]).run(
+        result = await Agent(model=model, system_prompt="Fixed rules.", plugins=[Calculator()]).run(
             "Add",
             settings={
                 "anthropic_cache_instructions": True,

@@ -28,17 +28,17 @@ Each mount owns one connection and a fixed catalog of namespaced tools. See
 
 ## Agent
 
-`Agent(*, model=None, instructions=None, plugins=(),
+`Agent(*, model=None, system_prompt=None, plugins=(),
 plugin_validation=PluginValidation.ERROR)` resolves reusable configuration.
 
 | Member | Behavior |
 | --- | --- |
 | model | Harnessed Model, native PydanticAI model, or provider:model string |
-| instructions | Text or a sequence of text/Section values |
+| system_prompt | Plain text or an explicitly ordered SystemPrompt |
 | plugins | Explicit configured plugins, merged with default slots |
 | plugin_validation | ERROR rejects unresolved plugins at session startup; WARN emits PluginDependencyWarning and retains them for later activation |
 | agent.plugins | Tuple of resolved plugins |
-| agent.prompt | Inspectable PromptComposition of instructions and guidance |
+| agent.prompt | Inspectable PromptComposition with order, origins, format and exclusions |
 | agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types/contracts |
 | agent.run(prompt, **options) | One run in a fresh session |
 | agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
@@ -52,6 +52,42 @@ tuple contains immutable `PluginDependencyIssue` snapshots with `.plugin`
 `PluginValidation.WARN` emits one `PluginDependencyWarning` with the same `.issues`
 and permits later activation. Setup failures still propagate in either mode.
 See [startup validation](../guides/plugins.md#session-startup-validation).
+
+## System prompt composition
+
+`SystemPrompt(*, sections=(), format=PromptFormat.PLAIN, exclude=(),
+unplaced=Unplaced.APPEND)` is an immutable document. Sections are strings,
+keyword-only `SystemSection(text="", title=None, description="")` values,
+plugin-bound references, `PluginSections(plugin)` groups, a `PluginSections()`
+rest slot, or nested SystemPrompt documents.
+The outermost format governs the flattened document: PLAIN joins text with blank
+lines, MARKDOWN adds optional level-two headings, and XML renders escaped section
+elements. Untitled and empty sections have defined behavior in every format; see
+the [context guide](../guides/context.md).
+
+Plugins declare sections as attributes or synchronous `@system_section(title=...)`
+methods returning `str | None`. Configuration providers run once at agent
+construction. `SystemSection.from_file(path=..., title=..., missing_ok=False)`
+and `SystemSection.from_factory(factory=..., title=..., description=...)` run once
+per opened session. Factories are async callbacks accepting the session Context.
+
+Unplaced sections append in configured plugin and declaration order by default,
+including with `Agent(system_prompt="...")` or no application text. Setup order
+does not affect them. A rest slot is resolved globally after all explicit placements
+and exclusions, including later nested ones; at most one slot is allowed per prompt.
+The outermost document controls format and unplaced policy. `Unplaced.ERROR`
+requires complete placement or exclusion, but open groups and slots accept future
+sections. Use individual references without open groups/slots to detect additions.
+Reference identity follows the configured recipe and declaration; equal text is
+retained. Duplicate, foreign and conflicting references fail before providers run.
+`await session.prompt.render()` returns the actual session text.
+
+`session.use(plugin, section_delivery=SectionDelivery.ERROR)` rejects declared
+sections before mounting. `CONTEXT` delivers guidance as mount-owned active context,
+removed on suspension or unmount; providers/factories run once per activation and
+failures roll back the mount. `IGNORE` does not execute section providers, factories
+or file reads. The system text stays fixed; new tools still change the tool catalog.
+Use ContextValue for dynamic facts. All prompt policies are exported by `harnessed`.
 
 ## Session
 
@@ -68,7 +104,7 @@ See [startup validation](../guides/plugins.md#session-startup-validation).
 | stop(keep_inbox=False) | Finish this step, end its turn, return to idle |
 | abort(keep_inbox=False) | Cancel now, drain cleanup, repair and end its turn |
 | wait_until_idle() | Wait for idle and an empty inbox |
-| use(plugin) | Mount a reversible runtime capability |
+| use(plugin, section_delivery=SectionDelivery.ERROR) | Mount a reversible capability; CONTEXT owns guidance per activation, IGNORE skips sections |
 | compact() | Summarize completed history while idle or paused; return its record or None |
 | fork(id, at=None, inherit_approvals=False) | Create a closed-prefix branch for Agent.session |
 | subscribe(transient=False) | Independent raw log subscription |

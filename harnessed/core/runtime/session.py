@@ -4,7 +4,6 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Mapping
 from contextvars import ContextVar
 from typing import Any, Unpack, overload
-from weakref import WeakKeyDictionary
 
 from harnessed.core.attachments import Attachment
 from harnessed.core.buffering import EventBuffer
@@ -25,10 +24,11 @@ from harnessed.core.model import (
     resolve_request_settings,
 )
 from harnessed.core.outputs import OutputContract, OutputTypes, OutputValues
-from harnessed.core.plugin import plugin_events
+from harnessed.core.plugin import plugin_contribution, plugin_events
 from harnessed.core.prompt.context import DynamicContext
-from harnessed.core.prompt.system_prompt import SystemPrompt
-from harnessed.core.prompt.values import Section
+from harnessed.core.prompt.delivery import runtime_sections
+from harnessed.core.prompt.system_prompt import SystemPromptStore
+from harnessed.core.prompt.values import SectionDelivery
 from harnessed.core.runtime.approvals import LiveApprovals, SessionApprovals
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.executor import ToolExecutor
@@ -64,9 +64,8 @@ from harnessed.core.tools.context import BoundToolContexts, ToolContexts
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
-from harnessed.kernel.events import PluginActivated
 from harnessed.kernel.hooks import HookFactory, ListenerFactory
-from harnessed.kernel.plugin import PluginHandle, PluginLike, PluginStatus
+from harnessed.kernel.plugin import PluginHandle, PluginLike
 
 type AgentEvent = SessionEvent | TransientEvent
 _driving: ContextVar[Session | None] = ContextVar("harnessed_driving", default=None)
@@ -82,7 +81,6 @@ class Session:
         self.id = session.id
         self.context = DynamicContext(session)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
-        self._runtime_guidance: WeakKeyDictionary[PluginHandle, str] = WeakKeyDictionary()
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
         self._live_approvals = LiveApprovals()
         self.approvals = SessionApprovals(
@@ -115,11 +113,10 @@ class Session:
         self._runner = TurnRunner(ctx, session, options, self.control, self._steps, self)
         ctx.on(SessionAppended, self._session_event)
         ctx.on(SessionPublished, self._stream_event)
-        ctx.on(PluginActivated, self._plugin_activated)
 
     @property
-    def prompt(self) -> SystemPrompt:
-        return self.ctx[SystemPrompt]
+    def prompt(self) -> SystemPromptStore:
+        return self.ctx[SystemPromptStore]
 
     @property
     def events(self) -> tuple[SessionEvent, ...]:
@@ -157,31 +154,26 @@ class Session:
         async for event in self.log.subscribe(transient=transient, buffer_size=buffer_size):
             yield event
 
-    async def use(self, plugin: PluginLike) -> PluginHandle:
-        """Mount a recipe at runtime; its guidance is context, never system text."""
+    async def use(
+        self, plugin: PluginLike, *, section_delivery: SectionDelivery = SectionDelivery.ERROR
+    ) -> PluginHandle:
+        """Mount a capability, with explicit delivery of any declared system sections.
+
+        CONTEXT owns guidance for each activation; IGNORE never evaluates section
+        providers. Neither policy changes the session's fixed system text.
+        """
+        delivery = SectionDelivery(section_delivery)
+        contribution = plugin_contribution(plugin)
+        spec = runtime_sections(plugin, contribution, delivery)
         self.log.registry.register(plugin_events(plugin))
-        handle = await self.ctx.plugin(plugin)
+        handle = await self.ctx.plugin(spec)
         try:
             await self.ctx.settle()
             self.ctx[ToolRegistry].validate_references()
         except BaseException:
             await handle.aclose()
             raise
-        self._runtime_guidance[handle] = f"plugin:{handle.name}:{id(handle):x}"
-        if handle.status == PluginStatus.ACTIVE:
-            await self._plugin_activated(PluginActivated(handle))
         return handle
-
-    async def _plugin_activated(self, event: PluginActivated) -> None:
-
-        handle = event.handle
-        name = self._runtime_guidance.get(handle)
-        guidance = handle.spec.guidance
-        if name is None or guidance is None:
-            return
-        text = await guidance.render(handle.ctx) if isinstance(guidance, Section) else guidance
-        await self.context.set(name, text)
-        handle.ctx.effect(lambda: self.context.remove(name))
 
     @overload
     def on[H](
@@ -318,7 +310,7 @@ class Session:
         async with self.control.maintenance():
             request = ModelRequest(
                 self.ctx[Model].info.name,
-                self.log.messages,
+                (*self.log.messages, *self.context.owned_messages),
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
                 self._options.max_tokens,
             )

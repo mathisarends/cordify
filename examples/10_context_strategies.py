@@ -2,7 +2,7 @@
 
 import asyncio
 
-from harnessed import Agent, Observation, Plugin, Session, tool
+from harnessed import Agent, Observation, Plugin, Session, SystemPrompt, tool
 from harnessed.events import CompactionAppliedEvent, SpillCreatedEvent
 from harnessed.hooks import PreStep
 from harnessed.kernel import Inject, hook
@@ -44,14 +44,16 @@ async def main():
             [ModelChunk(text="The report is stored for ranged reads.")],
         ]
     )
+    spill = Spill(threshold_tokens=100, preview_tokens=8)
     agent = Agent(
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
         model=model,
         plugins=[
             AgentLoop(context_window=2000),
             Reports(),
             WorkspaceState(),
             LatestObservationOnly(max_summaries=1),
-            Spill(threshold_tokens=100, preview_tokens=8),
+            spill,
             Compaction(
                 trigger=at_ratio(0.3),
                 summarizer=ScriptedModel(["The initial task was completed."]),

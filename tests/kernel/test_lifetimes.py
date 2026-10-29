@@ -7,7 +7,7 @@ from pydantic import PydanticSchemaGenerationError
 
 from harnessed import Agent as Application
 from harnessed import Context, Plugin, PolicyDecision, Session, ToolCall, hook, plugin, tool
-from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.runtime.services import RuntimeServices
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import ContextClosed, Emit, Inject
@@ -40,7 +40,7 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
     async def base() -> str:
         return "base"
 
-    @plugin(needs=[ToolRegistry, SystemPrompt])
+    @plugin(needs=[ToolRegistry, SystemPromptStore])
     async def feature(ctx):
 
         async def override() -> str:
@@ -51,7 +51,7 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
                 ctx.provide(str, "override"),
                 ctx.add_listener(Ping, lambda event: seen.append("override")),
                 ctx[ToolRegistry].register(override, name="read", override=True),
-                ctx[SystemPrompt].fixed("override"),
+                ctx[SystemPromptStore].fixed("override"),
             ]
         )
         yield
@@ -61,11 +61,11 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
         ctx.provide(str, "base")
         ctx.add_listener(Ping, lambda event: seen.append("base"))
         ctx[ToolRegistry].register(base, name="read")
-        ctx[SystemPrompt].fixed("base")
+        ctx[SystemPromptStore].fixed("base")
         handle = await ctx.plugin(feature())
         assert ctx[str] == "override"
         assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "override"
-        assert await ctx[SystemPrompt].render() == "override"
+        assert await ctx[SystemPromptStore].render() == "override"
         await ctx.dispatch(Ping())
         assert seen == ["base", "override"]
         for dispose in disposers:
@@ -73,11 +73,11 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
             await dispose()
         assert ctx[str] == "base"
         assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "base"
-        assert await ctx[SystemPrompt].render() == "base"
+        assert await ctx[SystemPromptStore].render() == "base"
         await ctx.dispatch(Ping())
         assert seen == ["base", "override", "base"]
         await handle.aclose()
-        assert ctx[str] == "base" and await ctx[SystemPrompt].render() == "base"
+        assert ctx[str] == "base" and await ctx[SystemPromptStore].render() == "base"
 
 
 async def test_registrations_are_hidden_during_setup_and_before_async_teardown_finishes():
@@ -88,14 +88,14 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
     async def base() -> str:
         return "base"
 
-    @plugin(needs=[ToolRegistry, SystemPrompt])
+    @plugin(needs=[ToolRegistry, SystemPromptStore])
     async def feature(ctx):
 
         @ctx[ToolRegistry].tool(name="read", override=True)
         async def override() -> str:
             return "override"
 
-        ctx[SystemPrompt].fixed("override")
+        ctx[SystemPromptStore].fixed("override")
         ctx.on(Ping, lambda event: seen.append("override"))
         starting.set()
         await ready.wait()
@@ -106,26 +106,26 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
     async with Context() as ctx:
         await ctx.install([RuntimeServices()])
         ctx[ToolRegistry].register(base, name="read")
-        ctx[SystemPrompt].fixed("base")
+        ctx[SystemPromptStore].fixed("base")
         mounting = asyncio.create_task(ctx.plugin(feature()))
         try:
             await starting.wait()
             assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "base"
-            assert await ctx[SystemPrompt].render() == "base"
+            assert await ctx[SystemPromptStore].render() == "base"
             await ctx.dispatch(Ping())
             assert seen == []
         finally:
             ready.set()
             handle = await mounting
         assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "override"
-        assert await ctx[SystemPrompt].render() == "override"
+        assert await ctx[SystemPromptStore].render() == "override"
         await ctx.dispatch(Ping())
         closing = asyncio.create_task(handle.aclose())
         try:
             await stopping.wait()
             assert not closing.done()
             assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "base"
-            assert await ctx[SystemPrompt].render() == "base"
+            assert await ctx[SystemPromptStore].render() == "base"
             await ctx.dispatch(Ping())
             assert seen == ["override"]
         finally:
@@ -150,12 +150,12 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
         lifecycle.append(("bridge", name))
 
     class Feature(Plugin):
-        needs = (Bridge, ToolRegistry, SystemPrompt)
+        needs = (Bridge, ToolRegistry, SystemPromptStore)
 
         async def setup(self, ctx):
             self.backend = ctx[Bridge].name
             self.calls = 0
-            ctx[SystemPrompt].fixed(self.backend)
+            ctx[SystemPromptStore].fixed(self.backend)
             ctx.provide(Ready, Ready())
 
         @tool
@@ -179,14 +179,14 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
             assert feature.status == bridge_handle.status == PluginStatus.ACTIVE
             assert [definition.name for definition in ctx[ToolRegistry].definitions] == ["read"]
             assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == f"{name}:1"
-            assert await ctx[SystemPrompt].render() == name
+            assert await ctx[SystemPromptStore].render() == name
             assert Ready in ctx
             await ctx.dispatch(Ping())
             await source.aclose()
             await ctx.settle()
             assert feature.status == bridge_handle.status == PluginStatus.WAITING
             assert ctx[ToolRegistry].definitions == ()
-            assert await ctx[SystemPrompt].render() == ""
+            assert await ctx[SystemPromptStore].render() == ""
             assert Ready not in ctx
             await ctx.dispatch(Ping())
             assert lifecycle[-3:] == [("feature", name), ("bridge", name), ("provider", name)]
@@ -201,10 +201,10 @@ async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_ba
     cleaned = []
 
     class Broken(Plugin):
-        needs = (ToolRegistry, SystemPrompt)
+        needs = (ToolRegistry, SystemPromptStore)
 
         async def setup(self, ctx):
-            ctx[SystemPrompt].fixed("must disappear")
+            ctx[SystemPromptStore].fixed("must disappear")
             ctx.provide(Ready, Ready())
 
         @hook(Ping)
@@ -228,18 +228,18 @@ async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_ba
             await ctx.plugin(Broken())
         assert cleaned == ["closed"]
         assert ctx[ToolRegistry].definitions == () and Ready not in ctx
-        assert await ctx[SystemPrompt].render() == ""
+        assert await ctx[SystemPromptStore].render() == ""
         await ctx.dispatch(Ping())
 
 
 async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
     seen = []
 
-    @plugin(needs=[Backend, ToolRegistry, SystemPrompt])
+    @plugin(needs=[Backend, ToolRegistry, SystemPromptStore])
     async def feature(ctx):
         name = ctx[Backend].name
         ctx.provide(Ready, Ready())
-        ctx[SystemPrompt].fixed(name)
+        ctx[SystemPromptStore].fixed(name)
         ctx.on(Ping, lambda event: seen.append(name))
 
         @ctx[ToolRegistry].tool
@@ -258,13 +258,13 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
         with pytest.raises(ExceptionGroup, match="composition failed"):
             await ctx.settle()
         assert handle.status == PluginStatus.WAITING and Ready not in ctx
-        assert ctx[ToolRegistry].definitions == () and await ctx[SystemPrompt].render() == ""
+        assert ctx[ToolRegistry].definitions == () and await ctx[SystemPromptStore].render() == ""
         await ctx.dispatch(Ping())
         ctx.provide(Backend, Backend("fixed"))
         await ctx.settle()
         assert handle.status == PluginStatus.ACTIVE and Ready in ctx
         assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "fixed"
-        assert await ctx[SystemPrompt].render() == "fixed"
+        assert await ctx[SystemPromptStore].render() == "fixed"
         await ctx.dispatch(Ping())
         assert seen == ["fixed"]
 

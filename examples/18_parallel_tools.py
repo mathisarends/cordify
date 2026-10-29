@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, PolicyDecision, Role, Section, ToolCall, tool
+from harnessed import Agent, Plugin, PolicyDecision, Role, SystemPrompt, ToolCall, tool
 from harnessed.events import ToolCallFinishedEvent
 from harnessed.kernel import Inject
 from harnessed.models import ModelChunk
@@ -76,12 +76,13 @@ async def writes_with_resource_keys(root: Path):
         ToolCall("save_document", {"path": "./a.txt", "text": "second version"}),
     ]
     model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "Documents saved."])
+    filesystem = Filesystem(root)
     async with Agent(
         model=model,
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
-            Filesystem(root),
-            Instructions([Section.from_file(Path(root) / "AGENTS.md", missing_ok=True)]),
+            filesystem,
+            Instructions(SystemPrompt(sections=(filesystem.usage,))),
             tools,
         ],
     ).session("documents") as session:

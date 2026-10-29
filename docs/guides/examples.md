@@ -64,3 +64,10 @@ credentials. See the [MCP guide](mcp.md) for HTTP, filters and ownership.
 to the console, with an outer backend span and model usage, without network
 access or credentials. See [the source](https://github.com/mathisarends/harnessed/blob/main/examples/29_tracing.py)
 and [the Phoenix/Langfuse setup guide](tracing.md).
+
+## System prompt composition
+
+`uv run python -m examples.32_system_prompts` declares literal and
+configuration-dependent plugin sections, explicitly orders them across plugins
+and nested groups, and renders the same document as plain text, XML and Markdown.
+See [system prompts and changing context](context.md).

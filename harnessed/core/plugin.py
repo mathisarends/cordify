@@ -4,7 +4,12 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
-from harnessed.core.prompt.values import PromptContribution, Section
+from harnessed.core.prompt.values import (
+    BoundSystemSection,
+    PromptContribution,
+    SystemSection,
+    SystemSectionProvider,
+)
 from harnessed.core.session.events import SessionEvent
 from harnessed.core.stream import TransientEvent
 from harnessed.kernel import Context, Key, ServiceKey
@@ -15,13 +20,6 @@ from harnessed.kernel.events import on as hook
 from harnessed.kernel.plugin import PluginLike, as_plugin_spec
 
 from .model import Model
-
-
-class _DefaultGuidance:
-    pass
-
-
-_DEFAULT_GUIDANCE = _DefaultGuidance()
 
 
 class Bundle(KernelBundle):
@@ -51,8 +49,6 @@ class Plugin(KernelPlugin):
     config: Any
     events: tuple[type[SessionEvent | TransientEvent], ...] = ()
 
-    guidance: str | Section | None = None
-
     def __init__(
         self,
         *,
@@ -60,13 +56,24 @@ class Plugin(KernelPlugin):
         hooks: Iterable[HookEntry] = (),
         needs: Iterable[ServiceKey[Any]] | None = None,
         registrations: Iterable[tuple[Registration, Callable]] = (),
-        guidance: str | Section | None | _DefaultGuidance = _DEFAULT_GUIDANCE,
         **configuration: Any,
     ) -> None:
         super().__init__(name=name, hooks=hooks, needs=needs, registrations=registrations)
-        if not isinstance(guidance, _DefaultGuidance):
-            self.guidance = guidance
         self.config = type(self).Config.model_validate(configuration)
+
+    def system_sections(self) -> tuple[BoundSystemSection, ...]:
+        """Declared system sections, bound to this recipe without evaluating providers."""
+        members: dict[str, object] = {}
+        for base in reversed(type(self).__mro__):
+            members.update(vars(base))
+        members.update(vars(self))
+        sections: list[BoundSystemSection] = []
+        for name, member in members.items():
+            if isinstance(member, SystemSection):
+                sections.append(member.bind(self, name))
+            elif isinstance(member, SystemSectionProvider):
+                sections.append(member.__get__(self, type(self)))
+        return tuple(sections)
 
     @property
     def context_description(self) -> tuple[str, str] | None:
@@ -82,9 +89,7 @@ def plugin_events(value: PluginLike) -> tuple[type[SessionEvent | TransientEvent
 def plugin_contribution(value: PluginLike) -> PromptContribution:
     """Normalize a plugin's prompt metadata once at the agent boundary."""
     spec = as_plugin_spec(value)
-    guidance = spec.guidance
-    if guidance is not None and not isinstance(guidance, str | Section):
-        raise TypeError("Plugin guidance must be a string, Section or None")
+    sections = value.system_sections() if isinstance(value, Plugin) else ()
     description = value.context_description if isinstance(value, Plugin) else None
     if description is not None and (
         not isinstance(description, tuple)
@@ -92,7 +97,9 @@ def plugin_contribution(value: PluginLike) -> PromptContribution:
         or not all(isinstance(part, str) for part in description)
     ):
         raise TypeError("Context descriptions must contain a name and text")
-    return PromptContribution(spec.name, guidance, description)
+    return PromptContribution(
+        spec.name, sections, description, value if isinstance(value, Plugin) else None
+    )
 
 
 class Service[T](Plugin):

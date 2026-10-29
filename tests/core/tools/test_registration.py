@@ -2,7 +2,7 @@ import pytest
 
 from harnessed.core.errors import ToolNameConflict
 from harnessed.core.messages import ToolCall
-from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import Context
 
@@ -10,7 +10,7 @@ from harnessed.kernel import Context
 async def test_explicit_owner_controls_tool_and_prompt_lifetime():
     async with Context() as root:
         owner = root.extend()
-        registry, prompt = ToolRegistry(root), SystemPrompt(root)
+        registry, prompt = ToolRegistry(root), SystemPromptStore(root)
 
         @registry.tool(owner=owner)
         async def selected() -> str:

@@ -11,7 +11,7 @@ from harnessed.core.errors import ContextLengthExceeded, OutputValidationError
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
 from harnessed.core.messages import Assistant, Observation, Role, User
 from harnessed.core.model import Model, ModelRequest, resolve_request_settings
-from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.executor import ToolExecutor
 from harnessed.core.runtime.options import AgentOptions
@@ -91,7 +91,7 @@ class StepRunner:
             return False
         accepted = decision.messages
         await self.log.append(StepStartedEvent(turn, step))
-        prompt = await self.ctx[SystemPrompt].render()
+        prompt = await self.ctx[SystemPromptStore].render()
         previous_event = self.log.last(SystemMessageEvent)
         previous = previous_event.content if previous_event is not None else None
         if prompt != previous:
@@ -124,7 +124,7 @@ class StepRunner:
         model = self.ctx[Model]
         request = ModelRequest(
             model.info.name,
-            self.log.messages,
+            (*self.log.messages, *self.session.context.owned_messages),
             self.ctx[ToolRegistry].visible_definitions(self.ctx),
             self.options.max_tokens,
             settings=settings,

@@ -4,7 +4,7 @@ The default `Approvals()` permits read-only tools and asks before side effects.
 Use an enum for a different fallback and decorated method references for rules:
 
 ```python
-from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, tool
+from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, SystemPrompt, tool
 from harnessed.events import ApprovalRequestedEvent
 from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel, call
@@ -20,10 +20,12 @@ async def approve(request: ApprovalRequestedEvent) -> ApprovalAnswer:
     return ApprovalAnswer.ALLOW
 
 
+filesystem = Filesystem(root=".")
 agent = Agent(
+    system_prompt=SystemPrompt(sections=(filesystem.usage,)),
     model=ScriptedModel([call(WorkspaceTools.count_lines, path="README.md"), "done"]),
     plugins=[
-        Filesystem(root="."),
+        filesystem,
         WorkspaceTools(),
         Approvals(
             default=PolicyDecision.ALLOW,

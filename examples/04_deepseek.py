@@ -4,20 +4,26 @@ import asyncio
 import os
 from pathlib import Path
 
-from harnessed import Agent, ApprovalAnswer, Section
+from harnessed import Agent, ApprovalAnswer, SystemPrompt, SystemSection
 from harnessed.events import ApprovalNeededEvent, TextDeltaEvent, ToolCallRequestedEvent
 from harnessed.plugins import AgentLoop, Filesystem, JsonlSessions
 
 
 async def main():
     workspace = Path.cwd()
+    filesystem = Filesystem(root=workspace)
     agent = Agent(
         model=f"deepseek:{os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')}",
-        instructions=[
-            "Help the user understand this Python project. Answer in English.",
-            Section.from_file(workspace / "AGENTS.md", missing_ok=True),
-        ],
-        plugins=[Filesystem(root=workspace), AgentLoop(max_steps=8), JsonlSessions()],
+        system_prompt=SystemPrompt(
+            sections=(
+                SystemSection(
+                    text="Help the user understand this Python project. Answer in English."
+                ),
+                SystemSection.from_file(path=workspace / "AGENTS.md", missing_ok=True),
+                filesystem.usage,
+            )
+        ),
+        plugins=[filesystem, AgentLoop(max_steps=8), JsonlSessions()],
     )
     async with agent.session("project-tour") as session:
         async for event in session.stream("Read pyproject.toml and explain the package."):

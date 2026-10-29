@@ -11,6 +11,7 @@ from pydantic.fields import FieldInfo
 
 from harnessed.core.messages import ToolResult, ToolStatus, result_content, to_dict
 from harnessed.core.plugin import Plugin, PluginConfig
+from harnessed.core.prompt.values import SystemSection
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import Context, Inject, run_sync
@@ -245,8 +246,10 @@ class Shell(ShellTools, slot="shell"):
     """Expose argv-based commands with safe approval defaults and bounded output."""
 
     needs = (ToolRegistry,)
-    guidance = (
-        "Run executables with argv. Filter large output and check exit codes before continuing."
+    usage = SystemSection(
+        text=(
+            "Run executables with argv. Filter large output and check exit codes before continuing."
+        )
     )
 
     def __init__(

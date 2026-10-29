@@ -15,7 +15,7 @@ async def compare(name, trigger):
     summaries = ScriptedModel(["Preserve the public API and finish the open work."] * 6)
     app = Agent(
         model=model,
-        instructions="Keep the goal and recent work accurate.",
+        system_prompt="Keep the goal and recent work accurate.",
         plugins=[
             AgentLoop(context_window=2500, max_tokens=256),
             Compaction(

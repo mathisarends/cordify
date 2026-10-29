@@ -3,7 +3,7 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, ToolResult, ToolStatus, tool
+from harnessed import Agent, Plugin, SystemPrompt, ToolResult, ToolStatus, tool
 from harnessed.plugins import JsonlSessions, Spill
 from harnessed.testing import ScriptedModel, call
 
@@ -20,12 +20,14 @@ class Logs(Plugin):
 async def main():
     with TemporaryDirectory(prefix="harnessed-spill-") as directory:
         model = ScriptedModel([call("test_log"), "The full output is stored."])
+        spill = Spill(threshold_tokens=100, preview_tokens=16, max_files=8, max_bytes=1_000_000)
         agent = Agent(
+            system_prompt=SystemPrompt(sections=(spill.usage,)),
             model=model,
             plugins=[
                 Logs(),
                 JsonlSessions(directory),
-                Spill(threshold_tokens=100, preview_tokens=16, max_files=8, max_bytes=1_000_000),
+                spill,
             ],
         )
         async with agent.session("tests") as session:
@@ -36,11 +38,13 @@ async def main():
             print(ascii(output.text))
 
         # A fresh agent reconstructs the file namespace and retention state.
+        spill_2 = Spill(threshold_tokens=100)
         resumed = Agent(
+            system_prompt=SystemPrompt(sections=(spill_2.usage,)),
             model=ScriptedModel(
                 [call("read_spill", path=path, offset=1, limit=24), "Read the range."]
             ),
-            plugins=[JsonlSessions(directory), Spill(threshold_tokens=100)],
+            plugins=[JsonlSessions(directory), spill_2],
         )
         async with resumed.session("tests") as session:
             result = await session.run("Read a small range from that output.")

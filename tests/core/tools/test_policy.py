@@ -1,6 +1,6 @@
 import pytest
 
-from harnessed import Agent, Plugin, tool
+from harnessed import Agent, Plugin, SystemPrompt, tool
 from harnessed.plugins import Spill, ToolOutputLimit
 from harnessed.testing import ScriptedModel, call
 
@@ -19,7 +19,13 @@ async def test_explicit_output_policy_on_tool_methods(limit):
     if limit is None:
         plugins.append(Spill(threshold_tokens=1))
     model = ScriptedModel([call("content"), "done"])
-    async with Agent(model=model, plugins=plugins).session() as session:
+    async with Agent(
+        model=model,
+        plugins=plugins,
+        system_prompt=SystemPrompt(
+            sections=tuple(p.usage for p in plugins if isinstance(p, Spill))
+        ),
+    ).session() as session:
         result = (await session.run("Read the instructions")).tool_calls[0][1]
         if limit is None:
             assert result.content == original and result.spill is None and result.truncation is None

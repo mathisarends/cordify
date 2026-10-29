@@ -60,12 +60,14 @@ summarize through the session model; installing the testing package changes no p
 They use the normal tool schemas, injection, approvals, execution and log paths.
 
 ```python
+from harnessed import SystemPrompt
 from harnessed.plugins import Approvals
 from harnessed.testing import InMemoryFS, FakeShell
 
 files = InMemoryFS({"project/notes.txt": "Remember this."})
 commands = FakeShell({"pytest": "1 passed"})
 agent = Agent(
+    system_prompt=SystemPrompt(sections=(files.usage, commands.usage)),
     model=ScriptedModel([call("run_command", argv=["pytest"]), reply("Tests pass")]),
     plugins=[files, commands, Approvals(default=PolicyDecision.ALLOW)],
 )
@@ -89,15 +91,20 @@ matching slots in an existing agent configuration:
 
 ```python
 async def test_workspace(harnessed_session):
+    files = InMemoryFS({"note.txt": "virtual"})
     async with harnessed_session(
+        system_prompt=SystemPrompt(sections=(files.usage,)),
         script=[call("read_file", path="note.txt"), reply("done")],
-        plugins=[InMemoryFS({"note.txt": "virtual"})],
+        plugins=[files],
     ) as session:
         result = await session.run("Read the note")
         assert assert_tool_called(result, "read_file")[1].content == "virtual"
 ```
 
-The fixture also accepts an existing `Agent` as its first argument. Provider SDKs
+The fixture also accepts an existing `Agent` as its first argument. When replacing
+plugins declaring system sections, automatic placement includes the replacement
+recipes. If composing individual references, update `system_prompt=` to refer to
+those replacement recipes. Provider SDKs
 and credentials are unnecessary for these tests. Configure pytest-asyncio as you
 normally would for asynchronous tests; Harnessed does not change its settings.
 

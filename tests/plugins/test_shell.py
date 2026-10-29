@@ -4,7 +4,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from harnessed import Agent, ToolCall
+from harnessed import Agent, SystemPrompt, ToolCall
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop
 from harnessed.plugins.shell import LocalShell, ProcResult, Shell
@@ -76,7 +76,12 @@ async def test_descendants_end_with_the_command(tmp_path, end):
 async def test_shell_limits_are_schema_visible_and_configured_backends_are_used(tmp_path):
     with pytest.raises(ValidationError):
         await LocalShell().run([sys.executable], cwd=tmp_path, timeout=601)
-    async with Agent(model=ScriptedModel([]), plugins=[Shell(tmp_path)]).session() as session:
+    shell = Shell(tmp_path)
+    async with Agent(
+        system_prompt=SystemPrompt(sections=(shell.usage,)),
+        model=ScriptedModel([]),
+        plugins=[shell],
+    ).session() as session:
         definition = session.ctx[ToolRegistry].definitions[0]
         assert definition.parameters["properties"]["timeout"]["anyOf"][0]["maximum"] == 600
         result = await session.ctx[ToolRegistry].execute(
@@ -95,11 +100,13 @@ async def test_shell_command_deadline_overrides_the_generic_tool_timeout(tmp_pat
             await asyncio.sleep(0.03)
             return ProcResult(0, "finished", "")
 
+    shell = Shell(tmp_path, implementation=Backend(), timeout=0.1, max_timeout=0.2)
     async with Agent(
+        system_prompt=SystemPrompt(sections=(shell.usage,)),
         model=ScriptedModel([]),
         plugins=[
             AgentLoop(tool_timeout=0.01),
-            Shell(tmp_path, implementation=Backend(), timeout=0.1, max_timeout=0.2),
+            shell,
         ],
     ).session() as session:
         registry = session.ctx[ToolRegistry]
@@ -120,7 +127,11 @@ async def test_shell_schema_and_validation_use_each_mounts_timeout_limit(tmp_pat
             return ProcResult(0, str(timeout), "")
 
     shell = Shell(tmp_path, implementation=Backend(), timeout=min(30, maximum), max_timeout=maximum)
-    app = Agent(model=ScriptedModel([]), plugins=[shell])
+    app = Agent(
+        system_prompt=SystemPrompt(sections=(shell.usage,)),
+        model=ScriptedModel([]),
+        plugins=[shell],
+    )
     async with app.session() as session:
         registry = session.ctx[ToolRegistry]
         definition = registry.definitions[0]
@@ -139,6 +150,11 @@ async def test_shell_schema_and_validation_use_each_mounts_timeout_limit(tmp_pat
         assert rejected.is_error and "ValidationError" in rejected.text
 
     # A second mount keeps its own constraints; neither mutates the declaration.
-    async with Agent(model=ScriptedModel([]), plugins=[Shell(tmp_path)]).session() as session:
+    shell_3 = Shell(tmp_path)
+    async with Agent(
+        system_prompt=SystemPrompt(sections=(shell_3.usage,)),
+        model=ScriptedModel([]),
+        plugins=[shell_3],
+    ).session() as session:
         schema = session.ctx[ToolRegistry].definitions[0].parameters["properties"]["timeout"]
         assert schema["anyOf"][0]["maximum"] == 600

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent
+from harnessed import Agent, SystemPrompt
 from harnessed.plugins import Skill, Skills, Spill, ToolOutputLimit
 from harnessed.plugins.skills import SkillCatalog
 from harnessed.testing import ScriptedModel, call
@@ -28,19 +28,27 @@ async def main():
                 "I will group the changelog by features, fixes and migrations.",
             ]
         )
+        skills = Skills(
+            Skill.from_dir(source),
+            Skill(
+                name="testing",
+                description="Run and diagnose tests.",
+                instructions="Read the first failure first.",
+            ),
+        )
+        spill = Spill(threshold_tokens=1)
         agent = Agent(
+            system_prompt=SystemPrompt(
+                sections=(
+                    skills.catalog,
+                    spill.usage,
+                )
+            ),
             model=model,
             plugins=[
-                Skills(
-                    Skill.from_dir(source),
-                    Skill(
-                        name="testing",
-                        description="Run and diagnose tests.",
-                        instructions="Read the first failure first.",
-                    ),
-                ),
+                skills,
                 ToolOutputLimit(256),
-                Spill(threshold_tokens=1),
+                spill,
             ],
         )
         async with agent.session() as session:
