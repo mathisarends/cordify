@@ -16,6 +16,7 @@ class PluginSpec:
     kwargs: Mapping[str, Any]
     slot: str | None = None
     guidance: Any = None
+    provides: tuple[ServiceKey[Any], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kwargs", MappingProxyType(dict(self.kwargs)))

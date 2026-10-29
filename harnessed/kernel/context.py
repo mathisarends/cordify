@@ -16,6 +16,7 @@ from .hooks import HookFactory, ListenerFactory
 from .keys import Key as Key
 from .keys import MissingService, ServiceKey
 from .plugin import PluginHandle, PluginLike, _Runtime, as_plugin_spec
+from .spec import PluginSpec
 
 _current: ContextVar[Context | None] = ContextVar("harnessed_context", default=None)
 
@@ -278,7 +279,10 @@ class Context:
 
         Missing dependencies remain waiting unless ``strict`` is true.
         """
-        mounted, pending = await self._install_ready(plugins)
+        specs = tuple(as_plugin_spec(value) for value in plugins)
+        if strict:
+            _check_declared_dependencies(specs, self)
+        mounted, pending = await self._install_ready(specs)
         if pending and strict:
             for handle in reversed(mounted):
                 await handle.aclose()
@@ -342,3 +346,27 @@ class Context:
 
     async def __aexit__(self, *exc) -> None:
         await self.aclose()
+
+
+def _check_declared_dependencies(specs: tuple[PluginSpec, ...], ctx: Context) -> None:
+    """Reject a closed dependency cycle before running any setup callbacks.
+
+    Undeclared providers (function plugins and manual ctx.provide) still require
+    the normal runtime check. Do not infer their outputs from their class names.
+    """
+    pending = list(specs)
+    available = {key for spec in specs for key in spec.needs if key in ctx}
+    while pending:
+        ready = [spec for spec in pending if set(spec.needs) <= available]
+        if not ready:
+            promised = {key for spec in pending for key in spec.provides}
+            if all(key in available or key in promised for spec in pending for key in spec.needs):
+                names = ", ".join(spec.name for spec in pending)
+                raise RuntimeError(f"Unresolved plugin dependencies (cyclic): {names}")
+            return
+        # A ready manual provider may satisfy arbitrary keys at runtime.
+        if any(not spec.provides for spec in ready):
+            return
+        for spec in ready:
+            available.update(spec.provides)
+            pending.remove(spec)

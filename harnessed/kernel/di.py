@@ -1,12 +1,26 @@
+from __future__ import annotations
+
 import inspect
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Annotated, Any, TypeAliasType, Union, get_args, get_origin, get_type_hints
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    TypeAliasType,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 from weakref import WeakKeyDictionary
 
 from .keys import Key, ServiceKey
+
+if TYPE_CHECKING:
+    from .context import Context
 
 
 @dataclass(frozen=True)
@@ -23,6 +37,11 @@ type Inject[T] = Annotated[T, InjectMarker()]
 class Dependency:
     key: ServiceKey[Any]
     optional: bool = False
+
+    def resolve(self, ctx: Context) -> Any:
+        if self.optional and self.key not in ctx:
+            return None
+        return ctx[self.key]
 
 
 def _dependency(annotation) -> Dependency | None:
@@ -68,10 +87,8 @@ class BindingPlan:
             key = dependency.key
             if key in extra:
                 bound.arguments[name] = extra[key]
-            elif dependency.optional and key not in ctx:
-                bound.arguments[name] = None
             else:
-                bound.arguments[name] = ctx[key]
+                bound.arguments[name] = dependency.resolve(ctx)
         return bound
 
 

@@ -84,6 +84,15 @@ See the [event guide](docs/guides/events.md) for lifecycle phases and the
 
 ### Added
 
+- Export `SessionLog` from the root SDK for plugin injection and log access.
+- Class `name: Inject[T]` dependencies resolve before setup on each mount.
+  Required dependencies infer `needs`; optional dependencies receive `None`
+  when absent. Recipe and disposed-instance access raises `RuntimeError`.
+- `Plugin(..., provides=True)` class metadata publishes the mount under the
+  declaring class, inherited unchanged by subclasses. `provides=SomeKey`
+  chooses another service key; `provides=False` disables inherited publication.
+  Strict installation checks closed declared cycles before running setup.
+
 - `@tool(description="...")` supplies an explicit model-facing description while
   leaving the method's docstring available for developer documentation. An
   explicit string wins over the docstring, including `""` to suppress it.

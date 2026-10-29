@@ -48,6 +48,7 @@ and SDK errors from `harnessed.errors`.
 | control | Advanced: the SessionControl service for plugins and external UIs |
 | log | Advanced: append-only SessionLog service and event catalog |
 
+`from harnessed import SessionLog` exposes the injectable log service for plugins.
 Applications read through the session views above. `session.log` exposes the same
 data for plugins and integrations; prefer the session views when both exist.
 
@@ -93,6 +94,8 @@ unhashable. See [values and record versions](../concepts/values.md).
 | @tool(description="...") | Explicit model-facing description; None falls back to the docstring |
 | PluginConfig / Config = MyConfig | Module-level validated configuration model |
 | PluginState(factory) | Typed state freshly created before each mount's setup; available through cleanup |
+| name: Inject[T] | Per-mount dependency assigned before setup; optional T \| None receives None if absent |
+| class Capability(Plugin, provides=True) | Publish the mount under the declaring class; provides=Key selects another key |
 | Plugin.create_instance() | Customize fresh instance construction; defaults to shallow copying shared inputs |
 | @plugin | Kernel services and hooks in an async generator |
 | class Capability(Plugin, needs=(Backend,)) / Inject[T] | Temporal lifetime / per-call service resolution |
