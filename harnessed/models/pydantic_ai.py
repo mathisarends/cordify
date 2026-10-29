@@ -174,6 +174,16 @@ def _history(request: ModelRequest) -> list[NativeMessage]:
                 )[0]
                 if not isinstance(restored, native.ModelResponse):
                     raise ValueError("Assistant provider state must contain a response")
+                original = _response(restored).message
+                if (
+                    message.content != original.content
+                    or message.tool_calls != original.tool_calls
+                    or message.reasoning != original.reasoning
+                ):
+                    raise InvalidRequest(
+                        "Assistant message differs from its provider state; clear provider_state "
+                        "when editing history to discard the original signed response"
+                    )
                 history.append(restored)
                 continue
             parts: list[native.ModelResponsePart] = []

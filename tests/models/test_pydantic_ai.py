@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -109,6 +110,37 @@ async def test_non_streaming_request_and_settings_are_delegated_to_pydantic_ai()
         ModelRequest("fixture", (User("hi"),), settings={"temperature": 0})
     )
     assert response.message.text == "answer" and seen == [{"temperature": 0}]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"content": "replacement content"},
+        {"reasoning": "redacted"},
+        {"tool_calls": (ToolCall("changed", {}, "call"),)},
+    ],
+)
+async def test_edited_signed_history_requires_explicit_provider_state_invalidation(changes):
+    received = []
+
+    def respond(messages, info):
+        received.append(messages)
+        return native.ModelResponse(
+            [native.ThinkingPart("plan", signature="signature"), native.TextPart("original")]
+        )
+
+    model = PydanticAIModel(FunctionModel(respond))
+    original = (await model.request(ModelRequest("fixture", (User("hi"),)))).message
+    edited = replace(original, **changes)
+    with pytest.raises(InvalidRequest, match="clear provider_state"):
+        await model.request(ModelRequest("fixture", (edited,)))
+    assert len(received) == 1
+    await model.request(ModelRequest("fixture", (replace(edited, provider_state={}),)))
+    parts = received[-1][0].parts
+    assert not any(isinstance(part, native.ThinkingPart) for part in parts)
+    assert (
+        "".join(part.content for part in parts if isinstance(part, native.TextPart)) == edited.text
+    )
 
 
 def test_missing_optional_integration_names_the_correct_provider_extra(monkeypatch):
