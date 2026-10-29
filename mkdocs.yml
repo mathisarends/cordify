@@ -53,3 +53,4 @@ nav:
       - Session memory and replay: benchmarks/sessions.md
   - Contributing:
       - Development and CI: contributing/development.md
+      - Roadmap: contributing/roadmap.md

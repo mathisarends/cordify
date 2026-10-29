@@ -26,8 +26,7 @@ public APIs or persisted session formats.
 | Contribute or run all checks | [Development](contributing/development.md) |
 
 [Immutable values and the codec](concepts/values.md) explain the source-of-truth
-contract behind replay. The implementation migration is tracked in the repository's
-[open review](https://github.com/mathisarends/harnessed/blob/main/review.md),
-[API target](https://github.com/mathisarends/harnessed/blob/main/api-target.md) and
-[structure target](https://github.com/mathisarends/harnessed/blob/main/structure-target.md).
-These design documents are not the runtime API reference.
+contract behind replay. Contributors should follow the repository's
+[architecture constraints](https://github.com/mathisarends/harnessed/blob/main/structure-target.md).
+The [roadmap](contributing/roadmap.md) records possible future additions separately
+from the implemented SDK reference and guides.
