@@ -28,7 +28,7 @@ class FailureNudgeConfig(PluginConfig):
     threshold: int = Field(default=2, ge=1)
 
 
-class FailureNudge(Plugin):
+class FailureNudge(Plugin, needs=(DynamicContext,)):
     Config = FailureNudgeConfig
 
     config: FailureNudgeConfig

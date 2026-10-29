@@ -112,7 +112,7 @@ async def test_quiet_context_survives_prompt_updates_and_typed_user_steering():
 async def test_push_context_from_pre_step_is_in_the_current_request():
     seen = []
 
-    class Recall(Plugin):
+    class Recall(Plugin, needs=(Session,)):
         @hook(PreStep)
         async def recall(self, event, next_, agent: Inject[Session]):
             seen.append((event.is_turn_start, event.latest_user_text))
@@ -131,11 +131,11 @@ async def test_push_context_from_pre_step_is_in_the_current_request():
         assert not agent.inbox.pending
 
 
-async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_path):
+async def test_explicit_class_needs_and_injected_dynamic_project_context(tmp_path):
     instructions = tmp_path / "AGENTS.md"
     instructions.write_text("first rules", encoding="utf-8")
 
-    class Project(Plugin):
+    class Project(Plugin, needs=(DynamicContext, FileSystemBackend)):
         @hook(PreStep)
         async def refresh(
             self, event, next_, context: Inject[DynamicContext], fs: Inject[FileSystemBackend]
@@ -162,7 +162,7 @@ async def test_injection_only_class_lifecycle_and_dynamic_project_context(tmp_pa
 async def test_observations_use_full_current_state_and_summaries_in_later_steps_and_replay():
     states = iter(["before", "after"])
 
-    class BrowserObserver(Plugin):
+    class BrowserObserver(Plugin, needs=(Session,)):
         @hook(PreStep)
         async def observe(self, event, next_, agent: Inject[Session]):
             state = next(states)

@@ -79,13 +79,14 @@ the [tool guide](tools.md).
 
 ## Dependencies and provided services
 
-Declare dependencies directly on a plugin when its methods share them:
+Declare the plugin's service requirements explicitly with `needs`, and use
+`Inject` to bind those services to attributes or method parameters:
 
 ```python
 from harnessed import Inject, Plugin, SessionLog
 
 
-class Activity(Plugin, provides=True):
+class Activity(Plugin, provides=True, needs=(SessionLog,)):
     log: Inject[SessionLog]
     label: Inject[str | None]
 
@@ -93,11 +94,12 @@ class Activity(Plugin, provides=True):
         self.session_id = self.log.id
 ```
 
-Class `Inject[T]` attributes resolve on the mount before `setup`. Required
-attributes automatically declare temporal `needs`; optional attributes receive
-`None` when the service is absent and do not suspend the mount. Their values are
-captured for that mount. Access on a recipe or after disposal raises `RuntimeError`.
-Forward references resolve when the recipe is first compiled for mounting.
+Class `Inject[T]` attributes resolve on the mount before `setup`. Injection does
+not add `needs`: the explicit declaration defines the plugin's lifetime and makes
+its composition requirements visible. Optional attributes receive `None` when the
+service is absent. Their values are captured for that mount. Access on a recipe or
+after disposal raises `RuntimeError`. Forward references resolve when the recipe
+is first compiled for mounting.
 
 `provides=True` registers the mounted instance under the declaring class before
 setup. Subclasses inherit that key: a subclass of Activity still provides Activity.
@@ -120,21 +122,27 @@ class Database(Protocol):
     async def lookup(self, key: str) -> str: ...
 
 
-class Lookup(Plugin):
+class Lookup(Plugin, needs=(Database,)):
     @tool(readonly=True)
     async def lookup(self, key: str, *, db: Inject[Database]) -> str:
         return await db.lookup(key)
 ```
 
-`Service(Database, implementation)` provides the structural dependency. Required
-class, setup, hook and tool injections declare the plugin's lifetime. Missing services leave it waiting; removing a
-service tears it down, and restoring one restarts it. `Inject[T]` resolves the
-argument from the current scope for every invocation. Setup and hook injection
-also declare required needs. Use explicit `needs=(Database,)` for dependencies
-read dynamically through `ctx[Database]` rather than declared through injection.
+`Service(Database, implementation)` provides the structural dependency.
+`needs=(Database,)` declares the plugin's temporal requirement: a missing service
+leaves it waiting, removing the service tears it down, and replacing or restoring
+it restarts the plugin. `Inject[T]` resolves an argument from the current scope
+for each invocation; it does not infer lifetime requirements from class, setup,
+hook or tool annotations. Declare `needs` for required services whether accessed
+through injection or dynamically through `ctx[Database]`. Function plugins use
+`@plugin(needs=(Database,))`; bundles use `Bundle("name", needs=(Database,))`.
+Tool declarations contribute their own registration requirement for `ToolRegistry`.
 
 `Inject[T | None]` is optional and returns None while the service is absent.
-Optional dependencies do not suspend a plugin. Named `Key[T]` values distinguish
+Optional injections do not suspend a plugin unless the service is also declared
+in `needs`. A required injection without a matching service raises `MissingService`
+when resolved. Call-scoped values such as `ToolContext` are supplied for tool
+execution and do not belong in plugin `needs`. Named `Key[T]` values distinguish
 two implementations of the same contract. A narrow Protocol is the service
 contract; third-party implementations need no Harnessed base class.
 
@@ -145,6 +153,8 @@ removes the capability and guidance; temporal restarts refresh both.
 ## Session startup validation
 
 `Agent` requires its configured plugins to be active when opening a session.
+Validation checks the lifetime requirements declared through `needs`; `Inject`
+continues to bind values without adding requirements.
 After publishing `Session`, `SessionLog` and the other session services, it waits
 for dependency-driven setup to settle and checks the full service scope, including
 nested plugin installs. A waiting plugin raises `PluginDependencyError` before

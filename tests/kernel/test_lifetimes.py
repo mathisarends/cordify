@@ -272,7 +272,7 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
 async def test_agent_registration_facade_uses_the_active_plugin_owner():
     seen = []
 
-    class Feature(Plugin):
+    class Feature(Plugin, needs=(Session,)):
         async def setup(self, ctx, agent: Inject[Session]):
             agent.add_hook(Ping, lambda event: seen.append("explicit"))
 

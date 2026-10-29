@@ -99,7 +99,7 @@ async def test_setup_failure_rolls_back_all_effects():
     assert cleaned == ["cleanup"]
 
 
-async def test_inferred_dependencies_and_provider_unload():
+async def test_explicit_dependencies_and_provider_unload():
     teardown = []
 
     @plugin
@@ -108,7 +108,7 @@ async def test_inferred_dependencies_and_provider_unload():
         yield
         teardown.append("provider")
 
-    @plugin(name="consumer")
+    @plugin(name="consumer", needs=(Service,))
     async def consumer(ctx, service: Inject[Service]):
         assert service is ctx[Service]
         yield
@@ -216,7 +216,7 @@ async def test_provider_unload_removes_services_even_if_consumer_teardown_fails(
         ctx.provide(Service, Service())
         yield
 
-    @plugin
+    @plugin(needs=(Service,))
     async def consumer(ctx, service: Inject[Service]):
         yield
         raise ValueError("consumer teardown")

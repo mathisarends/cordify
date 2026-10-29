@@ -235,7 +235,7 @@ async def test_result_converters_follow_their_owner_lifetime():
 
 
 async def test_tool_context_exposes_log_inbox_and_progress_without_the_driver():
-    class Inspect(Plugin):
+    class Inspect(Plugin, needs=(DynamicContext,)):
         @tool(readonly=True)
         async def inspect(self, call: Inject[ToolContext], context: Inject[DynamicContext]) -> str:
             assert not hasattr(call, "agent")

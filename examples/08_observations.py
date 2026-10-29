@@ -51,7 +51,7 @@ async def browser_backend(ctx: Context):
     yield
 
 
-class BrowserObserver(Plugin):
+class BrowserObserver(Plugin, needs=(Browser, Session)):
     @hook(PreStep)
     async def observe(self, event, next_, browser: Inject[Browser], session: Inject[Session]):
         state = await browser.snapshot()

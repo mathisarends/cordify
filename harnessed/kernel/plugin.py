@@ -10,7 +10,7 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any, Concatenate, overload
 
 from .declarations import Bundle, PluginBase
-from .di import bind_injected, injections
+from .di import bind_injected
 from .events import PluginActivated, PluginFailed
 from .events import on as hook
 from .keys import MissingService, ServiceKey
@@ -317,14 +317,15 @@ def plugin(
     name: str | None = None,
     slot: str | None = None,
 ):
-    """Turn an async-generator function into a configured plugin factory."""
+    """Configure an async-generator plugin with explicit lifetime needs.
+
+    Inject parameters bind services without adding lifetime dependencies.
+    """
 
     def decorate(factory):
         @wraps(factory)
         def configure(*args, **kwargs):
-            dependencies = tuple(
-                dict.fromkeys((*needs, *injections(factory, required_only=True).values()))
-            )
+            dependencies = tuple(dict.fromkeys(needs))
             return PluginSpec(name or factory.__name__, factory, dependencies, args, kwargs, slot)
 
         vars(configure)["_harnessed_plugin"] = True

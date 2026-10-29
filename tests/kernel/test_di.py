@@ -2,9 +2,88 @@ from typing import Annotated
 
 import pytest
 
-from harnessed.kernel import Context, Emit, Inject, InjectMarker, Key, plugin
+from harnessed.kernel import (
+    Bundle,
+    Context,
+    Emit,
+    Inject,
+    InjectMarker,
+    Key,
+    MissingService,
+    PluginBase,
+    hook,
+    plugin,
+)
 from harnessed.kernel.di import binding_plan
-from harnessed.kernel.plugin import PluginStatus
+from harnessed.kernel.plugin import PluginStatus, as_plugin_spec
+
+
+async def test_injection_binds_values_without_creating_lifetime_dependencies():
+    class Changed(Emit):
+        pass
+
+    seen = []
+
+    class Feature(PluginBase, provides=True):
+        value: Inject[str]
+
+        async def setup(self, value: Inject[str]) -> None:
+            self.initial = value
+
+        @hook(Changed)
+        def observe(self, event: Changed, value: Inject[str]) -> None:
+            seen.append(value)
+
+    async with Context() as ctx:
+        ctx.provide(str, "first")
+        handle = await ctx.plugin(Feature())
+        assert handle.spec.needs == ()
+        mounted = ctx[Feature]
+        assert mounted.value == mounted.initial == "first"
+        await ctx.dispatch(Changed())
+        restore = ctx.provide(str, "second")
+        await ctx.settle()
+        assert ctx[Feature] is mounted
+        assert mounted.value == mounted.initial == "first"
+        await ctx.dispatch(Changed())
+        await restore()
+        await ctx.settle()
+        await ctx.dispatch(Changed())
+        assert seen == ["first", "second", "first"]
+
+
+@pytest.mark.parametrize("site", ["attribute", "setup"])
+async def test_missing_required_injection_without_needs_fails_at_resolution(site):
+    class Attribute(PluginBase):
+        value: Inject[str]
+
+    class Setup(PluginBase):
+        async def setup(self, value: Inject[str]) -> None:
+            pass
+
+    recipe = Attribute() if site == "attribute" else Setup()
+    async with Context() as ctx:
+        with pytest.raises(MissingService, match="str"):
+            await ctx.plugin(recipe)
+
+
+def test_bundle_configured_hooks_and_function_injections_do_not_add_needs():
+    class Changed(Emit):
+        pass
+
+    def observe(event: Changed, value: Inject[str]) -> None:
+        pass
+
+    bundle = Bundle("observer")
+    bundle.on(Changed, observe)
+    configured = PluginBase(hooks=((Changed, observe),))
+
+    @plugin
+    async def consumer(ctx: Context, value: Inject[str]):
+        yield
+
+    for recipe in (bundle, configured, consumer()):
+        assert as_plugin_spec(recipe).needs == ()
 
 
 async def test_listener_resolves_current_service_without_repeating_reflection(monkeypatch):

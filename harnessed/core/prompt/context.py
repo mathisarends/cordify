@@ -50,7 +50,7 @@ class DynamicContext:
         await self.set(name, None)
 
 
-class ContextValue(Plugin):
+class ContextValue(Plugin, needs=(DynamicContext,)):
     """Refresh one named fact before each step, appending only actual changes."""
 
     def __init__(

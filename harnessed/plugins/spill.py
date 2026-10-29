@@ -152,7 +152,7 @@ class SpillConfig(PluginConfig):
     max_bytes: Annotated[int, Field(ge=1)] = 32 * 1024 * 1024
 
 
-class Spill(Plugin, slot="spill"):
+class Spill(Plugin, slot="spill", needs=(SessionLog, SessionFiles, TokenCounter)):
     """Spill large text, preserve images, and expire oldest files within a hard quota."""
 
     guidance = (

@@ -28,6 +28,12 @@ library. Harnessed is distributed under the
 
 ## Unreleased
 
+Plugin composition now requires explicit `needs=(...)` declarations. `Inject`
+binds values without inferring lifetime requirements. Add required services to
+the plugin class, `@plugin(needs=(...))` or `Bundle(..., needs=(...))` so missing
+providers suspend the plugin and provider changes restart it. See the
+[plugin guide](guides/plugins.md) for examples and optional injection behavior.
+
 Agent sessions validate their plugin composition after session services have been
 published and setup has settled, before starting the runtime or resuming queued
 work. Missing required services now raise `PluginDependencyError` with structured

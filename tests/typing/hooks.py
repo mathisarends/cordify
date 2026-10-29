@@ -35,7 +35,7 @@ async def transform(event: Transform, next_: Next[str]) -> str:
     return await next_()
 
 
-class Hooks(PluginBase):
+class Hooks(PluginBase, needs=(str,)):
     @hook(Notice)
     def observe(self, event: Notice) -> None:
         pass

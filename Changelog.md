@@ -4,6 +4,16 @@
 
 ### Breaking changes
 
+- Plugin lifetime requirements now use explicit `needs=(...)` declarations.
+  `Inject[T]` binds attribute and parameter values without inferring composition
+  requirements from class attributes, setup, hooks or function plugins. Declare
+  dependencies such as `class Feature(Plugin, needs=(Actions,))` alongside
+  `actions: Inject[Actions]`; function plugins use `@plugin(needs=(Actions,))`
+  and bundles use `Bundle("name", needs=(Actions,))`. These declarations control
+  waiting, teardown and restart when providers disappear or change. Optional
+  injection remains optional unless its service is explicitly listed in `needs`.
+  Tool declarations retain their `ToolRegistry` registration requirement;
+  call-scoped values such as `ToolContext` do not belong in plugin `needs`.
 - Agent sessions now reject plugins still waiting for required services with
   `PluginDependencyError` before starting the runtime or resuming queued work.
   Validation runs after `Session`, `SessionLog` and other session services have
@@ -21,8 +31,9 @@
 - `Context.plugin_diagnostics()` exposes immutable snapshots of waiting plugins
   in its shared runtime after `await ctx.settle()`, including nested installs,
   extended scopes and transitively blocked plugins. The standalone kernel's
-  deferred dependency behavior and `Context.install(strict=...)` remain unchanged. Runtime plugin
-  additions and later service changes retain their temporal lifecycle behavior.
+  deferred dependency behavior and `Context.install(strict=...)` remain unchanged.
+  Runtime plugin additions and later service changes retain their temporal
+  lifecycle behavior.
 
 ## 0.2.0 (2026-10-29)
 

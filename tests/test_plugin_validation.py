@@ -15,7 +15,7 @@ class RequiredService:
     pass
 
 
-class RequiredFeature(Plugin):
+class RequiredFeature(Plugin, needs=(RequiredService,)):
     service: Inject[RequiredService]
 
     @tool
@@ -47,10 +47,10 @@ async def test_missing_plugin_service_fails_before_runtime_start(monkeypatch, on
 async def test_validation_reports_every_missing_service_and_transitively_waiting_plugin():
     other = Key[str]("other")
 
-    class Provider(Plugin, provides=True, needs=(other,)):
+    class Provider(Plugin, provides=True, needs=(other, RequiredService)):
         service: Inject[RequiredService]
 
-    class Consumer(Plugin):
+    class Consumer(Plugin, needs=(Provider,)):
         provider: Inject[Provider]
 
     agent = Agent(model=ScriptedModel([]), plugins=[Consumer(), Provider()])
@@ -66,7 +66,7 @@ async def test_validation_reports_every_missing_service_and_transitively_waiting
 async def test_session_services_and_providers_activated_by_them_settle_before_validation():
     mounted = []
 
-    class SessionProvider(Plugin):
+    class SessionProvider(Plugin, needs=(Session, SessionLog)):
         session: Inject[Session]
         log: Inject[SessionLog]
 
@@ -129,7 +129,7 @@ async def test_validation_failure_closes_runtime_plugins_and_session_lease():
     mounted, closed = [], []
     storage = MemorySessions(max_sessions=0)
 
-    class Observer(Plugin):
+    class Observer(Plugin, needs=(Session,)):
         session: Inject[Session]
 
         async def setup(self, ctx: Context) -> None:

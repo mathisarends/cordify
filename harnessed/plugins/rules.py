@@ -106,7 +106,7 @@ def when(
     return Rule(tools, command_contains, exit_code, repeated, result_tokens_over, predicate)
 
 
-class Rules(Plugin):
+class Rules(Plugin, needs=(SessionLog, DynamicContext, TokenCounter, SessionInbox)):
     _counts = PluginState[Counter[tuple[int, str]]](Counter)
     _last_counts = PluginState[dict[int, int]](dict)
 

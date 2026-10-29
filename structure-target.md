@@ -66,6 +66,8 @@ Internal modules import their owning layer rather than the root facade.
 - Plugins inherit the small `Plugin` base. Configuration models live at module
   scope. Mutable mount state is initialized by `PluginState` or `setup` and remains
   available until all cleanup effects finish.
+- Plugins declare service requirements explicitly with `needs`; `Inject` binds
+  attribute and parameter values without inferring lifetime dependencies.
 - Registration ownership uses public `Context.register()` and
   `RegistrationState.active`. Higher layers do not inspect private kernel state.
 - Prompt metadata is normalized into typed `PromptContribution` values at the agent

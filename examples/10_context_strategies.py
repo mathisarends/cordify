@@ -11,7 +11,7 @@ from harnessed.plugins import AgentLoop, Compaction, LatestObservationOnly, Spil
 from harnessed.testing import ScriptedModel, call
 
 
-class WorkspaceState(Plugin):
+class WorkspaceState(Plugin, needs=(Session,)):
     def __init__(self):
         super().__init__()
         self.frame = 0

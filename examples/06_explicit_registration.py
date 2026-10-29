@@ -10,7 +10,7 @@ from harnessed.kernel import Inject, hook
 from harnessed.testing import ScriptedModel, call
 
 
-class Echo(Plugin):
+class Echo(Plugin, needs=(SessionLog,)):
     def __init__(self, prefix: str = ""):
         super().__init__()
         self.prefix = prefix

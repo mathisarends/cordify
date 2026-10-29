@@ -58,7 +58,7 @@ async def test_state_isolated_between_mounts_and_released_after_all_cleanup():
 async def test_dependency_restart_recreates_state_before_setup():
     instances = []
 
-    class Feature(PluginBase):
+    class Feature(PluginBase, needs=(str,)):
         values = PluginState[list[str]](list)
 
         async def setup(self, backend: Inject[str]) -> None:
