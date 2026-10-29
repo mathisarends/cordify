@@ -10,7 +10,7 @@ A Python agent SDK built from reversible plugins. Harnessed owns the loop,
 tool policies and append-only session log; optional provider integrations use
 PydanticAI's Direct API. Python **3.12-3.14**, Pydantic v2 and modern generics.
 
-Harnessed 0.1.x is **alpha software**. APIs and persisted session formats may
+Harnessed 0.x is **alpha software**. APIs and persisted session formats may
 change in minor releases before 1.0. See the
 [release notes and compatibility policy](https://github.com/mathisarends/harnessed/blob/main/docs/releases.md).
 

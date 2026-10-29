@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-29)
+
+This release introduces breaking event API and session storage changes from
+0.1.0. Back up existing sessions and start a new session store after upgrading.
+See the [release overview](docs/releases.md) and the migration instructions below
+before updating an application.
 
 ### Model lifecycle
 
