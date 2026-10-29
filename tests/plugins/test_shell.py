@@ -6,7 +6,8 @@ from pydantic import ValidationError
 
 from harnessed import Agent, ToolCall
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.plugins.shell import LocalShell, Shell
+from harnessed.plugins import AgentLoop
+from harnessed.plugins.shell import LocalShell, ProcResult, Shell
 from harnessed.testing import ScriptedModel
 
 
@@ -82,3 +83,31 @@ async def test_shell_limits_are_schema_visible_and_configured_backends_are_used(
             ToolCall("run_command", {"argv": [sys.executable, "-c", "raise SystemExit(7)"]})
         )
         assert result.exit_code == 7 and result.is_error
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_shell_command_deadline_overrides_the_generic_tool_timeout(tmp_path, explicit):
+    seen = []
+
+    class Backend:
+        async def run(self, argv, *, cwd, timeout):
+            seen.append(timeout)
+            await asyncio.sleep(0.03)
+            return ProcResult(0, "finished", "")
+
+    async with Agent(
+        model=ScriptedModel([]),
+        plugins=[
+            AgentLoop(tool_timeout=0.01),
+            Shell(tmp_path, implementation=Backend(), timeout=0.1, max_timeout=0.2),
+        ],
+    ).session() as session:
+        registry = session.ctx[ToolRegistry]
+        result = await registry.execute(
+            ToolCall("run_command", {"argv": ["test"], **({"timeout": 0.15} if explicit else {})})
+        )
+        assert not result.is_error and "finished" in result.content
+        assert seen == [0.15 if explicit else 0.1]
+        result = await registry.execute(ToolCall("run_command", {"argv": ["test"], "timeout": 0.3}))
+        assert result.is_error and "must not exceed 0.2" in result.content
+        assert len(seen) == 1

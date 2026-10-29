@@ -11,7 +11,7 @@ from pydantic import Field, model_validator
 from harnessed.core.messages import ToolResult, ToolStatus, result_content, to_dict
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.tools.decorator import tool
-from harnessed.core.tools.registry import ToolRegistry
+from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import Context, Inject, run_sync
 
 if os.name == "nt":
@@ -222,7 +222,7 @@ class ShellTools(Plugin, needs=(ShellBackend, ToolRegistry)):
         self.cwd = await run_sync(self.config.cwd.resolve)
         ctx[ToolRegistry].result_converter(ProcResult, proc_result, owner=ctx)
 
-    @tool
+    @tool(timeout=600)
     async def run_command(
         self,
         argv: Annotated[list[str], Field(min_length=1)],
@@ -231,7 +231,10 @@ class ShellTools(Plugin, needs=(ShellBackend, ToolRegistry)):
         shell: Inject[ShellBackend],
     ) -> ProcResult:
         """Run argv without shell expansion. Output and execution time are bounded."""
-        return await shell.run(argv, cwd=self.cwd, timeout=timeout or self.config.timeout)
+        limit = timeout if timeout is not None else self.config.timeout
+        if limit > self.config.max_timeout:
+            raise ToolError(f"timeout must not exceed {self.config.max_timeout:g} seconds")
+        return await shell.run(argv, cwd=self.cwd, timeout=limit)
 
 
 class Shell(ShellTools, slot="shell"):
