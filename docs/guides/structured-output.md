@@ -9,12 +9,15 @@ from typing import Literal
 from pydantic import BaseModel
 from harnessed import Agent
 
+
 class Triage(BaseModel):
     severity: Literal["low", "high", "critical"]
     owner: str
     summary: str
 
+
 agent = Agent(model="openai:gpt-4.1-mini")
+
 
 async def triage(report: str) -> Triage:
     result = await agent.run(report, output=Triage)
@@ -53,8 +56,10 @@ from harnessed import OutputContract
 
 triage_output = OutputContract("support.triage.v1", Triage)
 
+
 async def triage_persisted(session, report: str) -> Triage:
     return (await session.run(report, output=triage_output)).output
+
 
 async def resume(agent: Agent):
     async with agent.session("triage-session", restore_outputs=[triage_output]) as session:

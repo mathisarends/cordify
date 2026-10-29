@@ -29,6 +29,7 @@ validation:
 
 nav:
   - Overview: index.md
+  - Releases and compatibility: releases.md
   - Guides:
       - Models: guides/models.md
       - Structured answers: guides/structured-output.md

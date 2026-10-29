@@ -22,8 +22,9 @@ agent = Agent(
     model="deepseek:deepseek-chat",
     plugins=[
         JsonlSessions(".harnessed/sessions"),
-        Spill(threshold_tokens=8_000, preview_tokens=256,
-              max_files=128, max_bytes=32 * 1024 * 1024),
+        Spill(
+            threshold_tokens=8_000, preview_tokens=256, max_files=128, max_bytes=32 * 1024 * 1024
+        ),
         ToolOutputLimit(max_chars=16_000),
     ],
 )

@@ -51,17 +51,42 @@ Ein Plugin, das nur Tools enthält, ist die einfachste Plugin-Form. Es braucht w
 
 ```python
 from harnessed import (
-    Agent, Session, SessionStatus, RunHandle, RunResult, StopReason,
-    Plugin, PluginConfig, tool, Section, ToolError, ToolContext, Image,
-    ApprovalRequest, PolicyDecision, events,
+    Agent,
+    Session,
+    SessionStatus,
+    RunHandle,
+    RunResult,
+    StopReason,
+    Plugin,
+    PluginConfig,
+    tool,
+    Section,
+    ToolError,
+    ToolContext,
+    Image,
+    ApprovalRequest,
+    PolicyDecision,
+    events,
 )
 from harnessed.kernel import Context, hook, Inject
 from harnessed.hooks import Next, PrepareRequest, ToolPolicy, ReviewToolResult, Priority
 from harnessed.models import PydanticAIModel
 from harnessed.plugins import (
-    AgentLoop, JsonlSessions, Service, ContextValue,
-    Approvals, ApprovalAnswer, Compaction, at_ratio, every_turns, Spill, ToolOutputLimit,
-    Filesystem, Shell, Skills, Skill,
+    AgentLoop,
+    JsonlSessions,
+    Service,
+    ContextValue,
+    Approvals,
+    ApprovalAnswer,
+    Compaction,
+    at_ratio,
+    every_turns,
+    Spill,
+    ToolOutputLimit,
+    Filesystem,
+    Shell,
+    Skills,
+    Skill,
 )
 from harnessed.testing import ScriptedModel, call
 ```
@@ -700,9 +725,7 @@ class Indexer(Plugin):
         return "Indexed."
 
 
-type ProjectEvent = Annotated[
-    events.BuiltinEvent | ProjectIndexed, Field(discriminator="type")
-]
+type ProjectEvent = Annotated[events.BuiltinEvent | ProjectIndexed, Field(discriminator="type")]
 adapter = TypeAdapter(ProjectEvent)
 ```
 
@@ -741,7 +764,9 @@ result = await session.run(
     "And afterwards, write tests."
 )  # waits: queued as its own turn after the current one
 await session.steer("Use pathlib, not os.path.")  # into the running turn, before the next step
-await session.context.set("ci", "CI is red on main.")  # a fact, sent with the next step, never starts one
+await session.context.set(
+    "ci", "CI is red on main."
+)  # a fact, sent with the next step, never starts one
 
 session.inbox.pending  # tuple of InboxItem (queued runs and steers)
 await session.inbox.remove(item.id)
