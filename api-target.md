@@ -262,7 +262,8 @@ class Deployer(Plugin):
 ```
 
 - Keyword-only Parameter mit `ToolContext` oder `Inject[...]` sind für das Modell unsichtbar.
-- `ToolContext` enthält `call`, `session`, `progress()` und `cancelled`, aber **nicht** den Agent (P1-9).
+- `ToolContext` enthält `call`, `log`, `signal`, `cancelled`, `progress()`, `emit()` und `approve(reason)`, aber **nicht** den Agent (P1-9).
+- `await ctx.approve(reason)` fragt mitten im Call über den Approval-Flow der Session nach (Grant, `Approvals(approver=...)` oder Stream) und liefert `bool`. Rückfragen mit Freitext stellt das Modell, indem es den Turn mit einer Frage beendet.
 - **Faustregel:** Was nur dieses Plugin braucht, entsteht in `setup()` und liegt auf `self` (2.2). Was mehrere Plugins teilen, ist ein Service und kommt über `Inject`.
 
 Ein Service ist ebenfalls ein Plugin. Für eine fertige Instanz reicht `Service`:

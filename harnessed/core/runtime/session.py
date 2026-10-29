@@ -92,7 +92,7 @@ class Session:
         self.inbox = SessionInbox(session, self.control, self._inbox_writer)
         ctx.provide(SessionControl, self.control)
         ctx.provide(SessionInbox, self.inbox)
-        ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox))
+        ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox, self.approvals))
         self._subscribers: set[EventBuffer[AgentEvent | None]] = set()
         self._submissions: dict[RunHandle[Any], SubmittedRun] = {}
         self._queued_submissions: dict[str, SubmittedRun] = {}

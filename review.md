@@ -22,12 +22,6 @@ an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
 
 ### Missing capabilities agents need
 
-**M3. Asking the user from inside a tool.** `ToolContext` offers `progress`,
-`emit` and cancellation, but no way to ask a question or request approval
-mid-call. `Session.request_approval` exists but tools cannot reach it. A
-`ToolContext.ask(...)` / `approve(...)` on the existing approval machinery would
-cover clarifying questions, the most common human-in-the-loop need.
-
 **M5. No access to provider-native tools.** PydanticAI supports server-side tools
 (web search, code execution, URL context), but `_parameters` never forwards them,
 so agents cannot use them through the bridge. This fits the "PydanticAI is the
@@ -38,7 +32,9 @@ currently reject with `ProviderError`.
 ## Deferred scope
 
 Subagents, MCP, OTel, UI applications, RAG and eval systems remain outside the
-current implementation scope.
+current implementation scope. Free-text questions from inside a tool are also
+deferred: tools ask for approval with `ToolContext.approve`, and clarifying
+questions end the turn.
 
 Subagents are deferred at the user's request. Section 11 of api-target.md retains
 the future design; do not implement child-session logs, session.children or

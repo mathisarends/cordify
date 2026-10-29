@@ -94,7 +94,7 @@ unhashable. See [values and record versions](../concepts/values.md).
 | @plugin | Kernel services and hooks in an async generator |
 | class Capability(Plugin, needs=(Backend,)) / Inject[T] | Temporal lifetime / per-call service resolution |
 | @hook / Context.hook | Typed observer, bail or waterfall extension |
-| ToolContext | Call, log, signal, cancelled, progress and emit |
+| ToolContext | Call, log, signal, cancelled, progress, emit and approve(reason) |
 | ctx.register(install) / RegistrationState.active | Owned registration and lifecycle visibility |
 | ctx.effect(cleanup) | Owned idempotent sync/async cleanup |
 | await ctx.enter(manager) | Async context manager exited when the scope closes |

@@ -250,6 +250,9 @@ class Approvals(Plugin, slot="approvals"):
         self.trust = tuple(tools.reference(item, owner=ctx) for item in self.trust)
         self.require = tuple(tools.reference(item, owner=ctx) for item in self.require)
         self.deny = tuple(tools.reference(item, owner=ctx) for item in self.deny)
+        if self.approver is not None:
+            # Tools and other guards asking mid-call reach the same human.
+            ctx.provide(Approver, self.approver)
 
     @hook(ToolPolicy, priority=Priority.GUARD)
     async def authorize(

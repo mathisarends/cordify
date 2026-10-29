@@ -51,6 +51,26 @@ is also supported. Its signal, progress, call and append-only session log belong
 to this call. It does not expose the model driver. Normal service arguments use
 `Inject[T]`; an unmarked application parameter always belongs to the model.
 
+## Ask for approval inside a tool
+
+A tool that discovers a risky step mid-call asks with `await call.approve(reason)`.
+The request is durable and runs through the session approval flow: an `ALWAYS`
+grant for the tool and scope (default `"tool-call"`), the approver configured on
+`Approvals(approver=...)`, or a stream consumer answering `events.approval.Needed`.
+It returns True for allow or always and raises `ApprovalUnavailable` when nobody
+can answer.
+
+```python
+@tool
+async def cleanup(self, *, call: ToolContext) -> str:
+    if not await call.approve("Delete 3 generated files?"):
+        return "Kept the files."
+    ...
+```
+
+Free-text clarifying questions are not a tool API. Let the model end its turn with
+the question; the user's answer arrives as the next run.
+
 ## Cancellation and parallel work
 
 Async tools receive task cancellation on abort or timeout. Put resource cleanup
