@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import RequestApproval, SessionAppended
-from harnessed.core.messages import ApprovalAnswer, ToolCall
+from harnessed.core.messages import ApprovalAnswer
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.approvals import LiveApproval, LiveApprovals
 from harnessed.core.runtime.control import SessionStatus
@@ -23,9 +23,9 @@ from harnessed.core.session.events import (
     SessionEvent,
     SpillCreatedEvent,
     SpillExpiredEvent,
-    ToolCalledEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     ToolProgressEvent,
-    ToolReturnedEvent,
     TurnStartedEvent,
 )
 from harnessed.core.stream import (
@@ -36,9 +36,7 @@ from harnessed.core.stream import (
     SessionStatusChangedEvent,
     TextDeltaEvent,
     ToolArgumentsDeltaEvent,
-    ToolCallStartedEvent,
-    ToolFinishedEvent,
-    ToolStartedEvent,
+    ToolCallGenerationStartedEvent,
     TurnFinishedEvent,
 )
 from harnessed.kernel import Priority
@@ -133,7 +131,7 @@ async def project_stream_events(
 ) -> AsyncGenerator[EventStream[Any], None]:
     """Project raw events into stream notifications and exactly one terminal result."""
     events: list[SessionEvent] = []
-    calls: dict[str, ToolCall] = {}
+    calls: set[str] = set()
     control_calls: set[str] = set()
     previous_status: SessionStatus | None = None
     try:
@@ -151,7 +149,7 @@ async def project_stream_events(
                     TextDeltaEvent()
                     | ReasoningDeltaEvent()
                     | ApprovalNeededEvent()
-                    | ToolCallStartedEvent()
+                    | ToolCallGenerationStartedEvent()
                     | ToolArgumentsDeltaEvent()
                 ):
                     yield event
@@ -159,13 +157,14 @@ async def project_stream_events(
                     yield event
                 case DurableEvent() | CustomTransientEvent():
                     yield event
-                case ToolCalledEvent(call=call) if call.id not in control_calls:
-                    calls[call.id] = call
-                    yield ToolStartedEvent(call)
+                case ToolCallRequestedEvent(call=call) if call.id not in control_calls:
+                    calls.add(call.id)
+                    yield event
                 case ToolProgressEvent(call_id=call_id) if call_id in calls:
                     yield event
-                case ToolReturnedEvent(call_id=call_id, result=result) if call_id in calls:
-                    yield ToolFinishedEvent(calls[call_id], result)
+                case ToolCallFinishedEvent(call_id=call_id) if call_id in calls:
+                    yield event
+                    calls.discard(call_id)
                 case TurnStartedEvent() | AgentControlChangedEvent():
                     # A subsequent turn may already be running when this consumer resumes.
                     status = _stream_status(event)

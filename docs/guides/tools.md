@@ -75,8 +75,9 @@ the question; the user's answer arrives as the next run.
 
 Each finished invocation writes and flushes a `tool.execution.finished` receipt
 before waiting for ordered result review. The receipt contains unreviewed output in
-the audit log; it is not a model-visible result. `tool.completed` records the
-reviewed and limited result, and `tool.returned` publishes it in model order.
+the audit log; it is not a model-visible result. `ToolCallFinishedEvent`
+(`tool.call.finished`) commits the reviewed and limited result in model order,
+once for both history and the UI stream. There is no separate completion event.
 If execution finished but review did not, recovery retains the receipt and returns
 an explicit interrupted-review error without exposing raw output or repeating the
 action. Audit consumers must treat execution receipts as unreviewed data.

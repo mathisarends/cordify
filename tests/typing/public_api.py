@@ -13,7 +13,7 @@ from harnessed.events import (
     AssistantMessageEvent,
     EventStream,
     ToolArgumentsDeltaEvent,
-    ToolCallStartedEvent,
+    ToolCallGenerationStartedEvent,
     ToolExecutionFinishedEvent,
     TurnEndedEvent,
     TurnFinishedEvent,
@@ -92,7 +92,7 @@ async def typed_stream(session: Session) -> None:
             assert_type(event, TurnFinishedEvent[Triage])
             assert_type(event.result, RunResult[Triage])
             assert_type(event.result.output.severity, int)
-        elif isinstance(event, ToolCallStartedEvent):
+        elif isinstance(event, ToolCallGenerationStartedEvent):
             assert_type(event.call, ToolCallStart)
         elif isinstance(event, ToolArgumentsDeltaEvent):
             assert_type(event.delta, ToolCallDelta)

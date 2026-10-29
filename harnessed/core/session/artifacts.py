@@ -8,8 +8,7 @@ from harnessed.core.session.events import (
     SpillCreatedEvent,
     SpillExpirationReason,
     SpillExpiredEvent,
-    ToolCompletedEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
 )
 from harnessed.core.session.files import SessionFiles, validate_file_key
 
@@ -26,10 +25,7 @@ def artifact_refs(events: Iterable[SessionEvent]) -> tuple[SpillRef, ...]:
         if isinstance(event, SpillCreatedEvent):
             ref = event.ref
             expired.discard(ref.path)
-        elif (
-            isinstance(event, ToolCompletedEvent | ToolReturnedEvent)
-            and event.result.spill is not None
-        ):
+        elif isinstance(event, ToolCallFinishedEvent) and event.result.spill is not None:
             ref = event.result.spill
             if ref.path in expired:
                 continue

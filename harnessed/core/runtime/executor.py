@@ -20,12 +20,11 @@ from harnessed.core.messages import (
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
     PolicySource,
-    ToolCalledEvent,
-    ToolCompletedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     ToolExecutionFinishedEvent,
     ToolExecutionStartedEvent,
     ToolPolicyAppliedEvent,
-    ToolReturnedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.context import ToolContexts
@@ -57,7 +56,7 @@ class ToolExecutor:
         plans: list[PreparedToolCall] = []
         registry = self.ctx[ToolRegistry]
         for call in calls:
-            await self.log.append(ToolCalledEvent(call))
+            await self.log.append(ToolCallRequestedEvent(call))
             if results is not None and call.id in results:
                 plans.append(PreparedToolCall(call, ToolScheduling(), results[call.id]))
                 continue
@@ -86,7 +85,7 @@ class ToolExecutor:
         ]
         reviewed = [asyncio.Event() for _ in plans]
 
-        async def worker(index: int, plan: PreparedToolCall) -> ToolResult:
+        async def worker(index: int, plan: PreparedToolCall) -> None:
             try:
                 limit = (
                     None
@@ -108,15 +107,11 @@ class ToolExecutor:
                     result = await self.review(plan.call, result, output_limit=plan.output_limit)
                 if limit is not None:
                     result = limit.apply(result)
-                await self.log.append(ToolCompletedEvent(plan.call.id, result))
-                return result
+                await self.log.append(ToolCallFinishedEvent(plan.call, result))
             finally:
                 reviewed[index].set()
 
-        async def commit(call: ToolCall, result: ToolResult) -> None:
-            await self.log.append(ToolReturnedEvent(call.id, result))
-
-        await scheduler.run(plans, worker, commit)
+        await scheduler.run(plans, worker)
 
     async def authorize(self, call: ToolCall) -> ToolResult | None:
         try:

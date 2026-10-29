@@ -109,8 +109,8 @@ values fail before invocation. See [tools and hooks](../guides/tools.md) and
 
 ## Event classes and data
 
-`harnessed.events` exposes `TextDeltaEvent`, `ReasoningDeltaEvent`, `ToolStartedEvent`,
-`ToolCallStartedEvent`, `ToolArgumentsDeltaEvent`, `ToolFinishedEvent`, `ApprovalNeededEvent`,
+`harnessed.events` exposes `TextDeltaEvent`, `ReasoningDeltaEvent`, `ToolCallRequestedEvent`,
+`ToolCallGenerationStartedEvent`, `ToolArgumentsDeltaEvent`, `ToolCallFinishedEvent`, `ApprovalNeededEvent`,
 `TurnFinishedEvent`, `CompactionAppliedEvent` and `SpillCreatedEvent`, among other
 classes. Import these full names directly; they are the canonical class names,
 also used by `@hook`. `TurnEndedEvent` is the durable turn-end record;

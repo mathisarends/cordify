@@ -139,7 +139,9 @@ async def test_native_tool_argument_previews_arrive_while_the_provider_is_still_
         finally:
             release.set()
             await asyncio.gather(task, return_exceptions=True)
-        start = next(e for e in notifications if isinstance(e, events.ToolCallStartedEvent))
+        start = next(
+            e for e in notifications if isinstance(e, events.ToolCallGenerationStartedEvent)
+        )
         deltas = [e.delta for e in notifications if isinstance(e, events.ToolArgumentsDeltaEvent)]
         assert start.call.name == "add" and start.call.call_id == "call"
         assert [delta.arguments for delta in deltas] == ['{"a":', '1,"b":2}']

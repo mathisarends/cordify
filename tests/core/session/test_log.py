@@ -15,8 +15,8 @@ from harnessed.core.session.events import (
     InboxTarget,
     ModelRequestedEvent,
     StepStartedEvent,
-    ToolCalledEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     TurnEndedEvent,
     TurnOutcome,
     TurnStartedEvent,
@@ -74,7 +74,7 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
         ]
     records = [json.loads(line) for line in (tmp_path / "resume.jsonl").read_text().splitlines()]
     assert [record["seq"] for record in records] == list(range(len(records)))
-    assert all(record["version"] == 1 for record in records)
+    assert all(record["version"] == 2 for record in records)
 
 
 async def test_jsonl_excludes_other_writers_and_releases_lock(tmp_path):
@@ -101,10 +101,10 @@ async def test_jsonl_rejects_unsafe_session_ids(tmp_path, session_id):
 @pytest.mark.parametrize(
     "content",
     [
-        '{"version":1,',
+        '{"version":2,',
         '{"version":3,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
-        '{"version":1,"seq":5,"type":"turn/start","data":{"turn_id":"x"}}\n',
-        '{"version":1,"seq":0,"type":"unknown","data":{}}\n',
+        '{"version":2,"seq":5,"type":"turn/start","data":{"turn_id":"x"}}\n',
+        '{"version":2,"seq":0,"type":"unknown","data":{}}\n',
     ],
 )
 async def test_jsonl_refuses_corruption_and_unknown_records(tmp_path, content):
@@ -118,7 +118,7 @@ async def test_jsonl_refuses_corruption_and_unknown_records(tmp_path, content):
 
 
 async def test_jsonl_rejects_valid_json_without_final_record_delimiter(tmp_path):
-    content = '{"version":1,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}'
+    content = '{"version":2,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}'
     path = tmp_path / "truncated.jsonl"
     path.write_text(content)
     persistence = JsonlPersistence(tmp_path)
@@ -136,7 +136,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
         TurnStartedEvent("turn-1"),
         StepStartedEvent("turn-1", 1),
         AssistantMessageEvent(Assistant(tool_calls=(call,))),
-        ToolCalledEvent(call),
+        ToolCallRequestedEvent(call),
     ):
         await session.append(event)
     await persistence.aclose()
@@ -147,7 +147,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     async with harness.session("interrupted") as agent:
         assert isinstance(agent.log.last(TurnEndedEvent), TurnEndedEvent)
         assert agent.log.last(TurnEndedEvent).reason == TurnOutcome.ABORTED
-        results = [e for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert len(results) == 1 and results[0].call_id == "call-1"
         assert (await agent.run("continue")).text == "recovered"
 
@@ -206,7 +206,7 @@ def test_event_json_roundtrip_includes_requests_and_frozen_tool_data():
                 (ToolDefinition("nested", "description", {"type": "object", "properties": {}}),),
             )
         ),
-        ToolReturnedEvent(call.id, ToolResult("ok")),
+        ToolCallFinishedEvent(call, ToolResult("ok")),
     )
     restored = tuple(decode_event(json.loads(json.dumps(encode_event(e)))) for e in events)
     assert restored == events

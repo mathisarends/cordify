@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, final
 from pydantic import Field
 
 from harnessed.core.event_kinds import EventKind
-from harnessed.core.messages import ToolCall, ToolResult
+from harnessed.core.messages import ToolCall
 from harnessed.core.model import ToolArgumentsMode, ToolCallDelta, ToolCallStart
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.session.control import SessionStatus
@@ -15,6 +15,8 @@ from harnessed.core.session.events import (
     DurableEvent,
     SpillCreatedEvent,
     SpillExpiredEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     ToolProgressEvent,
 )
 from harnessed.kernel.events import Emit
@@ -52,9 +54,11 @@ class ReasoningDeltaEvent(TransientEvent):
 
 
 @dataclass(frozen=True, slots=True)
-class ToolCallStartedEvent(TransientEvent):
-    type: Literal[EventKind.TOOL_CALL_STARTED] = field(
-        default=EventKind.TOOL_CALL_STARTED, kw_only=True
+class ToolCallGenerationStartedEvent(TransientEvent):
+    """The model began generating a call preview; no tool has been scheduled."""
+
+    type: Literal[EventKind.TOOL_CALL_GENERATION_STARTED] = field(
+        default=EventKind.TOOL_CALL_GENERATION_STARTED, kw_only=True
     )
     message_id: str
     call: ToolCallStart
@@ -67,21 +71,6 @@ class ToolArgumentsDeltaEvent(TransientEvent):
     )
     message_id: str
     delta: ToolCallDelta
-
-
-@dataclass(frozen=True, slots=True)
-class ToolStartedEvent(TransientEvent):
-    __hash__ = None
-    type: Literal[EventKind.TOOL_STARTED] = field(default=EventKind.TOOL_STARTED, kw_only=True)
-    call: ToolCall
-
-
-@dataclass(frozen=True, slots=True)
-class ToolFinishedEvent(TransientEvent):
-    __hash__ = None
-    type: Literal[EventKind.TOOL_FINISHED] = field(default=EventKind.TOOL_FINISHED, kw_only=True)
-    call: ToolCall
-    result: ToolResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,11 +103,11 @@ type StreamEvent[T] = Annotated[
     (
         TextDeltaEvent
         | ReasoningDeltaEvent
-        | ToolCallStartedEvent
+        | ToolCallGenerationStartedEvent
         | ToolArgumentsDeltaEvent
-        | ToolStartedEvent
+        | ToolCallRequestedEvent
         | ToolProgressEvent
-        | ToolFinishedEvent
+        | ToolCallFinishedEvent
         | ApprovalNeededEvent
         | SessionStatusChangedEvent
         | TurnFinishedEvent[T]

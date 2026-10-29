@@ -14,8 +14,8 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalResolvedEvent,
     ApprovalStatus,
+    ToolCallFinishedEvent,
     ToolExecutionStartedEvent,
-    ToolReturnedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel import hook
@@ -79,7 +79,7 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
     ).session("no-ui") as agent:
         await asyncio.wait_for(agent.run("go"), 2)
         results = [
-            event.result for event in agent.log.events if isinstance(event, ToolReturnedEvent)
+            event.result for event in agent.log.events if isinstance(event, ToolCallFinishedEvent)
         ]
         assert [result.status for result in results] == ["unavailable", "ok"]
         assert "No approval responder" in results[0].content

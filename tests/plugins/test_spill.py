@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from harnessed import Agent, Plugin
-from harnessed.core.messages import ImagePart, TextPart, ToolResult, ToolStatus
+from harnessed.core.messages import ImagePart, TextPart, ToolCall, ToolResult, ToolStatus
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     SpillCreatedEvent,
@@ -146,7 +146,7 @@ def test_spill_options_are_declarative_and_strict(options):
 
 
 async def test_late_canonical_results_do_not_resurrect_a_durably_expired_reference():
-    from harnessed.core.session.events import ToolReturnedEvent
+    from harnessed.core.session.events import ToolCallFinishedEvent
 
     app = configure(
         ScriptedModel([call("source", text="x" * 1000), "done"]),
@@ -155,7 +155,9 @@ async def test_late_canonical_results_do_not_resurrect_a_durably_expired_referen
     async with app.session("late") as session:
         result = (await session.run("source")).tool_calls[0][1]
         await session.log.append(SpillExpiredEvent(result.spill))
-        await session.log.append(ToolReturnedEvent("late-result", result))
+        await session.log.append(
+            ToolCallFinishedEvent(ToolCall("late-result", id="late-result"), result)
+        )
         with pytest.raises(ToolError, match="expired"):
             await session.ctx[SpillStore].read(result.spill.path)
     async with app.session("late") as session:

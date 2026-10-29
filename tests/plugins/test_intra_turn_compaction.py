@@ -25,7 +25,7 @@ from harnessed.core.session.events import (
     ModelRequestedEvent,
     StepEndedEvent,
     StepStartedEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
     TurnEndedEvent,
     TurnStartedEvent,
     UserMessageEvent,
@@ -63,7 +63,7 @@ async def append_step(log: SessionLog, turn: str, number: int) -> None:
     await log.append(
         AssistantMessageEvent(Assistant(tool_calls=(call,), provider_state={"signature": call.id}))
     )
-    await log.append(ToolReturnedEvent(call.id, ToolResult("x" * 2000)))
+    await log.append(ToolCallFinishedEvent(call, ToolResult("x" * 2000)))
     await log.append(StepEndedEvent(turn, number))
 
 

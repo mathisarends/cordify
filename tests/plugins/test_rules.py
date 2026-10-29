@@ -9,7 +9,7 @@ from harnessed.core.session.events import (
     ContextValueChangedEvent,
     InboxAddedEvent,
     RuleTriggeredEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel.plugin import PluginStatus
@@ -48,7 +48,7 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
     ).session("rules") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert result.exit_code == 1 and result.content == "failed\n\nOpen a PR."
         inbox = [e for e in agent.log.events if isinstance(e, InboxAddedEvent)]
         assert [e.mode for e in inbox] == ["followup", "steer"]
@@ -191,7 +191,7 @@ async def test_size_predicate_and_missing_exit_code_and_tool_filters():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
     ).session("size") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert result.content.endswith("Use a line range.")
         assert sum(isinstance(e, RuleTriggeredEvent) for e in agent.log.events) == 1
 
@@ -223,7 +223,7 @@ async def test_process_return_values_are_normalized_with_exit_codes():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, converters()]
     ).session("process") as agent:
         await agent.run("go")
-        event = next(e for e in agent.log.events if isinstance(e, ToolReturnedEvent))
+        event = next(e for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert event.result.status == ToolStatus.ERROR and event.result.exit_code == 7
         assert event.result.with_note("note").exit_code == 7
         assert decode_event(encode_event(event)) == event

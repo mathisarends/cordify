@@ -18,8 +18,8 @@ from harnessed.core.runtime.inbox import SessionInbox
 from harnessed.core.session.events import (
     RuleAction,
     RuleTriggeredEvent,
-    ToolCalledEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter, count_content
@@ -145,9 +145,9 @@ class Rules(Plugin):
         # Match bits are recorded with the canonical tool result.
         calls: dict[str, ToolCall] = {}
         for event in session.events:
-            if isinstance(event, ToolCalledEvent):
+            if isinstance(event, ToolCallRequestedEvent):
                 calls[event.call.id] = event.call
-            elif isinstance(event, ToolReturnedEvent) and event.call_id in calls:
+            elif isinstance(event, ToolCallFinishedEvent) and event.call_id in calls:
                 recorded = dict(event.result.rule_matches)
                 for index, rule in enumerate(self.rules):
                     rule_id = f"{self.name}:{index}"

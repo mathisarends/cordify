@@ -63,7 +63,7 @@ def _validate_event(
     immutable(event)
 
 
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 _ADAPTER = TypeAdapter(
     LogEvent,
     config=ConfigDict(

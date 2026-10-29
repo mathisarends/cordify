@@ -24,9 +24,8 @@ from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.values import Section
 from harnessed.core.session.events import (
     CompactionAppliedEvent,
-    ToolCalledEvent,
-    ToolCompletedEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
@@ -346,15 +345,12 @@ class Skills(Plugin, slot="skills"):
             await self._retain()
 
     def _remember(self, event) -> None:
-        if isinstance(event, ToolCalledEvent):
+        if isinstance(event, ToolCallRequestedEvent):
             if event.call.name == "load_skill":
                 self._calls.add(event.call.id)
             else:
                 self._calls.discard(event.call.id)
-        elif (
-            isinstance(event, ToolCompletedEvent | ToolReturnedEvent)
-            and event.call_id in self._calls
-        ):
+        elif isinstance(event, ToolCallFinishedEvent) and event.call_id in self._calls:
             if event.result.status == ToolStatus.OK:
                 try:
                     data, _ = json.JSONDecoder().raw_decode(event.result.text.lstrip())
@@ -363,7 +359,7 @@ class Skills(Plugin, slot="skills"):
                     pass
                 else:
                     self._loaded[loaded.name] = loaded.instructions
-            if isinstance(event, ToolReturnedEvent):
+            if isinstance(event, ToolCallFinishedEvent):
                 self._calls.discard(event.call_id)
 
     async def _retain(self) -> None:
@@ -377,7 +373,7 @@ class Skills(Plugin, slot="skills"):
         self._remember(event.event)
         if isinstance(event.event, CompactionAppliedEvent):
             await self._retain()
-        elif isinstance(event.event, ToolReturnedEvent):
+        elif isinstance(event.event, ToolCallFinishedEvent):
             for name, instructions in self._loaded.items():
                 if f"skill:{name}" in self._context.values:
                     await self._context.set(f"skill:{name}", instructions)

@@ -11,13 +11,13 @@ from harnessed.core.model import ModelChunk, ModelInfo, StopReason
 from harnessed.core.session.events import (
     AssistantMessageEvent,
     ModelRequestedEvent,
+    ToolCallFinishedEvent,
     ToolProgressEvent,
-    ToolReturnedEvent,
     TurnEndedEvent,
     TurnOutcome,
     TurnStartedEvent,
 )
-from harnessed.core.stream import TextDeltaEvent, ToolFinishedEvent
+from harnessed.core.stream import TextDeltaEvent
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import hook
 from harnessed.plugins import AgentLoop, Approvals, Service
@@ -48,7 +48,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
             "".join(e.text for e in events if isinstance(e, TextDeltaEvent)) == "The result is 3."
         )
         assert [e.text for e in events if isinstance(e, ToolProgressEvent)] == ["adding"]
-        assert any(isinstance(e, ToolFinishedEvent) and e.result.content == "3" for e in events)
+        assert any(isinstance(e, ToolCallFinishedEvent) and e.result.content == "3" for e in events)
         recorded = [e.request for e in agent.log.events if isinstance(e, ModelRequestedEvent)]
         assert recorded == model.requests
         assert model.requests[0].model == "test-model"
@@ -119,7 +119,7 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
     )
     async with harness.session("deny") as agent:
         result = await agent.run("remove")
-        outcomes = [e.result for e in result.events if isinstance(e, ToolReturnedEvent)]
+        outcomes = [e.result for e in result.events if isinstance(e, ToolCallFinishedEvent)]
         assert outcomes[0].status == ToolStatus.DENIED
         assert stages == []
 
@@ -167,7 +167,7 @@ async def test_approval_always_is_session_local_and_review_can_steer_nudges():
         assert asked == ["work"]
         assert stages == ["policy", "tool", "review", "policy", "tool", "review"]
         assert any(m.content == "consider this" for m in model.requests[-1].messages)
-        results = [e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert all(result.content == "done\n\nReviewed" for result in results)
 
 
@@ -202,7 +202,9 @@ async def test_class_plugin_state_is_fresh_for_every_session_and_methods_support
         async with harness.session(session_id) as agent:
             result = await agent.run("count")
             assert (
-                next(e.result.content for e in result.events if isinstance(e, ToolReturnedEvent))
+                next(
+                    e.result.content for e in result.events if isinstance(e, ToolCallFinishedEvent)
+                )
                 == "1"
             )
     assert template.count == 0
@@ -253,7 +255,7 @@ async def test_explicit_and_live_registration():
     async with harness.session("explicit") as agent:
         handle = await agent.use(Live())
         seen = []
-        agent.add_hook(ToolReturnedEvent, lambda event: seen.append(event.result.content))
+        agent.add_hook(ToolCallFinishedEvent, lambda event: seen.append(event.result.content))
         await agent.run("echo")
         assert seen == ["hello\n\nok"]
         assert {d.name for d in model.requests[0].tools} == {"echo", "alias", "live"}
@@ -339,7 +341,7 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
         await started.wait()
         await agent.abort()
         assert calls[0].signal.is_set()
-        results = [e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert len(results) == 1 and results[0].is_error
 
 

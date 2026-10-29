@@ -17,8 +17,8 @@ serialize the intended JSON payload with a defined canonical encoding and hash
 those bytes.
 
 The persistence codec has a separate versioned boundary. Records require version
-1 and explicit dotted tags, such as `turn.start` and `tool.returned`. This is the
-single canonical format for the 0.1 release line. Older experimental formats,
+2 and explicit dotted tags, such as `turn.start` and `tool.call.finished`. Version
+1 is unsupported after the tool lifecycle change. Older formats,
 unknown fields, invalid discriminators, non-finite numbers and malformed nested
 values are rejected without rewriting the append-only log.
 See the [compatibility policy](../releases.md#compatibility-policy) before upgrading

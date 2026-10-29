@@ -36,10 +36,9 @@ from harnessed.core.session.events import (
     StepEndedEvent,
     StepOutcome,
     StepStartedEvent,
-    ToolCompletedEvent,
+    ToolCallFinishedEvent,
     ToolExecutionFinishedEvent,
     ToolExecutionStartedEvent,
-    ToolReturnedEvent,
     TurnEndedEvent,
     TurnOutcome,
     TurnStartedEvent,
@@ -75,7 +74,7 @@ def _validate_compaction(
     for item in events[: event.through]:
         if isinstance(item, AssistantMessageEvent):
             unanswered.update(call.id for call in item.message.tool_calls)
-        elif isinstance(item, ToolReturnedEvent):
+        elif isinstance(item, ToolCallFinishedEvent):
             unanswered.discard(item.call_id)
     if unanswered:
         raise ValueError("Compaction must not split unanswered tool calls")
@@ -309,7 +308,7 @@ class SessionLog:
     async def append(self, event: SessionEvent) -> None:
         self.registry.validate(event)
         cancelled = False
-        if isinstance(event, ToolExecutionFinishedEvent | ToolCompletedEvent):
+        if isinstance(event, ToolExecutionFinishedEvent | ToolCallFinishedEvent):
             # An invocation/review already finished. Drain its checkpoint even if
             # abort arrives while another append owns the log lock. Observers stay
             # outside this shield so an unresponsive hook cannot block cancellation.
@@ -323,7 +322,7 @@ class SessionLog:
             cancelled |= interrupted
         else:
             seq, cancelled = await self._append(event)
-        if cancelled and isinstance(event, ToolExecutionFinishedEvent | ToolCompletedEvent):
+        if cancelled and isinstance(event, ToolExecutionFinishedEvent | ToolCallFinishedEvent):
             raise asyncio.CancelledError
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
@@ -349,7 +348,7 @@ class SessionLog:
                 async def persist() -> None:
                     await persistence.append(self.id, seq, event)
                     if isinstance(
-                        event, TurnEndedEvent | ToolExecutionFinishedEvent | ToolCompletedEvent
+                        event, TurnEndedEvent | ToolExecutionFinishedEvent | ToolCallFinishedEvent
                     ):
                         await persistence.flush()
 
@@ -440,7 +439,6 @@ class SessionLog:
             )
         turn, step = None, None
         unanswered: dict[str, ToolCall] = {}
-        completed: dict[str, ToolResult] = {}
         started = set()
         executed: set[str] = set()
         for event in self._events:
@@ -452,13 +450,10 @@ class SessionLog:
                 case AssistantMessageEvent(message=message):
                     for call in message.tool_calls:
                         unanswered[call.id] = call
-                        completed.pop(call.id, None)
                         started.discard(call.id)
                         executed.discard(call.id)
-                case ToolReturnedEvent(call_id=call_id):
+                case ToolCallFinishedEvent(call_id=call_id):
                     unanswered.pop(call_id, None)
-                case ToolCompletedEvent(call_id=call_id, result=result):
-                    completed[call_id] = result
                 case ToolExecutionStartedEvent(call_id=call_id):
                     started.add(call_id)
                 case ToolExecutionFinishedEvent(call_id=call_id):
@@ -468,13 +463,10 @@ class SessionLog:
                 case TurnEndedEvent():
                     turn = None
         for call in unanswered.values():
-            if call.id in completed:
-                await self.append(ToolReturnedEvent(call.id, completed[call.id]))
-                continue
             if call.id in executed:
                 await self.append(
-                    ToolReturnedEvent(
-                        call.id,
+                    ToolCallFinishedEvent(
+                        call,
                         ToolResult.error(
                             "Tool execution finished, but result review was interrupted. "
                             "The raw result is retained in tool.execution.finished for inspection. "
@@ -486,7 +478,7 @@ class SessionLog:
             message = "Tool execution interrupted" if control.paused else "Tool execution aborted"
             if call.id in started:
                 message += "; external outcome is unknown. Inspect external state before retrying."
-            await self.append(ToolReturnedEvent(call.id, ToolResult.error(message)))
+            await self.append(ToolCallFinishedEvent(call, ToolResult.error(message)))
         if turn is not None:
             if step is not None:
                 await self.append(

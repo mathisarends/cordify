@@ -11,10 +11,10 @@ from harnessed.events import (
     ReasoningDeltaEvent,
     TextDeltaEvent,
     ToolArgumentsDeltaEvent,
-    ToolCallStartedEvent,
-    ToolFinishedEvent,
+    ToolCallGenerationStartedEvent,
+    ToolCallFinishedEvent,
     ToolProgressEvent,
-    ToolStartedEvent,
+    ToolCallRequestedEvent,
     TurnFinishedEvent,
 )
 
@@ -27,15 +27,15 @@ async def show(session: Session):
                     print(text, end="", flush=True)
                 case ReasoningDeltaEvent(text=text):
                     print("Thinking:", text)
-                case ToolCallStartedEvent(call=preview):
+                case ToolCallGenerationStartedEvent(call=preview):
                     print("Generating call:", preview.name)
                 case ToolArgumentsDeltaEvent(delta=delta):
                     print("Arguments:", delta.mode, delta.arguments)
-                case ToolStartedEvent(call=call):
-                    print("Starting:", call.name)
+                case ToolCallRequestedEvent(call=call):
+                    print("Requested:", call.name)
                 case ToolProgressEvent(text=text):
                     print("Progress:", text)
-                case ToolFinishedEvent(call=call, result=result):
+                case ToolCallFinishedEvent(call=call, result=result):
                     print(call.name, result.status)
                 case ApprovalNeededEvent(request_id=request_id):
                     await session.approvals.answer(request_id, ApprovalAnswer.DENY)
@@ -60,20 +60,21 @@ messages. Final-answer control tools do not produce application tool spinners.
 
 ## Preview tool arguments
 
-`events.ToolCallStartedEvent` (`tool.call.started`) and `events.ToolArgumentsDeltaEvent`
+`events.ToolCallGenerationStartedEvent` (`tool.call.generation.started`) and
+`events.ToolArgumentsDeltaEvent`
 (`tool.arguments.delta`) arrive during model generation. Both are transient and
-carry `message_id`. `ToolCallStartedEvent.call` is a typed `ToolCallStart`;
+carry `message_id`. `ToolCallGenerationStartedEvent.call` is a typed `ToolCallStart`;
 `ToolArgumentsDeltaEvent.delta` is a typed `ToolCallDelta`. Their response-local `index`
 correlates interleaved calls. Use `(message_id, index)` as the preview key, because
 provider call IDs and names may arrive in fragments or change during generation.
-A repeated `ToolCallStartedEvent` replaces that key's preview and resets its argument text.
+A repeated `ToolCallGenerationStartedEvent` replaces that key's preview and resets its argument text.
 
 Each delta supplies the current `name` and `call_id`. With
 `events.ToolArgumentsMode.APPEND`, append `arguments` verbatim; with `REPLACE`,
 replace the argument text with the supplied JSON snapshot. Object patches from
 providers are normalized to snapshots. Argument text can be incomplete or invalid;
 it is display data and must never be executed. Previews may include the reserved
-`final_answer` output call. They are distinct from `events.ToolStartedEvent`, which
+`final_answer` output call. They are distinct from `events.ToolCallRequestedEvent`, which
 continues to describe the later application-tool lifecycle.
 
 The final assistant message and its complete calls remain authoritative. Execution,

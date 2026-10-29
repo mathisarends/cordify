@@ -16,7 +16,7 @@ from harnessed.core.session.events import (
     ControlState,
     ModelRequestedEvent,
     StepStartedEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
     TurnOutcome,
     TurnStartedEvent,
     UserMessageEvent,
@@ -90,7 +90,7 @@ async def test_pause_waits_for_a_whole_step_and_resume_keeps_its_turn(phase):
         await wait(pause)
         assert session.status is SessionStatus.PAUSED
         assert not first.done() and not second.done() and len(model.requests) == 1
-        returned = [e.call_id for e in session.events if isinstance(e, ToolReturnedEvent)]
+        returned = [e.call_id for e in session.events if isinstance(e, ToolCallFinishedEvent)]
         assert returned == [c.id for c in calls] and sorted(executed) == [0, 1, 2]
         await session.pause()
         await session.resume()
@@ -179,7 +179,7 @@ async def test_abort_drains_tools_or_approvals_and_repairs_outstanding_calls(pha
         assert (await wait(running)).stop_reason is StopReason.ABORTED
         assert closed.is_set() and all(c.signal.is_set() for c in contexts)
         assert not session.approvals.pending
-        results = [e.result for e in session.events if isinstance(e, ToolReturnedEvent)]
+        results = [e.result for e in session.events if isinstance(e, ToolCallFinishedEvent)]
         assert len(results) == 1 and results[0].is_error and "aborted" in results[0].content
 
 

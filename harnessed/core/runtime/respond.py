@@ -11,7 +11,7 @@ from harnessed.core.stream import (
     ReasoningDeltaEvent,
     TextDeltaEvent,
     ToolArgumentsDeltaEvent,
-    ToolCallStartedEvent,
+    ToolCallGenerationStartedEvent,
 )
 from harnessed.core.tracing import span
 from harnessed.kernel import Context
@@ -55,7 +55,7 @@ class ModelResponder:
                         calls.append(chunk.tool_call)
                     if chunk.tool_call_start is not None:
                         await self.log.publish(
-                            ToolCallStartedEvent(message_id, chunk.tool_call_start)
+                            ToolCallGenerationStartedEvent(message_id, chunk.tool_call_start)
                         )
                     if chunk.tool_call_delta is not None:
                         await self.log.publish(

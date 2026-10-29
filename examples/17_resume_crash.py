@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
-from harnessed.events import LogTailRecoveredEvent, ToolReturnedEvent
+from harnessed.events import LogTailRecoveredEvent, ToolCallFinishedEvent
 from harnessed.models import ModelChunk
 from harnessed.plugins import ApprovalGate, Approvals, JsonlSessions
 from harnessed.plugins.sessions import Durability
@@ -86,7 +86,7 @@ async def resume(root: Path):
         print(f"Archived {recovered.discarded_bytes} incomplete bytes: {recovered.archive}")
         await session.run("Run the same tool in a fresh task.")
         result = next(
-            e.result for e in reversed(session.events) if isinstance(e, ToolReturnedEvent)
+            e.result for e in reversed(session.events) if isinstance(e, ToolCallFinishedEvent)
         )
         assert not result.is_error and asked == []
         print("Persisted ALWAYS grant reused; no new approval question.")

@@ -16,8 +16,7 @@ from harnessed.core.session.events import (
     SpillCreatedEvent,
     SpillExpirationReason,
     SpillExpiredEvent,
-    ToolCompletedEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
 )
 from harnessed.core.session.files import FileOffset, ReadLimit, SessionFiles
 from harnessed.core.session.session import SessionLog
@@ -55,10 +54,7 @@ class _SessionSpills:
         if isinstance(event, SpillCreatedEvent):
             ref = event.ref
             self._expired.discard(ref.path)
-        elif (
-            isinstance(event, ToolCompletedEvent | ToolReturnedEvent)
-            and event.result.spill is not None
-        ):
+        elif isinstance(event, ToolCallFinishedEvent) and event.result.spill is not None:
             ref = event.result.spill
             if ref.path in self._expired:
                 return

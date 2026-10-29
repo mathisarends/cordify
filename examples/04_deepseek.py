@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from harnessed import Agent, ApprovalAnswer, Section
-from harnessed.events import ApprovalNeededEvent, TextDeltaEvent, ToolStartedEvent
+from harnessed.events import ApprovalNeededEvent, TextDeltaEvent, ToolCallRequestedEvent
 from harnessed.plugins import AgentLoop, Filesystem, JsonlSessions
 
 
@@ -24,7 +24,7 @@ async def main():
             match event:
                 case TextDeltaEvent(text=text):
                     print(text, end="", flush=True)
-                case ToolStartedEvent(call=call):
+                case ToolCallRequestedEvent(call=call):
                     print(f"\n-> {call.name}")
                 case ApprovalNeededEvent(request_id=request_id, call=call):
                     answer = await asyncio.to_thread(input, f"Allow {call.name}? [y/N] ")

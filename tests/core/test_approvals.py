@@ -16,9 +16,9 @@ from harnessed.core.session.events import (
     ApprovalResolvedEvent,
     ApprovalRevokedEvent,
     ApprovalStatus,
+    ToolCallFinishedEvent,
     ToolExecutionStartedEvent,
     ToolPolicyAppliedEvent,
-    ToolReturnedEvent,
 )
 from harnessed.core.session.files import MemoryFiles
 from harnessed.core.session.session import SessionLog
@@ -220,7 +220,9 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
         assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
         assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.INTERRUPTED
         assert not any(isinstance(e, ToolExecutionStartedEvent) for e in agent.log.events)
-        assert any(isinstance(e, ToolReturnedEvent) and e.result.is_error for e in agent.log.events)
+        assert any(
+            isinstance(e, ToolCallFinishedEvent) and e.result.is_error for e in agent.log.events
+        )
 
 
 async def test_uncommitted_approval_answer_cannot_start_execution():

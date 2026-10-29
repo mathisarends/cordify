@@ -10,10 +10,10 @@ from harnessed.events import (
     SessionStatusChangedEvent,
     TextDeltaEvent,
     ToolArgumentsDeltaEvent,
-    ToolCallStartedEvent,
-    ToolFinishedEvent,
+    ToolCallFinishedEvent,
+    ToolCallGenerationStartedEvent,
+    ToolCallRequestedEvent,
     ToolProgressEvent,
-    ToolStartedEvent,
     TurnFinishedEvent,
 )
 from harnessed.models import ModelChunk, ToolCallDelta, ToolCallStart
@@ -61,15 +61,15 @@ async def main():
                         print(text)
                     case ReasoningDeltaEvent(text=text):
                         print("Thinking:", text)
-                    case ToolCallStartedEvent(call=preview):
+                    case ToolCallGenerationStartedEvent(call=preview):
                         print("Generating call:", preview.name)
                     case ToolArgumentsDeltaEvent(delta=delta):
                         print("Arguments:", delta.arguments)
-                    case ToolStartedEvent(call=call):
-                        print("Starting:", call.name)
+                    case ToolCallRequestedEvent(call=call):
+                        print("Requested:", call.name)
                     case ToolProgressEvent(text=text):
                         print("Progress:", text)
-                    case ToolFinishedEvent(call=call, result=result):
+                    case ToolCallFinishedEvent(call=call, result=result):
                         print(call.name, result.status)
                     case ApprovalNeededEvent(request_id=request_id, call=call):
                         # A UI would present this choice; the demo explicitly approves.

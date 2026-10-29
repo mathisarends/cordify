@@ -568,10 +568,14 @@ class AssistantMessageEvent(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ToolCalledEvent(SessionEvent):
+class ToolCallRequestedEvent(SessionEvent):
+    """A complete call accepted for scheduling, before policy or execution."""
+
     __hash__ = None
 
-    type: Literal[EventKind.TOOL_CALLED] = field(default=EventKind.TOOL_CALLED, kw_only=True)
+    type: Literal[EventKind.TOOL_CALL_REQUESTED] = field(
+        default=EventKind.TOOL_CALL_REQUESTED, kw_only=True
+    )
     call: ToolCall
 
     @property
@@ -580,12 +584,28 @@ class ToolCalledEvent(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ToolReturnedEvent(SessionEvent):
+class ToolCallFinishedEvent(SessionEvent):
+    """The final reviewed and limited result, committed in model call order.
+
+    Shared by the durable log and UI stream, including calls denied before
+    execution and synthetic recovery errors. Raw execution receipts are separate.
+    """
+
     __hash__ = None
 
-    type: Literal[EventKind.TOOL_RETURNED] = field(default=EventKind.TOOL_RETURNED, kw_only=True)
-    call_id: Identifier
+    type: Literal[EventKind.TOOL_CALL_FINISHED] = field(
+        default=EventKind.TOOL_CALL_FINISHED, kw_only=True
+    )
+    call: ToolCall
     result: ToolResult
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.call, ToolCall):
+            raise TypeError("ToolCallFinishedEvent requires a ToolCall")
+
+    @property
+    def call_id(self) -> str:
+        return self.call.id
 
 
 @dataclass(frozen=True)
@@ -594,22 +614,13 @@ class ToolExecutionFinishedEvent(SessionEvent):
 
     Text respects the captured output limit. This is audit data, not a
     model-visible result. Recovery must never bypass ReviewToolResult by
-    publishing this receipt as ToolReturnedEvent.
+    publishing this receipt as ToolCallFinishedEvent.
     """
 
     __hash__ = None
     type: Literal[EventKind.TOOL_EXECUTION_FINISHED] = field(
         default=EventKind.TOOL_EXECUTION_FINISHED, kw_only=True
     )
-    call_id: Identifier
-    result: ToolResult
-
-
-@dataclass(frozen=True)
-class ToolCompletedEvent(SessionEvent):
-    __hash__ = None
-
-    type: Literal[EventKind.TOOL_COMPLETED] = field(default=EventKind.TOOL_COMPLETED, kw_only=True)
     call_id: Identifier
     result: ToolResult
 
@@ -714,9 +725,8 @@ type LogEvent = Annotated[
         | SpillExpiredEvent
         | RuleTriggeredEvent
         | AssistantMessageEvent
-        | ToolCalledEvent
-        | ToolReturnedEvent
-        | ToolCompletedEvent
+        | ToolCallRequestedEvent
+        | ToolCallFinishedEvent
         | ToolProgressEvent
         | StepEndedEvent
         | TurnEndedEvent

@@ -13,8 +13,8 @@ from harnessed.core.session.events import (
     StepEndedEvent,
     StepOutcome,
     StepStartedEvent,
-    ToolCalledEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     TurnEndedEvent,
     TurnOutcome,
     TurnStartedEvent,
@@ -64,9 +64,9 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         assert all(
             sum(isinstance(e, ModelRequestedEvent) for e in step.events) == 1 for step in steps
         )
-        assert any(isinstance(e, ToolCalledEvent) for e in steps[0].events)
-        assert any(isinstance(e, ToolReturnedEvent) for e in steps[0].events)
-        assert not any(isinstance(e, ToolCalledEvent) for e in steps[1].events)
+        assert any(isinstance(e, ToolCallRequestedEvent) for e in steps[0].events)
+        assert any(isinstance(e, ToolCallFinishedEvent) for e in steps[0].events)
+        assert not any(isinstance(e, ToolCallRequestedEvent) for e in steps[1].events)
         first_users = [e.message.text for e in turns[0].events if isinstance(e, UserMessageEvent)]
         second_users = [e.message.text for e in turns[1].events if isinstance(e, UserMessageEvent)]
         assert first_users == ["first task", "focus here"]

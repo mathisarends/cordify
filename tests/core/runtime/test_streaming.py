@@ -25,9 +25,9 @@ from harnessed.events import (
     SessionEvent,
     SessionStatusChangedEvent,
     TextDeltaEvent,
-    ToolFinishedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     ToolProgressEvent,
-    ToolStartedEvent,
     TurnFinishedEvent,
 )
 from harnessed.plugins import Approvals, MemorySessions
@@ -115,9 +115,9 @@ async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result
         assert {type(e) for e in events} == {
             TextDeltaEvent,
             ReasoningDeltaEvent,
-            ToolStartedEvent,
+            ToolCallRequestedEvent,
             ToolProgressEvent,
-            ToolFinishedEvent,
+            ToolCallFinishedEvent,
             ApprovalNeededEvent,
             SessionStatusChangedEvent,
             TurnFinishedEvent,
@@ -125,9 +125,15 @@ async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result
         assert isinstance(events[-1], TurnFinishedEvent)
         assert events[-1].result.text == "Finished" and events[-1].result.output is None
         assert sum(isinstance(e, TurnFinishedEvent) for e in events) == 1
-        assert not any(
-            isinstance(e, SessionEvent) and not isinstance(e, ToolProgressEvent) for e in events
-        )
+        durable = [event for event in events if isinstance(event, SessionEvent)]
+        assert {type(event) for event in durable} == {
+            ToolCallRequestedEvent,
+            ToolProgressEvent,
+            ToolCallFinishedEvent,
+        }
+        assert all(any(event is record for record in session.events) for event in durable)
+        finished = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+        assert len(finished) == 1 and finished[0].call.name == "publish"
 
 
 async def test_closing_the_stream_resolves_pending_approval_and_removes_its_responder():
@@ -234,7 +240,8 @@ async def test_expired_ui_approval_cannot_be_answered_and_still_finishes_the_tur
         rest = [event async for event in stream]
         assert isinstance(rest[-1], TurnFinishedEvent) and effects == []
         assert (
-            next(e.result.status for e in rest if isinstance(e, ToolFinishedEvent)) == "unavailable"
+            next(e.result.status for e in rest if isinstance(e, ToolCallFinishedEvent))
+            == "unavailable"
         )
 
 
@@ -274,7 +281,7 @@ async def test_structured_stream_preserves_the_output_type_without_control_tool_
         assert isinstance(events[-1].result.output, Report)
         assert events[-1].result.output.text == "ready"
         assert not any(
-            isinstance(e, ToolStartedEvent | ToolFinishedEvent | ApprovalNeededEvent)
+            isinstance(e, ToolCallRequestedEvent | ToolCallFinishedEvent | ApprovalNeededEvent)
             for e in events
         )
 

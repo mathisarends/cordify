@@ -12,12 +12,11 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessageEvent,
     StepStartedEvent,
-    ToolCalledEvent,
-    ToolCompletedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     ToolExecutionFinishedEvent,
     ToolExecutionStartedEvent,
     ToolProgressEvent,
-    ToolReturnedEvent,
     TurnStartedEvent,
 )
 from harnessed.core.session.session import SessionLog
@@ -73,10 +72,10 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
             await agent.control.join()
         assert finished == [2, 1, 0] and reviews == [0, 1, 2]
         events = agent.log.events
-        assert [e.call.id for e in events if isinstance(e, ToolCalledEvent)] == [
+        assert [e.call.id for e in events if isinstance(e, ToolCallRequestedEvent)] == [
             c.id for c in calls
         ]
-        assert [e.call_id for e in events if isinstance(e, ToolReturnedEvent)] == [
+        assert [e.call_id for e in events if isinstance(e, ToolCallFinishedEvent)] == [
             c.id for c in calls
         ]
         assert [e.text for e in events if isinstance(e, ToolProgressEvent)] == [
@@ -135,7 +134,7 @@ async def test_resource_dependencies_are_fifo_and_do_not_hold_slots_while_waitin
         await asyncio.wait_for(running, 2)
         assert order.index(0) < order.index(1) < order.index(4)
         assert all(
-            not e.result.is_error for e in agent.log.events if isinstance(e, ToolReturnedEvent)
+            not e.result.is_error for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)
         )
 
 
@@ -207,7 +206,7 @@ async def test_builtin_writes_are_barriers_between_read_groups_and_same_file_ali
             release_reads.set()
             release_write.set()
         await asyncio.wait_for(running, 2)
-        results = [e for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert all(not event.result.is_error for event in results)
         assert results[-1].result.content == "SECOND"
         assert writes == ["FIRST", "SECOND"]
@@ -246,7 +245,7 @@ async def test_global_parallel_limit_bounds_execution_and_can_force_serial_mode(
     ).session("bounded") as agent:
         await asyncio.wait_for(agent.run("go"), 3)
         assert peak == limit
-        assert [e.call_id for e in agent.log.events if isinstance(e, ToolReturnedEvent)] == [
+        assert [e.call_id for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)] == [
             c.id for c in calls
         ]
 
@@ -281,7 +280,7 @@ async def test_tool_errors_and_denials_do_not_cancel_independent_calls():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools]
     ).session("errors") as agent:
         await agent.run("go")
-        results = [e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert [result.status for result in results] == ["error", "denied", "ok"]
         assert executed == [0, 2] and reviewed == [0, 2]
 
@@ -312,7 +311,7 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
         await asyncio.wait_for(started.wait(), 2)
         await agent.abort()
         assert sorted(cleaned) == [0, 1, 2] and all(call.signal.is_set() for call in contexts)
-        results = [e for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert [event.call_id for event in results] == [call.id for call in calls]
         assert all(event.result.is_error for event in results)
         assert not any(
@@ -322,7 +321,7 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
         )
 
 
-async def test_resume_uses_durable_completions_without_reexecuting_tools():
+async def test_resume_keeps_committed_results_without_reexecuting_or_duplicating_tools():
     from harnessed import ToolResult
 
     calls = (ToolCall("first", id="first"), ToolCall("second", id="second"))
@@ -333,15 +332,15 @@ async def test_resume_uses_durable_completions_without_reexecuting_tools():
         AssistantMessageEvent(Assistant(tool_calls=calls)),
         ToolExecutionStartedEvent("first"),
         ToolExecutionStartedEvent("second"),
-        ToolCompletedEvent("second", ToolResult("second result")),
-        ToolCompletedEvent("first", ToolResult("first result")),
+        ToolCallFinishedEvent(ToolCall("first", id="first"), ToolResult("first result")),
+        ToolCallFinishedEvent(ToolCall("second", id="second"), ToolResult("second result")),
     ):
         await session.append(event)
     replay = SessionLog(
         "replayed", seed=tuple(decode_event(encode_event(e)) for e in session.events)
     )
     await replay.repair_interrupted()
-    results = [event for event in replay.events if isinstance(event, ToolReturnedEvent)]
+    results = [event for event in replay.events if isinstance(event, ToolCallFinishedEvent)]
     assert [(event.call_id, event.result.content) for event in results] == [
         ("first", "first result"),
         ("second", "second result"),
@@ -389,7 +388,7 @@ async def test_fast_execution_is_durable_before_slow_sibling_review_and_safe_to_
             await session.log.flush()
             prefix = session.events
             assert not reviews
-            assert not any(isinstance(e, ToolCompletedEvent) for e in prefix)
+            assert not any(isinstance(e, ToolCallFinishedEvent) for e in prefix)
             raw = [e for e in prefix if isinstance(e, ToolExecutionFinishedEvent)]
             assert len(raw) == 1 and raw[0].call_id == calls[1].id
             # Copy the exact acknowledged disk prefix to emulate a process crash.
@@ -403,7 +402,7 @@ async def test_fast_execution_is_durable_before_slow_sibling_review_and_safe_to_
                 await writer.aclose()
             replay = SessionLog("replay", seed=persisted)
             await replay.repair_interrupted()
-            returns = [e for e in replay.events if isinstance(e, ToolReturnedEvent)]
+            returns = [e for e in replay.events if isinstance(e, ToolCallFinishedEvent)]
             assert [e.call_id for e in returns] == [call.id for call in calls]
             assert "outcome is unknown" in returns[0].result.content
             assert "execution finished" in returns[1].result.content
@@ -443,6 +442,45 @@ async def test_abort_during_review_preserves_raw_receipt_without_bypassing_revie
         result = await handle.result()
         assert session.last(ToolExecutionFinishedEvent).result.content == "private raw result"
         assert "execution finished" in result.tool_calls[0][1].content
+
+
+async def test_abort_after_final_commit_keeps_the_reviewed_result_without_duplicate_completion():
+    from harnessed import ToolResult
+
+    committed = asyncio.Event()
+
+    class Work(Plugin):
+        @tool(readonly=True)
+        async def work(self) -> str:
+            return "private raw output"
+
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            return ToolResult("reviewed output")
+
+    call = ToolCall("work")
+    model = ScriptedModel([[ModelChunk(tool_call=call)]])
+    async with Application(model=model, plugins=[Work()]).session() as session:
+
+        @session.on(ToolCallFinishedEvent)
+        async def observe(event):
+            committed.set()
+            await asyncio.Event().wait()
+
+        handle = await session.submit("go")
+        await asyncio.wait_for(committed.wait(), 2)
+        await session.abort()
+        result = await handle.result()
+        finished = [event for event in session.events if isinstance(event, ToolCallFinishedEvent)]
+        assert len(finished) == 1 and finished[0].call == call
+        assert finished[0].result.content == "reviewed output"
+        assert result.tool_calls == ((call, ToolResult("reviewed output")),)
+        replay = SessionLog(
+            "replay", seed=tuple(decode_event(encode_event(event)) for event in session.events)
+        )
+        prefix = replay.events
+        await replay.repair_interrupted()
+        assert replay.events == prefix
         assert "private raw result" not in result.tool_calls[0][1].content
 
 
@@ -483,7 +521,7 @@ async def test_sync_timeout_keeps_resource_until_the_worker_finishes():
             release.set()
         await asyncio.wait_for(running, 2)
         assert order == ["first-enter", "first-exit", "second-enter"]
-        results = [e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert "TimeoutError" in results[0].content and (not results[1].is_error)
 
 
@@ -501,7 +539,7 @@ async def test_invalid_resource_resolver_is_a_bounded_tool_error():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools]
     ).session("invalid") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert result.is_error and result.content == "invalid failed: ValueError"
 
 
@@ -538,7 +576,7 @@ async def test_replaced_tool_registration_cannot_run_with_stale_parallel_metadat
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools]
     ).session("replacement") as agent:
         await agent.run("go")
-        results = [e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent)]
+        results = [e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
         assert executed == []
         assert all(
             result.is_error and "registration changed" in result.content for result in results

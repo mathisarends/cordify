@@ -24,7 +24,7 @@ async for event in session.stream("Inspect the project."):
 ```
 
 Tags are stable namespaced strings, including `text.delta`, `reasoning.delta`,
-`tool.started`, `approval.needed`, `compaction.applied` and `spill.created`.
+`tool.call.requested`, `approval.needed`, `compaction.applied` and `spill.created`.
 They do not depend on the Python class name. `EventKind`, closed states and
 outcomes such as `TurnOutcome` are also exported directly from `harnessed.events`.
 
@@ -47,8 +47,31 @@ class TurnObserver(Plugin):
 `TurnEndedEvent` is the durable record closing a turn, with its ID and outcome.
 `TurnFinishedEvent[T]` is the terminal UI stream notification carrying the
 assembled `RunResult[T]`. Likewise, `ToolExecutionFinishedEvent` records execution
-before result review, while `ToolFinishedEvent` presents the reviewed result in
-the UI stream. These remain separate events.
+before result review, while `ToolCallFinishedEvent` commits the final result to
+history and the UI stream. These remain separate events.
+
+## Tool lifecycle
+
+For an application asking whether a tool is finished, observe
+`ToolCallFinishedEvent`. It includes the complete `call` and final `result`, also
+when policy denied the call or recovery supplied an interruption error.
+
+| Event | Meaning | Durable log | UI stream |
+| --- | --- | --- | --- |
+| `ToolCallGenerationStartedEvent` | The model began generating a call preview; no scheduling or execution yet | No | Yes |
+| `ToolCallRequestedEvent` | A complete call was accepted for scheduling, before policy checks | Yes | Yes |
+| `ToolExecutionStartedEvent` | Execution is about to be invoked, after policy permits it | Yes | No |
+| `ToolExecutionFinishedEvent` | Raw execution output is safely recorded, before result review | Yes | No |
+| `ToolCallFinishedEvent` | The final reviewed and limited result is committed in model order | Yes | Yes |
+
+`ToolArgumentsDeltaEvent` updates the generation preview and `ToolProgressEvent`
+reports progress. Neither is a completion signal. UI request and completion
+events are the same immutable objects recorded in the durable log. Structured
+output control calls remain hidden from the application tool UI.
+
+Successful calls proceed from request through execution to completion. Denied
+calls skip execution. Recovery never publishes an unreviewed execution receipt as
+a final result or repeats a tool to recover its output.
 
 ## Declare application events
 

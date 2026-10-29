@@ -9,7 +9,7 @@ from harnessed.core.session.codec import EventLogCodec, decode_event, encode_eve
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
     ModelRequestedEvent,
-    ToolCalledEvent,
+    ToolCallRequestedEvent,
     TurnStartedEvent,
 )
 
@@ -18,7 +18,7 @@ def test_canonical_tags_roundtrip_with_discriminated_schema():
     assert set(event_schema()["discriminator"]["mapping"]) == set(SESSION_EVENT_TYPES)
     event = TurnStartedEvent("one")
     assert encode_event(event) == {
-        "version": 1,
+        "version": 2,
         "type": "turn.start",
         "data": {
             "turn_id": "one",
@@ -36,16 +36,16 @@ def test_canonical_tags_roundtrip_with_discriminated_schema():
     [
         {"type": "turn.start", "data": {"turn_id": "one"}},
         {"version": True, "type": "turn.start", "data": {"turn_id": "one"}},
-        {"version": 2, "type": "turn.start", "data": {"turn_id": "one"}},
-        {"version": 1, "type": "turn/start", "data": {"turn_id": "one"}},
-        {"version": 1, "type": "TurnStartedEvent", "data": {"turn_id": "one"}},
-        {"version": 1, "type": "turn.start", "data": {"turn_id": "one", "extra": 1}},
-        {"version": 1, "type": "turn.start", "data": {"turn_id": ""}},
-        {"version": 1, "type": "step.start", "data": {"turn_id": "one", "step": True}},
-        {"version": 1, "type": "step.start", "data": {"turn_id": "one", "step": 0}},
-        {"version": 1, "type": "turn.end", "data": {"turn_id": "one", "reason": "typo"}},
-        {"version": 1, "type": "turn.start", "seq": False, "data": {"turn_id": "one"}},
-        {"version": 1, "type": "turn.start", "data": {"turn_id": "one", "type": "turn.end"}},
+        {"version": 1, "type": "turn.start", "data": {"turn_id": "one"}},
+        {"version": 2, "type": "turn/start", "data": {"turn_id": "one"}},
+        {"version": 2, "type": "TurnStartedEvent", "data": {"turn_id": "one"}},
+        {"version": 2, "type": "turn.start", "data": {"turn_id": "one", "extra": 1}},
+        {"version": 2, "type": "turn.start", "data": {"turn_id": ""}},
+        {"version": 2, "type": "step.start", "data": {"turn_id": "one", "step": True}},
+        {"version": 2, "type": "step.start", "data": {"turn_id": "one", "step": 0}},
+        {"version": 2, "type": "turn.end", "data": {"turn_id": "one", "reason": "typo"}},
+        {"version": 2, "type": "turn.start", "seq": False, "data": {"turn_id": "one"}},
+        {"version": 2, "type": "turn.start", "data": {"turn_id": "one", "type": "turn.end"}},
     ],
 )
 def test_invalid_records_fail_at_the_codec_boundary(record):
@@ -54,7 +54,7 @@ def test_invalid_records_fail_at_the_codec_boundary(record):
 
 
 def test_nested_values_reject_non_json_keys_and_obsolete_fields():
-    record = encode_event(ToolCalledEvent(ToolCall("read")))
+    record = encode_event(ToolCallRequestedEvent(ToolCall("read")))
     record["data"]["call"]["arguments"] = {1: "not a JSON key"}
     with pytest.raises(TypeError, match="keys"):
         decode_event(record)
@@ -70,7 +70,7 @@ def test_messages_reject_fields_from_other_variants(role):
     if role == "tool":
         payload["tool_call_id"] = "call"
     record = {
-        "version": 1,
+        "version": 2,
         "type": "model.requested",
         "data": {"request": {"model": "test", "messages": [payload]}},
     }

@@ -102,9 +102,9 @@ def test_custom_event_schema_is_strict_and_registry_rejects_collisions_atomicall
     with pytest.raises(ValidationError):
         registry.encode(ProjectIndexed("five"))
     with pytest.raises(SessionFormatError):
-        registry.decode({"version": 1, "type": "project.indexed", "data": {"files": True}})
+        registry.decode({"version": 2, "type": "project.indexed", "data": {"files": True}})
     with pytest.raises(SessionFormatError):
-        registry.decode({"version": 1, "type": "project.indexed", "data": {"files": 1, "extra": 2}})
+        registry.decode({"version": 2, "type": "project.indexed", "data": {"files": 1, "extra": 2}})
 
     @dataclass(frozen=True)
     class Collision(events.DurableEvent):
@@ -142,7 +142,7 @@ def test_mutable_untagged_and_builtin_subclass_events_are_not_extension_points()
         type: str = "project.untagged"
 
     @dataclass(frozen=True)
-    class Unsafe(events.ToolCalledEvent, events.DurableEvent):
+    class Unsafe(events.ToolCallRequestedEvent, events.DurableEvent):
         type: Literal["project.unsafe"] = field(default="project.unsafe", kw_only=True)
 
     for kind in (Mutable, Untagged, Unsafe):

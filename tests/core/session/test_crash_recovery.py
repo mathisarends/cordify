@@ -22,7 +22,7 @@ from harnessed.core.session.events import (
     InboxAddedEvent,
     InboxMode,
     LogTailRecoveredEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import Approvals, JsonlSessions
@@ -169,7 +169,7 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
                 interrupted = [
                     e
                     for e in agent.log.events
-                    if isinstance(e, ToolReturnedEvent) and e.result.is_error
+                    if isinstance(e, ToolCallFinishedEvent) and e.result.is_error
                 ]
                 assert (
                     len(interrupted) == 1 and "outcome is unknown" in interrupted[0].result.content
@@ -210,9 +210,9 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
 @pytest.mark.parametrize(
     "tail",
     [
-        b'{"version":1,',
-        b'{"version":1,"data":{"content":"\xf0\x9f',
-        b'{"version":1,"seq":1,"type":"turn/start","data":{"turn_id":"unfinished"}}',
+        b'{"version":2,',
+        b'{"version":2,"data":{"content":"\xf0\x9f',
+        b'{"version":2,"seq":1,"type":"turn/start","data":{"turn_id":"unfinished"}}',
     ],
 )
 async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_idempotent(
@@ -253,9 +253,9 @@ async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_i
 @pytest.mark.parametrize(
     "record",
     [
-        b'{"version":1,\n',
+        b'{"version":2,\n',
         b'{"version":3,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
-        b'{"version":1,"seq":0,"type":"unknown","data":{}}\n',
+        b'{"version":2,"seq":0,"type":"unknown","data":{}}\n',
         b"\xff\n",
     ],
 )
@@ -273,7 +273,7 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
     tmp_path, monkeypatch
 ):
     path = tmp_path / "interrupted-repair.jsonl"
-    tail = b'{"version":1,'
+    tail = b'{"version":2,'
     await asyncio.to_thread(path.write_bytes, tail)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
 
@@ -296,11 +296,11 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
 async def test_recovery_rejects_invalid_approval_prefix_without_modifying_the_file(tmp_path):
     path = tmp_path / "invalid.jsonl"
     invalid = {
-        "version": 1,
+        "version": 2,
         "seq": 0,
         **encode_event(ApprovalResolvedEvent("unknown", ApprovalAnswer.ALLOW)),
     }
-    content = json.dumps(invalid).encode() + b"\n" + b'{"version":1,'
+    content = json.dumps(invalid).encode() + b"\n" + b'{"version":2,'
     await asyncio.to_thread(path.write_bytes, content)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
     with pytest.raises(ValueError, match="pending"):
@@ -318,7 +318,7 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     path = tmp_path / "answer.jsonl"
     prefix = await asyncio.to_thread(path.read_bytes)
     answer = {
-        "version": 1,
+        "version": 2,
         "seq": 1,
         **encode_event(ApprovalResolvedEvent("approval", ApprovalAnswer.ALWAYS)),
     }
@@ -339,7 +339,7 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
 
 async def test_failed_tail_archive_does_not_discard_any_bytes(tmp_path, monkeypatch):
     path = tmp_path / "archive-failure.jsonl"
-    tail = b'{"version":1,'
+    tail = b'{"version":2,'
     await asyncio.to_thread(path.write_bytes, tail)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
 

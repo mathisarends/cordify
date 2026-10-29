@@ -20,8 +20,8 @@ from harnessed.core.session.events import (
     OutputValidatedEvent,
     OutputValidationFailedEvent,
     SessionEvent,
-    ToolCalledEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
     TurnEndedEvent,
     TurnOutcome,
     TurnStartedEvent,
@@ -95,12 +95,12 @@ class RunResult[T]:
         calls = {
             event.call.id: event.call
             for event in self.events
-            if isinstance(event, ToolCalledEvent) and event.call.id not in control_calls
+            if isinstance(event, ToolCallRequestedEvent) and event.call.id not in control_calls
         }
         return tuple(
             (calls[event.call_id], event.result)
             for event in self.events
-            if isinstance(event, ToolReturnedEvent) and event.call_id in calls
+            if isinstance(event, ToolCallFinishedEvent) and event.call_id in calls
         )
 
 

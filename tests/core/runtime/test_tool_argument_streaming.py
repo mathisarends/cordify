@@ -6,7 +6,7 @@ from pydantic import TypeAdapter
 from harnessed import Agent, Plugin, StopReason, ToolCall, events, tool
 from harnessed.core.model import ModelChunk, ToolArgumentsMode, ToolCallDelta, ToolCallStart
 from harnessed.core.session.codec import encode_event
-from harnessed.core.session.events import AssistantMessageEvent, ToolCalledEvent
+from harnessed.core.session.events import AssistantMessageEvent, ToolCallRequestedEvent
 from harnessed.core.stream import TextDeltaEvent, ToolArgumentsDeltaEvent, coalesce_deltas
 from harnessed.testing import CallbackModel, ScriptedModel
 
@@ -50,7 +50,8 @@ async def test_previews_arrive_before_stream_completion_and_do_not_execute_argum
             await asyncio.wait_for(seen.wait(), 3)
             assert not task.done() and effects == []
             assert not any(
-                isinstance(e, AssistantMessageEvent | ToolCalledEvent) for e in session.events
+                isinstance(e, AssistantMessageEvent | ToolCallRequestedEvent)
+                for e in session.events
             )
             release.set()
             await asyncio.wait_for(task, 3)
@@ -58,21 +59,25 @@ async def test_previews_arrive_before_stream_completion_and_do_not_execute_argum
             release.set()
             await asyncio.gather(task, return_exceptions=True)
         assert effects == [(1, 2)]
-        start = next(e for e in notifications if isinstance(e, events.ToolCallStartedEvent))
+        start = next(
+            e for e in notifications if isinstance(e, events.ToolCallGenerationStartedEvent)
+        )
         deltas = [e for e in notifications if isinstance(e, events.ToolArgumentsDeltaEvent)]
         assert start.call == ToolCallStart(2, "ad", "early")
         assert {e.message_id for e in deltas} == {start.message_id}
         assert "".join(e.delta.arguments for e in deltas) == '{"a":1,"b":2}'
         assert deltas[-1].delta.name == "add" and deltas[-1].delta.call_id == "final"
         assert all(e.delta.index == 2 for e in deltas)
-        execution = next(e for e in notifications if isinstance(e, events.ToolStartedEvent))
+        execution = next(e for e in notifications if isinstance(e, events.ToolCallRequestedEvent))
         assert execution.call.id == deltas[-1].delta.call_id
         assert notifications.index(deltas[-1]) < notifications.index(execution)
         assert notifications[-1].result.text == "done"
         with pytest.raises(TypeError, match="durable"):
             encode_event(deltas[0])
         assert all(
-            not isinstance(e, events.ToolCallStartedEvent | events.ToolArgumentsDeltaEvent)
+            not isinstance(
+                e, events.ToolCallGenerationStartedEvent | events.ToolArgumentsDeltaEvent
+            )
             for e in session.events
         )
 
@@ -106,7 +111,7 @@ async def test_abort_discards_argument_preview_and_closes_the_provider_without_e
         assert closed.is_set() and effects == []
         assert notifications[-1].result.stop_reason == StopReason.ABORTED
         assert not any(
-            isinstance(e, AssistantMessageEvent | ToolCalledEvent) for e in session.events
+            isinstance(e, AssistantMessageEvent | ToolCallRequestedEvent) for e in session.events
         )
 
 
@@ -123,12 +128,12 @@ async def test_valid_preview_json_alone_does_not_schedule_a_tool_call():
     async with Agent(model=model, plugins=[Add(effects)]).session() as session:
         result = await session.run("preview")
         assert effects == [] and not result.tool_calls
-        assert not any(isinstance(e, ToolCalledEvent) for e in result.events)
+        assert not any(isinstance(e, ToolCallRequestedEvent) for e in result.events)
 
 
 def test_tool_previews_roundtrip_in_the_public_discriminated_stream_union():
     adapter = TypeAdapter(events.StreamEvent[None])
-    start = events.ToolCallStartedEvent("message", ToolCallStart(0, "add", "call"))
+    start = events.ToolCallGenerationStartedEvent("message", ToolCallStart(0, "add", "call"))
     delta = events.ToolArgumentsDeltaEvent(
         "message", ToolCallDelta(0, '{"a":1}', "add", "call", ToolArgumentsMode.REPLACE)
     )

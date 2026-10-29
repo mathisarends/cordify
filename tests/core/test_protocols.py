@@ -11,7 +11,7 @@ from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import ApprovalAnswer, PolicyDecision
 from harnessed.core.model import Model, ModelChunk
 from harnessed.core.runtime.agent_loop import AgentFactory
-from harnessed.core.session.events import ToolReturnedEvent
+from harnessed.core.session.events import ToolCallFinishedEvent
 from harnessed.core.session.store import SessionPersistence
 from harnessed.core.tokens import TokenCounter
 from harnessed.kernel import Context
@@ -89,7 +89,9 @@ async def test_foreign_fs_and_model_work_through_di_without_framework_inheritanc
         result = await agent.run("Write and read the note.")
         assert result.text == "done"
         assert files.files == {"note.txt": "hello"}
-        results = [event.result for event in result.events if isinstance(event, ToolReturnedEvent)]
+        results = [
+            event.result for event in result.events if isinstance(event, ToolCallFinishedEvent)
+        ]
         assert results[-1].content == "hello" and (not results[-1].is_error)
         definition = next(tool for tool in model.requests[0].tools if tool.name == "read_file")
         assert set(definition.parameters["properties"]) == {"path", "limit", "offset"}
@@ -151,7 +153,7 @@ async def test_foreign_shell_and_approver_are_accepted_structurally(tmp_path):
     async with harness.session("foreign-shell") as agent:
         result = await agent.run("Run the tests.")
         returned = next(
-            event.result for event in result.events if isinstance(event, ToolReturnedEvent)
+            event.result for event in result.events if isinstance(event, ToolCallFinishedEvent)
         )
         assert returned.exit_code == 7 and returned.is_error
         assert shell.calls == [(["python", "-m", "pytest"], tmp_path.resolve(), 30)]

@@ -16,7 +16,7 @@ from harnessed.core.session.events import (
     StepEndedEvent,
     StepStartedEvent,
     SystemMessageEvent,
-    ToolReturnedEvent,
+    ToolCallFinishedEvent,
     TurnEndedEvent,
     TurnStartedEvent,
     UserMessageEvent,
@@ -58,7 +58,7 @@ class MessageProjection:
             (
                 UserMessageEvent,
                 AssistantMessageEvent,
-                ToolReturnedEvent,
+                ToolCallFinishedEvent,
                 ContextMessageEvent,
                 ContextValueChangedEvent,
                 ModelRequestedEvent,
@@ -152,7 +152,7 @@ class MessageProjection:
                 ObservationPolicyAppliedEvent,
                 ObservationRecordedEvent,
                 SystemMessageEvent,
-                ToolReturnedEvent,
+                ToolCallFinishedEvent,
                 UserMessageEvent,
                 TurnEndedEvent,
                 TurnStartedEvent,
@@ -175,7 +175,7 @@ class MessageProjection:
                 self._entries = {seq: System(event.content, id="system")} | self._entries
         elif isinstance(event, UserMessageEvent | AssistantMessageEvent):
             self._put(seq, event.message)
-        elif isinstance(event, ToolReturnedEvent):
+        elif isinstance(event, ToolCallFinishedEvent):
             self._put(
                 seq,
                 ToolReply(
@@ -328,7 +328,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                             id=f"observation:{turn_id}:{step}:{observation.source}",
                         ),
                     )
-            case ToolReturnedEvent(call_id=call_id, result=result):
+            case ToolCallFinishedEvent(call_id=call_id, result=result):
                 add(
                     seq,
                     ToolReply(

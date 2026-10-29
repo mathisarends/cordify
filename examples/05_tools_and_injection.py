@@ -4,7 +4,7 @@ import asyncio
 
 from examples.features.workspace import FailureNudge, WorkspaceTools
 from harnessed import Agent, ApprovalAnswer, PolicyDecision
-from harnessed.events import ToolFinishedEvent, ToolProgressEvent
+from harnessed.events import ToolCallFinishedEvent, ToolProgressEvent
 from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel, call
 
@@ -40,7 +40,7 @@ async def main():
             match event:
                 case ToolProgressEvent(text=text):
                     print(f"Progress: {text}")
-                case ToolFinishedEvent(result=result):
+                case ToolCallFinishedEvent(result=result):
                     print(f"Result ({result.status}): {result.content}")
         schema = next(
             tool.parameters for tool in model.requests[0].tools if tool.name == "count_lines"
