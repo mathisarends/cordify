@@ -37,6 +37,7 @@ nav:
       - Events and extensions: guides/events.md
       - Tools and hooks: guides/tools.md
       - Plugins: guides/plugins.md
+      - MCP tools: guides/mcp.md
       - Context: guides/context.md
       - Skills: guides/skills.md
       - Output limits and spill: guides/output.md

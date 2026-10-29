@@ -15,8 +15,11 @@ candidates for discussion, not committed APIs or release dates.
 
 | Candidate | Intended direction | Existing extension point |
 | --- | --- | --- |
-| MCP client | Expose server tools through a plugin with an optional dependency; own connections for the plugin lifetime | Tool plugins, setup and cleanup effects |
 | SQLite or PostgreSQL sessions | Add storage implementations that preserve writer ownership and durable replay | The `sessions` slot and `SessionStore` protocol |
+
+The optional [MCP client](../guides/mcp.md) now exposes tools over stdio and
+Streamable HTTP. Resources, prompts, sampling, elicitation and live catalog
+refresh remain future candidates.
 
 ## Subagents
 

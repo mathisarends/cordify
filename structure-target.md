@@ -38,6 +38,10 @@ protocol instead.
 - `integrations/opentelemetry.py` implements the optional `tracer` slot against
   an application-owned OpenTelemetry provider. Import it explicitly with the
   `otel` extra installed; SDK and feature facades never import OpenTelemetry.
+- `plugins/mcp.py` owns optional MCP clients, transport lifetimes and schema
+  validation. Import it explicitly with the `mcp` extra installed. Core's
+  `ToolRegistry.register_external()` owns schema-defined remote registrations
+  on the existing scheduling, policy and execution pipeline without importing MCP.
 - `events/`, `hooks.py` and `errors.py` expose public names for core domain values,
   hooks and the error tree.
 - `agent.py` resolves the model/instructions/plugin recipe and opens owned sessions.
@@ -61,7 +65,8 @@ Internal modules import their owning layer rather than the root facade.
   the `loop` slot keeps them.
 - `TurnRunner` and `StepRunner` own orchestration. Typed runtime components receive
   concrete dependencies; free functions do not receive `Session` as a pseudo-self.
-- Tools are `@tool` methods. A scheduled call retains its `PreparedToolCall` binding
+- Python tools are `@tool` methods; remote schema-defined tools use the explicit
+  `register_external()` integration boundary. A scheduled call retains its `PreparedToolCall` binding
   instead of silently following a replacement registration.
 - Plugins inherit the small `Plugin` base. Configuration models live at module
   scope. Mutable mount state is initialized by `PluginState` or `setup` and remains

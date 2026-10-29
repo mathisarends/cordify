@@ -52,6 +52,12 @@ includes it in a discriminated union, streams it and replays its stored value.
 See [the source](https://github.com/mathisarends/harnessed/blob/main/examples/28_custom_events.py)
 and [the event extension guide](events.md).
 
+## MCP tools
+
+`uv run --extra mcp python -m examples.31_mcp` starts a local MCP subprocess,
+discovers its tools and runs a scripted agent without network access or provider
+credentials. See the [MCP guide](mcp.md) for HTTP, filters and ownership.
+
 ## Tracing
 
 `uv run --extra otel python -m examples.29_tracing` exports a complete tool loop

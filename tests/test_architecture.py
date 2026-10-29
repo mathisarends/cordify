@@ -77,6 +77,8 @@ def test_optional_integrations_and_features_are_isolated():
                     assert relative == "models/pydantic_ai.py", relative
                 if module == "yaml":
                     assert relative == "plugins/skills.py", relative
+                if module.split(".")[0] in {"mcp", "jsonschema", "referencing"}:
+                    assert relative == "plugins/mcp.py", relative
                 if relative.startswith("plugins/") and relative != "plugins/__init__.py":
                     assert module != "harnessed.plugins", relative
                     if module.startswith("harnessed.plugins."):

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### MCP client
+
+- Add `harnessed[mcp]` and the explicit `harnessed.plugins.mcp.MCP` plugin with
+  `http()` and `stdio()` factories, per-mount connections, tool selection,
+  namespacing, schema validation, progress and existing approval/output policies.
+- Add a typed external-tool registration boundary to core without an MCP
+  dependency. Prepared calls retain their registration identity. Cancellation
+  closes the mount's connection; calls are never automatically retried.
+- Add an offline example using a real MCP subprocess and a guide covering
+  ownership, filtering, auth, result mapping and cancellation boundaries.
+
 ### Conditional tools
 
 - `@tool(enabled=...)` accepts a bool or a synchronous predicate with `Inject`

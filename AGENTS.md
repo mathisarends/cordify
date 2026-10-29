@@ -36,7 +36,8 @@ YAML. Internal modules import their owning layer, not the root facade.
 
 Follow `docs/reference/sdk.md`, the topic guides and `structure-target.md`.
 Future scope belongs in `docs/contributing/roadmap.md`; those proposals are not
-implemented API contracts. Subagents, MCP and OTel remain deferred until requested.
+implemented API contracts. Subagents remain deferred until requested. MCP and
+OTel are explicit optional integrations with their own dependency extras.
 Do not restore `seams`,
 `adapters`, `app`, `llms` or `presets`, or add native provider clients. Prefer
 canonical `core.messages` / `core.model` imports inside the library. Applications
@@ -67,7 +68,9 @@ remain discriminated. Custom plugins may define their own discriminator enums.
 Use stable dot-separated event tags, such as `assistant.message`, `tool.progress`
 and `step.end`. JSON-schema keys remain ordinary strings.
 
-Plugins inherit the small `Plugin` base and declare tools only as `@tool` methods.
+Plugins inherit the small `Plugin` base and declare Python tools as `@tool` methods.
+Schema-defined remote tools use `ToolRegistry.register_external()` as an explicit
+integration boundary, with validation in the owning integration.
 Use module-level configuration models. Class-level `needs=` and `slot=` metadata
 are supported; do not introduce a second decorator-based plugin class system.
 The filesystem backend protocol is `FileSystemBackend`, its local implementation

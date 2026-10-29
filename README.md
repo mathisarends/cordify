@@ -83,6 +83,7 @@ Start with the [documentation index](https://github.com/mathisarends/harnessed/b
 - [Models and provider settings](https://github.com/mathisarends/harnessed/blob/main/docs/guides/models.md)
 - [Tools, hooks and cancellation](https://github.com/mathisarends/harnessed/blob/main/docs/guides/tools.md)
 - [Plugin composition and lifecycle](https://github.com/mathisarends/harnessed/blob/main/docs/guides/plugins.md)
+- [MCP server tools over stdio and HTTP](https://github.com/mathisarends/harnessed/blob/main/docs/guides/mcp.md)
 - [Instructions and changing context](https://github.com/mathisarends/harnessed/blob/main/docs/guides/context.md)
 - [Sessions, controls, persistence and forks](https://github.com/mathisarends/harnessed/blob/main/docs/guides/sessions.md)
 - [Typed events and custom extensions](https://github.com/mathisarends/harnessed/blob/main/docs/guides/events.md)
