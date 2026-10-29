@@ -249,6 +249,14 @@ async def test_invalid_native_argument_preview_remains_a_malformed_completed_cal
     assert call.malformed.text == arguments
 
 
+def test_native_object_arguments_that_are_not_json_remain_malformed():
+    from harnessed.models.pydantic_ai import _tool_call
+
+    call = _tool_call(native.ToolCallPart("add", {"a": {1, 2}}, "set"))
+    assert call.malformed is not None and call.arguments == {}
+    assert call.malformed.text == repr({"a": {1, 2}})
+
+
 async def test_non_streaming_request_and_settings_are_delegated_to_pydantic_ai():
     seen = []
 

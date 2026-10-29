@@ -34,14 +34,6 @@ accumulated argument dict, so payload size grows quadratically with the number o
 patches. Fine for today's providers, which send few patches; note it in the bridge
 if a provider starts streaming many small patches.
 
-### 2. Low: `_tool_call` serializes dict arguments outside its `try`
-
-`raw = ... json.dumps(part.args or {})` runs before the `try`. If a provider SDK ever
-returns a dict containing a non-JSON value, the `TypeError` escapes and fails the
-whole response instead of producing `MalformedArguments`. Current providers return
-JSON-safe dicts, so this is defensive only. Moving the `json.dumps` into the `try`
-needs a fallback raw text (for example `repr(part.args)`) for the malformed case.
-
 ## Open findings: SDK usability, abstractions and agent capabilities
 
 Scope: the public SDK as of 335e7a1 (root facade, `Agent`, `Session`, `AgentLoop`,

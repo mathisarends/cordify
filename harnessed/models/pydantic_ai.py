@@ -294,8 +294,10 @@ def _parameters(request: ModelRequest, *, native_output: bool = False) -> ModelR
 def _tool_call(part: NativeToolCall) -> ToolCall:
     # Native convenience serializers may wrap invalid JSON in an ordinary
     # object. Validate the original payload so it cannot become executable.
-    raw = part.args if isinstance(part.args, str) else json.dumps(part.args or {})
+    raw = part.args if isinstance(part.args, str) else repr(part.args)
     try:
+        if not isinstance(part.args, str):
+            raw = json.dumps(part.args or {})
         return ToolCall(part.tool_name, json.loads(raw or "{}"), part.tool_call_id)
     except (ValueError, TypeError):
         return ToolCall(
