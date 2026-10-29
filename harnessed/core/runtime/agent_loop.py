@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import Annotated, Protocol
-
-from pydantic import Field
+from typing import Protocol
 
 from harnessed.core.budget import ContextBudget
 from harnessed.core.model import Model, TokenLimitBehavior
-from harnessed.core.plugin import Plugin, PluginConfig
+from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.system_prompt import SystemPrompt
-from harnessed.core.runtime.options import AgentOptions
+from harnessed.core.runtime.options import AgentLoopConfig, AgentOptions
 from harnessed.core.runtime.session import Session
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
@@ -19,35 +16,10 @@ from harnessed.kernel import Context
 
 
 class AgentFactory(Protocol):
-    def create(
-        self, ctx: Context, session: SessionLog, options: AgentOptions | None = None
-    ) -> Session: ...
+    def create(self, ctx: Context, session: SessionLog) -> Session: ...
 
 
-class ReactLoopFactory:
-    def __init__(self, *, error_formatter: ErrorFormatter | None = None) -> None:
-        self.error_formatter = error_formatter
-
-    def create(
-        self, ctx: Context, session: SessionLog, options: AgentOptions | None = None
-    ) -> Session:
-        if options is None:
-            model = ctx[Model]
-            options = AgentOptions(model.info.name, context_window=model.info.context_window)
-        if self.error_formatter is not None:
-            options = replace(options, error_formatter=self.error_formatter)
-        return Session(ctx, session, options)
-
-
-class AgentLoopConfig(PluginConfig):
-    max_steps: Annotated[int, Field(ge=1)] = 32
-    tool_timeout: Annotated[float, Field(gt=0)] = 30.0
-    max_parallel_tools: Annotated[int, Field(ge=1)] = 4
-    approval_timeout: Annotated[float, Field(gt=0)] = 300.0
-    max_tokens: Annotated[int, Field(ge=1)] | None = None
-    context_window: Annotated[int, Field(ge=1)] | None = None
-    on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT
-    output_retries: Annotated[int, Field(ge=0)] = 2
+_DEFAULTS = AgentLoopConfig()
 
 
 class AgentLoop(Plugin, slot="loop"):
@@ -60,14 +32,14 @@ class AgentLoop(Plugin, slot="loop"):
     def __init__(
         self,
         *,
-        max_steps: int = 32,
-        tool_timeout: float = 30.0,
-        max_parallel_tools: int = 4,
-        approval_timeout: float = 300.0,
-        max_tokens: int | None = None,
-        context_window: int | None = None,
-        on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT,
-        output_retries: int = 2,
+        max_steps: int = _DEFAULTS.max_steps,
+        tool_timeout: float = _DEFAULTS.tool_timeout,
+        max_parallel_tools: int = _DEFAULTS.max_parallel_tools,
+        approval_timeout: float = _DEFAULTS.approval_timeout,
+        max_tokens: int | None = _DEFAULTS.max_tokens,
+        context_window: int | None = _DEFAULTS.context_window,
+        on_max_tokens: TokenLimitBehavior = _DEFAULTS.on_max_tokens,
+        output_retries: int = _DEFAULTS.output_retries,
         error_formatter: ErrorFormatter | None = None,
     ) -> None:
         super().__init__(
@@ -87,28 +59,19 @@ class AgentLoop(Plugin, slot="loop"):
         ctx.provide(SystemPrompt, SystemPrompt(ctx))
         ctx.provide(TokenCounter, ApproximateTokenCounter())
         ctx.provide(ContextBudget, ContextBudget())
-        ctx.provide(AgentFactory, _Factory(self.config, self.error_formatter))
+        ctx.provide(AgentFactory, ReactLoopFactory(self.config, self.error_formatter))
 
 
-class _Factory(ReactLoopFactory):
+class ReactLoopFactory:
     def __init__(self, config: AgentLoopConfig, error_formatter: ErrorFormatter | None) -> None:
-        super().__init__(error_formatter=error_formatter)
         self.config = config
+        self.error_formatter = error_formatter
 
-    def create(
-        self, ctx: Context, session: SessionLog, options: AgentOptions | None = None
-    ) -> Session:
-        if options is None:
-            model = ctx[Model]
-            options = AgentOptions(
-                model.info.name,
-                max_steps=self.config.max_steps,
-                max_tokens=self.config.max_tokens,
-                context_window=self.config.context_window or model.info.context_window,
-                tool_output_limit=ctx[ToolOutputLimit],
-                max_parallel_tools=self.config.max_parallel_tools,
-                approval_timeout=self.config.approval_timeout,
-                on_max_tokens=self.config.on_max_tokens,
-                output_retries=self.config.output_retries,
-            )
-        return super().create(ctx, session, options)
+    def create(self, ctx: Context, session: SessionLog) -> Session:
+        options = AgentOptions.resolve(
+            self.config,
+            ctx[Model].info,
+            tool_output_limit=ctx[ToolOutputLimit],
+            error_formatter=self.error_formatter,
+        )
+        return Session(ctx, session, options)

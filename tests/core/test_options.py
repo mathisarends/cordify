@@ -4,7 +4,7 @@ from pydantic import TypeAdapter, ValidationError
 from harnessed.core.approvals import ApprovalGate
 from harnessed.core.budget import ContextBudget
 from harnessed.core.model import ModelInfo, ModelRequest, ModelUsage
-from harnessed.core.runtime.options import AgentOptions
+from harnessed.core.runtime.options import AgentLoopConfig
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context
 
@@ -38,7 +38,7 @@ def test_scoped_guard_configuration_is_strict(options):
 )
 def test_loop_options_are_strict_and_declarative(options):
     with pytest.raises(ValidationError):
-        AgentOptions("model", **options)
+        AgentLoopConfig(**options)
 
 
 @pytest.mark.parametrize("options", [{"limit": 0}, {"reserve_tokens": -1}, {"limit": True}])

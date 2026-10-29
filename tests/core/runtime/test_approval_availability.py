@@ -8,7 +8,7 @@ from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable, Approver
 from harnessed.core.hooks import RequestApproval, ToolPolicy
 from harnessed.core.messages import PolicyDecision, ToolStatus
 from harnessed.core.model import ModelChunk
-from harnessed.core.runtime.options import AgentOptions
+from harnessed.core.runtime.options import AgentLoopConfig
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     ApprovalResolved,
@@ -325,7 +325,7 @@ def test_approval_timeout_must_be_finite_and_positive(timeout):
             ],
         )
     with pytest.raises(ValueError, match="approval_timeout"):
-        AgentOptions("model", approval_timeout=timeout)
+        AgentLoopConfig(approval_timeout=timeout)
 
 
 def test_unavailable_resolution_is_not_an_answer_or_a_persistent_permission():

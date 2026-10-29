@@ -106,12 +106,6 @@ make the rest private.
 
 ### Code cleanliness and consistency of abstractions
 
-**C1. Loop configuration exists three times.** `AgentLoopConfig`, the
-`AgentLoop.__init__` parameters and `AgentOptions` repeat the same fields and
-defaults (32, 4, 300.0, 2). `tool_timeout` lives on `ToolRegistry` instead of
-`AgentOptions`. `ReactLoopFactory` and `_Factory` each build a fallback
-`AgentOptions`. Derive one from the other so defaults cannot drift.
-
 **C2. Higher layers reach into private state.** This breaks the AGENTS.md
 lifecycle rule:
 - `agent.py` reads `branch._fork_files` and calls `lease.__aenter__()` /

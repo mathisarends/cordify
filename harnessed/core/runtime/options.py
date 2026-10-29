@@ -1,12 +1,12 @@
 from collections.abc import Iterable, Mapping
-from dataclasses import field
-from typing import Annotated, Any, TypedDict
+from dataclasses import dataclass
+from typing import Annotated, Any, Self, TypedDict
 
-from pydantic import ConfigDict, Field
-from pydantic.dataclasses import dataclass
+from pydantic import Field
 
 from harnessed.core.attachments import Attachment
-from harnessed.core.model import TokenLimitBehavior
+from harnessed.core.model import ModelInfo, TokenLimitBehavior
+from harnessed.core.plugin import PluginConfig
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ErrorFormatter
 
@@ -19,24 +19,52 @@ class RunOptions(TypedDict, total=False):
     settings: Mapping[str, Any] | None
 
 
-@dataclass(
-    frozen=True,
-    config=ConfigDict(
-        strict=True,
-        extra="forbid",
-        arbitrary_types_allowed=True,
-        allow_inf_nan=False,
-        hide_input_in_errors=True,
-    ),
-)
-class AgentOptions:
-    model: Annotated[str, Field(min_length=1)]
+class AgentLoopConfig(PluginConfig):
+    """Validated loop settings; the single source of their defaults."""
+
     max_steps: Annotated[int, Field(ge=1)] = 32
-    max_tokens: Annotated[int, Field(ge=1)] | None = None
-    context_window: Annotated[int, Field(ge=1)] | None = None
-    tool_output_limit: ToolOutputLimit = field(default_factory=ToolOutputLimit)
+    tool_timeout: Annotated[float, Field(gt=0)] = 30.0
     max_parallel_tools: Annotated[int, Field(ge=1)] = 4
     approval_timeout: Annotated[float, Field(gt=0)] = 300.0
-    error_formatter: ErrorFormatter | None = None
+    max_tokens: Annotated[int, Field(ge=1)] | None = None
+    context_window: Annotated[int, Field(ge=1)] | None = None
     on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT
     output_retries: Annotated[int, Field(ge=0)] = 2
+
+
+@dataclass(frozen=True, slots=True)
+class AgentOptions:
+    """Loop settings resolved against one model for one session runtime."""
+
+    model: str
+    max_steps: int
+    max_tokens: int | None
+    context_window: int | None
+    tool_output_limit: ToolOutputLimit
+    max_parallel_tools: int
+    approval_timeout: float
+    error_formatter: ErrorFormatter | None
+    on_max_tokens: TokenLimitBehavior
+    output_retries: int
+
+    @classmethod
+    def resolve(
+        cls,
+        config: AgentLoopConfig,
+        model: ModelInfo,
+        *,
+        tool_output_limit: ToolOutputLimit,
+        error_formatter: ErrorFormatter | None = None,
+    ) -> Self:
+        return cls(
+            model=model.name,
+            max_steps=config.max_steps,
+            max_tokens=config.max_tokens,
+            context_window=config.context_window or model.context_window,
+            tool_output_limit=tool_output_limit,
+            max_parallel_tools=config.max_parallel_tools,
+            approval_timeout=config.approval_timeout,
+            error_formatter=error_formatter,
+            on_max_tokens=config.on_max_tokens,
+            output_retries=config.output_retries,
+        )
