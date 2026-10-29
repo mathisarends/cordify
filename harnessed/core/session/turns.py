@@ -4,17 +4,17 @@ from dataclasses import dataclass
 from harnessed.core.errors import SessionFormatError
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
-    AssistantMessage,
-    ModelRequested,
-    OutputValidated,
-    OutputValidationFailed,
+    AssistantMessageEvent,
+    ModelRequestedEvent,
+    OutputValidatedEvent,
+    OutputValidationFailedEvent,
     SessionEvent,
-    StepEnd,
+    StepEndedEvent,
     StepOutcome,
-    StepStart,
-    TurnEnd,
+    StepStartedEvent,
+    TurnEndedEvent,
     TurnOutcome,
-    TurnStart,
+    TurnStartedEvent,
 )
 
 
@@ -28,7 +28,7 @@ class Step:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "events", tuple(self.events))
-        count = sum(isinstance(event, ModelRequested) for event in self.events)
+        count = sum(isinstance(event, ModelRequestedEvent) for event in self.events)
         if count > 1 or (
             self.reason in (StepOutcome.COMPLETED, StepOutcome.CONTEXT_LIMIT) and count != 1
         ):
@@ -37,7 +37,7 @@ class Step:
     @property
     def request(self) -> ModelRequest | None:
         return next(
-            (event.request for event in self.events if isinstance(event, ModelRequested)), None
+            (event.request for event in self.events if isinstance(event, ModelRequestedEvent)), None
         )
 
     @property
@@ -62,11 +62,11 @@ class Turn:
         return self.reason is not None
 
     @property
-    def start(self) -> TurnStart:
+    def start(self) -> TurnStartedEvent:
         """The event that opened this turn."""
         event = self.events[0]
-        if not isinstance(event, TurnStart):
-            raise SessionFormatError("A turn must begin with TurnStart")
+        if not isinstance(event, TurnStartedEvent):
+            raise SessionFormatError("A turn must begin with TurnStartedEvent")
         return event
 
 
@@ -77,25 +77,25 @@ def derive_turns(events: Iterable[SessionEvent]) -> tuple[Turn, ...]:
     turn_id = None
     step_number = 0
     for seq, event in enumerate(events):
-        if isinstance(event, TurnStart):
+        if isinstance(event, TurnStartedEvent):
             if turn_start is not None:
                 raise ValueError("A turn cannot start inside an open turn")
             turn_start, turn_id, steps = seq, event.turn_id, []
-        elif isinstance(event, StepStart):
+        elif isinstance(event, StepStartedEvent):
             if turn_start is None or event.turn_id != turn_id or step_start is not None:
                 raise ValueError("A step must start inside its turn, after the previous step")
             if type(event.step) is not int or event.step != len(steps) + 1:
                 raise ValueError("Steps must be numbered consecutively from one within each turn")
             step_start, step_number = seq, event.step
-        elif isinstance(event, StepEnd):
+        elif isinstance(event, StepEndedEvent):
             if step_start is None or (event.turn_id, event.step) != (turn_id, step_number):
-                raise ValueError("StepEnd must close the current step")
+                raise ValueError("StepEndedEvent must close the current step")
             assert turn_id is not None
             steps.append(Step(turn_id, step_number, events[step_start : seq + 1], event.reason))
             step_start = None
-        elif isinstance(event, TurnEnd):
+        elif isinstance(event, TurnEndedEvent):
             if turn_start is None or event.turn_id != turn_id or step_start is not None:
-                raise ValueError("TurnEnd must close the current turn after its last step")
+                raise ValueError("TurnEndedEvent must close the current turn after its last step")
             assert turn_id is not None
             turns.append(Turn(turn_id, events[turn_start : seq + 1], tuple(steps), event.reason))
             turn_start, turn_id = None, None
@@ -128,13 +128,14 @@ class TurnProjection:
         return len(self._closed)
 
     def validate(self, event: SessionEvent) -> None:
-        if isinstance(event, OutputValidated | OutputValidationFailed):
+        if isinstance(event, OutputValidatedEvent | OutputValidationFailedEvent):
             start = self._events[0] if self._events else None
             answer = next(
-                (e for e in reversed(self._step or ()) if isinstance(e, AssistantMessage)), None
+                (e for e in reversed(self._step or ()) if isinstance(e, AssistantMessageEvent)),
+                None,
             )
             if (
-                not isinstance(start, TurnStart)
+                not isinstance(start, TurnStartedEvent)
                 or start.output_schema is None
                 or event.turn_id != self._turn
                 or event.schema_id != start.output_schema.id
@@ -146,33 +147,33 @@ class TurnProjection:
                 )
             ):
                 raise ValueError("An output verdict must match the current structured answer")
-        if isinstance(event, TurnStart):
+        if isinstance(event, TurnStartedEvent):
             if self._turn is not None:
                 raise ValueError("A turn cannot start inside an open turn")
-        elif isinstance(event, StepStart):
+        elif isinstance(event, StepStartedEvent):
             if self._turn is None or event.turn_id != self._turn or self._step is not None:
                 raise ValueError("A step must start inside its turn, after the previous step")
             if type(event.step) is not int or event.step != len(self._steps) + 1:
                 raise ValueError("Steps must be numbered consecutively from one within each turn")
-        elif isinstance(event, StepEnd):
+        elif isinstance(event, StepEndedEvent):
             if self._step is None or (event.turn_id, event.step) != (
                 self._turn,
                 len(self._steps) + 1,
             ):
-                raise ValueError("StepEnd must close the current step")
+                raise ValueError("StepEndedEvent must close the current step")
             if (
                 event.reason in (StepOutcome.COMPLETED, StepOutcome.CONTEXT_LIMIT)
                 and self._requests != 1
             ):
                 raise ValueError("A completed step must contain exactly one model request")
-        elif isinstance(event, TurnEnd):
+        elif isinstance(event, TurnEndedEvent):
             if self._turn is None or event.turn_id != self._turn or self._step is not None:
-                raise ValueError("TurnEnd must close the current turn after its last step")
-        elif isinstance(event, ModelRequested) and self._step is not None and self._requests:
+                raise ValueError("TurnEndedEvent must close the current turn after its last step")
+        elif isinstance(event, ModelRequestedEvent) and self._step is not None and self._requests:
             raise ValueError("A completed step must contain exactly one model request")
 
     def apply(self, event: SessionEvent) -> None:
-        if isinstance(event, TurnStart):
+        if isinstance(event, TurnStartedEvent):
             self._turn = event.turn_id
             self._events = []
             self._steps = []
@@ -180,18 +181,18 @@ class TurnProjection:
             return
         self._snapshot = self._open_snapshot = None
         self._events.append(event)
-        if isinstance(event, StepStart):
+        if isinstance(event, StepStartedEvent):
             self._step = []
             self._requests = 0
         if self._step is not None:
             self._step.append(event)
-            if isinstance(event, ModelRequested):
+            if isinstance(event, ModelRequestedEvent):
                 self._requests += 1
-        if isinstance(event, StepEnd):
+        if isinstance(event, StepEndedEvent):
             assert self._step is not None
             self._steps.append(Step(self._turn, event.step, tuple(self._step), event.reason))
             self._step = None
-        if isinstance(event, TurnEnd):
+        if isinstance(event, TurnEndedEvent):
             self._closed.append(
                 Turn(self._turn, tuple(self._events), tuple(self._steps), event.reason)
             )

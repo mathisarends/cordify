@@ -8,7 +8,8 @@ from typing import Annotated, Literal
 
 from pydantic import Field, TypeAdapter
 
-from harnessed import Agent, Plugin, ToolContext, events, tool
+from harnessed import Agent, Plugin, ToolContext, tool
+from harnessed.events import BuiltinEvent, DurableEvent, TextDeltaEvent
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
 
@@ -18,7 +19,7 @@ class ProjectEventKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ProjectIndexed(events.DurableEvent):
+class ProjectIndexed(DurableEvent):
     files: int
     type: Literal[ProjectEventKind.INDEXED] = field(default=ProjectEventKind.INDEXED, kw_only=True)
 
@@ -33,7 +34,7 @@ class Indexer(Plugin):
         return "Indexed 42 files."
 
 
-type ProjectEvent = Annotated[events.BuiltinEvent | ProjectIndexed, Field(discriminator="type")]
+type ProjectEvent = Annotated[BuiltinEvent | ProjectIndexed, Field(discriminator="type")]
 
 
 async def main():
@@ -49,7 +50,7 @@ async def main():
                 match event:
                     case ProjectIndexed(files=count):
                         print("Indexed:", count)
-                    case events.text.Delta(text=text):
+                    case TextDeltaEvent(text=text):
                         print(text)
 
         fresh = Agent(model=ScriptedModel([]), plugins=[Indexer(), JsonlSessions(directory)])

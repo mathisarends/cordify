@@ -44,7 +44,7 @@ reference to read the first session's data.
 ## Retention and failures
 
 File count and UTF-8 byte quotas are hard bounds. The oldest file is evicted when
-space is needed. Each expiration appends a SpillExpired event; the source log and
+space is needed. Each expiration appends a SpillExpiredEvent event; the source log and
 old ToolResult remain unchanged. A read of an expired reference returns an explicit
 tool error and asks for smaller source ranges. Old canonical results do not undo
 an expiration during replay.

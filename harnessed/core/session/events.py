@@ -116,7 +116,7 @@ class DurableEvent(SessionEvent):
 
 
 @dataclass(frozen=True)
-class AgentControlChanged(SessionEvent):
+class AgentControlChangedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.AGENT_CONTROL_CHANGED] = field(
@@ -136,7 +136,7 @@ class AgentControlChanged(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ApprovalRequested(SessionEvent):
+class ApprovalRequestedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.APPROVAL_REQUESTED] = field(
@@ -161,7 +161,7 @@ class ApprovalRequested(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ApprovalResolved(SessionEvent):
+class ApprovalResolvedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.APPROVAL_RESOLVED] = field(
@@ -193,7 +193,7 @@ class ApprovalResolved(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ApprovalRevoked(SessionEvent):
+class ApprovalRevokedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.APPROVAL_REVOKED] = field(
@@ -204,7 +204,7 @@ class ApprovalRevoked(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ToolPolicyApplied(SessionEvent):
+class ToolPolicyAppliedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.TOOL_POLICY_APPLIED] = field(
@@ -218,11 +218,11 @@ class ToolPolicyApplied(SessionEvent):
         object.__setattr__(self, "source", PolicySource(self.source))
         object.__setattr__(self, "decision", PolicyDecision(self.decision))
         if self.decision is PolicyDecision.ASK:
-            raise ValueError("ToolPolicyApplied requires a final decision")
+            raise ValueError("ToolPolicyAppliedEvent requires a final decision")
 
 
 @dataclass(frozen=True)
-class ToolExecutionStarted(SessionEvent):
+class ToolExecutionStartedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.TOOL_EXECUTION_STARTED] = field(
@@ -232,7 +232,7 @@ class ToolExecutionStarted(SessionEvent):
 
 
 @dataclass(frozen=True)
-class LogTailRecovered(SessionEvent):
+class LogTailRecoveredEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.LOG_TAIL_RECOVERED] = field(
@@ -271,7 +271,7 @@ class TurnLimits:
 
 
 @dataclass(frozen=True)
-class InboxAdded(SessionEvent):
+class InboxAddedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.INBOX_ADDED] = field(default=EventKind.INBOX_ADDED, kw_only=True)
@@ -326,7 +326,7 @@ class InboxAdded(SessionEvent):
 
 
 @dataclass(frozen=True)
-class InboxRemoved(SessionEvent):
+class InboxRemovedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.INBOX_REMOVED] = field(default=EventKind.INBOX_REMOVED, kw_only=True)
@@ -335,7 +335,7 @@ class InboxRemoved(SessionEvent):
 
 
 @dataclass(frozen=True)
-class TurnStart(SessionEvent):
+class TurnStartedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.TURN_START] = field(default=EventKind.TURN_START, kw_only=True)
@@ -350,7 +350,7 @@ class TurnStart(SessionEvent):
 
 
 @dataclass(frozen=True)
-class StepStart(SessionEvent):
+class StepStartedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.STEP_START] = field(default=EventKind.STEP_START, kw_only=True)
@@ -359,7 +359,7 @@ class StepStart(SessionEvent):
 
 
 @dataclass(frozen=True)
-class SystemMessage(SessionEvent):
+class SystemMessageEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.SYSTEM_MESSAGE] = field(default=EventKind.SYSTEM_MESSAGE, kw_only=True)
@@ -367,7 +367,7 @@ class SystemMessage(SessionEvent):
 
 
 @dataclass(frozen=True)
-class UserMessage(SessionEvent):
+class UserMessageEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.USER_MESSAGE] = field(default=EventKind.USER_MESSAGE, kw_only=True)
@@ -375,11 +375,11 @@ class UserMessage(SessionEvent):
 
     def __post_init__(self) -> None:
         if not isinstance(self.message, User):
-            raise TypeError("UserMessage requires a user message value")
+            raise TypeError("UserMessageEvent requires a user message value")
 
 
 @dataclass(frozen=True)
-class ContextMessage(SessionEvent):
+class ContextMessageEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.CONTEXT_MESSAGE] = field(
@@ -391,7 +391,7 @@ class ContextMessage(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ContextValueChanged(SessionEvent):
+class ContextValueChangedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.CONTEXT_VALUE_CHANGED] = field(
@@ -403,7 +403,7 @@ class ContextValueChanged(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ObservationRecorded(SessionEvent):
+class ObservationRecordedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.OBSERVATION_RECORDED] = field(
@@ -415,7 +415,7 @@ class ObservationRecorded(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ModelRequested(SessionEvent):
+class ModelRequestedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.MODEL_REQUESTED] = field(
@@ -425,7 +425,7 @@ class ModelRequested(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ModelUsageRecorded(SessionEvent):
+class ModelUsageRecordedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.MODEL_USAGE_RECORDED] = field(
@@ -439,7 +439,7 @@ class ModelUsageRecorded(SessionEvent):
 
 
 @dataclass(frozen=True)
-class CacheMetrics(SessionEvent):
+class CacheMetricsEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.CACHE_METRICS] = field(default=EventKind.CACHE_METRICS, kw_only=True)
@@ -451,7 +451,7 @@ class CacheMetrics(SessionEvent):
 
 
 @dataclass(frozen=True)
-class CompactionApplied(SessionEvent):
+class CompactionAppliedEvent(SessionEvent):
     """Replace a history prefix at a closed turn or completed step boundary.
 
     preserve_turns pins full turns; retained_turns is temporary sliding retention.
@@ -502,7 +502,7 @@ class CompactionApplied(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ObservationPolicyApplied(SessionEvent):
+class ObservationPolicyAppliedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.OBSERVATION_POLICY_APPLIED] = field(
@@ -518,7 +518,7 @@ class ObservationPolicyApplied(SessionEvent):
 
 
 @dataclass(frozen=True)
-class SpillCreated(SessionEvent):
+class SpillCreatedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.SPILL_CREATED] = field(default=EventKind.SPILL_CREATED, kw_only=True)
@@ -528,7 +528,7 @@ class SpillCreated(SessionEvent):
 
 
 @dataclass(frozen=True)
-class SpillExpired(SessionEvent):
+class SpillExpiredEvent(SessionEvent):
     __hash__ = None
     type: Literal[EventKind.SPILL_EXPIRED] = field(default=EventKind.SPILL_EXPIRED, kw_only=True)
     ref: SpillRef
@@ -536,7 +536,7 @@ class SpillExpired(SessionEvent):
 
 
 @dataclass(frozen=True)
-class RuleTriggered(SessionEvent):
+class RuleTriggeredEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.RULE_TRIGGERED] = field(default=EventKind.RULE_TRIGGERED, kw_only=True)
@@ -550,7 +550,7 @@ class RuleTriggered(SessionEvent):
 
 
 @dataclass(frozen=True)
-class AssistantMessage(SessionEvent):
+class AssistantMessageEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.ASSISTANT_MESSAGE] = field(
@@ -562,13 +562,13 @@ class AssistantMessage(SessionEvent):
 
     def __post_init__(self) -> None:
         if not isinstance(self.message, Assistant):
-            raise TypeError("AssistantMessage requires an assistant message value")
+            raise TypeError("AssistantMessageEvent requires an assistant message value")
         if self.stop_reason is not None:
             object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
 
 
 @dataclass(frozen=True)
-class ToolCalled(SessionEvent):
+class ToolCalledEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.TOOL_CALLED] = field(default=EventKind.TOOL_CALLED, kw_only=True)
@@ -580,7 +580,7 @@ class ToolCalled(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ToolReturned(SessionEvent):
+class ToolReturnedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.TOOL_RETURNED] = field(default=EventKind.TOOL_RETURNED, kw_only=True)
@@ -589,12 +589,12 @@ class ToolReturned(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ToolExecutionFinished(SessionEvent):
+class ToolExecutionFinishedEvent(SessionEvent):
     """The unreviewed execution receipt, saved before ordered result review.
 
     Text respects the captured output limit. This is audit data, not a
     model-visible result. Recovery must never bypass ReviewToolResult by
-    publishing this receipt as ToolReturned.
+    publishing this receipt as ToolReturnedEvent.
     """
 
     __hash__ = None
@@ -606,7 +606,7 @@ class ToolExecutionFinished(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ToolCompleted(SessionEvent):
+class ToolCompletedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.TOOL_COMPLETED] = field(default=EventKind.TOOL_COMPLETED, kw_only=True)
@@ -615,7 +615,7 @@ class ToolCompleted(SessionEvent):
 
 
 @dataclass(frozen=True)
-class ToolProgress(SessionEvent):
+class ToolProgressEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.TOOL_PROGRESS] = field(default=EventKind.TOOL_PROGRESS, kw_only=True)
@@ -624,7 +624,7 @@ class ToolProgress(SessionEvent):
 
 
 @dataclass(frozen=True)
-class StepEnd(SessionEvent):
+class StepEndedEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.STEP_END] = field(default=EventKind.STEP_END, kw_only=True)
@@ -637,7 +637,9 @@ class StepEnd(SessionEvent):
 
 
 @dataclass(frozen=True)
-class TurnEnd(SessionEvent):
+class TurnEndedEvent(SessionEvent):
+    """Durably close a turn with its outcome; the UI result is a separate event."""
+
     __hash__ = None
 
     type: Literal[EventKind.TURN_END] = field(default=EventKind.TURN_END, kw_only=True)
@@ -649,7 +651,7 @@ class TurnEnd(SessionEvent):
 
 
 @dataclass(frozen=True)
-class OutputValidated(SessionEvent):
+class OutputValidatedEvent(SessionEvent):
     """An accepted JSON answer, tied to the exact assistant message it validates."""
 
     __hash__ = None
@@ -668,7 +670,7 @@ class OutputValidated(SessionEvent):
 
 
 @dataclass(frozen=True)
-class OutputValidationFailed(SessionEvent):
+class OutputValidationFailedEvent(SessionEvent):
     """A bounded repair attempt; rejected input values are never echoed here."""
 
     __hash__ = None
@@ -686,40 +688,40 @@ class OutputValidationFailed(SessionEvent):
 # A closed tagged union is the persistence boundary, separate from in-memory hooks.
 type LogEvent = Annotated[
     (
-        AgentControlChanged
-        | ApprovalRequested
-        | ApprovalResolved
-        | ApprovalRevoked
-        | ToolPolicyApplied
-        | ToolExecutionStarted
-        | ToolExecutionFinished
-        | LogTailRecovered
-        | InboxAdded
-        | InboxRemoved
-        | TurnStart
-        | StepStart
-        | SystemMessage
-        | UserMessage
-        | ContextMessage
-        | ContextValueChanged
-        | ObservationRecorded
-        | ModelRequested
-        | ModelUsageRecorded
-        | CacheMetrics
-        | CompactionApplied
-        | ObservationPolicyApplied
-        | SpillCreated
-        | SpillExpired
-        | RuleTriggered
-        | AssistantMessage
-        | ToolCalled
-        | ToolReturned
-        | ToolCompleted
-        | ToolProgress
-        | StepEnd
-        | TurnEnd
-        | OutputValidated
-        | OutputValidationFailed
+        AgentControlChangedEvent
+        | ApprovalRequestedEvent
+        | ApprovalResolvedEvent
+        | ApprovalRevokedEvent
+        | ToolPolicyAppliedEvent
+        | ToolExecutionStartedEvent
+        | ToolExecutionFinishedEvent
+        | LogTailRecoveredEvent
+        | InboxAddedEvent
+        | InboxRemovedEvent
+        | TurnStartedEvent
+        | StepStartedEvent
+        | SystemMessageEvent
+        | UserMessageEvent
+        | ContextMessageEvent
+        | ContextValueChangedEvent
+        | ObservationRecordedEvent
+        | ModelRequestedEvent
+        | ModelUsageRecordedEvent
+        | CacheMetricsEvent
+        | CompactionAppliedEvent
+        | ObservationPolicyAppliedEvent
+        | SpillCreatedEvent
+        | SpillExpiredEvent
+        | RuleTriggeredEvent
+        | AssistantMessageEvent
+        | ToolCalledEvent
+        | ToolReturnedEvent
+        | ToolCompletedEvent
+        | ToolProgressEvent
+        | StepEndedEvent
+        | TurnEndedEvent
+        | OutputValidatedEvent
+        | OutputValidationFailedEvent
     ),
     Field(discriminator="type"),
 ]

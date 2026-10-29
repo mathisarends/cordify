@@ -6,7 +6,7 @@ import pytest
 
 from harnessed import Agent
 from harnessed.core.messages import User
-from harnessed.core.session.events import UserMessage
+from harnessed.core.session.events import UserMessageEvent
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import JsonlSessions
 from harnessed.plugins.sessions import Durability, JsonlPersistence
@@ -30,7 +30,7 @@ async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consist
     await writer.load("off-thread")
     monkeypatch.setattr(persistence_module.os, "fsync", slow_fsync)
     session = SessionLog("off-thread", persistence=writer)
-    first = UserMessage(User("first"))
+    first = UserMessageEvent(User("first"))
     task = asyncio.create_task(session.append(first))
     try:
         # If fsync ran on the event loop, this wait could never complete.
@@ -44,7 +44,7 @@ async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consist
         await task
     assert session.events == (first,)
     monkeypatch.setattr(persistence_module.os, "fsync", actual_fsync)
-    await session.append(UserMessage(User("second")))
+    await session.append(UserMessageEvent(User("second")))
     await writer.aclose()
     replay = JsonlPersistence(tmp_path)
     try:
@@ -56,7 +56,7 @@ async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consist
 async def test_buffered_mode_has_an_explicit_flush_barrier(tmp_path):
     writer = JsonlPersistence(tmp_path, durability=Durability.BUFFERED)
     await writer.load("buffered")
-    await writer.append("buffered", 0, UserMessage(User("saved")))
+    await writer.append("buffered", 0, UserMessageEvent(User("saved")))
     await writer.flush()
     assert "saved" in (tmp_path / "buffered.jsonl").read_text()
     await writer.aclose()
@@ -71,11 +71,11 @@ async def test_write_failures_remain_visible_to_append_and_flush(tmp_path, monke
 
     monkeypatch.setattr(writer, "_append", fail)
     with pytest.raises(OSError, match="disk unavailable"):
-        await writer.append("failed", 0, UserMessage(User("unsaved")))
+        await writer.append("failed", 0, UserMessageEvent(User("unsaved")))
     with pytest.raises(OSError, match="disk unavailable"):
         await writer.flush()
     with pytest.raises(OSError, match="disk unavailable"):
-        await writer.append("failed", 0, UserMessage(User("retry")))
+        await writer.append("failed", 0, UserMessageEvent(User("retry")))
     await writer.aclose()
 
 

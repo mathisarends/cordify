@@ -83,11 +83,12 @@ Start with the [documentation index](https://github.com/mathisarends/harnessed/b
 - [Plugin composition and lifecycle](https://github.com/mathisarends/harnessed/blob/main/docs/guides/plugins.md)
 - [Instructions and changing context](https://github.com/mathisarends/harnessed/blob/main/docs/guides/context.md)
 - [Sessions, controls, persistence and forks](https://github.com/mathisarends/harnessed/blob/main/docs/guides/sessions.md)
-- [Namespaced events and custom extensions](https://github.com/mathisarends/harnessed/blob/main/docs/guides/events.md)
+- [Typed events and custom extensions](https://github.com/mathisarends/harnessed/blob/main/docs/guides/events.md)
 - [Approvals and headless operation](https://github.com/mathisarends/harnessed/blob/main/docs/guides/approvals.md)
 - [Offline testing](https://github.com/mathisarends/harnessed/blob/main/docs/guides/testing.md)
 - [Executable examples](https://github.com/mathisarends/harnessed/blob/main/docs/guides/examples.md)
 - [Development and CI](https://github.com/mathisarends/harnessed/blob/main/docs/contributing/development.md)
+- [Changelog and breaking changes](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
 
 The standalone `harnessed.kernel` uses only the standard library. Optional
 features live under `harnessed.plugins`; providers live under `harnessed.models`.

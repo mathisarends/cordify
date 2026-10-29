@@ -3,7 +3,19 @@ from contextlib import aclosing
 
 from pydantic import BaseModel
 
-from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, ToolContext, events, tool
+from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, ToolContext, tool
+from harnessed.events import (
+    ApprovalNeededEvent,
+    ReasoningDeltaEvent,
+    SessionStatusChangedEvent,
+    TextDeltaEvent,
+    ToolArgumentsDeltaEvent,
+    ToolCallStartedEvent,
+    ToolFinishedEvent,
+    ToolProgressEvent,
+    ToolStartedEvent,
+    TurnFinishedEvent,
+)
 from harnessed.models import ModelChunk, ToolCallDelta, ToolCallStart
 from harnessed.testing import ScriptedModel
 
@@ -45,28 +57,28 @@ async def main():
         async with aclosing(session.stream("Publish the review note.", output=Report)) as stream:
             async for event in stream:
                 match event:
-                    case events.text.Delta(text=text):
+                    case TextDeltaEvent(text=text):
                         print(text)
-                    case events.reasoning.Delta(text=text):
+                    case ReasoningDeltaEvent(text=text):
                         print("Thinking:", text)
-                    case events.tool.CallStarted(call=preview):
+                    case ToolCallStartedEvent(call=preview):
                         print("Generating call:", preview.name)
-                    case events.tool.ArgumentsDelta(delta=delta):
+                    case ToolArgumentsDeltaEvent(delta=delta):
                         print("Arguments:", delta.arguments)
-                    case events.tool.Started(call=call):
+                    case ToolStartedEvent(call=call):
                         print("Starting:", call.name)
-                    case events.tool.Progress(text=text):
+                    case ToolProgressEvent(text=text):
                         print("Progress:", text)
-                    case events.tool.Finished(call=call, result=result):
+                    case ToolFinishedEvent(call=call, result=result):
                         print(call.name, result.status)
-                    case events.approval.Needed(request_id=request_id, call=call):
+                    case ApprovalNeededEvent(request_id=request_id, call=call):
                         # A UI would present this choice; the demo explicitly approves.
                         print("Approving:", call.name)
                         await session.approvals.answer(request_id, ApprovalAnswer.ALLOW)
-                    case events.turn.Finished(result=result):
+                    case TurnFinishedEvent(result=result):
                         print("Report:", result.output.summary)
                         print("Stop reason:", result.stop_reason)
-                    case events.session.StatusChanged(status=status):
+                    case SessionStatusChangedEvent(status=status):
                         print("Session:", status)
 
 

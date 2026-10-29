@@ -18,32 +18,32 @@ from harnessed.core.messages import (
 from harnessed.core.model import ModelRequest, ModelUsage, sum_usage
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
-    AgentControlChanged,
-    ApprovalResolved,
-    ApprovalRevoked,
+    AgentControlChangedEvent,
+    ApprovalResolvedEvent,
+    ApprovalRevokedEvent,
     ApprovalStatus,
-    AssistantMessage,
-    CompactionApplied,
-    ContextMessage,
+    AssistantMessageEvent,
+    CompactionAppliedEvent,
+    ContextMessageEvent,
     ControlState,
-    InboxAdded,
+    InboxAddedEvent,
     InboxRemovalReason,
-    InboxRemoved,
+    InboxRemovedEvent,
     InboxTarget,
-    ModelRequested,
-    ModelUsageRecorded,
+    ModelRequestedEvent,
+    ModelUsageRecordedEvent,
     SessionEvent,
-    StepEnd,
+    StepEndedEvent,
     StepOutcome,
-    StepStart,
-    ToolCompleted,
-    ToolExecutionFinished,
-    ToolExecutionStarted,
-    ToolReturned,
-    TurnEnd,
+    StepStartedEvent,
+    ToolCompletedEvent,
+    ToolExecutionFinishedEvent,
+    ToolExecutionStartedEvent,
+    ToolReturnedEvent,
+    TurnEndedEvent,
     TurnOutcome,
-    TurnStart,
-    UserMessage,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.history import (
@@ -59,35 +59,40 @@ from harnessed.core.stream import SessionPublished, TransientEvent, coalesce_del
 from harnessed.kernel.context import Context
 
 
-def _validate_compaction(events: list[SessionEvent], event: CompactionApplied, seq: int) -> None:
+def _validate_compaction(
+    events: list[SessionEvent], event: CompactionAppliedEvent, seq: int
+) -> None:
     if type(event.through) is not int or not 0 < event.through <= seq:
         raise ValueError("Compaction must replace an existing event prefix")
     boundary = events[event.through - 1]
     if not (
-        isinstance(boundary, TurnEnd)
-        or isinstance(boundary, StepEnd)
+        isinstance(boundary, TurnEndedEvent)
+        or isinstance(boundary, StepEndedEvent)
         and boundary.reason is StepOutcome.COMPLETED
     ):
         raise ValueError("Compaction must end at a closed turn or completed step boundary")
     unanswered: set[str] = set()
     for item in events[: event.through]:
-        if isinstance(item, AssistantMessage):
+        if isinstance(item, AssistantMessageEvent):
             unanswered.update(call.id for call in item.message.tool_calls)
-        elif isinstance(item, ToolReturned):
+        elif isinstance(item, ToolReturnedEvent):
             unanswered.discard(item.call_id)
     if unanswered:
         raise ValueError("Compaction must not split unanswered tool calls")
     if any(
-        offset >= event.through or not isinstance(events[offset], UserMessage | ContextMessage)
+        offset >= event.through
+        or not isinstance(events[offset], UserMessageEvent | ContextMessageEvent)
         for offset in event.preserve_inputs
     ):
         raise ValueError("Preserved inputs must reference messages inside the compacted prefix")
-    previous = max((e.through for e in events[:seq] if isinstance(e, CompactionApplied)), default=0)
+    previous = max(
+        (e.through for e in events[:seq] if isinstance(e, CompactionAppliedEvent)), default=0
+    )
     if event.through <= previous:
         raise ValueError("Compaction must advance the previous boundary")
     if not isinstance(event.summary, str) or not event.summary.strip():
         raise ValueError("Compaction requires a non-empty summary")
-    closed = {item.turn_id for item in events[: event.through] if isinstance(item, TurnEnd)}
+    closed = {item.turn_id for item in events[: event.through] if isinstance(item, TurnEndedEvent)}
     if not set((*event.preserve_turns, *event.retained_turns)) <= closed:
         raise ValueError("Preserved turns must be closed inside the compaction prefix")
 
@@ -126,7 +131,7 @@ class SessionLog:
         self._repair_lock = asyncio.Lock()
         for event in self._events:
             self.registry.validate(event)
-            if isinstance(event, ModelUsageRecorded):
+            if isinstance(event, ModelUsageRecordedEvent):
                 self._usage = (
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
                 )
@@ -151,14 +156,14 @@ class SessionLog:
         self._turn_boundaries = [
             (seq + 1, event.turn_id)
             for seq, event in enumerate(self._events)
-            if isinstance(event, TurnEnd)
+            if isinstance(event, TurnEndedEvent)
         ]
         self._known_turns = {
-            event.turn_id for event in self._events if isinstance(event, TurnStart)
+            event.turn_id for event in self._events if isinstance(event, TurnStartedEvent)
         }
         self._history = MessageProjection(self._events, _derive_message_entries)
         for seq, event in enumerate(self._events):
-            if isinstance(event, CompactionApplied):
+            if isinstance(event, CompactionAppliedEvent):
                 _validate_compaction(self._events, event, seq)
 
     @property
@@ -214,7 +219,7 @@ class SessionLog:
 
     @property
     def uncompacted_turn_count(self) -> int:
-        previous = self.last_offset(CompactionApplied)
+        previous = self.last_offset(CompactionAppliedEvent)
         if previous is None:
             return len(self._turn_boundaries)
         return len(self._turn_boundaries) - bisect_right(
@@ -304,7 +309,7 @@ class SessionLog:
     async def append(self, event: SessionEvent) -> None:
         self.registry.validate(event)
         cancelled = False
-        if isinstance(event, ToolExecutionFinished | ToolCompleted):
+        if isinstance(event, ToolExecutionFinishedEvent | ToolCompletedEvent):
             # An invocation/review already finished. Drain its checkpoint even if
             # abort arrives while another append owns the log lock. Observers stay
             # outside this shield so an unresponsive hook cannot block cancellation.
@@ -318,7 +323,7 @@ class SessionLog:
             cancelled |= interrupted
         else:
             seq, cancelled = await self._append(event)
-        if cancelled and isinstance(event, ToolExecutionFinished | ToolCompleted):
+        if cancelled and isinstance(event, ToolExecutionFinishedEvent | ToolCompletedEvent):
             raise asyncio.CancelledError
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
@@ -329,21 +334,23 @@ class SessionLog:
     async def _append(self, event: SessionEvent) -> tuple[int, bool]:
         cancelled = False
         async with self._lock:
-            if isinstance(event, InboxAdded) and event.message.id in self._pending:
+            if isinstance(event, InboxAddedEvent) and event.message.id in self._pending:
                 raise ValueError(f"Duplicate pending message id: {event.message.id}")
-            if isinstance(event, InboxRemoved) and event.message_id not in self._pending:
+            if isinstance(event, InboxRemovedEvent) and event.message_id not in self._pending:
                 raise ValueError(f"Removing unknown inbox message: {event.message_id}")
             approval = approval_transition(self._approval_records, event)
             self._turns.validate(event)
             seq = len(self._events)
-            if isinstance(event, CompactionApplied):
+            if isinstance(event, CompactionAppliedEvent):
                 _validate_compaction(self._events, event, seq)
             if self._persistence is not None:
                 persistence = self._persistence
 
                 async def persist() -> None:
                     await persistence.append(self.id, seq, event)
-                    if isinstance(event, TurnEnd | ToolExecutionFinished | ToolCompleted):
+                    if isinstance(
+                        event, TurnEndedEvent | ToolExecutionFinishedEvent | ToolCompletedEvent
+                    ):
                         await persistence.flush()
 
                 write = asyncio.create_task(persist())
@@ -357,21 +364,21 @@ class SessionLog:
             self._last[type(event)] = (seq, event)
             self._snapshot = None
             self._turns.apply(event)
-            if isinstance(event, TurnStart):
+            if isinstance(event, TurnStartedEvent):
                 self._known_turns.add(event.turn_id)
-            elif isinstance(event, TurnEnd):
+            elif isinstance(event, TurnEndedEvent):
                 self._turn_boundaries.append((seq + 1, event.turn_id))
             self._history.apply(event, seq, self._events)
-            if isinstance(event, InboxAdded):
+            if isinstance(event, InboxAddedEvent):
                 self._pending[event.message.id] = event
                 if event.target == InboxTarget.NEXT_STEP:
                     self._step_pending.add(event.message.id)
                 self._inbox = None
-            elif isinstance(event, InboxRemoved):
+            elif isinstance(event, InboxRemovedEvent):
                 del self._pending[event.message_id]
                 self._step_pending.discard(event.message_id)
                 self._inbox = None
-            elif isinstance(event, UserMessage | ContextMessage):
+            elif isinstance(event, UserMessageEvent | ContextMessageEvent):
                 if self._pending.pop(event.message.id, None) is not None:
                     self._step_pending.discard(event.message.id)
                     self._inbox = None
@@ -382,12 +389,12 @@ class SessionLog:
                     approval.request_id
                 ] = approval
                 self._approvals = None
-            if isinstance(event, AgentControlChanged):
+            if isinstance(event, AgentControlChangedEvent):
                 self._control = RunControl((event,))
-            if isinstance(event, ModelRequested):
+            if isinstance(event, ModelRequestedEvent):
                 self._requests.append(event.request)
                 self._request_snapshot = None
-            elif isinstance(event, ModelUsageRecorded):
+            elif isinstance(event, ModelUsageRecordedEvent):
                 self._usage = (
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
                 )
@@ -429,7 +436,7 @@ class SessionLog:
         control = self.control
         for approval in self.approvals.pending:
             await self.append(
-                ApprovalResolved(approval.request_id, status=ApprovalStatus.INTERRUPTED)
+                ApprovalResolvedEvent(approval.request_id, status=ApprovalStatus.INTERRUPTED)
             )
         turn, step = None, None
         unanswered: dict[str, ToolCall] = {}
@@ -438,35 +445,35 @@ class SessionLog:
         executed: set[str] = set()
         for event in self._events:
             match event:
-                case TurnStart(turn_id=turn_id):
+                case TurnStartedEvent(turn_id=turn_id):
                     turn = turn_id
-                case StepStart(step=index):
+                case StepStartedEvent(step=index):
                     step = index
-                case AssistantMessage(message=message):
+                case AssistantMessageEvent(message=message):
                     for call in message.tool_calls:
                         unanswered[call.id] = call
                         completed.pop(call.id, None)
                         started.discard(call.id)
                         executed.discard(call.id)
-                case ToolReturned(call_id=call_id):
+                case ToolReturnedEvent(call_id=call_id):
                     unanswered.pop(call_id, None)
-                case ToolCompleted(call_id=call_id, result=result):
+                case ToolCompletedEvent(call_id=call_id, result=result):
                     completed[call_id] = result
-                case ToolExecutionStarted(call_id=call_id):
+                case ToolExecutionStartedEvent(call_id=call_id):
                     started.add(call_id)
-                case ToolExecutionFinished(call_id=call_id):
+                case ToolExecutionFinishedEvent(call_id=call_id):
                     executed.add(call_id)
-                case StepEnd():
+                case StepEndedEvent():
                     step = None
-                case TurnEnd():
+                case TurnEndedEvent():
                     turn = None
         for call in unanswered.values():
             if call.id in completed:
-                await self.append(ToolReturned(call.id, completed[call.id]))
+                await self.append(ToolReturnedEvent(call.id, completed[call.id]))
                 continue
             if call.id in executed:
                 await self.append(
-                    ToolReturned(
+                    ToolReturnedEvent(
                         call.id,
                         ToolResult.error(
                             "Tool execution finished, but result review was interrupted. "
@@ -479,11 +486,11 @@ class SessionLog:
             message = "Tool execution interrupted" if control.paused else "Tool execution aborted"
             if call.id in started:
                 message += "; external outcome is unknown. Inspect external state before retrying."
-            await self.append(ToolReturned(call.id, ToolResult.error(message)))
+            await self.append(ToolReturnedEvent(call.id, ToolResult.error(message)))
         if turn is not None:
             if step is not None:
                 await self.append(
-                    StepEnd(
+                    StepEndedEvent(
                         turn,
                         step,
                         StepOutcome.INTERRUPTED if control.paused else StepOutcome.ABORTED,
@@ -496,14 +503,14 @@ class SessionLog:
                     and step is None
                     else TurnOutcome.ABORTED
                 )
-                await self.append(TurnEnd(turn, reason))
+                await self.append(TurnEndedEvent(turn, reason))
         if control.state == ControlState.PAUSING:
-            await self.append(AgentControlChanged(ControlState.PAUSED))
+            await self.append(AgentControlChangedEvent(ControlState.PAUSED))
         if control.stopped and not control.keep_inbox:
             for item in self.inbox.pending:
-                await self.append(InboxRemoved(item.message.id, InboxRemovalReason.DISCARDED))
+                await self.append(InboxRemovedEvent(item.message.id, InboxRemovalReason.DISCARDED))
         if control.stopped:
-            await self.append(AgentControlChanged(ControlState.ACTIVE))
+            await self.append(AgentControlChangedEvent(ControlState.ACTIVE))
 
     def fork(
         self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
@@ -516,19 +523,19 @@ class SessionLog:
         seed = self._events[:at]
         open_turn = False
         for event in seed:
-            if isinstance(event, TurnStart):
+            if isinstance(event, TurnStartedEvent):
                 open_turn = True
-            elif isinstance(event, TurnEnd):
+            elif isinstance(event, TurnEndedEvent):
                 open_turn = False
         if open_turn:
             raise ConfigError("Fork at a closed turn boundary")
         approvals = ApprovalState(seed)
         seed.extend(
-            ApprovalResolved(item.request_id, status=ApprovalStatus.INTERRUPTED)
+            ApprovalResolvedEvent(item.request_id, status=ApprovalStatus.INTERRUPTED)
             for item in approvals.pending
         )
         if not inherit_approvals:
-            seed.extend(ApprovalRevoked(item.request_id, "fork") for item in approvals.grants)
+            seed.extend(ApprovalRevokedEvent(item.request_id, "fork") for item in approvals.grants)
         return SessionLog(
             session_id,
             seed=seed,

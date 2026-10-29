@@ -20,14 +20,14 @@ from harnessed.core.messages import Assistant, ToolStatus, User
 from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.codec import EventLogCodec, decode_event, encode_event
 from harnessed.core.session.events import (
-    CompactionApplied,
-    ModelUsageRecorded,
-    ObservationPolicyApplied,
-    SpillCreated,
-    SystemMessage,
-    TurnEnd,
-    TurnStart,
-    UserMessage,
+    CompactionAppliedEvent,
+    ModelUsageRecordedEvent,
+    ObservationPolicyAppliedEvent,
+    SpillCreatedEvent,
+    SystemMessageEvent,
+    TurnEndedEvent,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog
@@ -84,7 +84,7 @@ async def test_large_results_spill_to_session_files_and_keep_structured_metadata
             decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
         )
         assert SessionLog("replay", seed=events).messages == agent.log.messages
-        assert any(isinstance(e, SpillCreated) for e in events)
+        assert any(isinstance(e, SpillCreatedEvent) for e in events)
         ref = result.spill
     async with Application(
         model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path), Spill()]
@@ -131,7 +131,7 @@ async def test_read_spill_tool_returns_bounded_ranges_without_respilling():
         )
         result = (await agent.run("read")).tool_calls[0][1]
         assert result.content == "x" * 40 and result.spill is None
-        assert not any(isinstance(e, SpillCreated) for e in agent.log.events)
+        assert not any(isinstance(e, SpillCreatedEvent) for e in agent.log.events)
 
 
 async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path):
@@ -162,7 +162,7 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
     async with harness.session("compact") as agent:
         await agent.run("old context " + "x" * 1200)
         await agent.run("current task", context={"ticket": "preserve current context"})
-        applied = [e for e in agent.log.events if isinstance(e, CompactionApplied)]
+        applied = [e for e in agent.log.events if isinstance(e, CompactionAppliedEvent)]
         assert len(applied) == 1
         request = model.requests[1]
         texts = [m.text for m in request.messages]
@@ -174,38 +174,39 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
         assert replay.messages == agent.log.messages
         assert agent.log.fork("fork").messages == replay.messages
         assert any(
-            isinstance(e, UserMessage) and "x" * 1200 in e.message.text for e in agent.log.events
+            isinstance(e, UserMessageEvent) and "x" * 1200 in e.message.text
+            for e in agent.log.events
         )
     codec = EventLogCodec()
     persisted = tuple(
         codec.decode(json.loads(line))
         for line in (tmp_path / "compact.jsonl").read_text().splitlines()
     )
-    assert any(isinstance(e, CompactionApplied) for e in persisted)
+    assert any(isinstance(e, CompactionAppliedEvent) for e in persisted)
 
 
 async def test_compaction_preserves_base_prompt_recent_turns_and_replaces_previous_summary():
     session = SessionLog("projection")
-    await session.append(SystemMessage("permanent rules"))
+    await session.append(SystemMessageEvent("permanent rules"))
     for name in ("one", "two"):
-        await session.append(TurnStart(name))
-        await session.append(UserMessage(User(name)))
-        await session.append(TurnEnd(name))
-    await session.append(CompactionApplied(4, "first summary"))
+        await session.append(TurnStartedEvent(name))
+        await session.append(UserMessageEvent(User(name)))
+        await session.append(TurnEndedEvent(name))
+    await session.append(CompactionAppliedEvent(4, "first summary"))
     assert [m.text for m in session.messages] == [
         "permanent rules",
         "Conversation summary:\nfirst summary",
         "two",
     ]
-    await session.append(CompactionApplied(7, "combined summary"))
+    await session.append(CompactionAppliedEvent(7, "combined summary"))
     assert [m.text for m in session.messages] == [
         "permanent rules",
         "Conversation summary:\ncombined summary",
     ]
     with pytest.raises(ValueError, match="advance"):
-        await session.append(CompactionApplied(7, "duplicate"))
+        await session.append(CompactionAppliedEvent(7, "duplicate"))
     with pytest.raises(ValueError, match="closed turn"):
-        await session.append(CompactionApplied(2, "invalid"))
+        await session.append(CompactionAppliedEvent(2, "invalid"))
 
 
 async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction():
@@ -230,7 +231,7 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
         await agent.submit("next")
         await started.wait()
         await agent.abort()
-        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
+        assert not any(isinstance(e, CompactionAppliedEvent) for e in agent.log.events)
         assert "x" * 1000 in "\n".join(m.text for m in agent.log.messages)
 
 
@@ -253,7 +254,7 @@ async def test_compactor_error_is_reported_and_history_is_intact():
         await agent.run("x" * 1000)
         with pytest.raises(ValueError, match="summary failed"):
             await agent.run("next")
-        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
+        assert not any(isinstance(e, CompactionAppliedEvent) for e in agent.log.events)
         assert len(model.requests) == 1
 
 
@@ -280,7 +281,7 @@ async def test_keep_turns_retains_recent_work_and_later_compaction_merges_old_su
         assert any("y" * 800 in text for text in texts)
         assert not any("x" * 800 in text for text in texts)
         await agent.run("next")
-        assert sum(isinstance(e, CompactionApplied) for e in agent.log.events) == 2
+        assert sum(isinstance(e, CompactionAppliedEvent) for e in agent.log.events) == 2
         assert sum(m.id.startswith("compaction:") for m in agent.log.messages) == 1
 
 
@@ -304,15 +305,15 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
     async with harness.session("no-growth") as agent:
         await agent.run("original" * 30)
         await agent.run("next")
-        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
+        assert not any(isinstance(e, CompactionAppliedEvent) for e in agent.log.events)
 
 
 async def test_empty_or_non_advancing_compaction_is_rejected_on_replay():
-    seed = (TurnStart("t"), UserMessage(User("one")), TurnEnd("t"))
+    seed = (TurnStartedEvent("t"), UserMessageEvent(User("one")), TurnEndedEvent("t"))
     with pytest.raises(ValueError, match="non-empty"):
-        SessionLog("invalid", seed=(*seed, CompactionApplied(3, "")))
+        SessionLog("invalid", seed=(*seed, CompactionAppliedEvent(3, "")))
     with pytest.raises(ValueError, match="existing event prefix"):
-        SessionLog("invalid", seed=(*seed, CompactionApplied(99, "summary")))
+        SessionLog("invalid", seed=(*seed, CompactionAppliedEvent(99, "summary")))
 
 
 async def test_latest_observation_policy_limits_old_summaries_per_source_and_unwinds():
@@ -342,7 +343,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
         assert "brief 1" not in texts and "brief 2" in texts and ("full 3" in texts)
         assert "full 1" not in texts
         assert SessionLog("replay", seed=agent.log.events).messages == agent.log.messages
-    assert isinstance(agent.log.events[-1], ObservationPolicyApplied)
+    assert isinstance(agent.log.events[-1], ObservationPolicyAppliedEvent)
     assert agent.log.events[-1].max_summaries is None
 
 
@@ -353,7 +354,7 @@ async def test_cache_usage_is_preserved_as_provider_reported_usage():
         "cache"
     ) as agent:
         await agent.run("one")
-        event = agent.log.last(ModelUsageRecorded)
+        event = agent.log.last(ModelUsageRecordedEvent)
         assert event.usage.cache_hit_rate == 0.8
         assert decode_event(encode_event(event)) == event
 

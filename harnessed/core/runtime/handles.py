@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from harnessed.core.model import OutputSchema
-from harnessed.core.session.events import InboxAdded
+from harnessed.core.session.events import InboxAddedEvent
 
 from .result import RunResult
 
@@ -29,7 +29,7 @@ class RunHandle[T]:
 class SubmittedRun:
     """Session-side state of one submitted run; only it completes the handle."""
 
-    input: InboxAdded
+    input: InboxAddedEvent
     schema: OutputSchema | None
     start: int | None = None
     turn_id: str | None = None

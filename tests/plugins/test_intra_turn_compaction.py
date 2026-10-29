@@ -17,18 +17,18 @@ from harnessed.core.messages import (
 from harnessed.core.model import ModelChunk, ModelRequest, ModelResponse
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    AssistantMessage,
-    CompactionApplied,
+    AssistantMessageEvent,
+    CompactionAppliedEvent,
     ContextLifetime,
-    ContextMessage,
+    ContextMessageEvent,
     ControlState,
-    ModelRequested,
-    StepEnd,
-    StepStart,
-    ToolReturned,
-    TurnEnd,
-    TurnStart,
-    UserMessage,
+    ModelRequestedEvent,
+    StepEndedEvent,
+    StepStartedEvent,
+    ToolReturnedEvent,
+    TurnEndedEvent,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog, derive_messages
 from harnessed.plugins import AgentLoop, Compaction, JsonlSessions
@@ -58,22 +58,22 @@ def assert_pairs(messages: tuple[Message, ...]) -> None:
 
 async def append_step(log: SessionLog, turn: str, number: int) -> None:
     call = ToolCall("work", id=f"{turn}-{number}")
-    await log.append(StepStart(turn, number))
-    await log.append(ModelRequested(ModelRequest("test", log.messages)))
+    await log.append(StepStartedEvent(turn, number))
+    await log.append(ModelRequestedEvent(ModelRequest("test", log.messages)))
     await log.append(
-        AssistantMessage(Assistant(tool_calls=(call,), provider_state={"signature": call.id}))
+        AssistantMessageEvent(Assistant(tool_calls=(call,), provider_state={"signature": call.id}))
     )
-    await log.append(ToolReturned(call.id, ToolResult("x" * 2000)))
-    await log.append(StepEnd(turn, number))
+    await log.append(ToolReturnedEvent(call.id, ToolResult("x" * 2000)))
+    await log.append(StepEndedEvent(turn, number))
 
 
-async def apply_plan(log: SessionLog, **options) -> CompactionApplied:
+async def apply_plan(log: SessionLog, **options) -> CompactionAppliedEvent:
     settings = dict(keep_turns=1, keep_first_turns=0, preserve_turns=(), keep_steps=1)
     settings.update(options)
     plan = plan_compaction(log, **settings)
     assert plan == plan_compaction(log.events, **settings)
     assert plan is not None
-    applied = CompactionApplied(
+    applied = CompactionAppliedEvent(
         plan.through,
         "summary",
         preserve_turns=plan.preserve_turns,
@@ -91,20 +91,20 @@ async def apply_plan(log: SessionLog, **options) -> CompactionApplied:
 
 async def test_repeated_compaction_retains_inputs_and_signatures_but_releases_recent_turns():
     log = SessionLog("long-turn")
-    await log.append(TurnStart("prior"))
-    await log.append(UserMessage(User("prior task")))
+    await log.append(TurnStartedEvent("prior"))
+    await log.append(UserMessageEvent(User("prior task")))
     await append_step(log, "prior", 1)
-    await log.append(TurnEnd("prior"))
-    await log.append(TurnStart("active"))
+    await log.append(TurnEndedEvent("prior"))
+    await log.append(TurnStartedEvent("active"))
     task = User("original task")
     steering = User("steering")
     context = System("per-turn context")
     persistent_context = System("session context")
-    await log.append(UserMessage(task))
-    await log.append(ContextMessage(context, ContextLifetime.TURN, "active"))
-    await log.append(ContextMessage(persistent_context))
+    await log.append(UserMessageEvent(task))
+    await log.append(ContextMessageEvent(context, ContextLifetime.TURN, "active"))
+    await log.append(ContextMessageEvent(persistent_context))
     await append_step(log, "active", 1)
-    await log.append(UserMessage(steering))
+    await log.append(UserMessageEvent(steering))
     await append_step(log, "active", 2)
     first = await apply_plan(log)
     assert first.retained_turns == ("prior",)
@@ -118,11 +118,11 @@ async def test_repeated_compaction_retains_inputs_and_signatures_but_releases_re
     second = await apply_plan(log)
     assert second.through > first.through
     assert all(message in log.messages for message in (task, steering, context))
-    await log.append(TurnEnd("active"))
+    await log.append(TurnEndedEvent("active"))
     assert context not in log.messages
     assert log.messages == derive_messages(log.events)
-    await log.append(TurnStart("next"))
-    await log.append(UserMessage(User("next task")))
+    await log.append(TurnStartedEvent("next"))
+    await log.append(UserMessageEvent(User("next task")))
     await append_step(log, "next", 1)
     await append_step(log, "next", 2)
     third = await apply_plan(log)
@@ -134,7 +134,7 @@ async def test_repeated_compaction_retains_inputs_and_signatures_but_releases_re
 @pytest.mark.parametrize("pinned", ["explicit", "first"])
 async def test_pinning_an_open_turn_prevents_compacting_its_steps(pinned):
     log = SessionLog("pinned")
-    await log.append(TurnStart("first"))
+    await log.append(TurnStartedEvent("first"))
     await append_step(log, "first", 1)
     await append_step(log, "first", 2)
     assert (
@@ -151,13 +151,13 @@ async def test_pinning_an_open_turn_prevents_compacting_its_steps(pinned):
 
 async def test_a_completed_step_cannot_hide_an_unanswered_tool_call():
     log = SessionLog("invalid-boundary")
-    await log.append(TurnStart("t"))
-    await log.append(StepStart("t", 1))
-    await log.append(ModelRequested(ModelRequest("test", ())))
-    await log.append(AssistantMessage(Assistant(tool_calls=(ToolCall("work"),))))
-    await log.append(StepEnd("t", 1))
+    await log.append(TurnStartedEvent("t"))
+    await log.append(StepStartedEvent("t", 1))
+    await log.append(ModelRequestedEvent(ModelRequest("test", ())))
+    await log.append(AssistantMessageEvent(Assistant(tool_calls=(ToolCall("work"),))))
+    await log.append(StepEndedEvent("t", 1))
     with pytest.raises(ValueError, match="unanswered tool calls"):
-        await log.append(CompactionApplied(len(log.events), "summary"))
+        await log.append(CompactionAppliedEvent(len(log.events), "summary"))
 
 
 @pytest.mark.parametrize("keep_steps", [0, -1, True])
@@ -241,7 +241,7 @@ async def test_nonshrinking_summary_retries_after_two_more_steps_in_the_same_tur
     ).session() as session:
         await session.run("task")
         assert len(brief.sources) == 2
-        assert sum(isinstance(e, CompactionApplied) for e in session.events) == 1
+        assert sum(isinstance(e, CompactionAppliedEvent) for e in session.events) == 1
         assert any(m.text.startswith("Conversation summary:") for m in model.requests[-1].messages)
 
 

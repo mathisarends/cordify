@@ -14,13 +14,13 @@ from harnessed.core.model import Model, ModelChunk, ModelInfo
 from harnessed.core.plugin import Bundle, Service
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    AssistantMessage,
-    CompactionApplied,
-    SystemMessage,
-    TurnEnd,
+    AssistantMessageEvent,
+    CompactionAppliedEvent,
+    SystemMessageEvent,
+    TurnEndedEvent,
     TurnOutcome,
-    TurnStart,
-    UserMessage,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import AgentLoop, Approvals, Compaction, at_ratio, every_turns
@@ -71,7 +71,7 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
         await agent.run("THIRD " + "c" * 800)
         await agent.run("CURRENT")
         events = agent.log.events
-        applied = [e for e in events if isinstance(e, CompactionApplied)]
+        applied = [e for e in events if isinstance(e, CompactionAppliedEvent)]
         assert len(applied) == 1 and applied[0].preserve_turns == (first_turn.id,)
         assert applied[0].policy == "Compaction"
         assert applied[0].after_tokens < applied[0].before_tokens
@@ -103,7 +103,7 @@ async def test_periodic_compaction_counts_new_closed_turns_since_last_event():
         counts = []
         for index in range(6):
             await agent.run(f"task {index} " + "x" * 500)
-            counts.append(sum(isinstance(e, CompactionApplied) for e in agent.log.events))
+            counts.append(sum(isinstance(e, CompactionAppliedEvent) for e in agent.log.events))
         assert counts == [0, 0, 1, 1, 2, 2]
         assert any(m.text == "Conversation summary:\nsummary 1" for m in summaries.sources[1])
         assert sum(m.id.startswith("compaction:") for m in agent.log.messages) == 1
@@ -131,7 +131,7 @@ async def test_explicit_turn_pins_are_preserved_and_excluded_from_summary_input(
         assert any(m.text.startswith("PINNED ") for m in model.requests[-1].messages)
         assert not any(m.text.startswith("PINNED ") for m in summaries.sources[0])
         await agent.run("next")
-        applied = [e for e in agent.log.events if isinstance(e, CompactionApplied)]
+        applied = [e for e in agent.log.events if isinstance(e, CompactionAppliedEvent)]
         assert all(pinned.id in event.preserve_turns for event in applied)
 
 
@@ -164,7 +164,7 @@ async def test_compaction_preserves_request_hook_context_and_combines_triggers_o
         await agent.run("x" * 2000)
         await agent.run("current")
         assert len(summaries.sources) == 1
-        assert sum(isinstance(e, CompactionApplied) for e in agent.log.events) == 1
+        assert sum(isinstance(e, CompactionAppliedEvent) for e in agent.log.events) == 1
         assert any(m.text == "HOOK CONTEXT" for m in model.requests[-1].messages)
 
 
@@ -191,7 +191,7 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
         await agent.steer("NEXT STEP CONTEXT")
         release.set()
         await agent.control.join()
-        event = next(e for e in agent.log.events if isinstance(e, CompactionApplied))
+        event = next(e for e in agent.log.events if isinstance(e, CompactionAppliedEvent))
         summary = next(m for m in model.requests[-1].messages if m.id.startswith("compaction:"))
         assert summary.id == f"compaction:{event.id}"
         assert summary in agent.log.messages
@@ -201,15 +201,15 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
 
 async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
     session = SessionLog("pins")
-    await session.append(SystemMessage("RULES"))
+    await session.append(SystemMessageEvent("RULES"))
     for turn in ("first", "second"):
-        await session.append(TurnStart(turn))
-        await session.append(UserMessage(user(turn)))
-        await session.append(AssistantMessage(Assistant(f"answer {turn}")))
-        await session.append(TurnEnd(turn))
-    await session.append(CompactionApplied(5, "first summary"))
+        await session.append(TurnStartedEvent(turn))
+        await session.append(UserMessageEvent(user(turn)))
+        await session.append(AssistantMessageEvent(Assistant(f"answer {turn}")))
+        await session.append(TurnEndedEvent(turn))
+    await session.append(CompactionAppliedEvent(5, "first summary"))
     assert not any(m.text == "first" for m in session.messages)
-    await session.append(CompactionApplied(9, "combined", preserve_turns=("first",)))
+    await session.append(CompactionAppliedEvent(9, "combined", preserve_turns=("first",)))
     assert [m.text for m in session.messages] == [
         "RULES",
         "Conversation summary:\ncombined",
@@ -217,7 +217,7 @@ async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
         "answer first",
     ]
     with pytest.raises(ValueError, match="closed"):
-        await session.append(CompactionApplied(10, "bad", preserve_turns=("unknown",)))
+        await session.append(CompactionAppliedEvent(10, "bad", preserve_turns=("unknown",)))
 
 
 async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
@@ -284,7 +284,7 @@ async def test_current_turn_and_tool_schemas_are_not_silently_discarded_to_fit_b
         with pytest.raises(ContextBudgetExceeded):
             await agent.run("current task")
         assert model.requests == []
-        assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)
+        assert not any(isinstance(e, CompactionAppliedEvent) for e in agent.log.events)
         assert any(m.text == "current task" for m in agent.log.messages)
 
 

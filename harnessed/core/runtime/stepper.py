@@ -16,20 +16,20 @@ from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.runtime.output import OutputHandler
 from harnessed.core.runtime.respond import ModelResponder
 from harnessed.core.session.events import (
-    AssistantMessage,
+    AssistantMessageEvent,
     ContextLifetime,
-    ContextMessage,
+    ContextMessageEvent,
     InboxRemovalReason,
-    InboxRemoved,
-    ModelRequested,
-    ObservationRecorded,
-    StepEnd,
+    InboxRemovedEvent,
+    ModelRequestedEvent,
+    ObservationRecordedEvent,
+    StepEndedEvent,
     StepOutcome,
-    StepStart,
-    SystemMessage,
-    TurnEnd,
+    StepStartedEvent,
+    SystemMessageEvent,
+    TurnEndedEvent,
     TurnOutcome,
-    UserMessage,
+    UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter
@@ -79,16 +79,18 @@ class StepRunner:
         )
         if not decision.accepted:
             for item in pending:
-                await self.log.append(InboxRemoved(item.message.id, InboxRemovalReason.REJECTED))
-            await self.log.append(TurnEnd(turn, TurnOutcome.REJECTED))
+                await self.log.append(
+                    InboxRemovedEvent(item.message.id, InboxRemovalReason.REJECTED)
+                )
+            await self.log.append(TurnEndedEvent(turn, TurnOutcome.REJECTED))
             return False
         accepted = decision.messages
-        await self.log.append(StepStart(turn, step))
+        await self.log.append(StepStartedEvent(turn, step))
         prompt = await self.ctx[SystemPrompt].render()
-        previous_event = self.log.last(SystemMessage)
+        previous_event = self.log.last(SystemMessageEvent)
         previous = previous_event.content if previous_event is not None else None
         if prompt != previous:
-            await self.log.append(SystemMessage(prompt))
+            await self.log.append(SystemMessageEvent(prompt))
         accepted_ids = {message.id for message in accepted}
         if len(accepted_ids) != len(accepted) or any(
             message.role not in (Role.USER, Role.SYSTEM) for message in accepted
@@ -96,20 +98,24 @@ class StepRunner:
             raise ValueError("PreStep must return unique user or system messages")
         for item in pending:
             if item.message.id not in accepted_ids:
-                await self.log.append(InboxRemoved(item.message.id))
+                await self.log.append(InboxRemovedEvent(item.message.id))
         for message in accepted:
             for item in pending:
                 if item.message.id == message.id:
                     for contribution in item.context:
                         await self.log.append(
-                            ContextMessage(contribution, ContextLifetime.TURN, turn)
+                            ContextMessageEvent(contribution, ContextLifetime.TURN, turn)
                         )
-            event = UserMessage(message) if isinstance(message, User) else ContextMessage(message)
+            event = (
+                UserMessageEvent(message)
+                if isinstance(message, User)
+                else ContextMessageEvent(message)
+            )
             await self.log.append(event)
         observations = tuple(self._observations.values())
         self._observations.clear()
         for observation in observations:
-            await self.log.append(ObservationRecorded(observation, turn, step))
+            await self.log.append(ObservationRecordedEvent(observation, turn, step))
         model = self.ctx[Model]
         request = ModelRequest(
             model.info.name,
@@ -135,7 +141,7 @@ class StepRunner:
                 context_window=self.options.context_window or model.info.context_window,
                 counter=self.ctx[TokenCounter],
             )
-        await self.log.append(ModelRequested(request))
+        await self.log.append(ModelRequestedEvent(request))
         try:
             response = await self.responder.respond(request)
         except ContextLengthExceeded:
@@ -144,7 +150,9 @@ class StepRunner:
                 CompactionPolicy not in self.ctx
                 or step >= (current.start.limits.max_steps or self.options.max_steps)
                 or any(item.reason == StepOutcome.CONTEXT_LIMIT for item in current.steps)
-                or any(isinstance(event, AssistantMessage) for event in current.steps[-1].events)
+                or any(
+                    isinstance(event, AssistantMessageEvent) for event in current.steps[-1].events
+                )
             ):
                 raise
             applied, _ = await self.compaction.compact(request)
@@ -152,11 +160,11 @@ class StepRunner:
                 raise
             # A retry is a new model step. Completed tools and visible partial replies
             # are never replayed by retrying an in-progress step.
-            await self.log.append(StepEnd(turn, step, StepOutcome.CONTEXT_LIMIT))
+            await self.log.append(StepEndedEvent(turn, step, StepOutcome.CONTEXT_LIMIT))
             return True
         results, failure = await self.outputs.validate(response, request.output_schema)
         await self.tools.run(response.tool_calls, results=results)
-        await self.log.append(StepEnd(turn, step))
+        await self.log.append(StepEndedEvent(turn, step))
         if failure is not None:
             raise OutputValidationError(f"Structured output retry limit reached: {failure}")
         return True

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from harnessed.core.errors import SessionClosed, SessionStateError
 from harnessed.core.session.control import SessionStatus as SessionStatus
-from harnessed.core.session.events import AgentControlChanged, ControlState
+from harnessed.core.session.events import AgentControlChangedEvent, ControlState
 from harnessed.core.session.session import SessionLog
 
 
@@ -124,7 +124,9 @@ class SessionControl:
             if not self.log.control.paused:
                 running = self.task is not None and not self.task.done() and not self.finishing
                 await self.log.append(
-                    AgentControlChanged(ControlState.PAUSING if running else ControlState.PAUSED)
+                    AgentControlChangedEvent(
+                        ControlState.PAUSING if running else ControlState.PAUSED
+                    )
                 )
         while self.log.control.state == ControlState.PAUSING:
             if self.error is not None:
@@ -139,7 +141,7 @@ class SessionControl:
             if self.log.control.state in (ControlState.STOPPING, ControlState.ABORTING):
                 return
             if self.log.control.state != ControlState.ACTIVE:
-                await self.log.append(AgentControlChanged(ControlState.ACTIVE))
+                await self.log.append(AgentControlChangedEvent(ControlState.ACTIVE))
         self.wake()
 
     @asynccontextmanager
@@ -170,7 +172,7 @@ class SessionControl:
             if state == ControlState.ACTIVE:
                 return
             if state == ControlState.PAUSING:
-                await self.log.append(AgentControlChanged(ControlState.PAUSED))
+                await self.log.append(AgentControlChangedEvent(ControlState.PAUSED))
             elif state == ControlState.STOPPING:
                 raise StopAtBoundary
             elif state in (ControlState.ABORTING, ControlState.STOPPED):
@@ -200,13 +202,13 @@ class SessionControl:
             busy = task is not None
             if not busy and self.log.open_turn is None and not self.log.inbox.pending:
                 if self.log.control.state != ControlState.ACTIVE:
-                    await self.log.append(AgentControlChanged(ControlState.ACTIVE))
+                    await self.log.append(AgentControlChangedEvent(ControlState.ACTIVE))
                 return
             state = self.log.control.state
             requested = ControlState.ABORTING if immediate else ControlState.STOPPING
             if state not in (requested, ControlState.ABORTING):
                 try:
-                    await self.log.append(AgentControlChanged(requested, keep_inbox))
+                    await self.log.append(AgentControlChangedEvent(requested, keep_inbox))
                 finally:
                     if (
                         immediate
@@ -236,7 +238,7 @@ class SessionControl:
         if self.log.control.stopped:
             await self.finish_termination()
         if self.log.control.state == ControlState.PAUSING:
-            await self.log.append(AgentControlChanged(ControlState.PAUSED))
+            await self.log.append(AgentControlChangedEvent(ControlState.PAUSED))
         self.synchronize()
 
     async def join(self) -> None:

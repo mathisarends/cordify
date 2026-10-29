@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, tool
 from harnessed.core.approvals import CallbackApprover
-from harnessed.core.session.events import ApprovalRequested
+from harnessed.core.session.events import ApprovalRequestedEvent
 from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel, call
 
@@ -38,7 +38,7 @@ async def test_required_reference_overrides_default_trust_and_policy():
     result = await agent.run("Echo")
     assert result.tool_calls[0][1].text == "hello"
     assert len(requests) == 1
-    assert isinstance(requests[0], ApprovalRequested)
+    assert isinstance(requests[0], ApprovalRequestedEvent)
     assert requests[0].call.name == "echo_text"
 
 
@@ -85,7 +85,7 @@ def test_scripted_references_validate_arguments_without_self_or_injected_service
 
 
 async def test_callback_adapter_receives_the_same_request_as_policy_callbacks():
-    request = ApprovalRequested(
+    request = ApprovalRequestedEvent(
         "request", call(Echo.echo, text="hi").message.tool_calls[0], "why", "test"
     )
     seen = []

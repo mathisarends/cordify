@@ -9,16 +9,16 @@ from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.model import ModelChunk, ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    ModelRequested,
-    StepEnd,
+    ModelRequestedEvent,
+    StepEndedEvent,
     StepOutcome,
-    StepStart,
-    ToolCalled,
-    ToolReturned,
-    TurnEnd,
+    StepStartedEvent,
+    ToolCalledEvent,
+    ToolReturnedEvent,
+    TurnEndedEvent,
     TurnOutcome,
-    TurnStart,
-    UserMessage,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.turns import derive_turns
@@ -61,12 +61,14 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         steps = tuple(step for turn in turns for step in turn.steps)
         assert tuple(step.request for step in steps) == tuple(model.requests)
         assert all(step.closed and step.reason == StepOutcome.COMPLETED for step in steps)
-        assert all(sum(isinstance(e, ModelRequested) for e in step.events) == 1 for step in steps)
-        assert any(isinstance(e, ToolCalled) for e in steps[0].events)
-        assert any(isinstance(e, ToolReturned) for e in steps[0].events)
-        assert not any(isinstance(e, ToolCalled) for e in steps[1].events)
-        first_users = [e.message.text for e in turns[0].events if isinstance(e, UserMessage)]
-        second_users = [e.message.text for e in turns[1].events if isinstance(e, UserMessage)]
+        assert all(
+            sum(isinstance(e, ModelRequestedEvent) for e in step.events) == 1 for step in steps
+        )
+        assert any(isinstance(e, ToolCalledEvent) for e in steps[0].events)
+        assert any(isinstance(e, ToolReturnedEvent) for e in steps[0].events)
+        assert not any(isinstance(e, ToolCalledEvent) for e in steps[1].events)
+        first_users = [e.message.text for e in turns[0].events if isinstance(e, UserMessageEvent)]
+        second_users = [e.message.text for e in turns[1].events if isinstance(e, UserMessageEvent)]
         assert first_users == ["first task", "focus here"]
         assert second_users == ["second task"]
         restored = tuple(decode_event(encode_event(event)) for event in agent.log.events)
@@ -120,16 +122,16 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
 @pytest.mark.parametrize(
     "events",
     [
-        (TurnStart("a"), TurnStart("b")),
-        (TurnStart("a"), StepStart("b", 1)),
-        (TurnStart("a"), StepStart("a", 2)),
-        (TurnStart("a"), StepEnd("a", 1)),
-        (TurnStart("a"), StepStart("a", 1), TurnEnd("a")),
+        (TurnStartedEvent("a"), TurnStartedEvent("b")),
+        (TurnStartedEvent("a"), StepStartedEvent("b", 1)),
+        (TurnStartedEvent("a"), StepStartedEvent("a", 2)),
+        (TurnStartedEvent("a"), StepEndedEvent("a", 1)),
+        (TurnStartedEvent("a"), StepStartedEvent("a", 1), TurnEndedEvent("a")),
         (
-            TurnStart("a"),
-            StepStart("a", 1),
-            ModelRequested(ModelRequest("test", ())),
-            ModelRequested(ModelRequest("test", ())),
+            TurnStartedEvent("a"),
+            StepStartedEvent("a", 1),
+            ModelRequestedEvent(ModelRequest("test", ())),
+            ModelRequestedEvent(ModelRequest("test", ())),
         ),
     ],
 )

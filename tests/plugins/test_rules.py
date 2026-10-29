@@ -6,10 +6,10 @@ from harnessed.core.messages import Role, ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    ContextValueChanged,
-    InboxAdded,
-    RuleTriggered,
-    ToolReturned,
+    ContextValueChangedEvent,
+    InboxAddedEvent,
+    RuleTriggeredEvent,
+    ToolReturnedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel.plugin import PluginStatus
@@ -48,14 +48,14 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
     ).session("rules") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent))
         assert result.exit_code == 1 and result.content == "failed\n\nOpen a PR."
-        inbox = [e for e in agent.log.events if isinstance(e, InboxAdded)]
+        inbox = [e for e in agent.log.events if isinstance(e, InboxAddedEvent)]
         assert [e.mode for e in inbox] == ["followup", "steer"]
         assert inbox[-1].message.role == Role.USER
         assert any("Consider the failure." in m.text for m in model.requests[-1].messages)
         assert agent.context.values["rule:rules:1"] == "Consider the failure."
-        triggered = [e for e in agent.log.events if isinstance(e, RuleTriggered)]
+        triggered = [e for e in agent.log.events if isinstance(e, RuleTriggeredEvent)]
         assert triggered[0].actions == ("note", "steer")
         assert SessionLog("replay", seed=agent.log.events).messages == agent.log.messages
 
@@ -88,9 +88,9 @@ async def test_repeated_failures_are_grouped_by_command_reset_on_success_and_fir
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
     ).session("repeated") as agent:
         await agent.run("go")
-        triggers = [e for e in agent.log.events if isinstance(e, RuleTriggered)]
+        triggers = [e for e in agent.log.events if isinstance(e, RuleTriggeredEvent)]
         assert len(triggers) == 1 and triggers[0].occurrence == 3
-        messages = [e.value for e in agent.events if isinstance(e, ContextValueChanged)]
+        messages = [e.value for e in agent.events if isinstance(e, ContextValueChangedEvent)]
         assert messages.count("Third failure") == 1
 
 
@@ -113,10 +113,10 @@ async def test_repeat_state_recovers_from_log_without_replaying_actions(tmp_path
     )
     async with harness.session("resume-rules") as agent:
         await agent.run("first two")
-        assert not any(isinstance(e, RuleTriggered) for e in agent.log.events)
+        assert not any(isinstance(e, RuleTriggeredEvent) for e in agent.log.events)
     async with harness.session("resume-rules") as agent:
         await agent.run("third")
-        assert sum(isinstance(e, RuleTriggered) for e in agent.log.events) == 1
+        assert sum(isinstance(e, RuleTriggeredEvent) for e in agent.log.events) == 1
 
 
 async def test_rules_have_independent_state_in_different_sessions():
@@ -136,7 +136,7 @@ async def test_rules_have_independent_state_in_different_sessions():
     for session_id in ("one", "two"):
         async with harness.session(session_id) as agent:
             await agent.run("go")
-            assert not any(isinstance(e, RuleTriggered) for e in agent.log.events)
+            assert not any(isinstance(e, RuleTriggeredEvent) for e in agent.log.events)
 
 
 async def test_repeat_resume_uses_recorded_matches_even_when_notes_change_predicate(tmp_path):
@@ -165,7 +165,9 @@ async def test_repeat_resume_uses_recorded_matches_even_when_notes_change_predic
         await agent.run("one")
     async with harness.session("matched") as agent:
         await agent.run("two")
-        assert any(isinstance(e, RuleTriggered) and e.rule == "rules:0" for e in agent.log.events)
+        assert any(
+            isinstance(e, RuleTriggeredEvent) and e.rule == "rules:0" for e in agent.log.events
+        )
 
 
 async def test_size_predicate_and_missing_exit_code_and_tool_filters():
@@ -189,9 +191,9 @@ async def test_size_predicate_and_missing_exit_code_and_tool_filters():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, rules]
     ).session("size") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturnedEvent))
         assert result.content.endswith("Use a line range.")
-        assert sum(isinstance(e, RuleTriggered) for e in agent.log.events) == 1
+        assert sum(isinstance(e, RuleTriggeredEvent) for e in agent.log.events) == 1
 
 
 async def test_process_return_values_are_normalized_with_exit_codes():
@@ -221,7 +223,7 @@ async def test_process_return_values_are_normalized_with_exit_codes():
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, converters()]
     ).session("process") as agent:
         await agent.run("go")
-        event = next(e for e in agent.log.events if isinstance(e, ToolReturned))
+        event = next(e for e in agent.log.events if isinstance(e, ToolReturnedEvent))
         assert event.result.status == ToolStatus.ERROR and event.result.exit_code == 7
         assert event.result.with_note("note").exit_code == 7
         assert decode_event(encode_event(event)) == event

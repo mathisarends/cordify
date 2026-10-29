@@ -14,7 +14,8 @@ import re
 
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from harnessed import Agent, OutputContract, Plugin, events, tool
+from harnessed import Agent, OutputContract, Plugin, tool
+from harnessed.events import TextDeltaEvent, TurnFinishedEvent
 from harnessed.plugins import Skill, Skills
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
 from pydantic import BaseModel
@@ -64,13 +65,13 @@ async def main():
     assert isinstance(typed.output, Answer) and typed.output.value == 42
     async with Agent(model=ScriptedModel([call('final_answer', value=43)])).session() as session:
         notifications = [event async for event in session.stream('Answer', output=Answer)]
-        assert isinstance(notifications[-1], events.turn.Finished)
+        assert isinstance(notifications[-1], TurnFinishedEvent)
         assert notifications[-1].result.output.value == 43
     async with Agent(model=ScriptedModel([reply('queued result')])).session() as session:
         handle = await session.submit('Submit')
         assert (await handle.result()).text == 'queued result'
         assert handle.done()
-    assert events.text.Delta('message', 'hello').type == 'text.delta'
+    assert TextDeltaEvent('message', 'hello').type == 'text.delta'
     inline = Skill(name='notes', description='Write notes.', instructions='Keep notes concise.')
     async with Agent(model=ScriptedModel([call('load_skill', name='notes'), reply('Loaded')]),
                      plugins=[Skills(inline)]).session() as session:

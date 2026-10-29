@@ -41,8 +41,9 @@ protocol instead.
 
 Do not restore `seams`, `adapters`, `app`, `llms`, `presets` or native provider
 clients. Applications use the small root SDK, `harnessed.plugins`,
-`harnessed.models`, `harnessed.errors`, `harnessed.hooks` and the `harnessed.events`
-namespaces.
+`harnessed.models`, `harnessed.errors`, `harnessed.hooks` and `harnessed.events`.
+Built-in event classes have full names ending in `Event`, re-exported directly
+from `harnessed.events` with the same names as their core definitions.
 Internal modules import their owning layer rather than the root facade.
 
 ## Runtime and ownership invariants

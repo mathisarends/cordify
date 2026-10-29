@@ -6,9 +6,7 @@ import json
 from harnessed import Agent, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog, derive_messages, derive_requests
-from harnessed.events.message import Assistant as AssistantMessage
-from harnessed.events.message import User as UserMessage
-from harnessed.events.text import Delta as TextDelta
+from harnessed.events import AssistantMessageEvent, TextDeltaEvent, UserMessageEvent
 from harnessed.models import ModelChunk, User
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
@@ -34,7 +32,7 @@ async def main():
         "source"
     ) as session:
         async for event in session.stream("Add 2 and 3"):
-            if isinstance(event, TextDelta):
+            if isinstance(event, TextDeltaEvent):
                 print(event.text, end="", flush=True)
         print()
         log = session.events
@@ -46,11 +44,11 @@ async def main():
     print("Recorded requests:", len(replay.requests))
     print(
         "Replayed reply:",
-        "".join(e.message.text for e in restored if isinstance(e, AssistantMessage)),
+        "".join(e.message.text for e in restored if isinstance(e, AssistantMessageEvent)),
     )
     print("Last model history:", [(m.role, m.text) for m in replay.requests[-1].messages])
     fork = replay.fork("alternative")
-    await fork.append(UserMessage(User("Explain the result.")))
+    await fork.append(UserMessageEvent(User("Explain the result.")))
     assert replay.events == restored
     print("Parent / fork message count:", len(replay.messages), len(fork.messages))
 

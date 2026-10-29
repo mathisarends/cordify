@@ -4,7 +4,8 @@ The default `Approvals()` permits read-only tools and asks before side effects.
 Use an enum for a different fallback and decorated method references for rules:
 
 ```python
-from harnessed import Agent, ApprovalAnswer, ApprovalRequest, Plugin, PolicyDecision, tool
+from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, tool
+from harnessed.events import ApprovalRequestedEvent
 from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel, call
 
@@ -15,7 +16,7 @@ class WorkspaceTools(Plugin):
         return 42
 
 
-async def approve(request: ApprovalRequest) -> ApprovalAnswer:
+async def approve(request: ApprovalRequestedEvent) -> ApprovalAnswer:
     return ApprovalAnswer.ALLOW
 
 
@@ -50,14 +51,14 @@ and fail session startup when their tool is missing. An instance reference must
 belong to that mounted recipe. Explicit string names remain an escape hatch for
 dynamic integrations; they cannot receive the same declaration checks.
 
-An approver is a sync/async callback receiving `ApprovalRequest`, or a structural
+An approver is a sync/async callback receiving `ApprovalRequestedEvent`, or a structural
 service with `async ask(request)`. Both receive the same immutable request data.
 `ALLOW` approves this call, `DENY` declines it, and `ALWAYS` records a reusable
 grant for that tool and policy scope. Grants survive reopening the same session.
 `await session.approvals.revoke(request_id)` revokes a grant. Forks revoke grants
 by default. Policy denial and user denial retain distinct provenance.
 
-An active [UI stream](streaming.md) emits `events.approval.Needed` with
+An active [UI stream](streaming.md) emits `events.ApprovalNeededEvent` with
 `request_id`, `call` and `reason`. Respond through
 `await session.approvals.answer(request_id, ApprovalAnswer.ALLOW)`. The call waits
 for durable acknowledgement. Identical acknowledged responses are idempotent;

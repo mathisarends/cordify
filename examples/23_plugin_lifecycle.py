@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, tool
-from harnessed.events.turn import Ended as TurnEnd
+from harnessed.events import TurnEndedEvent
 from harnessed.hooks import ExecuteTool, SessionAppended
 from harnessed.kernel import Context, Inject, PluginState, plugin
 from harnessed.models import ModelChunk
@@ -68,7 +68,7 @@ async def trace(ctx: Context):
 
     @ctx.on(SessionAppended)
     def record(event):
-        if isinstance(event.event, TurnEnd):
+        if isinstance(event.event, TurnEndedEvent):
             print(f"{event.log.id}: turn ended at event {event.seq}")
 
     yield

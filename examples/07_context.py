@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from typing import Protocol
 
 from harnessed import Agent, File, Image, Plugin, Section, Session, ToolCall, tool
-from harnessed.events.message import Context as ContextMessage
+from harnessed.events import ContextMessageEvent
 from harnessed.hooks import PreStep
 from harnessed.kernel import Context, Inject, hook, plugin
 from harnessed.models import ModelChunk
@@ -98,7 +98,7 @@ async def main():
             )
             print(
                 "Task context in durable log:",
-                any(isinstance(e, ContextMessage) for e in agent.events),
+                any(isinstance(e, ContextMessageEvent) for e in agent.events),
             )
 
 

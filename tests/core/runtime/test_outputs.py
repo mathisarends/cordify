@@ -13,10 +13,10 @@ from harnessed.core.outputs import OutputContract, OutputTypes
 from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    InboxAdded,
-    OutputValidated,
-    OutputValidationFailed,
-    TurnEnd,
+    InboxAddedEvent,
+    OutputValidatedEvent,
+    OutputValidationFailedEvent,
+    TurnEndedEvent,
     TurnOutcome,
 )
 from harnessed.core.session.store import MemorySessions
@@ -60,10 +60,10 @@ async def test_native_json_retries_once_and_preserves_the_accepted_raw_input():
         assert result.output.owner == "sdk" and len(model.requests) == 2
         assert model.requests[0].tools == ()
         assert model.requests[0].output_schema.mode == OutputMode.NATIVE
-        failures = [e for e in session.events if isinstance(e, OutputValidationFailed)]
+        failures = [e for e in session.events if isinstance(e, OutputValidationFailedEvent)]
         assert len(failures) == 1 and "severity" in failures[0].message
         assert any("Correct these fields" in m.text for m in model.requests[1].messages)
-        proof = session.last(OutputValidated)
+        proof = session.last(OutputValidatedEvent)
         assert dict(proof.data) == {"severity": 1, "owner": "sdk"}
         with pytest.raises(TypeError):
             proof.data["owner"] = "changed"
@@ -75,8 +75,8 @@ async def test_fallback_retry_is_bounded_and_never_executes_a_registered_answer_
         with pytest.raises(OutputValidationError, match="retry limit"):
             await session.run("Triage", output=Triage)
         assert len(model.requests) == 2
-        assert len([e for e in session.events if isinstance(e, OutputValidationFailed)]) == 2
-        assert session.last(TurnEnd).reason == TurnOutcome.ABORTED
+        assert len([e for e in session.events if isinstance(e, OutputValidationFailedEvent)]) == 2
+        assert session.last(TurnEndedEvent).reason == TurnOutcome.ABORTED
 
 
 async def test_mixed_answer_and_work_is_rejected_but_the_work_runs_only_once():
@@ -121,7 +121,7 @@ async def test_live_results_do_not_execute_non_idempotent_validators_twice():
 
     result = await Agent(model=ScriptedModel([answer(value=1)])).run("Answer", output=Validated)
     assert result.output.value == 2 and calls == [1]
-    proof = next(e for e in result.events if isinstance(e, OutputValidated))
+    proof = next(e for e in result.events if isinstance(e, OutputValidatedEvent))
     assert proof.data["value"] == 1
 
 
@@ -132,7 +132,8 @@ async def test_queued_output_types_are_restored_explicitly_after_reopening_the_a
         await session.pause()
         enqueued = asyncio.Event()
         session.on(
-            SessionAppended, lambda ev: enqueued.set() if isinstance(ev.event, InboxAdded) else None
+            SessionAppended,
+            lambda ev: enqueued.set() if isinstance(ev.event, InboxAddedEvent) else None,
         )
         pending = asyncio.create_task(session.run("Triage", output=output))
         await asyncio.wait_for(enqueued.wait(), 3)
@@ -146,7 +147,7 @@ async def test_queued_output_types_are_restored_explicitly_after_reopening_the_a
     async with app.session("queued", restore_outputs=[output]) as restored:
         await restored.resume()
         await restored.wait_until_idle()
-        assert restored.last(OutputValidated).data["owner"] == "restored"
+        assert restored.last(OutputValidatedEvent).data["owner"] == "restored"
 
 
 async def test_output_types_restored_for_one_session_do_not_leak_into_another():

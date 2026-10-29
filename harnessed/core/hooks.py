@@ -12,7 +12,7 @@ from harnessed.core.messages import (
     ToolResult,
 )
 from harnessed.core.model import ModelRequest
-from harnessed.core.session.events import ApprovalRequested, SessionEvent, UserMessage
+from harnessed.core.session.events import ApprovalRequestedEvent, SessionEvent, UserMessageEvent
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.kernel.events import Bail, Emit, Waterfall
 from harnessed.kernel.hooks import Next as Next
@@ -48,7 +48,7 @@ class PreStep(Waterfall[StepDecision]):
         for message in reversed(self.messages):
             if message.role == Role.USER:
                 return message.text
-        event = self.session.log.last(UserMessage)
+        event = self.session.log.last(UserMessageEvent)
         return event.message.text if event is not None else ""
 
 
@@ -91,7 +91,7 @@ class TurnStopping(Bail[bool]):
 
 @dataclass(frozen=True)
 class RequestApproval(Bail[ApprovalAnswer]):
-    request: ApprovalRequested
+    request: ApprovalRequestedEvent
     session: Session
 
     @property

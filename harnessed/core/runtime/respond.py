@@ -5,9 +5,14 @@ from uuid import uuid4
 
 from harnessed.core.messages import Assistant, ToolCall
 from harnessed.core.model import Model, ModelRequest, ModelStream
-from harnessed.core.session.events import AssistantMessage, ModelUsageRecorded
+from harnessed.core.session.events import AssistantMessageEvent, ModelUsageRecordedEvent
 from harnessed.core.session.session import SessionLog
-from harnessed.core.stream import ReasoningDelta, TextDelta, ToolArgumentsDelta, ToolCallStarted
+from harnessed.core.stream import (
+    ReasoningDeltaEvent,
+    TextDeltaEvent,
+    ToolArgumentsDeltaEvent,
+    ToolCallStartedEvent,
+)
 from harnessed.core.tracing import span
 from harnessed.kernel import Context
 
@@ -43,27 +48,29 @@ class ModelResponder:
                         text.append(chunk.text)
                         reasoning.append(chunk.reasoning)
                         if chunk.text:
-                            await self.log.publish(TextDelta(message_id, chunk.text))
+                            await self.log.publish(TextDeltaEvent(message_id, chunk.text))
                         if chunk.reasoning:
-                            await self.log.publish(ReasoningDelta(message_id, chunk.reasoning))
+                            await self.log.publish(ReasoningDeltaEvent(message_id, chunk.reasoning))
                     if chunk.tool_call is not None:
                         calls.append(chunk.tool_call)
                     if chunk.tool_call_start is not None:
-                        await self.log.publish(ToolCallStarted(message_id, chunk.tool_call_start))
+                        await self.log.publish(
+                            ToolCallStartedEvent(message_id, chunk.tool_call_start)
+                        )
                     if chunk.tool_call_delta is not None:
                         await self.log.publish(
-                            ToolArgumentsDelta(message_id, chunk.tool_call_delta)
+                            ToolArgumentsDeltaEvent(message_id, chunk.tool_call_delta)
                         )
                 response = stream.response()
         except BaseException:
             if stream is not None and (usage := stream.usage) is not None:
-                await self.log.append(ModelUsageRecorded(usage))
+                await self.log.append(ModelUsageRecordedEvent(usage))
             if text or reasoning:
-                await self.log.append(AssistantMessage(message(), interrupted=True))
+                await self.log.append(AssistantMessageEvent(message(), interrupted=True))
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
-        await self.log.append(ModelUsageRecorded(response.usage))
+        await self.log.append(ModelUsageRecordedEvent(response.usage))
         final = replace(response.message, id=message_id)
-        await self.log.append(AssistantMessage(final, stop_reason=response.stop_reason))
+        await self.log.append(AssistantMessageEvent(final, stop_reason=response.stop_reason))
         return final

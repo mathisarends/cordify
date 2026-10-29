@@ -3,6 +3,9 @@
 Harnessed 0.1.x is alpha software. Its public API and persistence contracts are
 still evolving before 1.0.
 
+Pending breaking changes and upgrade instructions are recorded in the repository
+[changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
+
 ## Compatibility policy
 
 - Minor releases during 0.x may introduce breaking API or storage changes. Release

@@ -16,7 +16,7 @@ from harnessed.core.errors import SessionLocked
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.codec import CURRENT_VERSION, EventLogCodec
-from harnessed.core.session.events import LogTailRecovered, SessionEvent
+from harnessed.core.session.events import LogTailRecoveredEvent, SessionEvent
 from harnessed.core.session.files import (
     SessionFiles,
     StoredFile,
@@ -136,7 +136,7 @@ class JsonlPersistence:
                 recorded = {
                     (event.offset, event.sha256)
                     for event in events
-                    if isinstance(event, LogTailRecovered)
+                    if isinstance(event, LogTailRecoveredEvent)
                 }
                 pattern = re.compile(
                     re.escape(session_id) + r"\.incomplete-(\d+)-([a-f0-9]{64})\.bin"
@@ -151,7 +151,7 @@ class JsonlPersistence:
                     data = archive.read_bytes()
                     if position not in boundaries or hashlib.sha256(data).hexdigest() != digest:
                         raise ValueError("Incomplete-tail archive does not match the session log")
-                    recovered = LogTailRecovered(position, len(data), digest, str(archive))
+                    recovered = LogTailRecoveredEvent(position, len(data), digest, str(archive))
                     self._append(session_id, len(events), recovered)
                     events.append(recovered)
                     recorded.add((position, digest))

@@ -14,19 +14,19 @@ from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
-    AssistantMessage,
-    ModelRequested,
+    AssistantMessageEvent,
+    ModelRequestedEvent,
     SessionEvent,
-    StepStart,
-    SystemMessage,
-    TurnEnd,
-    TurnStart,
-    UserMessage,
+    StepStartedEvent,
+    SystemMessageEvent,
+    TurnEndedEvent,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.files import MemoryFiles
 from harnessed.core.session.session import SessionLog, derive_messages, derive_requests
 from harnessed.core.session.store import SessionStore
-from harnessed.core.stream import ReasoningDelta, TextDelta
+from harnessed.core.stream import ReasoningDeltaEvent, TextDeltaEvent
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.testing import ScriptedModel
 
@@ -47,8 +47,8 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
     observed = []
     async with harness.session("durable-chunks") as agent:
 
-        @agent.on(ReasoningDelta)
-        @agent.on(TextDelta)
+        @agent.on(ReasoningDeltaEvent)
+        @agent.on(TextDeltaEvent)
         def observe(event):
             assert event not in agent.log.events
             records = (tmp_path / "durable-chunks.jsonl").read_text().splitlines()
@@ -63,9 +63,9 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
         chunks = tuple(observed)
         assert len(chunks) == 3
         assert chunks == tuple(
-            event for event in live if isinstance(event, TextDelta | ReasoningDelta)
+            event for event in live if isinstance(event, TextDeltaEvent | ReasoningDeltaEvent)
         )
-        final = next(event for event in log if isinstance(event, AssistantMessage))
+        final = next(event for event in log if isinstance(event, AssistantMessageEvent))
         assert {chunk.message_id for chunk in chunks} == {final.message.id}
         assert final.message.text == "hello world" and final.message.reasoning == "think"
         assert [m.text for m in agent.log.messages] == ["hello", "hello world"]
@@ -103,7 +103,7 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
             assert replay.requests == derive_requests(prefix) == derive_requests(iter(prefix))
             assert replay.turns == SessionLog("original-prefix", seed=prefix).turns
         for seq, event in enumerate(log):
-            if isinstance(event, ModelRequested):
+            if isinstance(event, ModelRequestedEvent):
                 assert event.request.messages == derive_messages(log[:seq])
         assert tuple(model.requests) == agent.log.requests
 
@@ -139,10 +139,12 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
     await persistence.load("crashed")
     session = SessionLog("crashed", persistence=persistence)
     for event in (
-        TurnStart("turn"),
-        StepStart("turn", 1),
-        UserMessage(User("hello")),
-        AssistantMessage(Assistant("partial", reasoning="thinking", id="reply"), interrupted=True),
+        TurnStartedEvent("turn"),
+        StepStartedEvent("turn", 1),
+        UserMessageEvent(User("hello")),
+        AssistantMessageEvent(
+            Assistant("partial", reasoning="thinking", id="reply"), interrupted=True
+        ),
     ):
         await session.append(event)
     prefix = session.events
@@ -153,10 +155,10 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
     ).session("crashed") as resumed:
         assert resumed.log.events[: len(prefix)] == prefix
-        final = next(e for e in resumed.log.events if isinstance(e, AssistantMessage))
+        final = next(e for e in resumed.log.events if isinstance(e, AssistantMessageEvent))
         assert final.interrupted and final.message == partial and (final.message.id == "reply")
         assert [m.text for m in resumed.log.messages] == ["hello", "partial"]
-        assert isinstance(resumed.log.events[-1], TurnEnd)
+        assert isinstance(resumed.log.events[-1], TurnEndedEvent)
         repaired = resumed.log.events
         await resumed.log.repair_interrupted()
         assert resumed.log.events == repaired and model.requests == []
@@ -164,16 +166,16 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
 
 async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     events = (
-        TurnStart("turn"),
-        AssistantMessage(Assistant("one two", id="reply")),
+        TurnStartedEvent("turn"),
+        AssistantMessageEvent(Assistant("one two", id="reply")),
     )
     partial = derive_messages(events)
     assert len(partial) == 1 and partial[0].text == "one two"
-    completed = (*events, TurnEnd("turn"))
+    completed = (*events, TurnEndedEvent("turn"))
     assert derive_messages(completed) == partial
     parent = SessionLog("parent", seed=completed)
     child = parent.fork("child")
-    await child.append(UserMessage(User("another branch")))
+    await child.append(UserMessageEvent(User("another branch")))
     assert parent.events == completed and parent.messages == partial
     assert len(child.messages) == 2 and child.events[: len(completed)] == parent.events
 
@@ -188,7 +190,7 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
             pass
 
         async def append(self, session_id, seq, event):
-            if isinstance(event, AssistantMessage):
+            if isinstance(event, AssistantMessageEvent):
                 raise OSError("storage unavailable")
 
     from harnessed import plugin
@@ -220,9 +222,9 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
         with pytest.raises(OSError, match="storage unavailable"):
             async for event in agent.stream("hello"):
                 live.append(event)
-        assert any(isinstance(e, TextDelta) for e in live)
-        assert not any(isinstance(e, AssistantMessage) for e in live)
-        assert not any(isinstance(e, AssistantMessage) for e in agent.log.events)
+        assert any(isinstance(e, TextDeltaEvent) for e in live)
+        assert not any(isinstance(e, AssistantMessageEvent) for e in live)
+        assert not any(isinstance(e, AssistantMessageEvent) for e in agent.log.events)
         assert [message.text for message in agent.log.messages] == ["hello"]
 
 
@@ -231,7 +233,7 @@ class UnknownEvent(SessionEvent):
     type: ClassVar[str] = "unknown/event"
 
 
-@pytest.mark.parametrize("event", [SessionEvent(), UnknownEvent(), SystemMessage(["mutable"])])
+@pytest.mark.parametrize("event", [SessionEvent(), UnknownEvent(), SystemMessageEvent(["mutable"])])
 async def test_memory_logs_seeds_and_codecs_reject_unregistered_or_mutable_events(event):
     session = SessionLog("immutable")
     with pytest.raises(TypeError):
@@ -253,8 +255,8 @@ def test_durable_event_classes_are_frozen_and_event_snapshots_cannot_be_changed(
         is_dataclass(kind) and kind.__dataclass_params__.frozen
         for kind in SESSION_EVENT_TYPES.values()
     )
-    event = SystemMessage("hello")
+    event = SystemMessageEvent("hello")
     with pytest.raises(FrozenInstanceError):
         event.content = "changed"
     with pytest.raises(ValueError):
-        TurnEnd("turn", "invalid")
+        TurnEndedEvent("turn", "invalid")

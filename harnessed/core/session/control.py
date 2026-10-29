@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from harnessed.core.session.events import AgentControlChanged, ControlState, SessionEvent
+from harnessed.core.session.events import AgentControlChangedEvent, ControlState, SessionEvent
 
 
 class SessionStatus(StrEnum):
@@ -21,7 +21,7 @@ class RunControl:
     def __init__(self, events: Iterable[SessionEvent]) -> None:
         state, keep_inbox = ControlState.ACTIVE, False
         for event in events:
-            if isinstance(event, AgentControlChanged):
+            if isinstance(event, AgentControlChangedEvent):
                 state, keep_inbox = event.state, event.keep_inbox
         object.__setattr__(self, "state", state)
         object.__setattr__(self, "keep_inbox", keep_inbox)

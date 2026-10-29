@@ -9,11 +9,11 @@ from harnessed.core.messages import system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    InboxAdded,
+    InboxAddedEvent,
     InboxMode,
     InboxRemovalReason,
-    InboxRemoved,
-    UserMessage,
+    InboxRemovedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.session import SessionLog
@@ -24,7 +24,7 @@ from harnessed.testing import CallbackModel, ScriptedModel
 
 @pytest.mark.parametrize(("mode", "target"), [("followup", "next-turn"), ("steer", "next-step")])
 def test_input_modes_define_one_consistent_durable_route(mode, target):
-    event = InboxAdded.create(user("input"), mode)
+    event = InboxAddedEvent.create(user("input"), mode)
     assert event.target == target
     assert decode_event(encode_event(event)) == event
 
@@ -40,21 +40,21 @@ def test_input_modes_define_one_consistent_durable_route(mode, target):
 )
 def test_inconsistent_inbox_routes_cannot_enter_the_log(mode, target):
     with pytest.raises(ValueError):
-        InboxAdded(user("input"), target, mode)
+        InboxAddedEvent(user("input"), target, mode)
 
 
 def test_inbox_plans_one_followup_per_turn_and_preserves_pending_input_order():
-    first = InboxAdded.create(user("first task"), InboxMode.FOLLOWUP)
-    correction = InboxAdded.create(user("focus"), InboxMode.STEER)
-    second = InboxAdded.create(user("second task"), InboxMode.FOLLOWUP)
+    first = InboxAddedEvent.create(user("first task"), InboxMode.FOLLOWUP)
+    correction = InboxAddedEvent.create(user("focus"), InboxMode.STEER)
+    second = InboxAddedEvent.create(user("second task"), InboxMode.FOLLOWUP)
     inbox = Inbox((first, correction, second))
     assert inbox.has_wakeup and inbox.has_step_wakeup
     assert inbox.for_step(1) == (first, correction)
     assert inbox.for_step(2) == (correction,)
     assert inbox.next_turn == (first, second)
-    claimed = Inbox((first, correction, second, UserMessage(first.message)))
+    claimed = Inbox((first, correction, second, UserMessageEvent(first.message)))
     assert claimed.next_turn == (second,)
-    canceled = Inbox((first, InboxRemoved(first.message.id, InboxRemovalReason.CANCELED)))
+    canceled = Inbox((first, InboxRemovedEvent(first.message.id, InboxRemovalReason.CANCELED)))
     assert canceled.pending == () and (not canceled.has_wakeup)
     assert not canceled.has_step_wakeup
     with pytest.raises(FrozenInstanceError):
@@ -64,7 +64,7 @@ def test_inbox_plans_one_followup_per_turn_and_preserves_pending_input_order():
 @pytest.mark.parametrize("mode", ["followup", "steer"])
 def test_inbox_inputs_require_user_messages(mode):
     with pytest.raises(ValueError, match="requires a user message"):
-        InboxAdded.create(system("context"), mode)
+        InboxAddedEvent.create(system("context"), mode)
 
 
 class PausingModel(CallbackModel):
@@ -104,7 +104,7 @@ async def test_resume_reconstructs_pending_routing_from_the_log(tmp_path, mode):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
     session = SessionLog("pending", persistence=persistence)
-    event = InboxAdded.create(user("task"), mode)
+    event = InboxAddedEvent.create(user("task"), mode)
     await session.append(event)
     await persistence.aclose()
     model = ScriptedModel(["processed"])
@@ -167,6 +167,6 @@ async def test_public_steer_returns_the_same_frozen_item_across_restart(tmp_path
 
 
 def test_old_inbox_records_have_a_deterministic_creation_time():
-    record = encode_event(InboxAdded.create(user("old"), InboxMode.FOLLOWUP))
+    record = encode_event(InboxAddedEvent.create(user("old"), InboxMode.FOLLOWUP))
     record["data"].pop("created_at")
     assert decode_event(record).created_at == 0.0

@@ -9,10 +9,17 @@ from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session
-from harnessed.events import EventStream
-from harnessed.events.tool import ArgumentsDelta, CallStarted
-from harnessed.events.turn import Finished as TurnFinished
-from harnessed.kernel import Context, Inject, PluginSpec, plugin
+from harnessed.events import (
+    AssistantMessageEvent,
+    EventStream,
+    ToolArgumentsDeltaEvent,
+    ToolCallStartedEvent,
+    ToolExecutionFinishedEvent,
+    TurnEndedEvent,
+    TurnFinishedEvent,
+    TurnOutcome,
+)
+from harnessed.kernel import Context, Inject, PluginSpec, hook, plugin
 from harnessed.models import ToolArgumentsMode, ToolCallDelta, ToolCallStart
 from harnessed.plugins import AgentLoop, JsonlSessions, MemorySessions, Spill
 
@@ -23,6 +30,21 @@ async def configured(ctx: Context, root: str, *, enabled: bool = True) -> AsyncG
 
 
 assert_type(configured("workspace", enabled=False), PluginSpec)
+
+
+class EventObserver(Plugin):
+    @hook(AssistantMessageEvent)
+    async def on_assistant(self, event: AssistantMessageEvent) -> None:
+        assert_type(event.message, Assistant)
+        assert_type(event.interrupted, bool)
+
+    @hook(ToolExecutionFinishedEvent)
+    async def on_tool_finished(self, event: ToolExecutionFinishedEvent) -> None:
+        assert_type(event.call_id, str)
+
+    @hook(TurnEndedEvent)
+    async def on_turn(self, event: TurnEndedEvent) -> None:
+        assert_type(event.reason, TurnOutcome)
 
 
 class CountingTools(Plugin):
@@ -66,13 +88,13 @@ async def structured_consumer(agent: AppAgent, session: Session) -> None:
 async def typed_stream(session: Session) -> None:
     async for event in session.stream("Triage", output=OutputContract("triage.v1", Triage)):
         assert_type(event, EventStream[Triage])
-        if isinstance(event, TurnFinished):
-            assert_type(event, TurnFinished[Triage])
+        if isinstance(event, TurnFinishedEvent):
+            assert_type(event, TurnFinishedEvent[Triage])
             assert_type(event.result, RunResult[Triage])
             assert_type(event.result.output.severity, int)
-        elif isinstance(event, CallStarted):
+        elif isinstance(event, ToolCallStartedEvent):
             assert_type(event.call, ToolCallStart)
-        elif isinstance(event, ArgumentsDelta):
+        elif isinstance(event, ToolArgumentsDeltaEvent):
             assert_type(event.delta, ToolCallDelta)
             assert_type(event.delta.mode, ToolArgumentsMode)
 

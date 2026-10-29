@@ -21,7 +21,6 @@ from harnessed.core.runtime.control import SessionStatus as SessionStatus
 from harnessed.core.runtime.handles import RunHandle as RunHandle
 from harnessed.core.runtime.result import RunResult as RunResult
 from harnessed.core.runtime.session import Session as Session
-from harnessed.core.session.events import ApprovalRequested as ApprovalRequest
 from harnessed.core.tools.context import ToolContext as ToolContext
 from harnessed.core.tools.decorator import tool as tool
 from harnessed.core.tools.registry import ToolError as ToolError
@@ -36,7 +35,6 @@ from . import events as events
 __all__ = [
     "Agent",
     "ApprovalAnswer",
-    "ApprovalRequest",
     "Context",
     "File",
     "Image",

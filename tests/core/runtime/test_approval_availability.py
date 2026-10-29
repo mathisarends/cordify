@@ -12,10 +12,10 @@ from harnessed.core.model import ModelChunk
 from harnessed.core.runtime.options import AgentLoopConfig
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    ApprovalResolved,
+    ApprovalResolvedEvent,
     ApprovalStatus,
-    ToolExecutionStarted,
-    ToolReturned,
+    ToolExecutionStartedEvent,
+    ToolReturnedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel import hook
@@ -78,7 +78,9 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
         plugins=[Approvals(default=PolicyDecision.ALLOW), tools, ApprovalGate(risky={"risky"})],
     ).session("no-ui") as agent:
         await asyncio.wait_for(agent.run("go"), 2)
-        results = [event.result for event in agent.log.events if isinstance(event, ToolReturned)]
+        results = [
+            event.result for event in agent.log.events if isinstance(event, ToolReturnedEvent)
+        ]
         assert [result.status for result in results] == ["unavailable", "ok"]
         assert "No approval responder" in results[0].content
         assert executed == ["safe"]
@@ -239,7 +241,7 @@ async def test_gate_stays_active_after_approver_service_is_removed():
         await agent.run("second")
         assert executed == [True]
         assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.UNAVAILABLE
-        assert len([e for e in agent.log.events if isinstance(e, ToolExecutionStarted)]) == 1
+        assert len([e for e in agent.log.events if isinstance(e, ToolExecutionStartedEvent)]) == 1
 
 
 async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_new_request(tmp_path):
@@ -331,6 +333,6 @@ def test_approval_timeout_must_be_finite_and_positive(timeout):
 
 def test_unavailable_resolution_is_not_an_answer_or_a_persistent_permission():
     with pytest.raises(ValueError):
-        ApprovalResolved("request", ApprovalAnswer.ALLOW, status=ApprovalStatus.UNAVAILABLE)
+        ApprovalResolvedEvent("request", ApprovalAnswer.ALLOW, status=ApprovalStatus.UNAVAILABLE)
     with pytest.raises(TypeError):
-        ApprovalResolved("request", ApprovalAnswer.ALLOW, reason=123)
+        ApprovalResolvedEvent("request", ApprovalAnswer.ALLOW, reason=123)

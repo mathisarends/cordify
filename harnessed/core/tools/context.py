@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from harnessed.core.messages import ApprovalAnswer, ToolCall
-from harnessed.core.session.events import SessionEvent, ToolProgress
+from harnessed.core.session.events import SessionEvent, ToolProgressEvent
 from harnessed.core.stream import TransientEvent
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ class ToolContext:
         return self.signal.is_set()
 
     async def progress(self, text: str) -> None:
-        await self.log.append(ToolProgress(self.call.id, text))
+        await self.log.append(ToolProgressEvent(self.call.id, text))
 
     async def emit(self, event: SessionEvent | TransientEvent) -> None:
         await self.log.emit(event)

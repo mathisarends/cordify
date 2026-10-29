@@ -10,10 +10,10 @@ from harnessed.core.messages import Message
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.session.events import (
-    InboxAdded,
+    InboxAddedEvent,
     InboxMode,
     InboxRemovalReason,
-    InboxRemoved,
+    InboxRemovedEvent,
     TurnLimits,
 )
 from harnessed.core.session.session import SessionLog
@@ -33,7 +33,7 @@ class InboxItem:
     created_at: float
 
 
-def _item(event: InboxAdded) -> InboxItem:
+def _item(event: InboxAddedEvent) -> InboxItem:
     return InboxItem(
         event.message.id,
         InboxKind.RUN if event.mode == InboxMode.FOLLOWUP else InboxKind.STEER,
@@ -74,7 +74,7 @@ class InboxWriter:
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
         limits: TurnLimits | None = None,
-        prepared: Callable[[InboxAdded], None] | None = None,
+        prepared: Callable[[InboxAddedEvent], None] | None = None,
     ) -> InboxItem:
         async with self._sending():
             self.control.check_open()
@@ -82,7 +82,7 @@ class InboxWriter:
                 content, attachments=attachments, context=context
             )
             self.control.check_open()
-            event = InboxAdded.create(
+            event = InboxAddedEvent.create(
                 message,
                 mode,
                 context=contributions,
@@ -119,7 +119,7 @@ class SessionInbox:
         if not any(item.id == item_id for item in self.pending):
             raise KeyError(item_id)
         try:
-            await self.log.append(InboxRemoved(item_id, InboxRemovalReason.DISCARDED))
+            await self.log.append(InboxRemovedEvent(item_id, InboxRemovalReason.DISCARDED))
         except ValueError:
             # A model step may have claimed the item while persistence was awaited.
             if not any(item.id == item_id for item in self.pending):

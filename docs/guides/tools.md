@@ -56,7 +56,7 @@ to this call. It does not expose the model driver. Normal service arguments use
 A tool that discovers a risky step mid-call asks with `await call.approve(reason)`.
 The request is durable and runs through the session approval flow: an `ALWAYS`
 grant for the tool and scope (default `"tool-call"`), the approver configured on
-`Approvals(approver=...)`, or a stream consumer answering `events.approval.Needed`.
+`Approvals(approver=...)`, or a stream consumer answering `events.ApprovalNeededEvent`.
 It returns True for allow or always and raises `ApprovalUnavailable` when nobody
 can answer.
 

@@ -10,15 +10,15 @@ from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.runtime.stepper import StepRunner
 from harnessed.core.session.events import (
-    AssistantMessage,
-    ModelUsageRecorded,
-    OutputValidated,
-    OutputValidationFailed,
+    AssistantMessageEvent,
+    ModelUsageRecordedEvent,
+    OutputValidatedEvent,
+    OutputValidationFailedEvent,
     StepOutcome,
-    TurnEnd,
+    TurnEndedEvent,
     TurnLimits,
     TurnOutcome,
-    TurnStart,
+    TurnStartedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.turns import Step
@@ -57,7 +57,7 @@ class TurnRunner:
         if previous is None:
             candidates = self.log.inbox.next_turn or self.log.inbox.next_step
             first = candidates[0] if candidates else None
-            start = TurnStart(
+            start = TurnStartedEvent(
                 turn,
                 first.message.id if first is not None else None,
                 first.settings if first is not None else {},
@@ -68,14 +68,14 @@ class TurnRunner:
         else:
             start = previous.start
             if previous.steps and not await self.continue_from(previous.steps[-1]):
-                await self.log.append(TurnEnd(turn))
+                await self.log.append(TurnEndedEvent(turn))
                 return True
         settings = start.settings
         max_steps = start.limits.max_steps or self.options.max_steps
         budget = start.limits.token_budget
         for step in range(first_step, max_steps + 1):
             if budget is not None and self._spent_tokens() >= budget:
-                await self.log.append(TurnEnd(turn, TurnOutcome.TOKEN_BUDGET))
+                await self.log.append(TurnEndedEvent(turn, TurnOutcome.TOKEN_BUDGET))
                 return True
             with span(self.ctx, "step", session_id=self.log.id, turn_id=turn, step=step):
                 if not await self.steps.run(turn, step, settings):
@@ -83,22 +83,22 @@ class TurnRunner:
             await self.control.checkpoint()
             if await self.continue_from(self.log.current_turn().steps[-1]):
                 continue
-            await self.log.append(TurnEnd(turn))
+            await self.log.append(TurnEndedEvent(turn))
             return True
-        await self.log.append(TurnEnd(turn, TurnOutcome.MAX_STEPS))
+        await self.log.append(TurnEndedEvent(turn, TurnOutcome.MAX_STEPS))
         return True
 
     def _spent_tokens(self) -> int:
         """Input and output tokens billed so far in the open turn, compaction included."""
         events = self.log.current_turn().events
-        usage = sum_usage(e.usage for e in events if isinstance(e, ModelUsageRecorded))
+        usage = sum_usage(e.usage for e in events if isinstance(e, ModelUsageRecordedEvent))
         return usage.total_tokens
 
     async def continue_from(self, step: Step) -> bool:
         if step.reason == StepOutcome.CONTEXT_LIMIT:
             return True
         response = next(
-            (event for event in reversed(step.events) if isinstance(event, AssistantMessage)),
+            (event for event in reversed(step.events) if isinstance(event, AssistantMessageEvent)),
             None,
         )
         if response is not None and response.stop_reason == StopReason.MAX_TOKENS:
@@ -107,10 +107,12 @@ class TurnRunner:
             if self.options.on_max_tokens == TokenLimitBehavior.CONTINUE:
                 return True
         verdicts = [
-            e for e in step.events if isinstance(e, OutputValidated | OutputValidationFailed)
+            e
+            for e in step.events
+            if isinstance(e, OutputValidatedEvent | OutputValidationFailedEvent)
         ]
         output_calls = {e.call_id for e in verdicts}
-        invalid = any(isinstance(e, OutputValidationFailed) for e in verdicts)
+        invalid = any(isinstance(e, OutputValidationFailedEvent) for e in verdicts)
         if (
             step.reason == StepOutcome.INTERRUPTED
             or response is None

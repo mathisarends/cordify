@@ -24,7 +24,7 @@ from harnessed.core.errors import (
 from harnessed.core.messages import ImagePart, TextPart
 from harnessed.core.model import ModelRequest, StopReason, ToolArgumentsMode
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import ModelUsageRecorded
+from harnessed.core.session.events import ModelUsageRecordedEvent
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
 from harnessed.models import PydanticAIModel
@@ -127,7 +127,7 @@ async def test_native_tool_argument_previews_arrive_while_the_provider_is_still_
         async def consume():
             async for event in session.stream("add"):
                 notifications.append(event)
-                if isinstance(event, events.tool.ArgumentsDelta):
+                if isinstance(event, events.ToolArgumentsDeltaEvent):
                     seen.set()
 
         task = asyncio.create_task(consume())
@@ -139,8 +139,8 @@ async def test_native_tool_argument_previews_arrive_while_the_provider_is_still_
         finally:
             release.set()
             await asyncio.gather(task, return_exceptions=True)
-        start = next(e for e in notifications if isinstance(e, events.tool.CallStarted))
-        deltas = [e.delta for e in notifications if isinstance(e, events.tool.ArgumentsDelta)]
+        start = next(e for e in notifications if isinstance(e, events.ToolCallStartedEvent))
+        deltas = [e.delta for e in notifications if isinstance(e, events.ToolArgumentsDeltaEvent)]
         assert start.call.name == "add" and start.call.call_id == "call"
         assert [delta.arguments for delta in deltas] == ['{"a":', '1,"b":2}']
         assert effects == [(1, 2)]
@@ -576,7 +576,7 @@ async def test_native_stream_usage_is_recorded_once_even_when_interrupted(outcom
         assert usage.input_tokens > 0 and usage.output_tokens > 0
         assert session.usage.input_tokens == usage.input_tokens
         assert session.usage.output_tokens == usage.output_tokens
-        assert sum(isinstance(event, ModelUsageRecorded) for event in session.events) == 1
+        assert sum(isinstance(event, ModelUsageRecordedEvent) for event in session.events) == 1
 
 
 def _openai_sse(parts, finish):

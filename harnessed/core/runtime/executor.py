@@ -20,12 +20,12 @@ from harnessed.core.messages import (
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
     PolicySource,
-    ToolCalled,
-    ToolCompleted,
-    ToolExecutionFinished,
-    ToolExecutionStarted,
-    ToolPolicyApplied,
-    ToolReturned,
+    ToolCalledEvent,
+    ToolCompletedEvent,
+    ToolExecutionFinishedEvent,
+    ToolExecutionStartedEvent,
+    ToolPolicyAppliedEvent,
+    ToolReturnedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.context import ToolContexts
@@ -57,7 +57,7 @@ class ToolExecutor:
         plans: list[PreparedToolCall] = []
         registry = self.ctx[ToolRegistry]
         for call in calls:
-            await self.log.append(ToolCalled(call))
+            await self.log.append(ToolCalledEvent(call))
             if results is not None and call.id in results:
                 plans.append(PreparedToolCall(call, ToolScheduling(), results[call.id]))
                 continue
@@ -101,20 +101,20 @@ class ToolExecutor:
                     async with scheduler.slots:
                         result, reviewable = await self.invoke(plan)
                     receipt = limit.apply(result) if limit is not None else result
-                    await self.log.append(ToolExecutionFinished(plan.call.id, receipt))
+                    await self.log.append(ToolExecutionFinishedEvent(plan.call.id, receipt))
                 if index:
                     await reviewed[index - 1].wait()
                 if reviewable:
                     result = await self.review(plan.call, result, output_limit=plan.output_limit)
                 if limit is not None:
                     result = limit.apply(result)
-                await self.log.append(ToolCompleted(plan.call.id, result))
+                await self.log.append(ToolCompletedEvent(plan.call.id, result))
                 return result
             finally:
                 reviewed[index].set()
 
         async def commit(call: ToolCall, result: ToolResult) -> None:
-            await self.log.append(ToolReturned(call.id, result))
+            await self.log.append(ToolReturnedEvent(call.id, result))
 
         await scheduler.run(plans, worker, commit)
 
@@ -142,7 +142,7 @@ class ToolExecutor:
                 and (decision is PolicyDecision.ALLOW or record.decision is ApprovalAnswer.DENY)
                 else PolicySource.POLICY
             )
-            await self.log.append(ToolPolicyApplied(call.id, decision, source))
+            await self.log.append(ToolPolicyAppliedEvent(call.id, decision, source))
             if decision is PolicyDecision.DENY:
                 if answered and record.decision is ApprovalAnswer.DENY:
                     return ToolResult.denied("User declined this action", source=DenialSource.USER)
@@ -150,7 +150,7 @@ class ToolExecutor:
             return None
         except ApprovalUnavailable as exc:
             await self.log.append(
-                ToolPolicyApplied(call.id, PolicyDecision.DENY, PolicySource.UNAVAILABLE)
+                ToolPolicyAppliedEvent(call.id, PolicyDecision.DENY, PolicySource.UNAVAILABLE)
             )
             return ToolResult.unavailable(str(exc))
         except Exception as exc:
@@ -166,7 +166,7 @@ class ToolExecutor:
         call = plan.call
         execution = self.ctx[ToolContexts].create(call)
         try:
-            await self.log.append(ToolExecutionStarted(call.id))
+            await self.log.append(ToolExecutionStartedEvent(call.id))
             await self.log.flush()
             result = await self.ctx.dispatch(
                 ExecuteTool(call, self.session),

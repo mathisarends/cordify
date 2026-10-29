@@ -5,8 +5,7 @@ from time import perf_counter
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, ToolStatus, tool
 from harnessed.errors import ApprovalUnavailable
-from harnessed.events.approval import Status as ApprovalStatus
-from harnessed.events.tool import Returned as ToolReturned
+from harnessed.events import ApprovalStatus, ToolReturnedEvent
 from harnessed.hooks import RequestApproval, ToolPolicy
 from harnessed.kernel import hook
 from harnessed.models import ModelChunk
@@ -32,7 +31,7 @@ async def without_ui():
         ],
     ).session("no-ui") as session:
         result = await session.run("Publish the artifact.")
-        returned = next(event for event in result.events if isinstance(event, ToolReturned))
+        returned = next(event for event in result.events if isinstance(event, ToolReturnedEvent))
         assert returned.result.status == ToolStatus.UNAVAILABLE
         assert not session.approvals.pending
         print(f"No UI: {returned.result.status}; action was not executed.")
