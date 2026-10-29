@@ -13,7 +13,7 @@ from harnessed.core.runtime.session import Session
 from harnessed.events import EventStream
 from harnessed.events.turn import Finished as TurnFinished
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
-from harnessed.plugins import AgentLoop, JsonlSessions, Spill
+from harnessed.plugins import AgentLoop, JsonlSessions, MemorySessions, Spill
 
 
 @plugin
@@ -93,6 +93,7 @@ def plugin_configuration_signatures() -> None:
     assert_type(loop.config.max_steps, int)
     assert_type(Spill(max_files=4).config.max_files, int)
     assert_type(JsonlSessions(recover_tail=True).config.recover_tail, bool)
+    assert_type(MemorySessions(max_sessions=0).config.max_sessions, int | None)
     AgentLoop(max_steps="8")  # ty: ignore[invalid-argument-type]
     AgentLoop(max_step=8)  # ty: ignore[unknown-argument]
 

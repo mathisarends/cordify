@@ -7,6 +7,8 @@ uv run python -m scripts.benchmark_sessions --repeat 3 --output .harnessed/bench
 ```
 
 `--turns`, `--one-shots` and `--message-chars` select the workload sizes.
+`--retention all 16 0` compares unlimited retention, a bounded store and ephemeral
+sessions (the default set). `retention_limit` identifies each one-shot sample.
 Each JSON sample records elapsed time, current/peak traced allocations and
 structural counts. The model retains no request history and uses no provider.
 Schema warmup happens before the samples; garbage collection happens at each
@@ -42,3 +44,18 @@ The deterministic counts expose quadratic request-reference growth even though
 message values share identity and JSONL grows linearly. Retention can bound the
 number of closed conversations; it does not bound a single active conversation.
 Changing request-history representation remains a separate architectural task.
+
+## Bounded and ephemeral retention
+
+The same host/workload with the retention implementation produced:
+
+| One-shot runs | Retention limit | Retained sessions | Retained bytes |
+| --- | --- | --- | --- |
+| 100 | 16 | 16 | 109,697 |
+| 400 | 16 | 16 | 145,265 |
+| 100 | 0 | 0 | 55,968 |
+| 400 | 0 | 0 | 92,537 |
+
+The limit controls closed conversation ownership. It does not promise a fixed
+process memory footprint: global caches, active conversations and caller-held
+results can still allocate memory. Artifacts are evicted together with their log.
