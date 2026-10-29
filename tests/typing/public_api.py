@@ -11,9 +11,11 @@ from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session
 from harnessed.events import EventStream
+from harnessed.events.tool import ArgumentsDelta, CallStarted
 from harnessed.events.turn import Finished as TurnFinished
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
-from harnessed.plugins import AgentLoop, JsonlSessions, Spill
+from harnessed.models import ToolArgumentsMode, ToolCallDelta, ToolCallStart
+from harnessed.plugins import AgentLoop, JsonlSessions, MemorySessions, Spill
 
 
 @plugin
@@ -63,6 +65,11 @@ async def typed_stream(session: Session) -> None:
             assert_type(event, TurnFinished[Triage])
             assert_type(event.result, RunResult[Triage])
             assert_type(event.result.output.severity, int)
+        elif isinstance(event, CallStarted):
+            assert_type(event.call, ToolCallStart)
+        elif isinstance(event, ArgumentsDelta):
+            assert_type(event.delta, ToolCallDelta)
+            assert_type(event.delta.mode, ToolArgumentsMode)
 
 
 async def functional_scope(ctx: Context) -> None:
@@ -93,6 +100,7 @@ def plugin_configuration_signatures() -> None:
     assert_type(loop.config.max_steps, int)
     assert_type(Spill(max_files=4).config.max_files, int)
     assert_type(JsonlSessions(recover_tail=True).config.recover_tail, bool)
+    assert_type(MemorySessions(max_sessions=0).config.max_sessions, int | None)
     AgentLoop(max_steps="8")  # ty: ignore[invalid-argument-type]
     AgentLoop(max_step=8)  # ty: ignore[unknown-argument]
 

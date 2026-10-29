@@ -16,6 +16,10 @@ async def show(session: Session):
                     print(text, end="", flush=True)
                 case events.reasoning.Delta(text=text):
                     print("Thinking:", text)
+                case events.tool.CallStarted(call=preview):
+                    print("Generating call:", preview.name)
+                case events.tool.ArgumentsDelta(delta=delta):
+                    print("Arguments:", delta.mode, delta.arguments)
                 case events.tool.Started(call=call):
                     print("Starting:", call.name)
                 case events.tool.Progress(text=text):
@@ -42,6 +46,30 @@ when you want exhaustive static knowledge of your custom variants.
 Text and reasoning deltas are transient. Tool progress is durable. The accepted
 assistant message is stored once; deltas do not create additional history
 messages. Final-answer control tools do not produce application tool spinners.
+
+## Preview tool arguments
+
+`events.tool.CallStarted` (`tool.call.started`) and `events.tool.ArgumentsDelta`
+(`tool.arguments.delta`) arrive during model generation. Both are transient and
+carry `message_id`. `CallStarted.call` is a typed `ToolCallStart`;
+`ArgumentsDelta.delta` is a typed `ToolCallDelta`. Their response-local `index`
+correlates interleaved calls. Use `(message_id, index)` as the preview key, because
+provider call IDs and names may arrive in fragments or change during generation.
+A repeated `CallStarted` replaces that key's preview and resets its argument text.
+
+Each delta supplies the current `name` and `call_id`. With
+`events.tool.ArgumentsMode.APPEND`, append `arguments` verbatim; with `REPLACE`,
+replace the argument text with the supplied JSON snapshot. Object patches from
+providers are normalized to snapshots. Argument text can be incomplete or invalid;
+it is display data and must never be executed. Previews may include the reserved
+`final_answer` output call. They are distinct from `events.tool.Started`, which
+continues to describe the later application-tool lifecycle.
+
+The final assistant message and its complete calls remain authoritative. Execution,
+validation and approval happen after the provider stream completes. Cancellation
+can leave a preview without any completed call; clear outstanding previews at turn
+completion. Previews are not replayed from the durable log. Slow consumers use
+the same bounded buffers and overflow behavior as text deltas.
 
 ## Answer approvals by ID
 

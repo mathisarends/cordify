@@ -2,10 +2,10 @@ from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Annotated, Protocol
 
-from pydantic import ConfigDict, StringConstraints, TypeAdapter
+from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter
 
 from harnessed.core.errors import SessionLocked
-from harnessed.core.plugin import Plugin
+from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.events import SessionEvent
 from harnessed.core.session.files import MemoryFiles, SessionFiles, validate_file_key
 from harnessed.kernel import Context
@@ -60,46 +60,79 @@ class MemoryPersistence:
 
 
 class _MemoryStore:
-    def __init__(self) -> None:
+    def __init__(self, max_sessions: int | None = None) -> None:
         self.persistence = MemoryPersistence()
+        self.max_sessions = max_sessions
         self._active: set[str] = set()
         self._files: dict[str, MemoryFiles] = {}
+        self._retained: dict[str, None] = {}
 
     def files(self, session_id: str) -> SessionFiles:
         session_id = validate_session_id(session_id)
         return self._files.setdefault(session_id, MemoryFiles())
 
     async def list(self) -> tuple[str, ...]:
-        return tuple(sorted(self.persistence.records.keys() | self._files.keys() | self._active))
+        return tuple(
+            sorted(
+                self.persistence.records.keys()
+                | self._files.keys()
+                | self._active
+                | self._retained.keys()
+            )
+        )
 
     async def delete(self, session_id: str) -> None:
         session_id = validate_session_id(session_id)
         if session_id in self._active:
             raise SessionLocked(f"Session {session_id!r} still has a live owner")
+        self._discard(session_id)
+
+    def _discard(self, session_id: str) -> None:
         files = self._files.pop(session_id, None)
         if files is not None:
-            for entry in await files.entries():
-                await files.remove(entry.key)
+            files.clear()
         self.persistence.records.pop(session_id, None)
+        self._retained.pop(session_id, None)
+
+    def _prune(self) -> None:
+        if self.max_sessions is not None:
+            while len(self._retained) > self.max_sessions:
+                self._discard(next(iter(self._retained)))
 
     @asynccontextmanager
     async def open(self, session_id: str) -> AsyncGenerator[SessionPersistence]:
         session_id = validate_session_id(session_id)
         if session_id in self._active:
             raise SessionLocked(f"Session {session_id!r} already has a live owner")
+        self._retained.pop(session_id, None)
         self._active.add(session_id)
         try:
             yield self.persistence
         finally:
             self._active.remove(session_id)
+            self._retained[session_id] = None
+            self._prune()
+
+
+class MemorySessionsConfig(PluginConfig):
+    max_sessions: Annotated[int, Field(ge=0)] | None = None
 
 
 class MemorySessions(Plugin, slot="sessions"):
-    """Keep conversations by ID for the lifetime of this configured plugin."""
+    """Retain at most max_sessions closed conversations, most recently closed first.
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.store = _MemoryStore()
+    None retains every conversation; zero discards logs and artifacts on close.
+    Active leases never count toward the limit and cannot be evicted. This is
+    a conversation-count limit, not a byte limit on an individual live session.
+    """
+
+    Config = MemorySessionsConfig
+
+    config: MemorySessionsConfig
+
+    def __init__(self, *, max_sessions: int | None = None) -> None:
+        super().__init__(max_sessions=max_sessions)
+        self.store = _MemoryStore(self.config.max_sessions)
 
     async def setup(self, ctx: Context) -> None:
         ctx.provide(SessionStore, self.store)

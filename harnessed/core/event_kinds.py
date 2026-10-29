@@ -41,6 +41,8 @@ class EventKind(StrEnum):
     TEXT_DELTA = "text.delta"
     REASONING_DELTA = "reasoning.delta"
     TOOL_STARTED = "tool.started"
+    TOOL_CALL_STARTED = "tool.call.started"
+    TOOL_ARGUMENTS_DELTA = "tool.arguments.delta"
     TOOL_FINISHED = "tool.finished"
     APPROVAL_NEEDED = "approval.needed"
     STATUS_CHANGED = "session.status.changed"

@@ -155,6 +155,35 @@ def sum_usage(usages: Iterable[ModelUsage]) -> ModelUsage:
     )
 
 
+class ToolArgumentsMode(StrEnum):
+    APPEND = "append"
+    REPLACE = "replace"
+
+
+@validated_dataclass(frozen=True, slots=True, config=_VALUE_CONFIG)
+class ToolCallStart:
+    """Start or replace a preview at a response-local part index."""
+
+    index: Annotated[int, Field(ge=0)]
+    name: str
+    call_id: str | None = None
+
+
+@validated_dataclass(frozen=True, slots=True, config=_VALUE_CONFIG)
+class ToolCallDelta:
+    """Unvalidated argument text, with the current name and provider call ID.
+
+    APPEND adds a JSON fragment; REPLACE supplies a complete snapshot, used for
+    providers that stream object patches. Neither form authorizes execution.
+    """
+
+    index: Annotated[int, Field(ge=0)]
+    arguments: str
+    name: str
+    call_id: str | None = None
+    mode: ToolArgumentsMode = ToolArgumentsMode.APPEND
+
+
 @dataclass(frozen=True)
 class ModelChunk:
     __hash__ = None
@@ -163,6 +192,8 @@ class ModelChunk:
     tool_call: ToolCall | None = None
     usage: ModelUsage | None = None
     stop_reason: StopReason | None = None
+    tool_call_start: ToolCallStart | None = None
+    tool_call_delta: ToolCallDelta | None = None
 
     def __post_init__(self) -> None:
         if self.stop_reason is not None:

@@ -9,6 +9,9 @@ from harnessed.core.model import (
     OutputMode,
     StopReason,
     TokenLimitBehavior,
+    ToolArgumentsMode,
+    ToolCallDelta,
+    ToolCallStart,
     ToolDefinition,
 )
 
@@ -26,5 +29,8 @@ __all__ = [
     "PydanticAIModel",
     "StopReason",
     "TokenLimitBehavior",
+    "ToolArgumentsMode",
+    "ToolCallDelta",
+    "ToolCallStart",
     "ToolDefinition",
 ]

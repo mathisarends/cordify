@@ -91,7 +91,8 @@ values fail before invocation. See [tools and hooks](../guides/tools.md) and
 ## Event data and namespaces
 
 `harnessed.events` exposes `text.Delta`, `reasoning.Delta`, `tool.Started`,
-`tool.Finished`, `approval.Needed`, `turn.Finished`, `compaction.Applied` and
+`tool.CallStarted`, `tool.ArgumentsDelta`, `tool.Finished`, `approval.Needed`,
+`turn.Finished`, `compaction.Applied` and
 `spill.Created`, among other namespaces. Every event has an explicit namespaced
 `type` discriminator. See [events and schemas](../guides/events.md).
 

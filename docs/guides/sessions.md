@@ -12,6 +12,20 @@ advanced integrations can inspect it through `session.log` or inject it as a ser
 ID. IDs contain 1–128 ASCII letters, digits, underscores or hyphens, beginning with
 a letter or digit. Omitting an ID generates a fresh one.
 
+To bound in-memory retention, install `MemorySessions(max_sessions=100)` from
+`harnessed.plugins`. It keeps the 100 most recently closed conversations and
+deletes older logs and artifacts when a lease closes. Reopening a retained ID
+protects it while active and refreshes its recency when closed. Active sessions
+are never evicted and do not count toward the limit. The default `None` retains
+all sessions.
+
+`MemorySessions(max_sessions=0)` is ephemeral: closing a session discards its
+stored log and files, including after failure or cancellation. Reopening the ID
+starts empty. `Agent.run()` uses a fresh session and therefore leaves no retained
+session in this mode. Returned `RunResult` values remain usable, but spilled files
+must be read before closing. Caller-held results/logs still consume memory.
+Retention limits conversation count, not bytes or the length of an active session.
+
 JSONL records store unchanged model history prefixes and tool definitions relative
 to the preceding request. Ordered loading reconstructs every exact request;
 ordinary growing conversations no longer repeat their entire history on disk.

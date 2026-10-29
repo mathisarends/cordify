@@ -75,6 +75,10 @@ class MemoryFiles:
     async def remove(self, key: str) -> None:
         self._values.pop(validate_file_key(key), None)
 
+    def clear(self) -> None:
+        """Release all artifacts when the owning memory store deletes a session."""
+        self._values.clear()
+
     async def entries(self) -> tuple[StoredFile, ...]:
         return tuple(
             StoredFile(key, len(text.encode("utf-8")), modified)

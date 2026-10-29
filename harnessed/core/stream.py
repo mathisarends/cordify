@@ -7,6 +7,7 @@ from pydantic import Field
 
 from harnessed.core.event_kinds import EventKind
 from harnessed.core.messages import ToolCall, ToolResult
+from harnessed.core.model import ToolCallDelta, ToolCallStart
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.session.control import SessionStatus
 from harnessed.core.session.events import (
@@ -48,6 +49,24 @@ class ReasoningDelta(TransientEvent):
     )
     message_id: str
     text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallStarted(TransientEvent):
+    type: Literal[EventKind.TOOL_CALL_STARTED] = field(
+        default=EventKind.TOOL_CALL_STARTED, kw_only=True
+    )
+    message_id: str
+    call: ToolCallStart
+
+
+@dataclass(frozen=True, slots=True)
+class ToolArgumentsDelta(TransientEvent):
+    type: Literal[EventKind.TOOL_ARGUMENTS_DELTA] = field(
+        default=EventKind.TOOL_ARGUMENTS_DELTA, kw_only=True
+    )
+    message_id: str
+    delta: ToolCallDelta
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +112,8 @@ type StreamEvent[T] = Annotated[
     (
         TextDelta
         | ReasoningDelta
+        | ToolCallStarted
+        | ToolArgumentsDelta
         | ToolStarted
         | ToolProgress
         | ToolFinished

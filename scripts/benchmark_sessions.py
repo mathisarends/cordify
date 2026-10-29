@@ -76,6 +76,7 @@ class Measurement:
     request_tuple_bytes: int = 0
     jsonl_bytes: int = 0
     retained_sessions: int = 0
+    retention_limit: int | None = None
 
 
 def start_measurement() -> float:
@@ -157,20 +158,23 @@ async def long_session(count: int, chars: int, directory: Path) -> list[Measurem
     return [live, encoded, decoded]
 
 
-async def one_shots(count: int, chars: int) -> Measurement:
+async def one_shots(count: int, chars: int, max_sessions: int | None = None) -> Measurement:
     started = start_measurement()
-    app = Agent(model=EchoModel("a" * chars), plugins=[MemorySessions()])
+    app = Agent(model=EchoModel("a" * chars), plugins=[MemorySessions(max_sessions=max_sessions)])
     for index in range(count):
         await app.run(f"{index}:" + "u" * chars)
     elapsed = perf_counter() - started
     retained, peak = finish_measurement()
+    retained_sessions = len(await app.sessions.list())
+    assert retained_sessions == (count if max_sessions is None else min(count, max_sessions))
     return Measurement(
         "one_shots",
         count,
         elapsed,
         retained,
         peak,
-        retained_sessions=len(await app.sessions.list()),
+        retained_sessions=retained_sessions,
+        retention_limit=max_sessions,
     )
 
 
@@ -194,9 +198,11 @@ async def main(args: argparse.Namespace) -> None:
                     samples.append(sample)
                     print(json.dumps(sample), flush=True)
             for count in args.one_shots:
-                sample = {"repeat": repeat, **asdict(await one_shots(count, args.message_chars))}
-                samples.append(sample)
-                print(json.dumps(sample), flush=True)
+                for limit in args.retention:
+                    measurement = await one_shots(count, args.message_chars, limit)
+                    sample = {"repeat": repeat, **asdict(measurement)}
+                    samples.append(sample)
+                    print(json.dumps(sample), flush=True)
     report["samples"] = samples
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -210,10 +216,20 @@ def positive(value: str) -> int:
     return selected
 
 
+def retention(value: str) -> int | None:
+    if value == "all":
+        return None
+    selected = int(value)
+    if selected < 0:
+        raise argparse.ArgumentTypeError("must be all or a nonnegative integer")
+    return selected
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--turns", nargs="+", type=positive, default=[50, 100, 200])
     parser.add_argument("--one-shots", nargs="+", type=positive, default=[100, 200, 400])
+    parser.add_argument("--retention", nargs="+", type=retention, default=[None, 16, 0])
     parser.add_argument("--message-chars", type=positive, default=256)
     parser.add_argument("--repeat", type=positive, default=1)
     parser.add_argument("--work-dir", type=Path, default=Path(".harnessed/benchmarks"))
