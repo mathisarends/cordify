@@ -11,7 +11,7 @@ from harnessed.core.session.events import (
     RuleTriggered,
     ToolReturned,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.rules import Rules, when
@@ -57,7 +57,7 @@ async def test_rule_note_context_steer_order_and_structured_exit_code():
         assert agent.context.values["rule:rules:1"] == "Consider the failure."
         triggered = [e for e in agent.log.events if isinstance(e, RuleTriggered)]
         assert triggered[0].actions == ("note", "steer")
-        assert Session("replay", seed=agent.log.events).messages == agent.log.messages
+        assert SessionLog("replay", seed=agent.log.events).messages == agent.log.messages
 
 
 async def test_repeated_failures_are_grouped_by_command_reset_on_success_and_fire_once():

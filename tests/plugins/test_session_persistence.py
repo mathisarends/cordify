@@ -7,7 +7,7 @@ import pytest
 from harnessed import Agent
 from harnessed.core.messages import User
 from harnessed.core.session.events import UserMessage
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.plugins import JsonlSessions
 from harnessed.plugins.sessions import Durability, JsonlPersistence
 from harnessed.testing import ScriptedModel
@@ -29,7 +29,7 @@ async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consist
     writer = JsonlPersistence(tmp_path, durability=Durability.FSYNC)
     await writer.load("off-thread")
     monkeypatch.setattr(persistence_module.os, "fsync", slow_fsync)
-    session = Session("off-thread", persistence=writer)
+    session = SessionLog("off-thread", persistence=writer)
     first = UserMessage(User("first"))
     task = asyncio.create_task(session.append(first))
     try:

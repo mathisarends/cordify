@@ -5,8 +5,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, plugin, tool
-from harnessed import Session as Agent
+from harnessed import ApprovalAnswer, Inject, Plugin, Session, ToolCall, plugin, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalState, Approver, CallbackApprover
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
@@ -22,7 +21,7 @@ from harnessed.core.session.events import (
     ToolReturned,
 )
 from harnessed.core.session.files import MemoryFiles
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import SessionStore
 from harnessed.kernel import hook
 from harnessed.plugins import Approvals, JsonlSessions, Service
@@ -38,7 +37,7 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
 
     class ToolsPlugin(Plugin):
         @tool
-        async def work(self, agent: Inject[Agent]) -> str:
+        async def work(self, agent: Inject[Session]) -> str:
             assert isinstance(agent.log.events[-1], ToolExecutionStarted)
             assert agent.log.approvals.records[-1].decision is ApprovalAnswer.ALWAYS
             executed.append(True)
@@ -290,4 +289,4 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
 )
 def test_invalid_approval_transitions_are_rejected_by_replay(events):
     with pytest.raises(ValueError):
-        Session("invalid", seed=events)
+        SessionLog("invalid", seed=events)

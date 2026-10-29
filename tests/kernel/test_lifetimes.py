@@ -5,8 +5,7 @@ import pytest
 from pydantic import PydanticSchemaGenerationError
 
 from harnessed import Agent as Application
-from harnessed import Context, Plugin, PolicyDecision, ToolCall, hook, plugin, tool
-from harnessed import Session as Agent
+from harnessed import Context, Plugin, PolicyDecision, Session, ToolCall, hook, plugin, tool
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import ContextClosed, Emit, Inject
@@ -272,7 +271,7 @@ async def test_agent_registration_facade_uses_the_active_plugin_owner():
     seen = []
 
     class Feature(Plugin):
-        async def setup(self, ctx, agent: Inject[Agent]):
+        async def setup(self, ctx, agent: Inject[Session]):
             agent.add_hook(Ping, lambda event: seen.append("explicit"))
 
             @agent.on(Ping)

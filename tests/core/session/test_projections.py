@@ -27,15 +27,14 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.inbox import Inbox
-from harnessed.core.session.session import SessionLog as Session
-from harnessed.core.session.session import derive_messages, derive_requests
+from harnessed.core.session.session import SessionLog, derive_messages, derive_requests
 from harnessed.core.session.turns import derive_turns
 
 
 @pytest.mark.parametrize("seed", range(12))
 async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(seed):
     rng = random.Random(seed)
-    session = Session(f"generated-{seed}")
+    session = SessionLog(f"generated-{seed}")
     prefix = []
     snapshots = []
 
@@ -79,7 +78,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
 
 
 async def test_projection_validation_failure_does_not_advance_log_or_state():
-    session = Session("invalid-transition")
+    session = SessionLog("invalid-transition")
     original = session.events, session.inbox, session.approvals, session.control
     with pytest.raises(ValueError, match="unknown inbox"):
         await session.append(InboxRemoved("absent"))
@@ -88,7 +87,7 @@ async def test_projection_validation_failure_does_not_advance_log_or_state():
 
 
 async def test_last_and_since_indexes_match_the_log_suffix():
-    session = Session("indexes")
+    session = SessionLog("indexes")
     assert session.last(TurnStart) is None and session.since(TurnStart) == ()
     start = TurnStart("turn")
     message = UserMessage(User("hello"))
@@ -102,14 +101,14 @@ async def test_last_and_since_indexes_match_the_log_suffix():
 @pytest.mark.parametrize("seed", range(5))
 async def test_incremental_observations_and_compaction_match_every_prefix(seed):
     rng = random.Random(seed)
-    session = Session("observations")
+    session = SessionLog("observations")
     boundaries = []
 
     async def append(event):
         snapshot = session.messages
         await session.append(event)
         assert session.messages == derive_messages(session.events)
-        assert Session("reloaded", seed=session.events).messages == session.messages
+        assert SessionLog("reloaded", seed=session.events).messages == session.messages
         assert isinstance(snapshot, tuple)
         for keep in (0, 1, 2):
             options = dict(keep_turns=keep, keep_first_turns=1, preserve_turns=())
@@ -147,7 +146,7 @@ async def test_incremental_observations_and_compaction_match_every_prefix(seed):
 
 async def test_completed_message_does_not_enable_a_permanent_history_fold():
     message = Assistant("completed", id="old")
-    session = Session(
+    session = SessionLog(
         "completed",
         seed=[
             AssistantMessage(message),

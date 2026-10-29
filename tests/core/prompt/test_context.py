@@ -2,15 +2,24 @@ import json
 from pathlib import Path
 
 from harnessed import Agent as Application
-from harnessed import File, Image, Inject, Observation, Plugin, PolicyDecision, ToolCall, tool
-from harnessed import Session as Agent
+from harnessed import (
+    File,
+    Image,
+    Inject,
+    Observation,
+    Plugin,
+    PolicyDecision,
+    Session,
+    ToolCall,
+    tool,
+)
 from harnessed.core.hooks import PreStep
 from harnessed.core.messages import ImageDetail, ImagePart, Role, User, system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.kernel import hook
 from harnessed.plugins import Approvals, Service
 from harnessed.plugins.filesystem import FileSystemBackend, LocalFileSystem
@@ -90,7 +99,7 @@ async def test_push_context_from_pre_step_is_in_the_current_request():
 
     class Recall(Plugin):
         @hook(PreStep)
-        async def recall(self, event, next_, agent: Inject[Agent]):
+        async def recall(self, event, next_, agent: Inject[Session]):
             seen.append((event.is_turn_start, event.latest_user_text))
             if event.is_turn_start:
                 await agent.inject(system("Relevant memory: prefers Python"))
@@ -140,7 +149,7 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
 
     class BrowserObserver(Plugin):
         @hook(PreStep)
-        async def observe(self, event, next_, agent: Inject[Agent]):
+        async def observe(self, event, next_, agent: Inject[Session]):
             state = next(states)
             agent.observe(Observation("browser", f"FULL {state} refs", f"SUMMARY {state}"))
             return await next_()
@@ -162,7 +171,7 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
         assert "SUMMARY before" in texts and "FULL before refs" not in texts
         assert texts[-1] == "FULL after refs"
         assert any(isinstance(e, ObservationRecorded) for e in agent.log.events)
-        replay = Session("replay", seed=agent.log.events)
+        replay = SessionLog("replay", seed=agent.log.events)
         assert replay.messages == agent.log.messages
         assert all(not m.text.startswith("FULL") for m in replay.messages)
         fork = agent.log.fork("fork")

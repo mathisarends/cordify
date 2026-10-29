@@ -3,8 +3,7 @@ import asyncio
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import ApprovalAnswer, Inject, Plugin, ToolCall, ToolContext, plugin, tool
-from harnessed import Session as Agent
+from harnessed import ApprovalAnswer, Inject, Plugin, Session, ToolCall, ToolContext, plugin, tool
 from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
 from harnessed.core.hooks import ExecuteTool, PreStep, ReviewToolResult, StepDecision, ToolPolicy
 from harnessed.core.messages import PolicyDecision, Role, ToolStatus
@@ -146,7 +145,7 @@ async def test_approval_always_is_session_local_and_review_can_inject_nudges():
             return await next_()
 
         @hook(ReviewToolResult)
-        async def review(self, event, next_, agent: Inject[Agent]):
+        async def review(self, event, next_, agent: Inject[Session]):
             stages.append("review")
             await agent.inject("consider this")
             return (await next_()).with_note("Reviewed")
@@ -185,13 +184,13 @@ async def test_class_plugin_state_is_fresh_for_every_session_and_methods_support
             self.count = 0
 
         @tool
-        async def count_calls(self, agent: Inject[Agent]) -> int:
+        async def count_calls(self, agent: Inject[Session]) -> int:
             self.count += 1
             assert agent.status == "running"
             return self.count
 
         @hook(ReviewToolResult)
-        async def review(self, event, next_, agent: Inject[Agent]):
+        async def review(self, event, next_, agent: Inject[Session]):
             assert agent.id in ("one", "two")
             return await next_()
 
@@ -218,7 +217,7 @@ async def test_function_plugin_can_inject_current_agent_and_implicit_dependencie
     observed = []
 
     @plugin
-    async def observer(ctx, agent: Inject[Agent], registry: Inject[ToolRegistry]):
+    async def observer(ctx, agent: Inject[Session], registry: Inject[ToolRegistry]):
         observed.append((agent.id, registry))
         yield
         assert agent.status == "closed"

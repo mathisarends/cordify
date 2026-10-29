@@ -23,7 +23,7 @@ from harnessed.core.session.files import (
     validate_file_key,
     validate_file_range,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import SessionPersistence, SessionStore, validate_session_id
 from harnessed.kernel import Context, Inject, run_sync
 
@@ -123,7 +123,7 @@ class JsonlPersistence:
                         offset += len(line)
                         boundaries.add(offset)
             if tail is not None:
-                Session(session_id, seed=events, registry=self.registry)
+                SessionLog(session_id, seed=events, registry=self.registry)
                 self._archive_tail(session_id, offset, tail)
                 with path.open("r+b") as stream:
                     stream.truncate(offset)

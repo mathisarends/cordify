@@ -10,7 +10,7 @@ from harnessed.core.stream import TransientEvent
 
 if TYPE_CHECKING:
     from harnessed.core.runtime.inbox import SessionInbox
-    from harnessed.core.session.session import SessionLog as Session
+    from harnessed.core.session.session import SessionLog
 
 
 @dataclass
@@ -18,7 +18,7 @@ class ToolContext:
     """Per-call services without access to the runtime driver."""
 
     call: ToolCall
-    session: Session
+    session: SessionLog
     inbox: SessionInbox
     signal: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -39,7 +39,7 @@ class ToolContexts(Protocol):
 
 @dataclass(frozen=True)
 class BoundToolContexts:
-    session: Session
+    session: SessionLog
     inbox: SessionInbox
 
     def create(self, call: ToolCall) -> ToolContext:

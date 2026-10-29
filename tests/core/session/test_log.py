@@ -22,15 +22,14 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session.session import SessionLog as Session
-from harnessed.core.session.session import derive_messages
+from harnessed.core.session.session import SessionLog, derive_messages
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
 
 
 async def test_slow_subscription_disconnects_without_affecting_other_consumers_or_the_log():
-    session = Session("subscribers")
+    session = SessionLog("subscribers")
     slow = session.subscribe(buffer_size=2)
     fast = session.subscribe(buffer_size=2)
     slow_first = asyncio.create_task(anext(slow))
@@ -131,7 +130,7 @@ async def test_jsonl_rejects_valid_json_without_final_record_delimiter(tmp_path)
 async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("interrupted")
-    session = Session("interrupted", persistence=persistence)
+    session = SessionLog("interrupted", persistence=persistence)
     call = ToolCall("missing", id="call-1")
     for event in (
         TurnStart("turn-1"),
@@ -156,7 +155,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
 async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
-    session = Session("pending", persistence=persistence)
+    session = SessionLog("pending", persistence=persistence)
     await session.append(
         InboxAdded(User("queued"), InboxTarget.NEXT_TURN, True, InboxMode.FOLLOWUP)
     )
@@ -172,18 +171,18 @@ async def test_resume_wakes_durable_pending_followup_but_not_injection(tmp_path)
 
 
 async def test_user_message_atomically_claims_its_inbox_identity():
-    session = Session("atomic-input")
+    session = SessionLog("atomic-input")
     message = User("input")
     await session.append(InboxAdded(message, InboxTarget.NEXT_TURN, True, InboxMode.FOLLOWUP))
     await session.append(UserMessage(message))
     assert not session.inbox.pending
     assert session.messages == (message,)
-    replay = Session("replayed", seed=session.events)
+    replay = SessionLog("replayed", seed=session.events)
     assert replay.messages == (message,) and (not replay.inbox.pending)
 
 
 async def test_fork_copies_closed_prefix_and_is_independent():
-    session = Session("parent")
+    session = SessionLog("parent")
     await session.append(TurnStart("first"))
     await session.append(UserMessage(User("one")))
     with pytest.raises(ValueError, match="closed turn"):

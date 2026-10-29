@@ -19,7 +19,7 @@ from harnessed.core.session.events import (
 from harnessed.kernel.events import Emit
 
 if TYPE_CHECKING:
-    from harnessed.core.session.session import SessionLog as Session
+    from harnessed.core.session.session import SessionLog
 
 
 class TransientEvent(Emit):
@@ -111,5 +111,5 @@ type EventStream[T] = StreamEvent[T] | DurableEvent | CustomTransientEvent
 
 @dataclass(frozen=True, slots=True)
 class SessionPublished(Emit):
-    log: Session
+    log: SessionLog
     event: TransientEvent

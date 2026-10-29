@@ -2,7 +2,7 @@ from harnessed import Agent
 from harnessed.core.model import ModelChunk, ModelUsage, sum_usage
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ModelUsageRecorded
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.testing import ScriptedModel
 
 
@@ -29,4 +29,4 @@ async def test_final_usage_is_recorded_once_and_session_totals_survive_replay():
         recorded = [event for event in session.events if isinstance(event, ModelUsageRecorded)]
         assert len(recorded) == 2
         assert session.usage.input_tokens == 30 and session.usage.output_tokens == 8
-        assert Session("replay", seed=session.events).usage == session.usage
+        assert SessionLog("replay", seed=session.events).usage == session.usage

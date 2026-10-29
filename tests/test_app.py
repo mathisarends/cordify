@@ -14,7 +14,7 @@ from harnessed.core.session.events import (
     TurnEnd,
     TurnStart,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.kernel.plugin import PluginStatus
 from harnessed.models import Model
 from harnessed.plugins import Approvals, ContextValue, Instructions, Service
@@ -169,7 +169,7 @@ async def test_denials_distinguish_policy_from_the_user_in_log_and_result(user_a
 async def test_latest_dynamic_context_survives_compaction_and_replay():
     from harnessed.core.prompt.context import DynamicContext
 
-    session = Session("context-compaction")
+    session = SessionLog("context-compaction")
     values = DynamicContext(session)
     await session.append(TurnStart("first"))
     await values.set("user", "old")
@@ -178,7 +178,7 @@ async def test_latest_dynamic_context_survives_compaction_and_replay():
     await session.append(CompactionApplied(len(session), "Earlier work."))
     text = "\n".join(message.text for message in session.messages)
     assert "current" in text and ">old<" not in text
-    replay = Session("context-replay", seed=session.events)
+    replay = SessionLog("context-replay", seed=session.events)
     assert replay.messages == session.messages
     assert DynamicContext(replay).values == {"user": "current"}
 

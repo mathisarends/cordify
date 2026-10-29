@@ -24,8 +24,7 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.files import MemoryFiles
-from harnessed.core.session.session import SessionLog as Session
-from harnessed.core.session.session import derive_messages, derive_requests
+from harnessed.core.session.session import SessionLog, derive_messages, derive_requests
 from harnessed.core.session.store import SessionStore
 from harnessed.core.stream import ReasoningDelta, TextDelta
 from harnessed.plugins import Approvals, JsonlSessions
@@ -70,7 +69,7 @@ async def test_live_deltas_are_transient_and_completed_messages_match_jsonl_repl
         assert {chunk.message_id for chunk in chunks} == {final.message.id}
         assert final.message.text == "hello world" and final.message.reasoning == "think"
         assert [m.text for m in agent.log.messages] == ["hello", "hello world"]
-        replay = Session("replayed", seed=roundtrip(log))
+        replay = SessionLog("replayed", seed=roundtrip(log))
         assert replay.messages == agent.log.messages
         assert replay.requests == tuple(model.requests) == derive_requests(log)
         assert replay.fork("fork").events == log
@@ -99,10 +98,10 @@ async def test_every_log_prefix_reconstructs_the_same_history_and_requests():
         restored = roundtrip(log)
         for offset in range(len(log) + 1):
             prefix = log[:offset]
-            replay = Session("prefix", seed=restored[:offset])
+            replay = SessionLog("prefix", seed=restored[:offset])
             assert replay.messages == derive_messages(prefix) == derive_messages(iter(prefix))
             assert replay.requests == derive_requests(prefix) == derive_requests(iter(prefix))
-            assert replay.turns == Session("original-prefix", seed=prefix).turns
+            assert replay.turns == SessionLog("original-prefix", seed=prefix).turns
         for seq, event in enumerate(log):
             if isinstance(event, ModelRequested):
                 assert event.request.messages == derive_messages(log[:seq])
@@ -125,7 +124,7 @@ async def test_exact_requests_include_request_hook_changes_without_rerunning_the
 
     async with harness.session("request-snapshot") as agent:
         await agent.run("hello")
-        replay = Session("replayed", seed=roundtrip(agent.log.events))
+        replay = SessionLog("replayed", seed=roundtrip(agent.log.events))
         assert replay.requests == tuple(model.requests)
         assert replay.requests[0].messages[-1].text == "request context"
         assert invocations == [True]
@@ -138,7 +137,7 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
 
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("crashed")
-    session = Session("crashed", persistence=persistence)
+    session = SessionLog("crashed", persistence=persistence)
     for event in (
         TurnStart("turn"),
         StepStart("turn", 1),
@@ -172,7 +171,7 @@ async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     assert len(partial) == 1 and partial[0].text == "one two"
     completed = (*events, TurnEnd("turn"))
     assert derive_messages(completed) == partial
-    parent = Session("parent", seed=completed)
+    parent = SessionLog("parent", seed=completed)
     child = parent.fork("child")
     await child.append(UserMessage(User("another branch")))
     assert parent.events == completed and parent.messages == partial
@@ -234,11 +233,11 @@ class UnknownEvent(SessionEvent):
 
 @pytest.mark.parametrize("event", [SessionEvent(), UnknownEvent(), SystemMessage(["mutable"])])
 async def test_memory_logs_seeds_and_codecs_reject_unregistered_or_mutable_events(event):
-    session = Session("immutable")
+    session = SessionLog("immutable")
     with pytest.raises(TypeError):
         await session.append(event)
     with pytest.raises(TypeError):
-        Session("invalid-seed", seed=[event])
+        SessionLog("invalid-seed", seed=[event])
     with pytest.raises(TypeError):
         encode_event(event)
     assert session.events == ()

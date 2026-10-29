@@ -23,7 +23,7 @@ from harnessed.core.errors import (
 from harnessed.core.messages import ImagePart, TextPart
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
 from harnessed.models import PydanticAIModel
 from harnessed.plugins import AgentLoop
@@ -87,7 +87,7 @@ async def test_direct_stream_preserves_thinking_signature_tools_and_replay_state
         result = await session.run("Add")
         assert result.text == "3" and result.tool_calls[0][1].content == "3"
         records = json.loads(json.dumps([encode_event(event) for event in session.events]))
-        replay = Session("replay", seed=[decode_event(record) for record in records])
+        replay = SessionLog("replay", seed=[decode_event(record) for record in records])
         assert replay.messages == session.messages
         thinking = next(
             part
@@ -212,7 +212,7 @@ async def test_session_settings_are_durable_and_reach_each_step_of_the_turn():
         model=FunctionModel(stream_function=stream), plugins=[Calculator()]
     ).session() as session:
         await session.run("Add", settings={"temperature": 0.1})
-        replay = Session(
+        replay = SessionLog(
             "settings", seed=[decode_event(encode_event(event)) for event in session.events]
         )
         assert [request.settings["temperature"] for request in replay.requests] == [0.1, 0.1]

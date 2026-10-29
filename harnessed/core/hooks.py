@@ -18,8 +18,8 @@ from harnessed.kernel.events import Bail, Emit, Waterfall
 from harnessed.kernel.hooks import Next as Next
 
 if TYPE_CHECKING:
-    from harnessed.core.runtime.session import Session as Agent
-    from harnessed.core.session.session import SessionLog as Session
+    from harnessed.core.runtime.session import Session
+    from harnessed.core.session.session import SessionLog
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class StepDecision:
 
 @dataclass(frozen=True)
 class PreStep(Waterfall[StepDecision]):
-    agent: Agent
+    agent: Session
     messages: tuple[Message, ...]
     step: int
 
@@ -55,44 +55,44 @@ class PreStep(Waterfall[StepDecision]):
 @dataclass(frozen=True)
 class ExecuteTool(Waterfall[ToolResult]):
     call: ToolCall
-    agent: Agent
+    agent: Session
 
 
 @dataclass(frozen=True)
 class ToolPolicy(Waterfall[PolicyDecision]):
     call: ToolCall
-    agent: Agent
+    agent: Session
 
 
 @dataclass(frozen=True)
 class ReviewToolResult(Waterfall[ToolResult]):
     call: ToolCall
     result: ToolResult
-    agent: Agent
+    agent: Session
     output_limit: OutputLimitSetting = field(default=OutputLimit.INHERIT, kw_only=True)
 
 
 @dataclass(frozen=True)
 class PrepareRequest(Waterfall[ModelRequest]):
-    agent: Agent
+    agent: Session
     request: ModelRequest
 
 
 @dataclass(frozen=True)
 class ConfigureRequest(Waterfall[ModelRequest]):
-    agent: Agent
+    agent: Session
     request: ModelRequest
 
 
 @dataclass(frozen=True)
 class TurnStopping(Bail[bool]):
-    agent: Agent
+    agent: Session
 
 
 @dataclass(frozen=True)
 class ApprovalRequest(Bail[ApprovalAnswer]):
     request: ApprovalRequested
-    agent: Agent
+    agent: Session
 
     @property
     def call(self) -> ToolCall:
@@ -105,6 +105,6 @@ class ApprovalRequest(Bail[ApprovalAnswer]):
 
 @dataclass(frozen=True)
 class SessionAppended(Emit):
-    log: Session
+    log: SessionLog
     event: SessionEvent
     seq: int

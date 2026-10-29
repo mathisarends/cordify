@@ -20,7 +20,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.session.turns import derive_turns
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
@@ -136,4 +136,4 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
 )
 def test_malformed_turn_step_boundaries_are_rejected(events):
     with pytest.raises(ValueError):
-        _ = Session("invalid", seed=events).turns
+        _ = SessionLog("invalid", seed=events).turns

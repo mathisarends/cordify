@@ -25,8 +25,7 @@ from harnessed.core.session.events import (
     TurnEnd,
     TurnStart,
 )
-from harnessed.core.session.session import SessionLog as Session
-from harnessed.core.session.session import _derive_message_entries, derive_messages
+from harnessed.core.session.session import SessionLog, _derive_message_entries, derive_messages
 from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.core.tracing import span
 from harnessed.kernel import Context
@@ -136,7 +135,7 @@ class CompactionPolicy:
 class CompactionManager:
     """Serialize summaries and commit only smaller, replayable projections."""
 
-    def __init__(self, ctx: Context, session: Session, *, context_window: int | None) -> None:
+    def __init__(self, ctx: Context, session: SessionLog, *, context_window: int | None) -> None:
         self.ctx = ctx
         self.log = session
         self.context_window = context_window
@@ -250,7 +249,7 @@ class CompactionPlan:
 
 
 def plan_compaction(
-    events: Session | Iterable[SessionEvent],
+    events: SessionLog | Iterable[SessionEvent],
     *,
     keep_turns: int,
     keep_first_turns: int,
@@ -258,7 +257,7 @@ def plan_compaction(
 ) -> CompactionPlan | None:
     session = None
     fold_events = ()
-    if isinstance(events, Session):
+    if isinstance(events, SessionLog):
         session = events
         known_turns = session._known_turns
         closed = session._turn_boundaries

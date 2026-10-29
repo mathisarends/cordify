@@ -16,7 +16,7 @@ from harnessed.core.session.events import (
     ToolExecutionStarted,
     ToolReturned,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.kernel import hook
 from harnessed.kernel.plugin import PluginStatus
 from harnessed.plugins import AgentLoop, Approvals, JsonlSessions, Service
@@ -85,7 +85,7 @@ async def test_approval_gate_without_a_ui_fails_closed_and_preserves_unrelated_c
         assert not approvals.pending and (not approvals.grants)
         assert approvals.records[0].resolution.status == ApprovalStatus.UNAVAILABLE
         assert approvals.records[0].decision is None
-        replay = Session(
+        replay = SessionLog(
             "replay", seed=tuple(decode_event(encode_event(e)) for e in agent.log.events)
         )
         assert replay.approvals == approvals

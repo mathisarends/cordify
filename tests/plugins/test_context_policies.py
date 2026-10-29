@@ -4,8 +4,16 @@ import json
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Inject, Observation, Plugin, PolicyDecision, ToolCall, ToolResult, tool
-from harnessed import Session as Agent
+from harnessed import (
+    Inject,
+    Observation,
+    Plugin,
+    PolicyDecision,
+    Session,
+    ToolCall,
+    ToolResult,
+    tool,
+)
 from harnessed.core.compaction import ModelSummarizer
 from harnessed.core.hooks import PreStep
 from harnessed.core.messages import Assistant, ToolStatus, User
@@ -22,7 +30,7 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.files import SessionFiles
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.registry import ToolError
 from harnessed.kernel import hook
 from harnessed.plugins import (
@@ -75,7 +83,7 @@ async def test_large_results_spill_to_session_files_and_keep_structured_metadata
         events = tuple(
             decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
         )
-        assert Session("replay", seed=events).messages == agent.log.messages
+        assert SessionLog("replay", seed=events).messages == agent.log.messages
         assert any(isinstance(e, SpillCreated) for e in events)
         ref = result.spill
     async with Application(
@@ -162,7 +170,7 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
         assert "current task" in texts
         assert "Task context [ticket]:\npreserve current context" in texts
         assert "x" * 1200 not in "\n".join(texts)
-        replay = Session("replay", seed=agent.log.events)
+        replay = SessionLog("replay", seed=agent.log.events)
         assert replay.messages == agent.log.messages
         assert agent.log.fork("fork").messages == replay.messages
         assert any(
@@ -177,7 +185,7 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
 
 
 async def test_compaction_preserves_base_prompt_recent_turns_and_replaces_previous_summary():
-    session = Session("projection")
+    session = SessionLog("projection")
     await session.append(SystemMessage("permanent rules"))
     for name in ("one", "two"):
         await session.append(TurnStart(name))
@@ -302,9 +310,9 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
 async def test_empty_or_non_advancing_compaction_is_rejected_on_replay():
     seed = (TurnStart("t"), UserMessage(User("one")), TurnEnd("t"))
     with pytest.raises(ValueError, match="non-empty"):
-        Session("invalid", seed=(*seed, CompactionApplied(3, "")))
+        SessionLog("invalid", seed=(*seed, CompactionApplied(3, "")))
     with pytest.raises(ValueError, match="existing event prefix"):
-        Session("invalid", seed=(*seed, CompactionApplied(99, "summary")))
+        SessionLog("invalid", seed=(*seed, CompactionApplied(99, "summary")))
 
 
 async def test_latest_observation_policy_limits_old_summaries_per_source_and_unwinds():
@@ -314,7 +322,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
             self.index = 0
 
         @hook(PreStep)
-        async def observe(self, event, next_, agent: Inject[Agent]):
+        async def observe(self, event, next_, agent: Inject[Session]):
             self.index += 1
             agent.observe(Observation("browser", f"full {self.index}", f"brief {self.index}"))
             return await next_()
@@ -333,7 +341,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
         texts = [m.text for m in model.requests[-1].messages]
         assert "brief 1" not in texts and "brief 2" in texts and ("full 3" in texts)
         assert "full 1" not in texts
-        assert Session("replay", seed=agent.log.events).messages == agent.log.messages
+        assert SessionLog("replay", seed=agent.log.events).messages == agent.log.messages
     assert isinstance(agent.log.events[-1], ObservationPolicyApplied)
     assert agent.log.events[-1].max_summaries is None
 

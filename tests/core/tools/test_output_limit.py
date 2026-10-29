@@ -11,7 +11,7 @@ from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolReturned
 from harnessed.core.session.files import SessionFiles
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import hook
@@ -67,7 +67,7 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         assert model.requests[1].messages[-1].text == result.content
         assert result.truncation.original_chars == len(source)
         restored = tuple(decode_event(encode_event(e)) for e in agent.log.events)
-        assert Session("replay", seed=restored).messages == agent.log.messages
+        assert SessionLog("replay", seed=restored).messages == agent.log.messages
         replayed = next(e.result for e in restored if isinstance(e, ToolReturned))
         assert replayed == result and replayed.exit_code == 3
     assert (tmp_path / "bounded.jsonl").stat().st_size < 4 * ToolOutputLimit().max_chars

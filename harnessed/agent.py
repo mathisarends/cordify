@@ -17,7 +17,7 @@ from harnessed.core.prompt.values import InstructionValues, PromptComposition, P
 from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
 from harnessed.core.runtime.options import RunOptions
 from harnessed.core.runtime.result import RunResult
-from harnessed.core.runtime.session import Session as LiveSession
+from harnessed.core.runtime.session import Session
 from harnessed.core.session.artifacts import copy_artifacts
 from harnessed.core.session.events import TurnStart
 from harnessed.core.session.files import SessionFiles
@@ -103,7 +103,7 @@ class Agent:
         session_id: str | SessionLog | None = None,
         *,
         restore_outputs: Iterable[type[Any] | OutputContract[Any]] = (),
-    ) -> AsyncGenerator[LiveSession]:
+    ) -> AsyncGenerator[Session]:
         """Open or resume a conversation; omit its ID to create a new one."""
         async with PluginContext() as ctx:
             ctx.provide(EventRegistry, self._events.copy())
@@ -152,7 +152,7 @@ class Agent:
                 await ctx.install(
                     [
                         Service(SessionLog, log),
-                        Service(LiveSession, runtime),
+                        Service(Session, runtime),
                         Service(DynamicContext, runtime.context),
                     ]
                 )

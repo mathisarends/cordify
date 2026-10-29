@@ -9,7 +9,7 @@ from harnessed import OutputContract, Plugin, RunHandle, ToolContext, tool
 from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
-from harnessed.core.runtime.session import Session as Agent
+from harnessed.core.runtime.session import Session
 from harnessed.events import EventStream
 from harnessed.events.turn import Finished as TurnFinished
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
@@ -31,7 +31,7 @@ class CountingTools(Plugin):
         return value
 
 
-async def consumer(agent: Agent) -> None:
+async def consumer(agent: Session) -> None:
     assert_type(await CountingTools().count(1, injected="service"), int)
     assert_type(await agent.run("hello"), RunResult[None])
 
@@ -40,7 +40,7 @@ class Triage(BaseModel):
     severity: int
 
 
-async def structured_consumer(agent: AppAgent, session: Agent) -> None:
+async def structured_consumer(agent: AppAgent, session: Session) -> None:
     result = await session.run("Triage", output=Triage)
     assert_type(result, RunResult[Triage])
     assert_type(result.output.severity, int)
@@ -56,7 +56,7 @@ async def structured_consumer(agent: AppAgent, session: Agent) -> None:
     await session.run("Triage", output="wrong type")  # ty: ignore[no-matching-overload]
 
 
-async def typed_stream(session: Agent) -> None:
+async def typed_stream(session: Session) -> None:
     async for event in session.stream("Triage", output=OutputContract("triage.v1", Triage)):
         assert_type(event, EventStream[Triage])
         if isinstance(event, TurnFinished):

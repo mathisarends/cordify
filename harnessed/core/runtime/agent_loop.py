@@ -10,8 +10,8 @@ from harnessed.core.model import Model, TokenLimitBehavior
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.options import AgentOptions
-from harnessed.core.runtime.session import Session as Agent
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.runtime.session import Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ErrorFormatter, ToolRegistry
@@ -20,21 +20,23 @@ from harnessed.kernel import Context
 
 class AgentFactory(Protocol):
     def create(
-        self, ctx: Context, session: Session, options: AgentOptions | None = None
-    ) -> Agent: ...
+        self, ctx: Context, session: SessionLog, options: AgentOptions | None = None
+    ) -> Session: ...
 
 
 class ReactLoopFactory:
     def __init__(self, *, error_formatter: ErrorFormatter | None = None) -> None:
         self.error_formatter = error_formatter
 
-    def create(self, ctx: Context, session: Session, options: AgentOptions | None = None) -> Agent:
+    def create(
+        self, ctx: Context, session: SessionLog, options: AgentOptions | None = None
+    ) -> Session:
         if options is None:
             model = ctx[Model]
             options = AgentOptions(model.info.name, context_window=model.info.context_window)
         if self.error_formatter is not None:
             options = replace(options, error_formatter=self.error_formatter)
-        return Agent(ctx, session, options)
+        return Session(ctx, session, options)
 
 
 class AgentLoopConfig(PluginConfig):
@@ -93,7 +95,9 @@ class _Factory(ReactLoopFactory):
         super().__init__(error_formatter=error_formatter)
         self.config = config
 
-    def create(self, ctx: Context, session: Session, options: AgentOptions | None = None) -> Agent:
+    def create(
+        self, ctx: Context, session: SessionLog, options: AgentOptions | None = None
+    ) -> Session:
         if options is None:
             model = ctx[Model]
             options = AgentOptions(

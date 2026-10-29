@@ -24,7 +24,7 @@ from harnessed.core.session.events import (
     LogTailRecovered,
     ToolReturned,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import Durability, JsonlPersistence
 from harnessed.testing import ScriptedModel
@@ -238,7 +238,7 @@ async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_i
         assert recovery.offset == len(prefix) and recovery.discarded_bytes == len(tail)
         assert recovery.sha256 == hashlib.sha256(tail).hexdigest()
         assert await asyncio.to_thread(Path(recovery.archive).read_bytes) == tail
-        assert Session("replay", seed=events).inbox.pending == (original,)
+        assert SessionLog("replay", seed=events).inbox.pending == (original,)
     finally:
         await recovered.aclose()
     again = JsonlPersistence(tmp_path, recover_tail=True)

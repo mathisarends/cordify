@@ -19,7 +19,7 @@ from harnessed.core.session.events import (
     ToolReturned,
     TurnStart,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import hook
 from harnessed.plugins import AgentLoop, Approvals
@@ -83,7 +83,7 @@ async def test_parallel_execution_overlaps_but_reviews_results_and_history_keep_
             c.id for c in calls
         ]
         restored = tuple(decode_event(encode_event(event)) for event in events)
-        assert Session("replay", seed=restored).messages == agent.log.messages
+        assert SessionLog("replay", seed=restored).messages == agent.log.messages
 
 
 async def test_resource_dependencies_are_fifo_and_do_not_hold_slots_while_waiting_for_review():
@@ -319,7 +319,7 @@ async def test_resume_uses_durable_completions_without_reexecuting_tools():
     from harnessed import ToolResult
 
     calls = (ToolCall("first", id="first"), ToolCall("second", id="second"))
-    session = Session("interrupted")
+    session = SessionLog("interrupted")
     for event in (
         TurnStart("turn"),
         StepStart("turn", 1),
@@ -330,7 +330,9 @@ async def test_resume_uses_durable_completions_without_reexecuting_tools():
         ToolCompleted("first", ToolResult("first result")),
     ):
         await session.append(event)
-    replay = Session("replayed", seed=tuple(decode_event(encode_event(e)) for e in session.events))
+    replay = SessionLog(
+        "replayed", seed=tuple(decode_event(encode_event(e)) for e in session.events)
+    )
     await replay.repair_interrupted()
     results = [event for event in replay.events if isinstance(event, ToolReturned)]
     assert [(event.call_id, event.result.content) for event in results] == [

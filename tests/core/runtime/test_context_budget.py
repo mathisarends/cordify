@@ -21,7 +21,7 @@ from harnessed.core.session.events import (
     TurnStart,
     UserMessage,
 )
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.plugins import AgentLoop, Approvals, Compaction, at_ratio, every_turns
 from harnessed.testing import ExtractiveSummarizer, ScriptedModel
 
@@ -82,7 +82,7 @@ async def test_sliding_window_preserves_recent_turns_first_turn_and_tool_pairs_v
         assert any(m.role == Role.TOOL and m.text == "exact result" for m in request.messages)
         assert all(not m.text.startswith("FIRST GOAL") for m in summaries.sources[0])
         replayed = tuple(decode_event(json.loads(json.dumps(encode_event(e)))) for e in events)
-        assert Session("replay", seed=replayed).messages == agent.log.messages
+        assert SessionLog("replay", seed=replayed).messages == agent.log.messages
         assert agent.log.fork("fork").messages == agent.log.messages
         assert events[: len(prefix)] == prefix
 
@@ -198,7 +198,7 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
 
 
 async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
-    session = Session("pins")
+    session = SessionLog("pins")
     await session.append(SystemMessage("RULES"))
     for turn in ("first", "second"):
         await session.append(TurnStart(turn))

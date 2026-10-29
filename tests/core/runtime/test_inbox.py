@@ -16,7 +16,7 @@ from harnessed.core.session.events import (
     UserMessage,
 )
 from harnessed.core.session.inbox import Inbox
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import CallbackModel, ScriptedModel
@@ -136,7 +136,7 @@ async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent(
 async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mode):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
-    session = Session("pending", persistence=persistence)
+    session = SessionLog("pending", persistence=persistence)
     event = InboxAdded.create(system("context") if mode == InboxMode.INJECT else user("task"), mode)
     await session.append(event)
     await persistence.aclose()

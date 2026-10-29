@@ -5,14 +5,14 @@ from collections.abc import Awaitable, Callable
 from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import ContextValueChanged
-from harnessed.core.session.session import SessionLog as Session
+from harnessed.core.session.session import SessionLog
 from harnessed.kernel import Inject, Next, hook
 
 
 class DynamicContext:
     """Append changed values once; hosts await writes before the next step."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: SessionLog) -> None:
         self.log = session
         self._values: dict[str, str] = {}
         self._lock = asyncio.Lock()
