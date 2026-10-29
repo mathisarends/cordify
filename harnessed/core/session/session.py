@@ -14,6 +14,7 @@ from harnessed.core.messages import (
     Message,
     ToolCall,
     ToolResult,
+    ToolStatus,
 )
 from harnessed.core.model import ModelRequest, ModelUsage, sum_usage
 from harnessed.core.session.control import RunControl
@@ -31,6 +32,8 @@ from harnessed.core.session.events import (
     InboxRemovedEvent,
     InboxTarget,
     ModelRequestedEvent,
+    ModelRequestFailedEvent,
+    ModelRequestOutcome,
     ModelUsageRecordedEvent,
     SessionEvent,
     StepEndedEvent,
@@ -150,6 +153,22 @@ class SessionLog:
             )
         self._control = RunControl(self._events)
         self._requests = list(derive_requests(self._events))
+        self._requests_by_id = {
+            event.request_id: event.request
+            for event in self._events
+            if isinstance(event, ModelRequestedEvent)
+        }
+        self._finished_requests = {
+            event.request_id
+            for event in self._events
+            if isinstance(event, AssistantMessageEvent | ModelRequestFailedEvent)
+        }
+        self._open_executions: set[str] = set()
+        for event in self._events:
+            if isinstance(event, ToolExecutionStartedEvent):
+                self._open_executions.add(event.call_id)
+            elif isinstance(event, ToolExecutionFinishedEvent):
+                self._open_executions.discard(event.call_id)
         self._request_snapshot: tuple[ModelRequest, ...] | None = None
         self._turns = TurnProjection(self._events)
         self._turn_boundaries = [
@@ -248,6 +267,18 @@ class SessionLog:
             self._request_snapshot = tuple(self._requests)
         return self._request_snapshot
 
+    def request(self, request_id: str) -> ModelRequest | None:
+        """Look up the final submitted request by its durable identity."""
+        return self._requests_by_id.get(request_id)
+
+    def request_finished(self, request_id: str) -> bool:
+        """Whether a reply or failure has durably closed this request."""
+        return request_id in self._finished_requests
+
+    def execution_pending(self, call_id: str) -> bool:
+        """Whether a tool execution start is still missing its receipt."""
+        return call_id in self._open_executions
+
     @property
     def turns(self) -> tuple[Turn, ...]:
         return self._turns.snapshot
@@ -308,7 +339,14 @@ class SessionLog:
     async def append(self, event: SessionEvent) -> None:
         self.registry.validate(event)
         cancelled = False
-        if isinstance(event, ToolExecutionFinishedEvent | ToolCallFinishedEvent):
+        terminal = isinstance(
+            event,
+            ToolExecutionFinishedEvent
+            | ToolCallFinishedEvent
+            | AssistantMessageEvent
+            | ModelRequestFailedEvent,
+        )
+        if terminal:
             # An invocation/review already finished. Drain its checkpoint even if
             # abort arrives while another append owns the log lock. Observers stay
             # outside this shield so an unresponsive hook cannot block cancellation.
@@ -322,7 +360,7 @@ class SessionLog:
             cancelled |= interrupted
         else:
             seq, cancelled = await self._append(event)
-        if cancelled and isinstance(event, ToolExecutionFinishedEvent | ToolCallFinishedEvent):
+        if cancelled and terminal:
             raise asyncio.CancelledError
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
@@ -368,6 +406,10 @@ class SessionLog:
             elif isinstance(event, TurnEndedEvent):
                 self._turn_boundaries.append((seq + 1, event.turn_id))
             self._history.apply(event, seq, self._events)
+            if isinstance(event, ToolExecutionStartedEvent):
+                self._open_executions.add(event.call_id)
+            elif isinstance(event, ToolExecutionFinishedEvent):
+                self._open_executions.discard(event.call_id)
             if isinstance(event, InboxAddedEvent):
                 self._pending[event.message.id] = event
                 if event.target == InboxTarget.NEXT_STEP:
@@ -392,7 +434,10 @@ class SessionLog:
                 self._control = RunControl((event,))
             if isinstance(event, ModelRequestedEvent):
                 self._requests.append(event.request)
+                self._requests_by_id[event.request_id] = event.request
                 self._request_snapshot = None
+            elif isinstance(event, AssistantMessageEvent | ModelRequestFailedEvent):
+                self._finished_requests.add(event.request_id)
             elif isinstance(event, ModelUsageRecordedEvent):
                 self._usage = (
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
@@ -433,6 +478,15 @@ class SessionLog:
 
     async def _repair_interrupted(self) -> None:
         control = self.control
+        for request_id in self._requests_by_id:
+            if request_id not in self._finished_requests:
+                await self.append(
+                    ModelRequestFailedEvent(
+                        request_id,
+                        ModelRequestOutcome.CANCELLED,
+                        "Request interrupted before completion",
+                    )
+                )
         for approval in self.approvals.pending:
             await self.append(
                 ApprovalResolvedEvent(approval.request_id, status=ApprovalStatus.INTERRUPTED)
@@ -441,6 +495,7 @@ class SessionLog:
         unanswered: dict[str, ToolCall] = {}
         started = set()
         executed: set[str] = set()
+        cancelled_executions: set[str] = set()
         for event in self._events:
             match event:
                 case TurnStartedEvent(turn_id=turn_id):
@@ -456,14 +511,26 @@ class SessionLog:
                     unanswered.pop(call_id, None)
                 case ToolExecutionStartedEvent(call_id=call_id):
                     started.add(call_id)
-                case ToolExecutionFinishedEvent(call_id=call_id):
+                case ToolExecutionFinishedEvent(call_id=call_id, result=result):
                     executed.add(call_id)
+                    if result.status is ToolStatus.CANCELLED:
+                        cancelled_executions.add(call_id)
                 case StepEndedEvent():
                     step = None
                 case TurnEndedEvent():
                     turn = None
+        for call_id in sorted(started - executed):
+            await self.append(
+                ToolExecutionFinishedEvent(
+                    call_id,
+                    ToolResult(
+                        "Tool execution interrupted; external outcome is unknown",
+                        ToolStatus.CANCELLED,
+                    ),
+                )
+            )
         for call in unanswered.values():
-            if call.id in executed:
+            if call.id in executed and call.id not in cancelled_executions:
                 await self.append(
                     ToolCallFinishedEvent(
                         call,
@@ -478,7 +545,8 @@ class SessionLog:
             message = "Tool execution interrupted" if control.paused else "Tool execution aborted"
             if call.id in started:
                 message += "; external outcome is unknown. Inspect external state before retrying."
-            await self.append(ToolCallFinishedEvent(call, ToolResult.error(message)))
+            status = ToolStatus.CANCELLED if call.id in started else ToolStatus.ERROR
+            await self.append(ToolCallFinishedEvent(call, ToolResult(message, status)))
         if turn is not None:
             if step is not None:
                 await self.append(

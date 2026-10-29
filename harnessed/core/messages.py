@@ -53,6 +53,8 @@ class ToolStatus(StrEnum):
     ERROR = "error"
     DENIED = "denied"
     UNAVAILABLE = "unavailable"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
 
 
 class DenialSource(StrEnum):

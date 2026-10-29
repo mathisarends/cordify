@@ -16,6 +16,7 @@ from harnessed.core.messages import (
     PolicyDecision,
     ToolCall,
     ToolResult,
+    ToolStatus,
 )
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
@@ -99,8 +100,6 @@ class ToolExecutor:
                 if result is None:
                     async with scheduler.slots:
                         result, reviewable = await self.invoke(plan)
-                    receipt = limit.apply(result) if limit is not None else result
-                    await self.log.append(ToolExecutionFinishedEvent(plan.call.id, receipt))
                 if index:
                     await reviewed[index - 1].wait()
                 if reviewable:
@@ -160,10 +159,11 @@ class ToolExecutor:
     async def execute(self, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
         call = plan.call
         execution = self.ctx[ToolContexts].create(call)
+        result: ToolResult | None = None
         try:
             await self.log.append(ToolExecutionStartedEvent(call.id))
             await self.log.flush()
-            result = await self.ctx.dispatch(
+            returned = await self.ctx.dispatch(
                 ExecuteTool(call, self.session),
                 default=lambda: self.ctx[ToolRegistry].execute(
                     call,
@@ -174,16 +174,28 @@ class ToolExecutor:
                     default_timeout=self.options.tool_timeout,
                 ),
             )
-            if not isinstance(result, ToolResult):
+            if not isinstance(returned, ToolResult):
                 raise TypeError("Tool hooks must return a ToolResult")
+            result = returned
             return result, True
         except asyncio.CancelledError:
             execution.signal.set()
+            result = ToolResult("Tool execution cancelled", ToolStatus.CANCELLED)
             raise
         except Exception as exc:
-            return ToolResult.error(
-                format_tool_error(call, exc, self.options.error_formatter)
-            ), False
+            result = ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
+            return result, False
+        finally:
+            if result is not None and self.log.execution_pending(call.id):
+                limit = (
+                    None
+                    if plan.output_limit is None
+                    else self.options.tool_output_limit
+                    if isinstance(plan.output_limit, OutputLimit)
+                    else ToolOutputLimit(plan.output_limit)
+                )
+                receipt = limit.apply(result) if limit is not None else result
+                await self.log.append(ToolExecutionFinishedEvent(call.id, receipt))
 
     async def review(
         self,

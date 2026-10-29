@@ -143,7 +143,9 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
         StepStartedEvent("turn", 1),
         UserMessageEvent(User("hello")),
         AssistantMessageEvent(
-            Assistant("partial", reasoning="thinking", id="reply"), interrupted=True
+            Assistant("partial", reasoning="thinking", id="reply"),
+            interrupted=True,
+            request_id="request",
         ),
     ):
         await session.append(event)
@@ -167,7 +169,7 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
 async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     events = (
         TurnStartedEvent("turn"),
-        AssistantMessageEvent(Assistant("one two", id="reply")),
+        AssistantMessageEvent(Assistant("one two", id="reply"), request_id="request"),
     )
     partial = derive_messages(events)
     assert len(partial) == 1 and partial[0].text == "one two"

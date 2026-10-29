@@ -11,7 +11,7 @@ from pydantic import ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 
 from harnessed.core.errors import ToolNameConflict
-from harnessed.core.messages import ToolCall, ToolResult
+from harnessed.core.messages import ToolCall, ToolResult, ToolStatus
 from harnessed.core.model import ToolDefinition
 from harnessed.core.tools.arguments import ToolArguments, tool_result_content
 from harnessed.core.tools.context import ToolContext, ToolContexts
@@ -400,5 +400,7 @@ class ToolRegistry:
             if call_context is not None:
                 call_context.signal.set()
             raise
+        except TimeoutError as exc:
+            return ToolResult(format_tool_error(call, exc, error_formatter), ToolStatus.TIMEOUT)
         except Exception as exc:
             return ToolResult.error(format_tool_error(call, exc, error_formatter))

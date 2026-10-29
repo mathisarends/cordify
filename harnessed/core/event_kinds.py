@@ -22,6 +22,7 @@ class EventKind(StrEnum):
     CONTEXT_VALUE_CHANGED = "context.changed"
     OBSERVATION_RECORDED = "observation.recorded"
     MODEL_REQUESTED = "model.requested"
+    MODEL_REQUEST_FAILED = "model.request.failed"
     MODEL_USAGE_RECORDED = "model.usage"
     CACHE_METRICS = "model.cache"
     COMPACTION_APPLIED = "compaction.applied"

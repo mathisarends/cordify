@@ -130,8 +130,8 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
         (
             TurnStartedEvent("a"),
             StepStartedEvent("a", 1),
-            ModelRequestedEvent(ModelRequest("test", ())),
-            ModelRequestedEvent(ModelRequest("test", ())),
+            ModelRequestedEvent(ModelRequest("test", ()), request_id="request"),
+            ModelRequestedEvent(ModelRequest("test", ()), request_id="request"),
         ),
     ],
 )

@@ -205,7 +205,9 @@ async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
     for turn in ("first", "second"):
         await session.append(TurnStartedEvent(turn))
         await session.append(UserMessageEvent(user(turn)))
-        await session.append(AssistantMessageEvent(Assistant(f"answer {turn}")))
+        await session.append(
+            AssistantMessageEvent(Assistant(f"answer {turn}"), request_id="request")
+        )
         await session.append(TurnEndedEvent(turn))
     await session.append(CompactionAppliedEvent(5, "first summary"))
     assert not any(m.text == "first" for m in session.messages)

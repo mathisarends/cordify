@@ -58,7 +58,9 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         await append(UserMessageEvent(message))
         for step in range(1, rng.randint(2, 5)):
             await append(StepStartedEvent(str(turn), step))
-            await append(ModelRequestedEvent(ModelRequest("test", session.messages)))
+            await append(
+                ModelRequestedEvent(ModelRequest("test", session.messages), request_id="request")
+            )
             call = ToolCall(f"tool-{rng.randrange(3)}", id=f"call-{turn}-{step}")
             request = ApprovalRequestedEvent(f"approval-{turn}-{step}", call, "test", "generated")
             await append(request)
@@ -67,7 +69,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
             assert session.latest_approval(call.id).decision == answer
             if answer is ApprovalAnswer.ALWAYS and rng.choice([True, False]):
                 await append(ApprovalRevokedEvent(request.request_id))
-            await append(AssistantMessageEvent(Assistant("reply")))
+            await append(AssistantMessageEvent(Assistant("reply"), request_id="request"))
             await append(StepEndedEvent(str(turn), step))
         await append(TurnEndedEvent(str(turn)))
         await append(AgentControlChangedEvent(rng.choice(["active", "paused", "stopped"])))
@@ -128,9 +130,13 @@ async def test_incremental_observations_and_compaction_match_every_prefix(seed):
                             step,
                         )
                     )
-            await append(ModelRequestedEvent(ModelRequest("test", session.messages)))
+            await append(
+                ModelRequestedEvent(ModelRequest("test", session.messages), request_id="request")
+            )
             message_id = f"{turn}:{step}"
-            await append(AssistantMessageEvent(Assistant("hello world", id=message_id)))
+            await append(
+                AssistantMessageEvent(Assistant("hello world", id=message_id), request_id="request")
+            )
             await append(StepEndedEvent(str(turn), step))
         await append(TurnEndedEvent(str(turn)))
         boundaries.append(len(session))
@@ -149,7 +155,7 @@ async def test_completed_message_does_not_enable_a_permanent_history_fold():
     session = SessionLog(
         "completed",
         seed=[
-            AssistantMessageEvent(message),
+            AssistantMessageEvent(message, request_id="request"),
             ObservationPolicyAppliedEvent(2),
         ],
     )
@@ -168,7 +174,9 @@ async def test_completed_message_does_not_enable_a_permanent_history_fold():
                 1,
             )
         )
-        await session.append(ModelRequestedEvent(ModelRequest("test", session.messages)))
+        await session.append(
+            ModelRequestedEvent(ModelRequest("test", session.messages), request_id="request")
+        )
         await session.append(StepEndedEvent(str(index), 1))
         await session.append(TurnEndedEvent(str(index)))
         assert session.messages == derive_messages(session.events)

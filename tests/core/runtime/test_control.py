@@ -308,9 +308,11 @@ async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_tu
         TurnStartedEvent("turn"),
         StepStartedEvent("turn", 1),
         UserMessageEvent(User("task")),
-        ModelRequestedEvent(ModelRequest("model", (User("task"),))),
+        ModelRequestedEvent(ModelRequest("model", (User("task"),)), request_id="request"),
         AgentControlChangedEvent(state),
-        AssistantMessageEvent(Assistant("visible", id="message"), interrupted=True),
+        AssistantMessageEvent(
+            Assistant("visible", id="message"), interrupted=True, request_id="request"
+        ),
     ):
         await log.append(event)
     await log.repair_interrupted()

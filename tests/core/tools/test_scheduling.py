@@ -329,7 +329,7 @@ async def test_resume_keeps_committed_results_without_reexecuting_or_duplicating
     for event in (
         TurnStartedEvent("turn"),
         StepStartedEvent("turn", 1),
-        AssistantMessageEvent(Assistant(tool_calls=calls)),
+        AssistantMessageEvent(Assistant(tool_calls=calls), request_id="request"),
         ToolExecutionStartedEvent("first"),
         ToolExecutionStartedEvent("second"),
         ToolCallFinishedEvent(ToolCall("first", id="first"), ToolResult("first result")),

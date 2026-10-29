@@ -59,9 +59,12 @@ def assert_pairs(messages: tuple[Message, ...]) -> None:
 async def append_step(log: SessionLog, turn: str, number: int) -> None:
     call = ToolCall("work", id=f"{turn}-{number}")
     await log.append(StepStartedEvent(turn, number))
-    await log.append(ModelRequestedEvent(ModelRequest("test", log.messages)))
+    await log.append(ModelRequestedEvent(ModelRequest("test", log.messages), request_id="request"))
     await log.append(
-        AssistantMessageEvent(Assistant(tool_calls=(call,), provider_state={"signature": call.id}))
+        AssistantMessageEvent(
+            Assistant(tool_calls=(call,), provider_state={"signature": call.id}),
+            request_id="request",
+        )
     )
     await log.append(ToolCallFinishedEvent(call, ToolResult("x" * 2000)))
     await log.append(StepEndedEvent(turn, number))
@@ -153,8 +156,10 @@ async def test_a_completed_step_cannot_hide_an_unanswered_tool_call():
     log = SessionLog("invalid-boundary")
     await log.append(TurnStartedEvent("t"))
     await log.append(StepStartedEvent("t", 1))
-    await log.append(ModelRequestedEvent(ModelRequest("test", ())))
-    await log.append(AssistantMessageEvent(Assistant(tool_calls=(ToolCall("work"),))))
+    await log.append(ModelRequestedEvent(ModelRequest("test", ()), request_id="request"))
+    await log.append(
+        AssistantMessageEvent(Assistant(tool_calls=(ToolCall("work"),)), request_id="request")
+    )
     await log.append(StepEndedEvent("t", 1))
     with pytest.raises(ValueError, match="unanswered tool calls"):
         await log.append(CompactionAppliedEvent(len(log.events), "summary"))

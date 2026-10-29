@@ -84,6 +84,19 @@ See the [event guide](docs/guides/events.md) for lifecycle phases and the
 
 ### Added
 
+- Model request, assistant reply and response usage events carry `request_id`.
+  Each submitted attempt receives a fresh ID, including context-limit retries.
+  `SessionLog.request(id)` retrieves its submitted snapshot; `request_finished(id)`
+  reports whether it has a durable completion. Existing version 2 JSONL records
+  without IDs derive stable `session_id:index` identities when loaded.
+- Every submitted model request closes with an `AssistantMessageEvent` (including
+  interrupted partial replies) or `ModelRequestFailedEvent`. Failure outcomes
+  distinguish `FAILED`, `CANCELLED` and `CONTEXT_EXCEEDED`.
+- Tool execution starts now receive exactly one execution receipt on cancellation
+  and timeout as well as success or error. `ToolStatus.CANCELLED` and
+  `ToolStatus.TIMEOUT` identify those outcomes. Resume repair closes orphan model
+  requests and tool executions before repairing the turn.
+
 - Export `SessionLog` from the root SDK for plugin injection and log access.
 - Class `name: Inject[T]` dependencies resolve before setup on each mount.
   Required dependencies infer `needs`; optional dependencies receive `None`

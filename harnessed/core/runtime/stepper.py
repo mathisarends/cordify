@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from harnessed.core.budget import ContextBudget
 from harnessed.core.compaction import CompactionManager, CompactionPolicy
 from harnessed.core.errors import ContextLengthExceeded, OutputValidationError
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
-from harnessed.core.messages import Observation, Role, User
+from harnessed.core.messages import Assistant, Observation, Role, User
 from harnessed.core.model import Model, ModelRequest, resolve_request_settings
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.control import SessionControl
@@ -22,6 +24,8 @@ from harnessed.core.session.events import (
     InboxRemovalReason,
     InboxRemovedEvent,
     ModelRequestedEvent,
+    ModelRequestFailedEvent,
+    ModelRequestOutcome,
     ObservationRecordedEvent,
     StepEndedEvent,
     StepOutcome,
@@ -141,9 +145,9 @@ class StepRunner:
                 context_window=self.options.context_window or model.info.context_window,
                 counter=self.ctx[TokenCounter],
             )
-        await self.log.append(ModelRequestedEvent(request))
+        request_id = uuid4().hex
         try:
-            response = await self.responder.respond(request)
+            response = await self._request(request, request_id=request_id)
         except ContextLengthExceeded:
             current = self.log.current_turn()
             if (
@@ -168,3 +172,21 @@ class StepRunner:
         if failure is not None:
             raise OutputValidationError(f"Structured output retry limit reached: {failure}")
         return True
+
+    async def _request(self, request: ModelRequest, *, request_id: str) -> Assistant:
+        try:
+            await self.log.append(ModelRequestedEvent(request, request_id=request_id))
+            return await self.responder.respond(request, request_id=request_id)
+        except BaseException as error:
+            if self.log.request(request_id) is not None and not self.log.request_finished(
+                request_id
+            ):
+                outcome = (
+                    ModelRequestOutcome.CANCELLED
+                    if isinstance(error, asyncio.CancelledError)
+                    else ModelRequestOutcome.CONTEXT_EXCEEDED
+                    if isinstance(error, ContextLengthExceeded)
+                    else ModelRequestOutcome.FAILED
+                )
+                await self.log.append(ModelRequestFailedEvent(request_id, outcome, str(error)))
+            raise

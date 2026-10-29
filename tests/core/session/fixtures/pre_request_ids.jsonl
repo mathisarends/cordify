@@ -1,0 +1,7 @@
+{"version":2,"seq":0,"type":"turn.start","data":{"turn_id":"turn"}}
+{"version":2,"seq":1,"type":"step.start","data":{"turn_id":"turn","step":1}}
+{"version":2,"seq":2,"type":"model.requested","data":{"request":{"model":"test","messages":{"prefix":0,"items":[{"role":"user","content":"hello","id":"user"}]}}}}
+{"version":2,"seq":3,"type":"model.usage","data":{"usage":{"input_tokens":5}}}
+{"version":2,"seq":4,"type":"assistant.message","data":{"message":{"role":"assistant","content":"done","id":"reply"}}}
+{"version":2,"seq":5,"type":"step.end","data":{"turn_id":"turn","step":1}}
+{"version":2,"seq":6,"type":"turn.end","data":{"turn_id":"turn"}}

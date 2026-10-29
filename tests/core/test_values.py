@@ -16,7 +16,7 @@ from harnessed.core.session.events import ModelRequestedEvent, TurnStartedEvent
         ModelRequest("test", ()),
         ModelResponse(Assistant("done")),
         TurnStartedEvent("one"),
-        ModelRequestedEvent(ModelRequest("test", ())),
+        ModelRequestedEvent(ModelRequest("test", ()), request_id="request"),
     ],
 )
 def test_mapping_values_and_log_records_are_explicitly_unhashable(value):
