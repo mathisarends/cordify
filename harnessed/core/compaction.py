@@ -214,16 +214,21 @@ class CompactionManager:
             # The input request stays a snapshot even if new inbox/context records arrive.
             events = self.session_log.events
             previous = self.session_log.last(CompactionAppliedEvent)
-            with span(self.ctx, "compaction", session_id=self.session_log.id, through=plan.through):
+            with span(
+                self.ctx, "compaction", session_id=self.session_log.id, through=plan.through
+            ) as trace:
                 try:
                     summary = await summarizer.summarize(
                         plan.messages, max_tokens=settings.summary_tokens
                     )
                 except SummaryError as error:
+                    trace.set_attribute("usage", error.usage)
                     await self.session_log.append(
                         ModelUsageRecordedEvent(error.usage, purpose=UsagePurpose.COMPACTION)
                     )
                     raise
+                if isinstance(summary, Summary) and summary.usage is not None:
+                    trace.set_attribute("usage", summary.usage)
             if isinstance(summary, Summary):
                 if summary.usage is not None:
                     await self.session_log.append(

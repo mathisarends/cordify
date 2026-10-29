@@ -5,6 +5,16 @@ examples live in the topic guides. Optional features are imported from
 `harnessed.plugins`; model contracts and message types come from `harnessed.models`,
 and SDK errors from `harnessed.errors`.
 
+## Tracing
+
+`harnessed.integrations.opentelemetry.OpenTelemetryTracer(*, tracer_provider=None,
+capture_content=False, max_content_length=16384)` replaces the `tracer` slot and
+requires `harnessed[otel]`. It emits nested runtime spans through the application's
+OpenTelemetry provider, without owning its exporters or shutdown. Import the
+integration explicitly; public SDK facades remain usable without the extra.
+See [tracing](../guides/tracing.md) for Phoenix and Langfuse configuration,
+content capture, parent context and the emitted attributes.
+
 ## Agent
 
 `Agent(*, model=None, instructions=None, plugins=())` resolves reusable configuration.

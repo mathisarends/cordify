@@ -5,6 +5,8 @@ behavior. The initial release includes plugin composition and per-mount state,
 typed tools and hooks, fixed instructions and dynamic context, optional providers,
 durable sessions and controls, structured output, streaming and custom events,
 approvals, skills, compaction, spill, tracing hooks and offline testing.
+An optional [OpenTelemetry integration](../guides/tracing.md) now exports runtime
+spans to Phoenix, Langfuse and other OTLP collectors.
 
 The following additions remain outside the 0.1 release scope. They are candidates
 for discussion, not committed APIs or release dates.
@@ -14,7 +16,6 @@ for discussion, not committed APIs or release dates.
 | Candidate | Intended direction | Existing extension point |
 | --- | --- | --- |
 | MCP client | Expose server tools through a plugin with an optional dependency; own connections for the plugin lifetime | Tool plugins, setup and cleanup effects |
-| OpenTelemetry exporter | Export runtime spans without adding dependencies to the kernel or core | The `tracer` slot and `Tracer` protocol |
 | SQLite or PostgreSQL sessions | Add storage implementations that preserve writer ownership and durable replay | The `sessions` slot and `SessionStore` protocol |
 
 ## Subagents

@@ -51,3 +51,10 @@ and [the Skills guide](skills.md).
 includes it in a discriminated union, streams it and replays its stored value.
 See [the source](https://github.com/mathisarends/harnessed/blob/main/examples/28_custom_events.py)
 and [the event extension guide](events.md).
+
+## Tracing
+
+`uv run --extra otel python -m examples.29_tracing` exports a complete tool loop
+to the console, with an outer backend span and model usage, without network
+access or credentials. See [the source](https://github.com/mathisarends/harnessed/blob/main/examples/29_tracing.py)
+and [the Phoenix/Langfuse setup guide](tracing.md).

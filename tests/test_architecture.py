@@ -102,16 +102,18 @@ print('standalone kernel')
     assert result.returncode == 0, result.stderr
 
 
-def test_validation_is_explicit_and_otel_is_not_added():
+def test_validation_is_explicit_and_otel_is_optional_and_isolated():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     assert project["dependencies"] == ["pydantic>=2.12,<3"]
-    assert "otel" not in project["optional-dependencies"]
+    assert "otel" in project["optional-dependencies"]
     for path in PACKAGE.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Import):
-                assert all(not alias.name.startswith("opentelemetry") for alias in node.names)
+                if any(alias.name.startswith("opentelemetry") for alias in node.names):
+                    assert path.relative_to(PACKAGE).as_posix() == "integrations/opentelemetry.py"
             elif isinstance(node, ast.ImportFrom):
-                assert not (node.module or "").startswith("opentelemetry")
+                if (node.module or "").startswith("opentelemetry"):
+                    assert path.relative_to(PACKAGE).as_posix() == "integrations/opentelemetry.py"
 
 
 @pytest.mark.parametrize(

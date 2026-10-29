@@ -33,6 +33,11 @@ openai = ["pydantic-ai-slim[openai]>=2.63,<3"]
 anthropic = ["pydantic-ai-slim[anthropic]>=2.63,<3"]
 google = ["pydantic-ai-slim[google]>=2.63,<3"]
 skills = ["pyyaml>=6.0.3,<7"]
+otel = [
+    "opentelemetry-api>=1.39,<2",
+    "opentelemetry-sdk>=1.39,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.39,<2",
+]
 
 [dependency-groups]
 dev = [

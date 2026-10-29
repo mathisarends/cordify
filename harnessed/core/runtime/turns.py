@@ -47,12 +47,17 @@ class TurnRunner:
         self.session = session
 
     async def run(self) -> bool:
-        with span(self.ctx, "turn", session_id=self.log.id):
-            return await self._run()
-
-    async def _run(self) -> bool:
         previous = self.log.open_turn
         turn = previous.id if previous is not None else uuid4().hex
+        with span(self.ctx, "turn", session_id=self.log.id, turn_id=turn) as current:
+            result = await self._run(turn)
+            ended = self.log.last(TurnEndedEvent)
+            if ended is not None and ended.turn_id == turn:
+                current.set_attribute("outcome", ended.reason)
+            return result
+
+    async def _run(self, turn: str) -> bool:
+        previous = self.log.open_turn
         first_step = len(previous.steps) + 1 if previous is not None else 1
         if previous is None:
             candidates = self.log.inbox.next_turn or self.log.inbox.next_step
