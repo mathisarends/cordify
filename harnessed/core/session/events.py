@@ -434,6 +434,12 @@ class CacheMetrics(SessionEvent):
 
 @dataclass(frozen=True)
 class CompactionApplied(SessionEvent):
+    """Replace a history prefix at a closed turn or completed step boundary.
+
+    preserve_turns pins full turns; retained_turns is temporary sliding retention.
+    preserve_inputs holds event offsets of active-turn inputs kept verbatim.
+    """
+
     __hash__ = None
 
     type: Literal[EventKind.COMPACTION_APPLIED] = field(
@@ -566,10 +572,11 @@ class ToolReturned(SessionEvent):
 
 @dataclass(frozen=True)
 class ToolExecutionFinished(SessionEvent):
-    """The raw execution receipt, durably saved before ordered result review.
+    """The unreviewed execution receipt, saved before ordered result review.
 
-    This is audit data, not a model-visible result. Recovery must never bypass
-    ReviewToolResult by publishing this receipt as ToolReturned.
+    Text respects the captured output limit. This is audit data, not a
+    model-visible result. Recovery must never bypass ReviewToolResult by
+    publishing this receipt as ToolReturned.
     """
 
     __hash__ = None

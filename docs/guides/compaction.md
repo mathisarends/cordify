@@ -52,7 +52,8 @@ is not due. If retained content still exceeds the budget, the request fails befo
 calling the provider. A summary that does not reduce the estimated request size
 is discarded; automatic attempts back off for two more closed turns or two more
 finished steps in the same active turn. Over-budget and manual attempts bypass this
-backoff. Compaction cannot help if the protected inputs and retained steps alone
+backoff. Step retries require an advanced compaction boundary. Compaction cannot
+help if the protected inputs and retained steps alone
 exceed the budget.
 
 If the provider raises `ContextLengthExceeded` before a visible partial response,

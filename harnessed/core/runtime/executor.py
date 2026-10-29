@@ -88,26 +88,27 @@ class ToolExecutor:
 
         async def worker(index: int, plan: PreparedToolCall) -> ToolResult:
             try:
+                limit = (
+                    None
+                    if plan.output_limit is None
+                    else self.options.tool_output_limit
+                    if isinstance(plan.output_limit, OutputLimit)
+                    else ToolOutputLimit(plan.output_limit)
+                )
                 result = authorizations[index]
                 reviewable = result is None
                 if result is None:
                     async with scheduler.slots:
                         result, reviewable = await self.invoke(plan)
-                    await self.log.append(ToolExecutionFinished(plan.call.id, result))
-                    await self.log.flush()
+                    receipt = limit.apply(result) if limit is not None else result
+                    await self.log.append(ToolExecutionFinished(plan.call.id, receipt))
                 if index:
                     await reviewed[index - 1].wait()
                 if reviewable:
                     result = await self.review(plan.call, result, output_limit=plan.output_limit)
-                if plan.output_limit is not None:
-                    limit = (
-                        self.options.tool_output_limit
-                        if isinstance(plan.output_limit, OutputLimit)
-                        else ToolOutputLimit(plan.output_limit)
-                    )
+                if limit is not None:
                     result = limit.apply(result)
                 await self.log.append(ToolCompleted(plan.call.id, result))
-                await self.log.flush()
                 return result
             finally:
                 reviewed[index].set()

@@ -9,7 +9,7 @@ from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import ToolReturned
+from harnessed.core.session.events import ToolExecutionFinished, ToolReturned
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.output_limit import ToolOutputLimit
@@ -66,11 +66,15 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         assert result.content.startswith("HEAD") and result.content.endswith("TAIL ERROR")
         assert model.requests[1].messages[-1].text == result.content
         assert result.truncation.original_chars == len(source)
+        receipt = agent.last(ToolExecutionFinished).result
+        assert len(receipt.content) == 32000
+        assert receipt.truncation.original_chars == len(source)
         restored = tuple(decode_event(encode_event(e)) for e in agent.log.events)
         assert SessionLog("replay", seed=restored).messages == agent.log.messages
         replayed = next(e.result for e in restored if isinstance(e, ToolReturned))
         assert replayed == result and replayed.exit_code == 3
-    assert (tmp_path / "bounded.jsonl").stat().st_size < 4 * ToolOutputLimit().max_chars
+    # The unreviewed receipt adds one bounded copy to the durable audit trail.
+    assert (tmp_path / "bounded.jsonl").stat().st_size < 5 * ToolOutputLimit().max_chars
 
 
 @pytest.mark.parametrize("stage", ["execution", "review", "error"])

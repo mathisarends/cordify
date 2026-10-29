@@ -148,6 +148,7 @@ class CompactionManager:
         self._lock = asyncio.Lock()
         self._retry_after_turns = 0
         self._retry_after_step: tuple[str, int] | None = None
+        self._retry_through = 0
 
     async def state(self, request: ModelRequest) -> ContextState:
         budget = self.ctx[ContextBudget] if ContextBudget in self.ctx else ContextBudget()
@@ -184,14 +185,6 @@ class CompactionManager:
             policy = self.ctx[CompactionPolicy] if CompactionPolicy in self.ctx else None
             settings = policy.settings if policy is not None else CompactionSettings()
             current = self.log.open_turn
-            if not force and self.log.closed_turn_count < self._retry_after_turns:
-                if (
-                    self._retry_after_step is None
-                    or current is None
-                    or current.id != self._retry_after_step[0]
-                    or sum(step.closed for step in current.steps) < self._retry_after_step[1]
-                ):
-                    return None, request
             plan = plan_compaction(
                 self.log,
                 keep_turns=settings.keep_turns,
@@ -201,6 +194,15 @@ class CompactionManager:
             )
             if plan is None:
                 return None, request
+            if not force and self.log.closed_turn_count < self._retry_after_turns:
+                if (
+                    self._retry_after_step is None
+                    or current is None
+                    or current.id != self._retry_after_step[0]
+                    or sum(step.closed for step in current.steps) < self._retry_after_step[1]
+                    or plan.through <= self._retry_through
+                ):
+                    return None, request
             counter = self.ctx[TokenCounter]
             summarizer = policy.summarizer if policy is not None else None
             if summarizer is None:
@@ -245,6 +247,7 @@ class CompactionManager:
             after = await count_request(counter, compacted)
             if after >= before:
                 self._retry_after_turns = self.log.closed_turn_count + 2
+                self._retry_through = plan.through
                 self._retry_after_step = (
                     (current.id, sum(step.closed for step in current.steps) + 2)
                     if current is not None

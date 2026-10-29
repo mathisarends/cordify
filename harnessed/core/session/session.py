@@ -291,6 +291,30 @@ class SessionLog:
     async def append(self, event: SessionEvent) -> None:
         self.registry.validate(event)
         cancelled = False
+        if isinstance(event, ToolExecutionFinished | ToolCompleted):
+            # An invocation/review already finished. Drain its checkpoint even if
+            # abort arrives while another append owns the log lock. Observers stay
+            # outside this shield so an unresponsive hook cannot block cancellation.
+            checkpoint = asyncio.create_task(self._append(event))
+            while not checkpoint.done():
+                try:
+                    await asyncio.shield(checkpoint)
+                except asyncio.CancelledError:
+                    cancelled = True
+            seq, interrupted = checkpoint.result()
+            cancelled |= interrupted
+        else:
+            seq, cancelled = await self._append(event)
+        if cancelled and isinstance(event, ToolExecutionFinished | ToolCompleted):
+            raise asyncio.CancelledError
+        if self.ctx is not None:
+            await self.ctx.dispatch(SessionAppended(self, event, seq))
+            await self.ctx.dispatch(event)
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _append(self, event: SessionEvent) -> tuple[int, bool]:
+        cancelled = False
         async with self._lock:
             if isinstance(event, InboxAdded) and event.message.id in self._pending:
                 raise ValueError(f"Duplicate pending message id: {event.message.id}")
@@ -306,7 +330,7 @@ class SessionLog:
 
                 async def persist() -> None:
                     await persistence.append(self.id, seq, event)
-                    if isinstance(event, TurnEnd):
+                    if isinstance(event, TurnEnd | ToolExecutionFinished | ToolCompleted):
                         await persistence.flush()
 
                 write = asyncio.create_task(persist())
@@ -359,12 +383,8 @@ class SessionLog:
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
                 )
             self.registry.validate(event)
-        self._notify(event)
-        if self.ctx is not None:
-            await self.ctx.dispatch(SessionAppended(self, event, seq))
-            await self.ctx.dispatch(event)
-        if cancelled:
-            raise asyncio.CancelledError
+            self._notify(event)
+        return seq, cancelled
 
     async def flush(self) -> None:
         """Wait for persistence to acknowledge every preceding append."""
