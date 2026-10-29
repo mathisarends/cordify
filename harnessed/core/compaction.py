@@ -141,9 +141,11 @@ class CompactionPolicy:
 class CompactionManager:
     """Serialize summaries and commit only smaller, replayable projections."""
 
-    def __init__(self, ctx: Context, session: SessionLog, *, context_window: int | None) -> None:
+    def __init__(
+        self, ctx: Context, session_log: SessionLog, *, context_window: int | None
+    ) -> None:
         self.ctx = ctx
-        self.log = session
+        self.session_log = session_log
         self.context_window = context_window
         self._lock = asyncio.Lock()
         self._retry_after_turns = 0
@@ -156,7 +158,7 @@ class CompactionManager:
             await count_request(self.ctx[TokenCounter], request),
             budget.output_reserve(request),
             budget.window_limit(self.context_window),
-            self.log.uncompacted_turn_count,
+            self.session_log.uncompacted_turn_count,
         )
 
     async def prepare(self, request: ModelRequest) -> ModelRequest:
@@ -164,7 +166,7 @@ class CompactionManager:
             return request
         state = await self.state(request)
         policy = self.ctx[CompactionPolicy]
-        if not set(policy.settings.preserve_turns) <= self.log._known_turns:
+        if not set(policy.settings.preserve_turns) <= self.session_log._known_turns:
             raise ValueError("preserve_turns must refer to existing turns in the session log")
         decision = policy.trigger(state)
         if inspect.isawaitable(decision):
@@ -184,9 +186,9 @@ class CompactionManager:
         async with self._lock:
             policy = self.ctx[CompactionPolicy] if CompactionPolicy in self.ctx else None
             settings = policy.settings if policy is not None else CompactionSettings()
-            current = self.log.open_turn
+            current = self.session_log.open_turn
             plan = plan_compaction(
-                self.log,
+                self.session_log,
                 keep_turns=settings.keep_turns,
                 keep_first_turns=settings.keep_first_turns,
                 preserve_turns=settings.preserve_turns,
@@ -194,7 +196,7 @@ class CompactionManager:
             )
             if plan is None:
                 return None, request
-            if not force and self.log.closed_turn_count < self._retry_after_turns:
+            if not force and self.session_log.closed_turn_count < self._retry_after_turns:
                 if (
                     self._retry_after_step is None
                     or current is None
@@ -210,20 +212,21 @@ class CompactionManager:
                     self.ctx[Model], model_name=request.model, focus=settings.focus
                 )
             # The input request stays a snapshot even if new inbox/context records arrive.
-            events, previous = self.log.events, self.log.last(CompactionApplied)
-            with span(self.ctx, "compaction", session_id=self.log.id, through=plan.through):
+            events = self.session_log.events
+            previous = self.session_log.last(CompactionApplied)
+            with span(self.ctx, "compaction", session_id=self.session_log.id, through=plan.through):
                 try:
                     summary = await summarizer.summarize(
                         plan.messages, max_tokens=settings.summary_tokens
                     )
                 except SummaryError as error:
-                    await self.log.append(
+                    await self.session_log.append(
                         ModelUsageRecorded(error.usage, purpose=UsagePurpose.COMPACTION)
                     )
                     raise
             if isinstance(summary, Summary):
                 if summary.usage is not None:
-                    await self.log.append(
+                    await self.session_log.append(
                         ModelUsageRecorded(summary.usage, purpose=UsagePurpose.COMPACTION)
                     )
                 summary = summary.text
@@ -231,7 +234,7 @@ class CompactionManager:
             summary = truncate(summary.strip(), settings.summary_tokens, counter)
             if not summary.strip():
                 raise ValueError("Summarizer produced no content within the summary budget")
-            if self.log.last(CompactionApplied) is not previous:
+            if self.session_log.last(CompactionApplied) is not previous:
                 return None, request
             applied = CompactionApplied(
                 plan.through,
@@ -246,7 +249,7 @@ class CompactionManager:
             before = await count_request(counter, request)
             after = await count_request(counter, compacted)
             if after >= before:
-                self._retry_after_turns = self.log.closed_turn_count + 2
+                self._retry_after_turns = self.session_log.closed_turn_count + 2
                 self._retry_through = plan.through
                 self._retry_after_step = (
                     (current.id, sum(step.closed for step in current.steps) + 2)
@@ -261,7 +264,7 @@ class CompactionManager:
                 )
                 return None, request
             applied = replace(applied, before_tokens=before, after_tokens=after)
-            await self.log.append(applied)
+            await self.session_log.append(applied)
             return applied, compacted
 
 
