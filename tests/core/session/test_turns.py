@@ -91,7 +91,7 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
         await agent.control.join()
         turn = agent.log.turns[-1]
         assert turn.closed and turn.reason == TurnOutcome.REJECTED and (turn.steps == ())
-        assert model.requests == [] and len(agent.log.inbox.next_turn) == 1
+        assert model.requests == [] and not agent.log.inbox.next_turn
 
 
 async def test_cancel_closes_the_open_step_and_turn_in_the_log():
