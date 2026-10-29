@@ -70,12 +70,6 @@ def test_offline_sdk_example_runs(module):
 
 # Names without a public facade yet; see review.md U6. Shrink this, never grow it.
 _INTERNAL_EXAMPLE_IMPORTS = {
-    ("harnessed.core.approvals", "ApprovalUnavailable"),
-    ("harnessed.core.budget", "ContextBudgetExceeded"),
-    ("harnessed.core.hooks", "SessionAppended"),
-    ("harnessed.core.messages", "Assistant"),
-    ("harnessed.core.messages", "User"),
-    ("harnessed.core.messages", "user"),
     ("harnessed.core.prompt.system_prompt", "SystemPrompt"),
     ("harnessed.core.session.codec", "decode_event"),
     ("harnessed.core.session.codec", "encode_event"),

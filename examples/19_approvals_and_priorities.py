@@ -4,7 +4,7 @@ import asyncio
 from time import perf_counter
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, ToolStatus, tool
-from harnessed.core.approvals import ApprovalUnavailable
+from harnessed.errors import ApprovalUnavailable
 from harnessed.events.approval import Status as ApprovalStatus
 from harnessed.events.tool import Returned as ToolReturned
 from harnessed.hooks import RequestApproval, ToolPolicy

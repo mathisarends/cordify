@@ -12,10 +12,10 @@ from pydantic_ai import messages as native
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 
 from harnessed import Agent, Plugin, events
-from harnessed.core.budget import ContextBudgetExceeded
 from harnessed.core.errors import (
     AuthError,
     ConfigError,
+    ContextBudgetExceeded,
     InvalidRequest,
     ProviderError,
     ProviderUnavailable,

@@ -3,8 +3,8 @@
 import asyncio
 
 from harnessed import Agent, Role, events
-from harnessed.core.budget import ContextBudgetExceeded
 from harnessed.core.session.session import SessionLog
+from harnessed.errors import ContextBudgetExceeded
 from harnessed.plugins import AgentLoop, Compaction, at_ratio, every_turns
 from harnessed.testing import ScriptedModel
 

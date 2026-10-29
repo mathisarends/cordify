@@ -1,8 +1,9 @@
 import pytest
 
+from harnessed.core.errors import ToolNameConflict
 from harnessed.core.messages import ToolCall
 from harnessed.core.prompt.system_prompt import SystemPrompt
-from harnessed.core.tools.registry import ToolError, ToolNameConflict, ToolRegistry
+from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import Context
 
 

@@ -6,6 +6,7 @@ from harnessed.core.hooks import (
     PreStep,
     RequestApproval,
     ReviewToolResult,
+    SessionAppended,
     StepDecision,
     ToolPolicy,
     TurnStopping,
@@ -13,14 +14,15 @@ from harnessed.core.hooks import (
 from harnessed.kernel import Priority
 
 __all__ = [
-    "RequestApproval",
     "ConfigureRequest",
     "ExecuteTool",
     "Next",
     "PreStep",
     "PrepareRequest",
     "Priority",
+    "RequestApproval",
     "ReviewToolResult",
+    "SessionAppended",
     "StepDecision",
     "ToolPolicy",
     "TurnStopping",

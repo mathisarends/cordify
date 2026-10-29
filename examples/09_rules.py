@@ -13,12 +13,11 @@ from harnessed import (
     events,
     tool,
 )
-from harnessed.core.messages import user
 from harnessed.events.inbox import Added as InboxAdded
 from harnessed.events.inbox import Mode as InboxMode
 from harnessed.hooks import ReviewToolResult
 from harnessed.kernel import Inject, hook
-from harnessed.models import ModelChunk
+from harnessed.models import ModelChunk, user
 from harnessed.plugins import Approvals
 from harnessed.plugins.rules import Rules, when
 from harnessed.testing import ScriptedModel

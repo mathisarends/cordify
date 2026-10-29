@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, tool
-from harnessed.core.hooks import SessionAppended
 from harnessed.events.turn import Ended as TurnEnd
-from harnessed.hooks import ExecuteTool
+from harnessed.hooks import ExecuteTool, SessionAppended
 from harnessed.kernel import Context, Inject, plugin
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals

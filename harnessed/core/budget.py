@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass
 
+from harnessed.core.errors import ContextBudgetExceeded
 from harnessed.core.model import ModelRequest
 from harnessed.core.tokens import TokenCounter
 
@@ -17,17 +18,6 @@ def truncate(text: str, max_tokens: int, counter: TokenCounter) -> str:
         else:
             high = middle - 1
     return text[:low]
-
-
-class ContextBudgetExceeded(RuntimeError):
-    def __init__(self, input_tokens: int, reserve_tokens: int, limit: int) -> None:
-        self.input_tokens = input_tokens
-        self.reserve_tokens = reserve_tokens
-        self.limit = limit
-        super().__init__(
-            f"Context budget exceeded: {input_tokens} input + {reserve_tokens} reserved tokens "
-            f"> {limit}. Reduce current input/tool schemas, retain fewer turns, or compact earlier."
-        )
 
 
 @dataclass(

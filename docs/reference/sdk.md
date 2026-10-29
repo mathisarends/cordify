@@ -2,7 +2,8 @@
 
 This page describes the implemented application API. Detailed behavior and complete
 examples live in the topic guides. Optional features are imported from
-`harnessed.plugins`; model contracts come from `harnessed.models`.
+`harnessed.plugins`; model contracts and message types come from `harnessed.models`,
+and SDK errors from `harnessed.errors`.
 
 ## Agent
 
@@ -44,7 +45,7 @@ examples live in the topic guides. Optional features are imported from
 | log | Advanced append-only SessionLog service and event catalog |
 
 Await methods that perform durable writes. Closed handles raise SessionClosed.
-SDK failures derive from `HarnessedError` in `harnessed.core.errors`: operations
+SDK failures derive from `HarnessedError`, importable from `harnessed.errors`: operations
 invalid in the current status raise `SessionStateError` (SessionClosed is one),
 corrupt stored records raise `SessionFormatError`, and `on_max_tokens=FAIL` raises
 `OutputTokenLimit`.

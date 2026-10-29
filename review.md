@@ -76,36 +76,11 @@ and `AgentLoop`. There is no per-run override: `RunOptions` only has
 `attachments`, `context` and `settings`. Move the shared services out of the loop
 plugin and allow per-run limits (see M1).
 
-**U6. Some application types have no public home.** The examples now use the
-existing facades wherever one exists, and `tests/test_examples.py` pins the remaining
-`harnessed.core` imports to an explicit list. Still missing (needs a decision,
-because api-target.md keeps the root at about 20 names and lists no errors facade):
-- message types and constructors (`User`, `Assistant`, `user()`), although `run()`
-  accepts a `Message`;
-- provider errors (`ProviderError`, `RateLimited`, `AuthError`,
-  `ContextLengthExceeded`) that applications must catch, plus
-  `ContextBudgetExceeded`, `ApprovalUnavailable` and `OutputUnavailable`;
-- `SessionAppended` (not in the 14.3 hook catalog);
-- inspection types (`SessionLog`, `ToolRegistry`, `SystemPrompt`, the event codec),
-  which may legitimately stay level 3.
-
-An `harnessed.errors` facade would cover the largest group.
-
 **U8. Two ways to read everything.** `session.events`, `.messages`, `.usage`,
 `.turns` and `.last()` mirror `session.log.*`. `Session` also exposes `ctx`, `log`,
 `options`, `control`, `approvals` and `inbox` as public attributes. Examples mix
 both (`session.log.approvals.grant_for(...)`). Decide which surface is public and
 make the rest private.
-
-### Code cleanliness and consistency of abstractions
-
-**C4. Error exports.** Session state misuse, corrupt records, token-limit failures
-and exhausted scripts now raise typed `HarnessedError` subclasses, and runtime
-invariants no longer rely on `assert`. Applications still import `HarnessedError`
-and its subclasses from `harnessed.core.errors`, because the root SDK exports only
-`PluginConflict`, `SessionClosed` and `StreamOverflow`. Deciding which errors join the
-root SDK belongs with U6. Input validation in event and tool constructors still
-raises plain `ValueError`/`TypeError` on purpose.
 
 ### Missing capabilities agents need
 
@@ -113,11 +88,6 @@ raises plain `ValueError`/`TypeError` on purpose.
 a step limit, a token or cost limit (`ModelUsage` is already summed per turn),
 and a wall-clock timeout that ends the turn cleanly instead of cancelling the
 caller's `await`.
-
-**M2. Provider errors at the root.** The models guide now documents provider-SDK
-retries and the session state after a failed call, and a test pins it. What's left
-is the export question from U6: applications catch `RateLimited` and the other
-provider errors from `harnessed.core.errors`.
 
 **M3. Asking the user from inside a tool.** `ToolContext` offers `progress`,
 `emit` and cancellation, but no way to ask a question or request approval

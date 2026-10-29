@@ -5,7 +5,6 @@ from typing import Annotated, Protocol, Self, runtime_checkable
 
 from pydantic import ConfigDict, Field, TypeAdapter
 
-from harnessed.core.errors import ApprovalUnavailable as ApprovalUnavailable
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import ApprovalAnswer, PolicyDecision
 from harnessed.core.plugin import Plugin, PluginConfig

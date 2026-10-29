@@ -6,7 +6,8 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, tool
-from harnessed.core.budget import ContextBudget, ContextBudgetExceeded
+from harnessed.core.budget import ContextBudget
+from harnessed.core.errors import ContextBudgetExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
 from harnessed.core.messages import Assistant, Role, System, user
 from harnessed.core.model import ModelChunk

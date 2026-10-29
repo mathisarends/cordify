@@ -30,7 +30,7 @@ An answer sent alongside ordinary tool calls is rejected; those tools still run 
 Pydantic validates every proposed answer. The default loop permits two correction
 requests; configure `AgentLoop(output_retries=1)` to permit one. The normal
 `max_steps` limit still applies. Exhausting validation retries raises
-`OutputValidationError` from `harnessed.core.errors`. Validation feedback names
+`OutputValidationError` from `harnessed.errors`. Validation feedback names
 invalid fields without echoing their submitted values.
 
 Scalar and list outputs use an object envelope (`{"output": ...}`) on the wire.

@@ -41,7 +41,7 @@ Harnessed bleibt beim Prinzip von Cordis und DSH: Ein Agent ist eine Liste von P
 
 | Ebene | Für wen | Importiert aus | Muss man kennen |
 |---|---|---|---|
-| **1 · App** | Wer einen Agent baut | `harnessed`, `harnessed.models`, `harnessed.plugins` | `Agent`, `Session`, `RunResult`, Stream-Events, mitgelieferte Plugins *benutzen*, Tool-Plugins (`Plugin` + `@tool`) *schreiben* |
+| **1 · App** | Wer einen Agent baut | `harnessed`, `harnessed.models`, `harnessed.plugins`, `harnessed.errors` | `Agent`, `Session`, `RunResult`, Stream-Events, mitgelieferte Plugins *benutzen*, Tool-Plugins (`Plugin` + `@tool`) *schreiben* |
 | **2 · Plugin** | Wer das Verhalten des Loops ändert | zusätzlich `harnessed.hooks`, `harnessed.events` | `hook`, `Inject`, Hook-Events, Slots |
 | **3 · Kernel** | Wer ein eigenes Framework darauf baut | `harnessed.kernel`, bei Bedarf die besitzende `harnessed.core`-Schicht | `Context`, Services, `needs`, Effects |
 
@@ -1152,6 +1152,7 @@ class PostgresSessions(Plugin, slot="sessions"): ...
 | `ReviewToolResult` | waterfall → `ToolResult` | Ergebnis nachbearbeiten (Redaction, Spill, Limits) |
 | `AfterStep` | emit | Metriken, Regeln, Steering |
 | `PluginFailed` | emit | Alerting, Restart |
+| `SessionAppended` | emit | nach jedem angehängten Log-Event (mit `seq`): Spiegelung, Indizes, Audit |
 
 Daneben ist jedes **Log-Event** aus `harnessed.events` als `@hook(events.X)` abonnierbar, immer nur beobachtend.
 
@@ -1241,15 +1242,24 @@ class MyTracer(Plugin, slot="tracer"):
 
 ## 16. Fehler
 
+Alle Fehler kommen aus `harnessed.errors` (Ebene 1). Der Baum lebt in `core/errors.py`;
+die Facade re-exportiert ihn explizit, analog zu `harnessed.hooks`.
+
 ```
 HarnessedError
 ├── ConfigError                 # invalid options / plugin config (Pydantic ValidationError inside)
-├── PluginConflict              # two plugins in the same slot
-├── ToolNameConflict
-├── ApprovalRequired            # ASK without approver
+│   ├── PluginConflict          # two plugins in the same slot
+│   └── ToolNameConflict        # two live tools with one name
+├── ApprovalUnavailable         # ASK without a reachable approver
 ├── SessionLocked
+├── SessionStateError           # operation invalid in the current status
+│   └── SessionClosed
+├── SessionFormatError          # stored record does not match the log format
 ├── ContextBudgetExceeded       # message names Compaction(...)
-├── PluginFailed
+├── OutputTokenLimit            # on_max_tokens=FAIL
+├── OutputValidationError       # structured output retries exhausted
+├── OutputUnavailable
+├── StreamOverflow              # slow stream consumer
 └── ProviderError
     ├── AuthError
     ├── RateLimited             # .retry_after

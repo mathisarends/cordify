@@ -65,6 +65,7 @@ harnessed/
   __init__.py              # facade: Agent, Session, RunResult, Plugin, tool, ... (~20 names)
   agent.py                 # Agent facade: resolves model=, instructions=, defaults, PluginConflict
   hooks.py                 # facade: re-exports core.hooks (Next, PrepareRequest, ToolPolicy, ...)
+  errors.py                # facade: re-exports the core.errors tree
   events/                  # public namespaces: text, reasoning, tool, approval, ...
 
   kernel/                  # standalone: no harnessed imports, no third-party packages (unchanged)
@@ -180,7 +181,8 @@ Die Pfade aus `api-target.md` bleiben fast gleich. Nur `seams` verschwindet:
 | Import | Kommt aus |
 |---|---|
 | `harnessed` | `agent.py`, `core/*` (re-exportiert) |
-| `harnessed.models` | `core/model.py` (Protokoll, Typen), `models/pydantic_ai.py` |
+| `harnessed.models` | `core/model.py` (Protokoll, Typen), `core/messages.py` (Message-Typen), `models/pydantic_ai.py` |
+| `harnessed.errors` | `core/errors.py` |
 | `harnessed.plugins` | `plugins/*` und die Default-Plugins aus `core` (`AgentLoop`, `Approvals`, `ToolOutputLimit`, `Service`, `ContextValue`) |
 | `harnessed.hooks`, `harnessed.events.*` | `core/hooks.py`, `core/stream.py`, `core/session/events.py` |
 | `harnessed.kernel` | `kernel/` |

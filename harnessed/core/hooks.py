@@ -105,6 +105,8 @@ class RequestApproval(Bail[ApprovalAnswer]):
 
 @dataclass(frozen=True)
 class SessionAppended(Emit):
+    """Dispatched after an event is appended to the session log, before its own hooks."""
+
     log: SessionLog
     event: SessionEvent
     seq: int

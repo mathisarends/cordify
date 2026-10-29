@@ -10,6 +10,7 @@ from typing import Annotated, Any, overload
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 
+from harnessed.core.errors import ToolNameConflict
 from harnessed.core.messages import ToolCall, ToolResult
 from harnessed.core.model import ToolDefinition
 from harnessed.core.tools.arguments import ToolArguments, tool_result_content
@@ -35,10 +36,6 @@ _TIMEOUT = TypeAdapter(
         title="tool timeout", strict=True, allow_inf_nan=False, hide_input_in_errors=True
     ),
 )
-
-
-class ToolNameConflict(ValueError):
-    """Two live registrations claim the same name without an explicit override."""
 
 
 class ToolError(Exception):

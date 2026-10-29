@@ -4,8 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from harnessed import Agent
-from harnessed.core.messages import Assistant
-from harnessed.models import Model, ModelChunk, ModelInfo, ModelRequest, ModelResponse
+from harnessed.models import Assistant, Model, ModelChunk, ModelInfo, ModelRequest, ModelResponse
 
 
 class EchoStream:

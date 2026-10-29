@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from harnessed.core.approvals import ApprovalUnavailable
+from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import (
     ExecuteTool,
     ReviewToolResult,

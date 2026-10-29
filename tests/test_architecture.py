@@ -114,7 +114,10 @@ def test_validation_is_explicit_and_otel_is_not_added():
                 assert not (node.module or "").startswith("opentelemetry")
 
 
-@pytest.mark.parametrize("module", ["harnessed", "harnessed.plugins", "harnessed.models"])
+@pytest.mark.parametrize(
+    "module",
+    ["harnessed", "harnessed.errors", "harnessed.hooks", "harnessed.models", "harnessed.plugins"],
+)
 def test_public_exports_resolve_to_their_canonical_classes_and_functions(module):
     facade = importlib.import_module(module)
     declarations = dict(getattr(facade, "_EXPORTS", {}))
@@ -152,6 +155,7 @@ def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
     assert {path.name for path in PACKAGE.glob("*.py")} == {
         "__init__.py",
         "agent.py",
+        "errors.py",
         "hooks.py",
     }
     assert (PACKAGE / "events" / "__init__.py").is_file()

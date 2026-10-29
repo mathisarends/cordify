@@ -4,13 +4,12 @@ import asyncio
 import json
 
 from harnessed import Agent, Plugin, PolicyDecision, ToolCall, tool
-from harnessed.core.messages import User
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog, derive_messages, derive_requests
 from harnessed.events.message import Assistant as AssistantMessage
 from harnessed.events.message import User as UserMessage
 from harnessed.events.text import Delta as TextDelta
-from harnessed.models import ModelChunk
+from harnessed.models import ModelChunk, User
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 

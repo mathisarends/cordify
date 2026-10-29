@@ -1,11 +1,10 @@
 from .context import ToolContext
 from .decorator import tool
-from .registry import ToolError, ToolNameConflict, ToolRegistry, ToolSpec
+from .registry import ToolError, ToolRegistry, ToolSpec
 
 __all__ = [
     "ToolContext",
     "ToolError",
-    "ToolNameConflict",
     "ToolRegistry",
     "ToolSpec",
     "tool",

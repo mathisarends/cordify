@@ -7,10 +7,10 @@ from uuid import uuid4
 
 from harnessed.core.approvals import (
     Approval,
-    ApprovalUnavailable,
     Approver,
     validate_approval_timeout,
 )
+from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import RequestApproval
 from harnessed.core.messages import ApprovalAnswer, ToolCall
 from harnessed.core.runtime.control import SessionControl

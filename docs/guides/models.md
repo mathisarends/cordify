@@ -84,7 +84,7 @@ channel or a final-answer tool according to the model profile.
 See [multimodal tool results](tools.md#multimodal-results) for text/image policies.
 
 Authentication, rate limiting, context overflow, invalid requests and provider
-unavailability map to provider-independent errors in `harnessed.core.errors`.
+unavailability map to provider-independent errors in `harnessed.errors`.
 Mock-HTTP DeepSeek and Anthropic round trips cover this boundary without
 credentials or live remote calls.
 

@@ -10,6 +10,10 @@ class PluginConflict(ConfigError):
     pass
 
 
+class ToolNameConflict(ConfigError):
+    """Two live registrations claim the same name without an explicit override."""
+
+
 class SessionLocked(HarnessedError, RuntimeError):
     pass
 
@@ -38,6 +42,19 @@ class StreamOverflow(HarnessedError, RuntimeError):
         super().__init__(
             f"Event consumer exceeded its buffer of {capacity} events; "
             "read session.events for durable records and reconnect"
+        )
+
+
+class ContextBudgetExceeded(HarnessedError, RuntimeError):
+    """The next request exceeds the configured context budget."""
+
+    def __init__(self, input_tokens: int, reserve_tokens: int, limit: int) -> None:
+        self.input_tokens = input_tokens
+        self.reserve_tokens = reserve_tokens
+        self.limit = limit
+        super().__init__(
+            f"Context budget exceeded: {input_tokens} input + {reserve_tokens} reserved tokens "
+            f"> {limit}. Reduce current input/tool schemas, retain fewer turns, or compact earlier."
         )
 
 

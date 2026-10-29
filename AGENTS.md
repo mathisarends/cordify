@@ -37,7 +37,8 @@ YAML. Internal modules import their owning layer, not the root facade.
 Follow `api-target.md` and `structure-target.md`. Do not restore `seams`,
 `adapters`, `app`, `llms` or `presets`, or add native provider clients. Prefer
 canonical `core.messages` / `core.model` imports inside the library. Applications
-use the small root SDK, `harnessed.plugins`, `harnessed.models` and `harnessed.hooks`.
+use the small root SDK, `harnessed.plugins`, `harnessed.models`, `harnessed.errors`
+and `harnessed.hooks`.
 
 Ruff enforces the parent-relative import rule with `TID252` and
 `ban-relative-imports = "parents"`. Run `uv run ruff check .` before committing;

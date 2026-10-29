@@ -1,3 +1,15 @@
+from harnessed.core.messages import (
+    Assistant,
+    ContentPart,
+    ImagePart,
+    Message,
+    System,
+    TextPart,
+    ToolReply,
+    User,
+    system,
+    user,
+)
 from harnessed.core.model import (
     Model,
     ModelChunk,
@@ -18,6 +30,10 @@ from harnessed.core.model import (
 from .pydantic_ai import PydanticAIModel as PydanticAIModel
 
 __all__ = [
+    "Assistant",
+    "ContentPart",
+    "ImagePart",
+    "Message",
     "Model",
     "ModelChunk",
     "ModelInfo",
@@ -28,9 +44,15 @@ __all__ = [
     "OutputMode",
     "PydanticAIModel",
     "StopReason",
+    "System",
+    "TextPart",
     "TokenLimitBehavior",
     "ToolArgumentsMode",
     "ToolCallDelta",
     "ToolCallStart",
     "ToolDefinition",
+    "ToolReply",
+    "User",
+    "system",
+    "user",
 ]

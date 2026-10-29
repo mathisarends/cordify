@@ -4,7 +4,8 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Plugin, ToolCall, tool
-from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable, Approver, CallbackApprover
+from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
+from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import RequestApproval, ToolPolicy
 from harnessed.core.messages import PolicyDecision, ToolStatus
 from harnessed.core.model import ModelChunk
