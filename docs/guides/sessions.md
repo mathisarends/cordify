@@ -67,9 +67,14 @@ under the session's existing driver. No background task is created per handle.
 | `submit(text)` | a new turn | queued after earlier turns | starts at once | `RunHandle[T]` |
 | `steer(text)` | the running turn | joins its next step | starts a new turn | `InboxItem` |
 | `context.set(name, value)` | named context | sent with the next step | sent with the next turn; starts nothing | `None` |
+| `observe(observation)` | the next step's history | latest state per source joins the next step | waits for the next turn; starts nothing | `None` |
 
 A queued follow-up is just another `run()` or `submit()`. Facts that must not wake
-the agent belong in `context.set()`.
+the agent belong in `context.set()`. `steer` accepts the same `attachments` as `run`.
+`observe` is synchronous and kept in memory until the next step records it; a newer
+observation from the same source replaces an unrecorded older one. Use it from hooks
+for changing state such as a browser page, and see [context](context.md) for
+observation policies.
 
 `StepDecision.reject()` in a `PreStep` hook permanently consumes that step's
 pending inputs and ends the turn with `StopReason.REJECTED`. Later runs never

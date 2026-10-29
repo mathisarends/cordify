@@ -216,10 +216,6 @@ class Session:
         owner = owner if owner is not None else Context.current() or self.ctx
         return owner.add_listener(event, callback, prepend=prepend, priority=priority)
 
-    def observe(self, observation: Observation) -> None:
-        self.control.check_open()
-        self._steps.observe(observation)
-
     @property
     def status(self) -> SessionStatus:
         return self.control.status
@@ -295,8 +291,16 @@ class Session:
         if event.log is self.log:
             self._publish(event.event)
 
-    async def steer(self, content: str | Message) -> InboxItem:
-        return await self.inbox.steer(content)
+    async def steer(
+        self, content: str | Message, *, attachments: Iterable[Attachment] = ()
+    ) -> InboxItem:
+        """Add input to the running turn's next step, or start a turn while idle."""
+        return await self.inbox.steer(content, attachments=attachments)
+
+    def observe(self, observation: Observation) -> None:
+        """Buffer the latest state per source; the next step records it."""
+        self.control.check_open()
+        self._steps.observe(observation)
 
     async def pause(self) -> None:
         """Wait until the current model call and all its tools are committed."""

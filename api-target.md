@@ -750,7 +750,8 @@ await session.inbox.remove(item.id)
 |---|---|---|---|---|
 | `run(text)` / `stream(text)` | eigener, **neuer** Turn | Wird in die Inbox gestellt und startet, wenn alle Turns davor fertig sind. | Startet sofort. | `RunResult` bzw. Events **dieses** Turns |
 | `submit(text)` | eigener neuer Turn | Aufnahme wird bestätigt, Ausführung bleibt eingereiht. | Startet sofort. | `RunHandle[T]` |
-| `steer(text)` | in den **laufenden** Turn | Wird vor dem nächsten Step als User-Message eingefügt, nachdem die Tool-Calls des aktuellen Steps committed sind. | Startet einen neuen Turn, ohne darauf zu warten. | `InboxItem` |
+| `steer(text, attachments=...)` | in den **laufenden** Turn | Wird vor dem nächsten Step als User-Message eingefügt, nachdem die Tool-Calls des aktuellen Steps committed sind. | Startet einen neuen Turn, ohne darauf zu warten. | `InboxItem` |
+| `observe(observation)` | in den nächsten Step | Der neueste Zustand pro `source` wird im nächsten Step aufgezeichnet. | Wartet auf den nächsten Turn, startet nichts. | `None` |
 | `context.set(name, value)` | Kontext (4.4) | Geht mit dem nächsten Step mit. | Geht mit dem nächsten Turn mit. Startet nichts. | `None` |
 
 Regeln:

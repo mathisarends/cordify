@@ -114,5 +114,7 @@ class SessionInbox:
                 raise KeyError(item_id) from None
             raise
 
-    async def steer(self, content: str | Message) -> InboxItem:
-        return await self._writer.send(content, InboxMode.STEER)
+    async def steer(
+        self, content: str | Message, *, attachments: Iterable[Attachment] = ()
+    ) -> InboxItem:
+        return await self._writer.send(content, InboxMode.STEER, attachments=attachments)

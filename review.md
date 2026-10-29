@@ -47,11 +47,6 @@ an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
 
 ### Usability and expectation conformity
 
-**U3. Input verbs are not fully aligned.** `followup` and `inject` are gone
-(api-target.md 8.1), and the sessions guide now has a "which verb when" table.
-Left: `steer` takes no attachments while `run`/`submit` do, and `observe` (returns
-`None`) is outside the 8.1 verb table without its own guide entry.
-
 **U5. Loop limits hide in a slot plugin.** `max_steps`, `tool_timeout`,
 `max_parallel_tools` and `context_window` need `AgentLoop(...)` in `plugins`.
 Replacing the `loop` slot also removes `ToolRegistry`, `SystemPrompt`,

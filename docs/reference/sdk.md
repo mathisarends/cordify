@@ -27,7 +27,8 @@ and SDK errors from `harnessed.errors`.
 | run(prompt, output=None, attachments=(), context=None, settings=None) | Queue and await this turn's RunResult[T] |
 | submit(prompt, output=None, ...) | Acknowledge queued input and return RunHandle[T] |
 | stream(prompt, output=None, ...) | Namespaced UI and custom events, ending with events.turn.Finished |
-| steer(content) | Send a next-step correction and return its InboxItem |
+| steer(content, attachments=()) | Send a next-step correction and return its InboxItem |
+| observe(observation) | Buffer the latest state per source for the next step; starts nothing |
 | context.set(name, value) / remove(name) | Await a durable changed fact/removal |
 | inbox.pending / remove(id) | Frozen queued input snapshot / durable removal |
 | pause() / resume() | Pause at a committed step boundary / continue |

@@ -74,6 +74,18 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
         assert recorded == request and "changed after admission" not in recorded.messages[0].text
 
 
+async def test_steering_carries_attachments_like_a_run(tmp_path):
+    log = tmp_path / "failure.log"
+    log.write_text("AssertionError: login", encoding="utf-8")
+    model = ScriptedModel(["looked"])
+    async with Application(model=model).session("steer-attachments") as agent:
+        await agent.steer("Check this failure", attachments=[File(log)])
+        await agent.control.join()
+        message = model.requests[0].messages[0]
+        assert "Check this failure" in message.text
+        assert "File: failure.log\nAssertionError: login" in message.text
+
+
 async def test_quiet_context_survives_prompt_updates_and_typed_user_steering():
     model = ScriptedModel(["first", "second"])
     async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
