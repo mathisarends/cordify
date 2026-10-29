@@ -4,6 +4,7 @@ import pytest
 from pydantic import BaseModel, field_validator
 
 from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
+from harnessed.core.messages import User
 from harnessed.events.inbox import Added as InboxAdded
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
@@ -34,6 +35,37 @@ async def test_cancelling_a_result_waiter_leaves_the_acknowledged_run_queued():
         assert not handle.done() and session.inbox.pending[0].id == handle.id
         await session.resume()
         assert (await handle.result()).text == "done"
+
+
+@pytest.mark.parametrize("discard_second", [False, True])
+async def test_reusing_a_consumed_message_does_not_overwrite_a_running_submission(discard_second):
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class Work(Plugin):
+        @tool(readonly=True)
+        async def work(self) -> str:
+            started.set()
+            await release.wait()
+            return "done"
+
+    model = ScriptedModel([call(Work.work), "first", "second"])
+    async with Agent(model=model, plugins=[Work()]).session() as session:
+        message = User("reused input")
+        first = await session.submit(message)
+        await started.wait()
+        second = await session.submit(message)
+        assert first is not second and not first.done() and not second.done()
+        if discard_second:
+            await session.inbox.remove(second.id)
+        release.set()
+        async with asyncio.timeout(2):
+            assert (await first.result()).text == "first"
+            result = await second.result()
+        if discard_second:
+            assert result.stop_reason is StopReason.DISCARDED
+        else:
+            assert result.text == "second"
+        assert first.done() and second.done()
 
 
 async def test_removing_input_in_an_observer_before_submit_returns_still_completes_handle():

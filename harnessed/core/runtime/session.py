@@ -82,7 +82,8 @@ class Session:
         ctx.provide(SessionInbox, self.inbox)
         ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox))
         self._subscribers: set[asyncio.Queue[AgentEvent | None]] = set()
-        self._submissions: dict[str, SubmittedRun] = {}
+        self._submissions: dict[RunHandle[Any], SubmittedRun] = {}
+        self._queued_submissions: dict[str, SubmittedRun] = {}
         self._submitted_turns: dict[str, SubmittedRun] = {}
         self._output_values = OutputValues()
         if OutputTypes not in ctx:
@@ -226,13 +227,13 @@ class Session:
     def _submission_event(self, event: SessionEvent, seq: int) -> None:
         submitted = None
         if isinstance(event, TurnStart):
-            submitted = self._submissions.get(event.input_id)
+            submitted = self._queued_submissions.pop(event.input_id, None)
             if submitted is not None:
                 submitted.start, submitted.turn_id = seq, event.turn_id
                 self._submitted_turns[event.turn_id] = submitted
             return
         if isinstance(event, InboxRemoved):
-            submitted = self._submissions.get(event.message_id)
+            submitted = self._queued_submissions.pop(event.message_id, None)
             records = (submitted.input, event) if submitted is not None else ()
         elif isinstance(event, TurnEnd):
             submitted = self._submitted_turns.get(event.turn_id)
@@ -253,7 +254,9 @@ class Session:
     def _finish_submission(
         self, submitted: SubmittedRun, value: RunResult[Any] | Exception
     ) -> None:
-        self._submissions.pop(submitted.handle.id, None)
+        self._submissions.pop(submitted.handle, None)
+        if self._queued_submissions.get(submitted.handle.id) is submitted:
+            self._queued_submissions.pop(submitted.handle.id)
         if submitted.turn_id is not None:
             self._submitted_turns.pop(submitted.turn_id, None)
         submitted.handle._finish(value)
@@ -423,9 +426,13 @@ class Session:
         def prepared(item: InboxAdded) -> None:
             nonlocal submitted
             submitted = SubmittedRun(RunHandle(item.message.id), item, schema, expectation)
-            self._submissions[item.message.id] = submitted
+            self._submissions[submitted.handle] = submitted
+            self._queued_submissions[item.message.id] = submitted
             # An input observer can wake the driver before append() returns.
-            for seq in range(offset, len(self.log.events)):
+            start = next(
+                seq for seq in range(offset, len(self.log.events)) if self.log.events[seq] is item
+            )
+            for seq in range(start, len(self.log.events)):
                 self._submission_event(self.log.events[seq], seq)
 
         try:
