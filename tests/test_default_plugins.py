@@ -6,9 +6,10 @@ from pydantic import ValidationError
 from harnessed import Agent
 from harnessed.core.budget import ContextBudget
 from harnessed.core.errors import PluginConflict, SessionLocked
-from harnessed.core.model import ModelInfo
+from harnessed.core.model import ModelChunk, ModelInfo, ModelUsage
 from harnessed.core.runtime.services import RuntimeServices
-from harnessed.core.tokens import TokenCounter
+from harnessed.core.session.events import ModelRequested
+from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
 from harnessed.plugins import (
     AgentLoop,
     Approvals,
@@ -129,3 +130,16 @@ async def test_replacing_the_loop_slot_keeps_shared_tools_and_prompt():
     result = await Agent(model=model, plugins=[CustomLoop(), Math()]).run("add")
     assert result.text == "three"
     assert [(c.name, r.text) for c, r in result.tool_calls] == [("add", "3")]
+
+
+async def test_default_token_counter_calibrates_against_reported_input_tokens():
+    model = ScriptedModel([[ModelChunk(text="ok"), ModelChunk(usage=ModelUsage(1_000, 1))]])
+    async with Agent(model=model).session() as session:
+        counter = session.ctx[TokenCounter]
+        text = "def handler(event): return event"
+        assert counter.count_text(text) == ApproximateTokenCounter().count_text(text)
+        await session.run("hello")
+        request = session.last(ModelRequested).request
+        estimate = ApproximateTokenCounter().count_request(request)
+        assert counter.count_request(request) == min(1_000, estimate * 4)
+        assert counter.count_text(text) > ApproximateTokenCounter().count_text(text)

@@ -32,6 +32,11 @@ A custom synchronous trigger receives a frozen `ContextState` with `input_tokens
 `reserve_tokens`, `context_window`, `ratio` and `turns_since_compaction`; it must
 return a boolean. `ratio` is `None` when the window is unknown.
 
+The default estimate is UTF-8 bytes / 4, scaled by how far the previous request's
+estimate was from the input tokens the provider reported. The first request of a
+session uses the raw estimate; replace it with `Service(TokenCounter, counter)`
+when you have a provider tokenizer.
+
 `keep_turns` retains recent closed turns, `keep_first_turns` retains initial turns,
 and `preserve_turns` pins specific existing turn IDs. Retained turns remain verbatim,
 including paired tool calls and results. The current turn, fixed instructions and

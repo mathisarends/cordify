@@ -28,11 +28,6 @@ mid-call. `Session.request_approval` exists but tools cannot reach it. A
 `ToolContext.ask(...)` / `approve(...)` on the existing approval machinery would
 cover clarifying questions, the most common human-in-the-loop need.
 
-**M4. Token counts drive compaction on a guess.** `ApproximateTokenCounter`
-(UTF-8 bytes / 4) decides compaction and context budget, while the provider reports
-real input tokens in every `ModelUsage`. Calibrate against the last reported input
-count, or compaction runs too early or too late for code and non-Latin text.
-
 **M5. No access to provider-native tools.** PydanticAI supports server-side tools
 (web search, code execution, URL context), but `_parameters` never forwards them,
 so agents cannot use them through the bridge. This fits the "PydanticAI is the

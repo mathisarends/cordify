@@ -47,3 +47,32 @@ class ApproximateTokenCounter:
             total += 4 + count_content(self, message.content) + self.count_text(message.reasoning)
             total += self.count_text(json.dumps(to_dict(message.tool_calls)))
         return total
+
+
+class CalibratedTokenCounter:
+    """Scale an estimator by the provider's last reported input tokens.
+
+    The ratio between a reported input count and the estimate of the same request
+    corrects later estimates, such as code or non-Latin text, where bytes / 4 is
+    off. It starts at 1.0 and is clamped so one odd report cannot distort budgets.
+    """
+
+    MIN_RATIO = 0.25
+    MAX_RATIO = 4.0
+
+    def __init__(self, estimator: ApproximateTokenCounter | None = None) -> None:
+        self.estimator = estimator or ApproximateTokenCounter()
+        self.ratio = 1.0
+
+    def calibrate(self, request: ModelRequest, input_tokens: int) -> None:
+        """Record a provider's input count for a request; ignore empty reports."""
+        estimated = self.estimator.count_request(request)
+        if input_tokens < 1 or estimated < 1:
+            return
+        self.ratio = min(max(input_tokens / estimated, self.MIN_RATIO), self.MAX_RATIO)
+
+    def count_text(self, text: str) -> int:
+        return math.ceil(self.estimator.count_text(text) * self.ratio)
+
+    def count_request(self, request: ModelRequest) -> int:
+        return math.ceil(self.estimator.count_request(request) * self.ratio)

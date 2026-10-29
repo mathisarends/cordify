@@ -76,7 +76,7 @@ harnessed/
     messages.py            # Message, TextPart, ImagePart, ToolCall, ToolResult, user(), system()
     attachments.py         # File, Image, prepare_input
     model.py               # Model protocol, ModelInfo, ModelRequest/Response/Chunk/Stream, Usage
-    tokens.py              # TokenCounter protocol + ApproximateTokenCounter (default)
+    tokens.py              # TokenCounter protocol, ApproximateTokenCounter, CalibratedTokenCounter (default)
     errors.py              # HarnessedError tree incl. ProviderError, ConfigError, PluginConflict
     event_registry.py      # session-local custom event catalogs and schemas
     plugin.py              # public Plugin base (@tool methods, guidance, slot), Service
