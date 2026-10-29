@@ -1,6 +1,27 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-29)
+
+This release adds optional OpenTelemetry tracing, explicit plugin lifetime
+requirements and session startup validation. It includes breaking composition
+changes from 0.2.0; the session record format remains version **2**.
+
+### Added
+
+- Install `harnessed[otel]` and import `OpenTelemetryTracer` from
+  `harnessed.integrations.opentelemetry` to export runtime spans to Phoenix,
+  Langfuse or other OTLP collectors. The plugin replaces the default `tracer`
+  slot and uses an application-owned or global OpenTelemetry provider without
+  taking over exporter configuration or provider shutdown.
+- Traces cover turns, steps, model requests, tool execution, approval waits and
+  compaction, with durable correlation IDs, token usage, reported costs and
+  failure outcomes. Parallel tools inherit their own span context. Prompts,
+  completions, tool arguments/results and exception messages are excluded by
+  default; `capture_content=True` enables bounded content capture. Reasoning,
+  opaque provider state and stack traces remain excluded.
+- Add an offline tracing example and a
+  [tracing guide](docs/guides/tracing.md) covering provider ownership, backend
+  configuration, trace parentage and content capture.
 
 ### Breaking changes
 
@@ -35,6 +56,41 @@
   deferred dependency behavior and `Context.install(strict=...)` remain unchanged.
   Runtime plugin additions and later service changes retain their temporal
   lifecycle behavior.
+
+### Upgrade from 0.2.0
+
+Audit class attributes, setup parameters, hook parameters and function plugins
+annotated with `Inject`. Declare every service that must control the plugin's
+lifetime in `needs`, including services accessed through `ctx[key]`:
+
+```python
+from harnessed import Plugin
+from harnessed.kernel import Inject
+
+
+class Feature(Plugin, needs=(Actions,)):
+    actions: Inject[Actions]
+```
+
+Here `Actions` is the application's service type. Previously, the annotation
+alone inferred the lifetime requirement. Without explicit `needs`, a missing
+required injection now fails resolution instead of suspending the plugin, and
+provider replacement does not trigger a remount. Optional injections remain
+optional unless their service is listed in `needs`. See the
+[plugin guide](docs/guides/plugins.md) for function plugins and bundles.
+
+Provide all required services before opening a session. Incomplete compositions
+now raise `PluginDependencyError`, including through `Agent.run()`. If a plugin
+deliberately waits for a service added later, set
+`Agent(..., plugin_validation=PluginValidation.WARN)` and import
+`PluginValidation` from `harnessed`. Inspect the error or warning's `.issues`
+to identify waiting plugins and missing service keys. See
+[startup validation](docs/guides/plugins.md#session-startup-validation).
+
+Existing version **2** session stores need no format migration from 0.2.0.
+Tracing is opt-in; install the model provider's extra separately, for example
+`harnessed[openai,otel]`, and close the application-owned telemetry provider
+after active sessions have closed.
 
 ## 0.2.0 (2026-10-29)
 
