@@ -9,8 +9,8 @@ from harnessed.core.errors import OutputTokenLimit
 from harnessed.core.messages import user
 from harnessed.core.model import ModelChunk, ModelUsage, TokenLimitBehavior
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import InboxAdded, InboxMode, TurnLimits
-from harnessed.core.stream import TextDelta, TurnFinished
+from harnessed.core.session.events import InboxAddedEvent, InboxMode, TurnLimits
+from harnessed.core.stream import TextDeltaEvent, TurnFinishedEvent
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
 
@@ -38,7 +38,7 @@ async def test_concurrent_runs_return_their_own_text_usage_and_turn_without_wait
     ) as session:
         queued = asyncio.Event()
 
-        @session.on(InboxAdded)
+        @session.on(InboxAddedEvent)
         def sent(event):
             if event.message.text == "second":
                 queued.set()
@@ -80,9 +80,10 @@ async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
             await model.started[1].wait()
             events = await asyncio.wait_for(asyncio.shield(streaming), timeout=1)
             assert (
-                "".join(event.text for event in events if isinstance(event, TextDelta)) == "reply 1"
+                "".join(event.text for event in events if isinstance(event, TextDeltaEvent))
+                == "reply 1"
             )
-            assert isinstance(events[-1], TurnFinished)
+            assert isinstance(events[-1], TurnFinishedEvent)
             assert events[-1].result.text == "reply 1"
         finally:
             model.release[1].set()
@@ -175,4 +176,4 @@ async def test_invalid_limits_fail_before_queueing_and_only_new_turns_carry_limi
                 await session.run("task", **limits)
         assert not session.log.events
     with pytest.raises(ValueError, match="limits"):
-        InboxAdded.create(user("look"), InboxMode.STEER, limits=TurnLimits(max_steps=1))
+        InboxAddedEvent.create(user("look"), InboxMode.STEER, limits=TurnLimits(max_steps=1))

@@ -5,7 +5,7 @@ from pydantic import BaseModel, field_validator
 
 from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
 from harnessed.core.messages import User
-from harnessed.events.inbox import Added as InboxAdded
+from harnessed.events import InboxAddedEvent
 from harnessed.hooks import PreStep, StepDecision
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
@@ -72,7 +72,7 @@ async def test_reusing_a_consumed_message_does_not_overwrite_a_running_submissio
 async def test_removing_input_in_an_observer_before_submit_returns_still_completes_handle():
     async with Agent(model=ScriptedModel([])).session() as session:
 
-        @session.on(InboxAdded)
+        @session.on(InboxAddedEvent)
         async def discard(event):
             await session.inbox.remove(event.message.id)
 

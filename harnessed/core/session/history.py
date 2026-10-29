@@ -4,22 +4,22 @@ from xml.sax.saxutils import escape, quoteattr
 from harnessed.core.messages import Message, System, ToolReply, User
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
-    AssistantMessage,
-    CompactionApplied,
+    AssistantMessageEvent,
+    CompactionAppliedEvent,
     ContextLifetime,
-    ContextMessage,
-    ContextValueChanged,
-    ModelRequested,
-    ObservationPolicyApplied,
-    ObservationRecorded,
+    ContextMessageEvent,
+    ContextValueChangedEvent,
+    ModelRequestedEvent,
+    ObservationPolicyAppliedEvent,
+    ObservationRecordedEvent,
     SessionEvent,
-    StepEnd,
-    StepStart,
-    SystemMessage,
-    ToolReturned,
-    TurnEnd,
-    TurnStart,
-    UserMessage,
+    StepEndedEvent,
+    StepStartedEvent,
+    SystemMessageEvent,
+    ToolCallFinishedEvent,
+    TurnEndedEvent,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 
 type HistoryFold = Callable[[Iterable[SessionEvent]], tuple[tuple[int, Message], ...]]
@@ -36,13 +36,13 @@ class MessageProjection:
         self._offset = len(events) - 1
         self._turn: str | None = None
         self._step: tuple[str, int] | None = None
-        self._compaction: CompactionApplied | None = None
+        self._compaction: CompactionAppliedEvent | None = None
         self._max_summaries: int | None = None
         self._scoped: dict[str | None, dict[int, Message]] = {}
         self._origins: dict[int, str | None] = {}
         self._observations: dict[str, list[int]] = {}
         self._by_step: dict[tuple[str, int], dict[str, list[int]]] = {}
-        self._observation_events: dict[int, ObservationRecorded] = {}
+        self._observation_events: dict[int, ObservationRecordedEvent] = {}
         self._visible_observations: dict[str, set[int]] = {}
         for seq, event in enumerate(events):
             self._index(event, seq)
@@ -51,32 +51,32 @@ class MessageProjection:
             self._visible_observations[source] = set(indices) & self._entries.keys()
 
     def _index(self, event: SessionEvent, seq: int) -> None:
-        if isinstance(event, TurnStart):
+        if isinstance(event, TurnStartedEvent):
             self._turn = event.turn_id
         if isinstance(
             event,
             (
-                UserMessage,
-                AssistantMessage,
-                ToolReturned,
-                ContextMessage,
-                ContextValueChanged,
-                ModelRequested,
-                SystemMessage,
+                UserMessageEvent,
+                AssistantMessageEvent,
+                ToolCallFinishedEvent,
+                ContextMessageEvent,
+                ContextValueChangedEvent,
+                ModelRequestedEvent,
+                SystemMessageEvent,
             ),
         ):
             self._origins[seq] = self._turn
-        if isinstance(event, TurnStart | StepStart | StepEnd | TurnEnd):
-            if isinstance(event, StepStart):
+        if isinstance(event, TurnStartedEvent | StepStartedEvent | StepEndedEvent | TurnEndedEvent):
+            if isinstance(event, StepStartedEvent):
                 self._step = (event.turn_id, event.step)
-            elif isinstance(event, StepEnd | TurnEnd):
+            elif isinstance(event, StepEndedEvent | TurnEndedEvent):
                 self._step = None
-        if isinstance(event, ContextMessage) and event.lifetime == ContextLifetime.TURN:
+        if isinstance(event, ContextMessageEvent) and event.lifetime == ContextLifetime.TURN:
             self._scoped.setdefault(event.turn_id, {})[seq] = event.message
             self._origins[seq] = self._turn
-        elif isinstance(event, ObservationPolicyApplied):
+        elif isinstance(event, ObservationPolicyAppliedEvent):
             self._max_summaries = event.max_summaries
-        elif isinstance(event, ObservationRecorded):
+        elif isinstance(event, ObservationRecordedEvent):
             source = event.observation.source
             self._observations.setdefault(source, []).append(seq)
             self._by_step.setdefault((event.turn_id, event.step), {}).setdefault(source, []).append(
@@ -84,9 +84,9 @@ class MessageProjection:
             )
             self._observation_events[seq] = event
             self._origins[seq] = self._turn
-        elif isinstance(event, CompactionApplied):
+        elif isinstance(event, CompactionAppliedEvent):
             self._compaction = event
-        if isinstance(event, TurnEnd):
+        if isinstance(event, TurnEndedEvent):
             self._turn = None
 
     def _eligible(self, seq: int) -> bool:
@@ -144,38 +144,38 @@ class MessageProjection:
         relevant = isinstance(
             event,
             (
-                AssistantMessage,
-                CompactionApplied,
-                ContextMessage,
-                ContextValueChanged,
-                ModelRequested,
-                ObservationPolicyApplied,
-                ObservationRecorded,
-                SystemMessage,
-                ToolReturned,
-                UserMessage,
-                TurnEnd,
-                TurnStart,
-                StepStart,
-                StepEnd,
+                AssistantMessageEvent,
+                CompactionAppliedEvent,
+                ContextMessageEvent,
+                ContextValueChangedEvent,
+                ModelRequestedEvent,
+                ObservationPolicyAppliedEvent,
+                ObservationRecordedEvent,
+                SystemMessageEvent,
+                ToolCallFinishedEvent,
+                UserMessageEvent,
+                TurnEndedEvent,
+                TurnStartedEvent,
+                StepStartedEvent,
+                StepEndedEvent,
             ),
         )
         if not relevant:
             return
         self._snapshot = None
-        if isinstance(event, CompactionApplied):
+        if isinstance(event, CompactionAppliedEvent):
             self._entries = dict(self._fold(events))
             self._order_dirty = False
             self._visible_scoped = set(self._scoped.get(self._turn, {})) & self._entries.keys()
             for source, indices in self._observations.items():
                 self._visible_observations[source] = set(indices) & self._entries.keys()
-        elif isinstance(event, SystemMessage):
+        elif isinstance(event, SystemMessageEvent):
             self._entries = {key: msg for key, msg in self._entries.items() if msg.id != "system"}
             if event.content:
                 self._entries = {seq: System(event.content, id="system")} | self._entries
-        elif isinstance(event, UserMessage | AssistantMessage):
+        elif isinstance(event, UserMessageEvent | AssistantMessageEvent):
             self._put(seq, event.message)
-        elif isinstance(event, ToolReturned):
+        elif isinstance(event, ToolCallFinishedEvent):
             self._put(
                 seq,
                 ToolReply(
@@ -186,28 +186,28 @@ class MessageProjection:
                     exit_code=event.result.exit_code,
                 ),
             )
-        elif isinstance(event, ContextValueChanged):
+        elif isinstance(event, ContextValueChangedEvent):
             content = (
                 f'<context name={quoteattr(event.name)} removed="true"/>'
                 if event.value is None
                 else f"<context name={quoteattr(event.name)}>{escape(event.value)}</context>"
             )
             self._put(seq, User(content, id=f"context:{event.id}"))
-        elif isinstance(event, ContextMessage):
+        elif isinstance(event, ContextMessageEvent):
             if event.lifetime == ContextLifetime.SESSION or event.turn_id == self._turn:
                 self._put(seq, event.message)
                 if event.lifetime == ContextLifetime.TURN:
                     self._visible_scoped.add(seq)
-        elif isinstance(event, TurnStart | TurnEnd):
+        elif isinstance(event, TurnStartedEvent | TurnEndedEvent):
             for offset in self._visible_scoped:
                 self._entries.pop(offset, None)
             scoped = self._scoped.get(self._turn, {})
             self._visible_scoped = {offset for offset in scoped if self._eligible(offset)}
             for offset in self._visible_scoped:
                 self._put(offset, scoped[offset])
-        if isinstance(event, ObservationRecorded):
+        if isinstance(event, ObservationRecordedEvent):
             self._refresh_observations(event.observation.source, (seq,))
-        elif isinstance(event, ObservationPolicyApplied):
+        elif isinstance(event, ObservationPolicyAppliedEvent):
             for source in self._observations:
                 self._refresh_observations(source, all_entries=True)
         elif previous_step != self._step:
@@ -246,7 +246,7 @@ class MessageProjection:
 
 
 def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
-    return tuple(event.request for event in events if isinstance(event, ModelRequested))
+    return tuple(event.request for event in events if isinstance(event, ModelRequestedEvent))
 
 
 def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, Message], ...]:
@@ -255,24 +255,24 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
     observations: dict[str, list[int]] = {}
     for seq, event in enumerate(events):
         match event:
-            case TurnStart(turn_id=turn_id):
+            case TurnStartedEvent(turn_id=turn_id):
                 active_turn = turn_id
-            case StepStart(turn_id=turn_id, step=step):
+            case StepStartedEvent(turn_id=turn_id, step=step):
                 active_step = (turn_id, step)
-            case StepEnd():
+            case StepEndedEvent():
                 active_step = None
-            case TurnEnd():
+            case TurnEndedEvent():
                 active_turn, active_step = None, None
-            case ObservationPolicyApplied(max_summaries=limit):
+            case ObservationPolicyAppliedEvent(max_summaries=limit):
                 max_summaries = limit
-            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
+            case ObservationRecordedEvent(observation=observation, turn_id=turn_id, step=step):
                 observations.setdefault(observation.source, []).append(seq)
     visible_observations = set()
     for indices in observations.values():
         older = [
             seq
             for seq in indices
-            if isinstance(observation := events[seq], ObservationRecorded)
+            if isinstance(observation := events[seq], ObservationRecordedEvent)
             and (observation.turn_id, observation.step) != active_step
         ]
         visible_observations.update(
@@ -289,22 +289,22 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
     current_turn = None
     current_context: dict[str, tuple[int, Message]] = {}
     for seq, event in enumerate(events):
-        if isinstance(event, TurnStart):
+        if isinstance(event, TurnStartedEvent):
             current_turn = event.turn_id
         turn_offsets[seq] = current_turn
-        if isinstance(event, TurnEnd):
+        if isinstance(event, TurnEndedEvent):
             current_turn = None
         match event:
-            case SystemMessage(content=content):
+            case SystemMessageEvent(content=content):
                 entries = [(offset, m) for offset, m in entries if m.id != "system"]
                 if content:
                     entries.insert(0, (seq, System(content, id="system")))
-            case UserMessage(message=message) | AssistantMessage(message=message):
+            case UserMessageEvent(message=message) | AssistantMessageEvent(message=message):
                 add(seq, message)
-            case ContextMessage(message=message, lifetime=lifetime, turn_id=turn_id):
+            case ContextMessageEvent(message=message, lifetime=lifetime, turn_id=turn_id):
                 if lifetime == ContextLifetime.SESSION or turn_id == active_turn:
                     add(seq, message)
-            case ContextValueChanged(name=name, value=value):
+            case ContextValueChangedEvent(name=name, value=value):
                 content = (
                     f'<context name={quoteattr(name)} removed="true"/>'
                     if value is None
@@ -316,7 +316,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     current_context.pop(name, None)
                 else:
                     current_context[name] = (seq, message)
-            case ObservationRecorded(observation=observation, turn_id=turn_id, step=step):
+            case ObservationRecordedEvent(observation=observation, turn_id=turn_id, step=step):
                 content = (
                     observation.full if active_step == (turn_id, step) else observation.summary
                 )
@@ -328,7 +328,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                             id=f"observation:{turn_id}:{step}:{observation.source}",
                         ),
                     )
-            case ToolReturned(call_id=call_id, result=result):
+            case ToolCallFinishedEvent(call_id=call_id, result=result):
                 add(
                     seq,
                     ToolReply(
@@ -339,7 +339,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                         exit_code=result.exit_code,
                     ),
                 )
-            case CompactionApplied(through=through, summary=summary, preserve_turns=preserved):
+            case CompactionAppliedEvent(through=through, summary=summary, preserve_turns=preserved):
                 preserved = (*preserved, *event.retained_turns)
                 entries = [
                     (offset, message)

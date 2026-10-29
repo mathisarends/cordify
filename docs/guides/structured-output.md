@@ -44,8 +44,8 @@ its `output` then raises `OutputUnavailable`. Check `result.completed` (or
 
 ## Durable contracts
 
-The inbox, turn and model request persist the response schema. `OutputValidated`
-records the accepted JSON and its assistant-message ID; `OutputValidationFailed`
+The inbox, turn and model request persist the response schema. `OutputValidatedEvent`
+records the accepted JSON and its assistant-message ID; `OutputValidationFailedEvent`
 records repair attempts. Neither event imports or serializes a Python class.
 Live results reuse the validated object so custom validators run once.
 

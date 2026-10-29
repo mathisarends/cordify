@@ -8,11 +8,11 @@ from harnessed import Agent, ApprovalAnswer, Plugin, PluginConflict, Section, To
 from harnessed.core.messages import PolicyDecision, ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.events import (
-    CompactionApplied,
-    ContextValueChanged,
-    ToolPolicyApplied,
-    TurnEnd,
-    TurnStart,
+    CompactionAppliedEvent,
+    ContextValueChangedEvent,
+    ToolPolicyAppliedEvent,
+    TurnEndedEvent,
+    TurnStartedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel.plugin import PluginStatus
@@ -92,7 +92,7 @@ async def test_dynamic_context_is_durable_changes_only_and_does_not_change_syste
         await session.run("Same context")
         current[0] = "two"
         await session.run("Changed context")
-        changes = [event for event in session.events if isinstance(event, ContextValueChanged)]
+        changes = [event for event in session.events if isinstance(event, ContextValueChangedEvent)]
         assert [event.value for event in changes] == ["one", "two"]
         assert await session.prompt.render() == "Fixed rules."
         assert session.context.values == {"user": "two"}
@@ -161,7 +161,7 @@ async def test_denials_distinguish_policy_from_the_user_in_log_and_result(user_a
         assert denied.content == (
             "User declined this action" if user_answer else "Denied by policy"
         )
-        applied = session.last(ToolPolicyApplied)
+        applied = session.last(ToolPolicyAppliedEvent)
         assert applied.decision is PolicyDecision.DENY
         assert applied.source == ("approval" if user_answer else "policy")
 
@@ -171,11 +171,11 @@ async def test_latest_dynamic_context_survives_compaction_and_replay():
 
     session = SessionLog("context-compaction")
     values = DynamicContext(session)
-    await session.append(TurnStart("first"))
+    await session.append(TurnStartedEvent("first"))
     await values.set("user", "old")
     await values.set("user", "current")
-    await session.append(TurnEnd("first"))
-    await session.append(CompactionApplied(len(session), "Earlier work."))
+    await session.append(TurnEndedEvent("first"))
+    await session.append(CompactionAppliedEvent(len(session), "Earlier work."))
     text = "\n".join(message.text for message in session.messages)
     assert "current" in text and ">old<" not in text
     replay = SessionLog("context-replay", seed=session.events)
@@ -236,5 +236,5 @@ async def test_raw_subscription_includes_dependent_teardown_before_it_finishes()
         await session.run("Go")
         assert not observing.done()
     await asyncio.wait_for(observing, 2)
-    changes = [event for event in seen if isinstance(event, ContextValueChanged)]
+    changes = [event for event in seen if isinstance(event, ContextValueChangedEvent)]
     assert [event.value for event in changes] == ["present", None]

@@ -18,7 +18,7 @@ from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
     LogEvent,
-    ModelRequested,
+    ModelRequestedEvent,
     SessionEvent,
 )
 
@@ -63,7 +63,7 @@ def _validate_event(
     immutable(event)
 
 
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 _ADAPTER = TypeAdapter(
     LogEvent,
     config=ConfigDict(
@@ -136,7 +136,7 @@ class EventLogCodec:
         self._previous: ModelRequest | None = None
 
     def encode(self, event: SessionEvent) -> dict[str, Any]:
-        if not isinstance(event, ModelRequested):
+        if not isinstance(event, ModelRequestedEvent):
             return encode_event(event, registry=self.registry)
         previous = self._previous
         prefix = 0
@@ -159,7 +159,7 @@ class EventLogCodec:
         return record
 
     def accept(self, event: SessionEvent) -> None:
-        if isinstance(event, ModelRequested):
+        if isinstance(event, ModelRequestedEvent):
             self._previous = event.request
 
     def decode(self, record: dict[str, Any]) -> SessionEvent:
@@ -169,7 +169,7 @@ class EventLogCodec:
         previous = self._previous
         prefix = 0
         reuse_tools = False
-        if record.get("type") == ModelRequested.type:
+        if record.get("type") == ModelRequestedEvent.type:
             request = dict(record["data"]["request"])
             delta = request["messages"]
             if (
@@ -189,7 +189,7 @@ class EventLogCodec:
                 request["tools"] = []
             record = {**record, "data": {**record["data"], "request": request}}
         event = decode_event(record, registry=self.registry)
-        if isinstance(event, ModelRequested) and previous is not None:
+        if isinstance(event, ModelRequestedEvent) and previous is not None:
             event = replace(
                 event,
                 request=replace(

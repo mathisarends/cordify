@@ -17,17 +17,19 @@ from harnessed.core.errors import ApprovalUnavailable, OutputUnavailable, Sessio
 from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.events import ApprovalStatus
-from harnessed.events import SessionEvent
-from harnessed.events.approval import Needed as ApprovalNeeded
-from harnessed.events.approval import Resolved as ApprovalResolved
-from harnessed.events.inbox import Added as InboxAdded
-from harnessed.events.reasoning import Delta as ReasoningDelta
-from harnessed.events.session import StatusChanged as StatusChanged
-from harnessed.events.text import Delta as TextDelta
-from harnessed.events.tool import Finished as ToolFinished
-from harnessed.events.tool import Progress as ToolProgress
-from harnessed.events.tool import Started as ToolStarted
-from harnessed.events.turn import Finished as TurnFinished
+from harnessed.events import (
+    ApprovalNeededEvent,
+    ApprovalResolvedEvent,
+    InboxAddedEvent,
+    ReasoningDeltaEvent,
+    SessionEvent,
+    SessionStatusChangedEvent,
+    TextDeltaEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
+    ToolProgressEvent,
+    TurnFinishedEvent,
+)
 from harnessed.plugins import Approvals, MemorySessions
 from harnessed.testing import ScriptedModel
 
@@ -52,7 +54,7 @@ async def test_slow_stream_overflows_without_blocking_the_run_or_losing_the_dura
         stream = session.stream("large reply", buffer_size=16)
         try:
             async for event in stream:
-                if isinstance(event, TextDelta):
+                if isinstance(event, TextDeltaEvent):
                     break
             await session.wait_until_idle()
             with pytest.raises(StreamOverflow) as error:
@@ -81,7 +83,7 @@ async def test_answering_through_a_closed_session_fails_even_for_an_acknowledged
     ).session() as session:
         request_id = None
         async for event in session.stream("Publish"):
-            if isinstance(event, ApprovalNeeded):
+            if isinstance(event, ApprovalNeededEvent):
                 request_id = event.request_id
                 await session.approvals.answer(request_id, ApprovalAnswer.ALLOW)
     assert request_id is not None
@@ -100,9 +102,9 @@ async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result
         events = []
         async for event in session.stream("Publish"):
             events.append(event)
-            if isinstance(event, ApprovalNeeded):
+            if isinstance(event, ApprovalNeededEvent):
                 await session.approvals.answer(event.request_id, ApprovalAnswer.ALLOW)
-                resolution = session.last(ApprovalResolved)
+                resolution = session.last(ApprovalResolvedEvent)
                 assert resolution.request_id == event.request_id
                 assert resolution.status == ApprovalStatus.ANSWERED
                 # Repeating the same acknowledged decision is harmless.
@@ -111,21 +113,27 @@ async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result
                     await session.approvals.answer(event.request_id, ApprovalAnswer.DENY)
         assert effects == ["published"]
         assert {type(e) for e in events} == {
-            TextDelta,
-            ReasoningDelta,
-            ToolStarted,
-            ToolProgress,
-            ToolFinished,
-            ApprovalNeeded,
-            StatusChanged,
-            TurnFinished,
+            TextDeltaEvent,
+            ReasoningDeltaEvent,
+            ToolCallRequestedEvent,
+            ToolProgressEvent,
+            ToolCallFinishedEvent,
+            ApprovalNeededEvent,
+            SessionStatusChangedEvent,
+            TurnFinishedEvent,
         }
-        assert isinstance(events[-1], TurnFinished)
+        assert isinstance(events[-1], TurnFinishedEvent)
         assert events[-1].result.text == "Finished" and events[-1].result.output is None
-        assert sum(isinstance(e, TurnFinished) for e in events) == 1
-        assert not any(
-            isinstance(e, SessionEvent) and not isinstance(e, ToolProgress) for e in events
-        )
+        assert sum(isinstance(e, TurnFinishedEvent) for e in events) == 1
+        durable = [event for event in events if isinstance(event, SessionEvent)]
+        assert {type(event) for event in durable} == {
+            ToolCallRequestedEvent,
+            ToolProgressEvent,
+            ToolCallFinishedEvent,
+        }
+        assert all(any(event is record for record in session.events) for event in durable)
+        finished = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
+        assert len(finished) == 1 and finished[0].call.name == "publish"
 
 
 async def test_closing_the_stream_resolves_pending_approval_and_removes_its_responder():
@@ -135,7 +143,7 @@ async def test_closing_the_stream_resolves_pending_approval_and_removes_its_resp
         stream = session.stream("Publish")
         question = None
         async for event in stream:
-            if isinstance(event, ApprovalNeeded):
+            if isinstance(event, ApprovalNeededEvent):
                 question = event
                 break
         await stream.aclose()
@@ -153,7 +161,7 @@ async def test_answer_waits_for_persistence_and_caller_cancellation_does_not_rev
     original = store.store.persistence.append
 
     async def append(session_id, seq, event):
-        if isinstance(event, ApprovalResolved):
+        if isinstance(event, ApprovalResolvedEvent):
             entered.set()
             await release.wait()
         await original(session_id, seq, event)
@@ -165,7 +173,7 @@ async def test_answer_waits_for_persistence_and_caller_cancellation_does_not_rev
     ).session() as session:
         stream = session.stream("Publish")
         async for event in stream:
-            if isinstance(event, ApprovalNeeded):
+            if isinstance(event, ApprovalNeededEvent):
                 question = event
                 break
         answering = asyncio.create_task(
@@ -173,7 +181,7 @@ async def test_answer_waits_for_persistence_and_caller_cancellation_does_not_rev
         )
         try:
             await asyncio.wait_for(entered.wait(), 3)
-            assert not answering.done() and session.last(ApprovalResolved) is None
+            assert not answering.done() and session.last(ApprovalResolvedEvent) is None
             answering.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await answering
@@ -182,8 +190,8 @@ async def test_answer_waits_for_persistence_and_caller_cancellation_does_not_rev
         events = [event async for event in stream]
         await session.approvals.answer(question.request_id, ApprovalAnswer.ALLOW)
         assert effects == ["published"]
-        assert isinstance(events[-1], TurnFinished)
-        assert session.last(ApprovalResolved).decision is ApprovalAnswer.ALLOW
+        assert isinstance(events[-1], TurnFinishedEvent)
+        assert session.last(ApprovalResolvedEvent).decision is ApprovalAnswer.ALLOW
 
 
 async def test_a_queued_stream_cannot_answer_a_different_turns_approval():
@@ -194,7 +202,7 @@ async def test_a_queued_stream_cannot_answer_a_different_turns_approval():
         enqueued = asyncio.Event()
         submitted = []
 
-        @session.on(InboxAdded)
+        @session.on(InboxAddedEvent)
         def sent(event):
             submitted.append(event)
             if len(submitted) == 2:
@@ -202,7 +210,7 @@ async def test_a_queued_stream_cannot_answer_a_different_turns_approval():
 
         async def consume():
             async for event in session.stream("UI"):
-                if isinstance(event, ApprovalNeeded):
+                if isinstance(event, ApprovalNeededEvent):
                     asked.append(event)
                     await session.approvals.answer(event.request_id, ApprovalAnswer.ALLOW)
 
@@ -223,15 +231,18 @@ async def test_expired_ui_approval_cannot_be_answered_and_still_finishes_the_tur
     ).session() as session:
         stream = session.stream("Publish")
         async for event in stream:
-            if isinstance(event, ApprovalNeeded):
+            if isinstance(event, ApprovalNeededEvent):
                 question = event
                 break
         await asyncio.wait_for(session.wait_until_idle(), 3)
         with pytest.raises(ApprovalUnavailable):
             await session.approvals.answer(question.request_id, ApprovalAnswer.ALLOW)
         rest = [event async for event in stream]
-        assert isinstance(rest[-1], TurnFinished) and effects == []
-        assert next(e.result.status for e in rest if isinstance(e, ToolFinished)) == "unavailable"
+        assert isinstance(rest[-1], TurnFinishedEvent) and effects == []
+        assert (
+            next(e.result.status for e in rest if isinstance(e, ToolCallFinishedEvent))
+            == "unavailable"
+        )
 
 
 async def test_abort_during_ui_approval_returns_an_aborted_terminal_result():
@@ -243,7 +254,7 @@ async def test_abort_during_ui_approval_returns_an_aborted_terminal_result():
             events = []
             async for event in session.stream("Publish"):
                 events.append(event)
-                if isinstance(event, ApprovalNeeded):
+                if isinstance(event, ApprovalNeededEvent):
                     questions.append(event)
                     ready.set()
             return events
@@ -252,7 +263,7 @@ async def test_abort_during_ui_approval_returns_an_aborted_terminal_result():
         await asyncio.wait_for(ready.wait(), 3)
         await session.abort()
         events = await asyncio.wait_for(streaming, 3)
-        assert isinstance(events[-1], TurnFinished)
+        assert isinstance(events[-1], TurnFinishedEvent)
         assert events[-1].result.stop_reason is StopReason.ABORTED
         assert effects == [] and not session.approvals.pending
         with pytest.raises(ApprovalUnavailable):
@@ -266,10 +277,13 @@ async def test_structured_stream_preserves_the_output_type_without_control_tool_
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("final_answer", {"text": "ready"}))]])
     async with Agent(model=model).session() as session:
         events = [e async for e in session.stream("Report", output=Report)]
-        assert isinstance(events[-1], TurnFinished)
+        assert isinstance(events[-1], TurnFinishedEvent)
         assert isinstance(events[-1].result.output, Report)
         assert events[-1].result.output.text == "ready"
-        assert not any(isinstance(e, ToolStarted | ToolFinished | ApprovalNeeded) for e in events)
+        assert not any(
+            isinstance(e, ToolCallRequestedEvent | ToolCallFinishedEvent | ApprovalNeededEvent)
+            for e in events
+        )
 
 
 async def test_discarded_structured_stream_has_a_terminal_result_without_an_output():
@@ -279,7 +293,7 @@ async def test_discarded_structured_stream_has_a_terminal_result_without_an_outp
     async with Agent(model=ScriptedModel([])).session() as session:
         await session.pause()
         ready = asyncio.Event()
-        session.on(InboxAdded, lambda event: ready.set())
+        session.on(InboxAddedEvent, lambda event: ready.set())
 
         async def consume():
             return [e async for e in session.stream("Report", output=Report)]
@@ -288,7 +302,7 @@ async def test_discarded_structured_stream_has_a_terminal_result_without_an_outp
         await asyncio.wait_for(ready.wait(), 3)
         await session.inbox.remove(session.inbox.pending[0].id)
         events = await asyncio.wait_for(streaming, 3)
-        assert isinstance(events[-1], TurnFinished)
+        assert isinstance(events[-1], TurnFinishedEvent)
         assert events[-1].result.stop_reason is StopReason.DISCARDED
         with pytest.raises(OutputUnavailable):
             _ = events[-1].result.output
@@ -323,12 +337,12 @@ async def test_slow_stream_consumers_do_not_repeat_validators_after_many_complet
                 stream = session.stream("Report", output=Report, buffer_size=4096)
                 streams.append(stream)
                 async for event in stream:
-                    if isinstance(event, TextDelta):
+                    if isinstance(event, TextDeltaEvent):
                         break
                 await session.wait_until_idle()
             assert len(validated) == 130
             rest = [event async for event in streams[0]]
-            assert isinstance(rest[-1], TurnFinished)
+            assert isinstance(rest[-1], TurnFinishedEvent)
             assert rest[-1].result.output.value == 1 and len(validated) == 130
         finally:
             for stream in streams:

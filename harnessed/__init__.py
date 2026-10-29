@@ -9,7 +9,6 @@ logger.addHandler(logging.NullHandler())
 _EXPORTS = {
     "Agent": ("harnessed.agent", "Agent"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
-    "ApprovalRequest": ("harnessed.core.session.events", "ApprovalRequested"),
     "Context": ("harnessed.kernel", "Context"),
     "File": ("harnessed.core.attachments", "File"),
     "Image": ("harnessed.core.attachments", "Image"),

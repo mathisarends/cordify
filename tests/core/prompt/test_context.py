@@ -18,7 +18,11 @@ from harnessed.core.messages import ImageDetail, ImagePart, Role, User, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import ContextMessage, ModelRequested, ObservationRecorded
+from harnessed.core.session.events import (
+    ContextMessageEvent,
+    ModelRequestedEvent,
+    ObservationRecordedEvent,
+)
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel import hook
 from harnessed.plugins import Approvals, Service
@@ -46,7 +50,7 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
             assert request.messages[2].text == "review"
         await agent.run("unrelated")
         assert all("Task context" not in m.text for m in model.requests[-1].messages)
-        assert any(isinstance(e, ContextMessage) for e in agent.log.events)
+        assert any(isinstance(e, ContextMessageEvent) for e in agent.log.events)
         assert "Fix login" in json.dumps([encode_event(e) for e in agent.log.events])
 
 
@@ -70,7 +74,7 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
         restored = tuple(
             decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
         )
-        recorded = next(e.request for e in restored if isinstance(e, ModelRequested))
+        recorded = next(e.request for e in restored if isinstance(e, ModelRequestedEvent))
         assert recorded == request and "changed after admission" not in recorded.messages[0].text
 
 
@@ -181,7 +185,7 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
         texts = [m.text for m in model.requests[1].messages]
         assert "SUMMARY before" in texts and "FULL before refs" not in texts
         assert texts[-1] == "FULL after refs"
-        assert any(isinstance(e, ObservationRecorded) for e in agent.log.events)
+        assert any(isinstance(e, ObservationRecordedEvent) for e in agent.log.events)
         replay = SessionLog("replay", seed=agent.log.events)
         assert replay.messages == agent.log.messages
         assert all(not m.text.startswith("FULL") for m in replay.messages)

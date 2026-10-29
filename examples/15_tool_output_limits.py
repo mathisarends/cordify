@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, Plugin, PolicyDecision, Role, ToolResult, ToolStatus, tool
-from harnessed.events.tool import Returned as ToolReturned
+from harnessed.events import ToolCallFinishedEvent
 from harnessed.hooks import ExecuteTool
 from harnessed.kernel import Inject, hook
 from harnessed.plugins import Approvals, Service, ToolOutputLimit
@@ -62,7 +62,7 @@ async def main():
         async with agent.session("output-limit") as session:
             result = await session.run("Inspect the large log and read it in small ranges.")
             for event in result.events:
-                if not isinstance(event, ToolReturned):
+                if not isinstance(event, ToolCallFinishedEvent):
                     continue
                 output = event.result
                 if output.truncation is not None:

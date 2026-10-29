@@ -5,7 +5,7 @@ from pathlib import Path
 
 from harnessed import Agent, PolicyDecision, ToolCall
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.events.tool import Returned as ToolReturned
+from harnessed.events import ToolCallFinishedEvent
 from harnessed.kernel import Context, plugin
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
@@ -52,7 +52,9 @@ async def main():
         assert [tool.name for tool in registry.definitions] == ["run_command"]
         print((await session.run("Run another command.")).text)
         outputs = [
-            event.result.content for event in session.events if isinstance(event, ToolReturned)
+            event.result.content
+            for event in session.events
+            if isinstance(event, ToolCallFinishedEvent)
         ]
         assert len(outputs) == 2 and "local:" in outputs[0] and ("remote:" in outputs[1])
         print("Recorded outputs:", *outputs, sep="\n")

@@ -42,15 +42,15 @@ from harnessed.core.runtime.stepper import StepRunner
 from harnessed.core.runtime.streaming import StreamApprovals, project_stream_events
 from harnessed.core.runtime.turns import TurnRunner
 from harnessed.core.session.events import (
-    AgentControlChanged,
-    CompactionApplied,
-    InboxAdded,
+    AgentControlChangedEvent,
+    CompactionAppliedEvent,
+    InboxAddedEvent,
     InboxMode,
-    InboxRemoved,
+    InboxRemovedEvent,
     SessionEvent,
-    TurnEnd,
+    TurnEndedEvent,
     TurnLimits,
-    TurnStart,
+    TurnStartedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.turns import Turn
@@ -228,7 +228,7 @@ class Session:
     def _session_event(self, event: SessionAppended) -> None:
         if event.log is self.log:
             self._submission_event(event.event, event.seq)
-            if isinstance(event.event, AgentControlChanged):
+            if isinstance(event.event, AgentControlChangedEvent):
                 self.control.synchronize()
             else:
                 self.control.notify()
@@ -236,16 +236,16 @@ class Session:
 
     def _submission_event(self, event: SessionEvent, seq: int) -> None:
         submitted = None
-        if isinstance(event, TurnStart):
+        if isinstance(event, TurnStartedEvent):
             submitted = self._queued_submissions.pop(event.input_id, None)
             if submitted is not None:
                 submitted.start, submitted.turn_id = seq, event.turn_id
                 self._submitted_turns[event.turn_id] = submitted
             return
-        if isinstance(event, InboxRemoved):
+        if isinstance(event, InboxRemovedEvent):
             submitted = self._queued_submissions.pop(event.message_id, None)
             records = (submitted.input, event) if submitted is not None else ()
-        elif isinstance(event, TurnEnd):
+        elif isinstance(event, TurnEndedEvent):
             submitted = self._submitted_turns.get(event.turn_id)
             records = (
                 (submitted.input, *self.log.events[submitted.start : seq + 1])
@@ -313,7 +313,7 @@ class Session:
         """Wait for the session to become idle with an empty inbox."""
         await self.control.wait_until_idle()
 
-    async def compact(self) -> CompactionApplied | None:
+    async def compact(self) -> CompactionAppliedEvent | None:
         """Summarize completed history while idle or paused; return its log record."""
         async with self.control.maintenance():
             request = ModelRequest(
@@ -396,7 +396,7 @@ class Session:
         submitted = None
         offset = len(self.log.events)
 
-        def prepared(item: InboxAdded) -> None:
+        def prepared(item: InboxAddedEvent) -> None:
             nonlocal submitted
             submitted = SubmittedRun(item, schema)
             self._submissions[submitted.handle] = submitted
@@ -532,7 +532,7 @@ class Session:
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
         limits: TurnLimits | None = None,
-        prepared: Callable[[InboxAdded], None] | None = None,
+        prepared: Callable[[InboxAddedEvent], None] | None = None,
         buffer_size: int = 256,
     ) -> AsyncGenerator[AgentEvent, None]:
         queue: EventBuffer[AgentEvent | None] = EventBuffer(buffer_size, merge=coalesce_deltas)
@@ -564,18 +564,18 @@ class Session:
                         self._wake()
                         continue
                     return
-                if isinstance(event, TurnStart):
+                if isinstance(event, TurnStartedEvent):
                     if event.input_id == input_id:
                         turn_id = event.turn_id
                 if turn_id is None:
-                    if isinstance(event, InboxAdded) and event.message.id == input_id:
+                    if isinstance(event, InboxAddedEvent) and event.message.id == input_id:
                         yield event
-                    if isinstance(event, InboxRemoved) and event.message_id == input_id:
+                    if isinstance(event, InboxRemovedEvent) and event.message_id == input_id:
                         yield event
                         return
                     continue
                 yield event
-                if isinstance(event, TurnEnd) and event.turn_id == turn_id:
+                if isinstance(event, TurnEndedEvent) and event.turn_id == turn_id:
                     if self.control.error is not None:
                         raise self.control.error
                     return

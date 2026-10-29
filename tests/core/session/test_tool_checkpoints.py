@@ -3,18 +3,18 @@ from contextlib import aclosing
 
 import pytest
 
-from harnessed.core.messages import ToolResult, User
+from harnessed.core.messages import ToolCall, ToolResult, User
 from harnessed.core.session.events import (
-    ToolCompleted,
-    ToolExecutionFinished,
-    UserMessage,
+    ToolCallFinishedEvent,
+    ToolExecutionFinishedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import MemoryPersistence
 from harnessed.kernel import Context
 
 
-@pytest.mark.parametrize("event_type", [ToolExecutionFinished, ToolCompleted])
+@pytest.mark.parametrize("event_type", [ToolExecutionFinishedEvent, ToolCallFinishedEvent])
 @pytest.mark.parametrize("phase", ["lock", "write", "flush"])
 async def test_cancelled_result_checkpoint_drains_lock_write_and_flush(event_type, phase):
     entered, release = asyncio.Event(), asyncio.Event()
@@ -25,7 +25,7 @@ async def test_cancelled_result_checkpoint_drains_lock_write_and_flush(event_typ
             self.flushed = ()
 
         async def append(self, session_id, seq, event):
-            if (phase == "lock" and isinstance(event, UserMessage)) or (
+            if (phase == "lock" and isinstance(event, UserMessageEvent)) or (
                 phase == "write" and isinstance(event, event_type)
             ):
                 entered.set()
@@ -42,9 +42,10 @@ async def test_cancelled_result_checkpoint_drains_lock_write_and_flush(event_typ
     log = SessionLog("checkpoint", persistence=persistence)
     blocker = None
     if phase == "lock":
-        blocker = asyncio.create_task(log.append(UserMessage(User("concurrent input"))))
+        blocker = asyncio.create_task(log.append(UserMessageEvent(User("concurrent input"))))
         await asyncio.wait_for(entered.wait(), 2)
-    receipt = event_type("call", ToolResult("finished result"))
+    call = ToolCall("work", id="call") if event_type is ToolCallFinishedEvent else "call"
+    receipt = event_type(call, ToolResult("finished result"))
     append = asyncio.create_task(log.append(receipt))
     if phase == "lock":
         await asyncio.sleep(0)
@@ -66,7 +67,7 @@ async def test_cancelled_result_checkpoint_drains_lock_write_and_flush(event_typ
     assert log.events.count(receipt) == 1
 
 
-@pytest.mark.parametrize("event_type", [ToolExecutionFinished, ToolCompleted])
+@pytest.mark.parametrize("event_type", [ToolExecutionFinishedEvent, ToolCallFinishedEvent])
 async def test_checkpoint_is_flushed_before_observers_and_observers_remain_cancellable(event_type):
     observing = asyncio.Event()
     flushed = []
@@ -76,7 +77,8 @@ async def test_checkpoint_is_flushed_before_observers_and_observers_remain_cance
             flushed.append(await self.load("checkpoint"))
 
     persistence = Recorder()
-    receipt = event_type("call", ToolResult("finished result"))
+    call = ToolCall("work", id="call") if event_type is ToolCallFinishedEvent else "call"
+    receipt = event_type(call, ToolResult("finished result"))
     async with Context() as ctx:
 
         async def observer(event):
@@ -97,9 +99,9 @@ async def test_checkpoint_is_flushed_before_observers_and_observers_remain_cance
 async def test_mixed_concurrent_checkpoints_publish_in_durable_log_order():
     log = SessionLog("ordered", persistence=MemoryPersistence())
     events = tuple(
-        ToolExecutionFinished(str(index), ToolResult("finished"))
+        ToolExecutionFinishedEvent(str(index), ToolResult("finished"))
         if index % 2
-        else UserMessage(User(str(index)))
+        else UserMessageEvent(User(str(index)))
         for index in range(20)
     )
 

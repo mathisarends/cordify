@@ -102,9 +102,9 @@ def test_custom_event_schema_is_strict_and_registry_rejects_collisions_atomicall
     with pytest.raises(ValidationError):
         registry.encode(ProjectIndexed("five"))
     with pytest.raises(SessionFormatError):
-        registry.decode({"version": 1, "type": "project.indexed", "data": {"files": True}})
+        registry.decode({"version": 2, "type": "project.indexed", "data": {"files": True}})
     with pytest.raises(SessionFormatError):
-        registry.decode({"version": 1, "type": "project.indexed", "data": {"files": 1, "extra": 2}})
+        registry.decode({"version": 2, "type": "project.indexed", "data": {"files": 1, "extra": 2}})
 
     @dataclass(frozen=True)
     class Collision(events.DurableEvent):
@@ -122,13 +122,13 @@ def test_full_builtin_and_application_unions_support_schemas_and_terminal_result
     assert "project.indexed" in adapter.json_schema()["discriminator"]["mapping"]
     assert adapter.validate_json(adapter.dump_json(ProjectIndexed(3))) == ProjectIndexed(3)
     registry = events.EventRegistry([ProjectIndexed])
-    value = events.turn.Finished(RunResult("done", (ProjectIndexed(3),), _output=None))
+    value = events.TurnFinishedEvent(RunResult("done", (ProjectIndexed(3),), _output=None))
     restored = adapter.validate_json(adapter.dump_json(value), context={"events": registry})
     assert restored.result.events == (ProjectIndexed(3),)
 
     stream = TypeAdapter(events.StreamEvent[str])
     assert stream.json_schema()["discriminator"]["propertyName"] == "type"
-    result = events.turn.Finished(RunResult("done", (), _output="typed output"))
+    result = events.TurnFinishedEvent(RunResult("done", (), _output="typed output"))
     assert stream.validate_json(stream.dump_json(result)).result.output == "typed output"
 
 
@@ -142,7 +142,7 @@ def test_mutable_untagged_and_builtin_subclass_events_are_not_extension_points()
         type: str = "project.untagged"
 
     @dataclass(frozen=True)
-    class Unsafe(events.tool.Called, events.DurableEvent):
+    class Unsafe(events.ToolCallRequestedEvent, events.DurableEvent):
         type: Literal["project.unsafe"] = field(default="project.unsafe", kw_only=True)
 
     for kind in (Mutable, Untagged, Unsafe):

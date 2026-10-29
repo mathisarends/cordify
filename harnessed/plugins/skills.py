@@ -22,7 +22,11 @@ from harnessed.core.messages import ToolStatus, freeze, to_dict
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.values import Section
-from harnessed.core.session.events import CompactionApplied, ToolCalled, ToolCompleted, ToolReturned
+from harnessed.core.session.events import (
+    CompactionAppliedEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
+)
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError
@@ -337,16 +341,16 @@ class Skills(Plugin, slot="skills"):
         self._loaded: dict[str, str] = {}
         for event in session.events:
             self._remember(event)
-        if session.last(CompactionApplied) is not None:
+        if session.last(CompactionAppliedEvent) is not None:
             await self._retain()
 
     def _remember(self, event) -> None:
-        if isinstance(event, ToolCalled):
+        if isinstance(event, ToolCallRequestedEvent):
             if event.call.name == "load_skill":
                 self._calls.add(event.call.id)
             else:
                 self._calls.discard(event.call.id)
-        elif isinstance(event, ToolCompleted | ToolReturned) and event.call_id in self._calls:
+        elif isinstance(event, ToolCallFinishedEvent) and event.call_id in self._calls:
             if event.result.status == ToolStatus.OK:
                 try:
                     data, _ = json.JSONDecoder().raw_decode(event.result.text.lstrip())
@@ -355,7 +359,7 @@ class Skills(Plugin, slot="skills"):
                     pass
                 else:
                     self._loaded[loaded.name] = loaded.instructions
-            if isinstance(event, ToolReturned):
+            if isinstance(event, ToolCallFinishedEvent):
                 self._calls.discard(event.call_id)
 
     async def _retain(self) -> None:
@@ -367,9 +371,9 @@ class Skills(Plugin, slot="skills"):
         if event.log is not self._log:
             return
         self._remember(event.event)
-        if isinstance(event.event, CompactionApplied):
+        if isinstance(event.event, CompactionAppliedEvent):
             await self._retain()
-        elif isinstance(event.event, ToolReturned):
+        elif isinstance(event.event, ToolCallFinishedEvent):
             for name, instructions in self._loaded.items():
                 if f"skill:{name}" in self._context.values:
                     await self._context.set(f"skill:{name}", instructions)

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from harnessed import Agent, PolicyDecision
-from harnessed.core.session.events import TurnEnd, TurnStart
+from harnessed.core.session.events import TurnEndedEvent, TurnStartedEvent
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import Approvals, Filesystem, Shell
 from harnessed.plugins.filesystem import FileSystemBackend, LocalFileSystem
@@ -57,10 +57,10 @@ async def test_virtual_and_local_filesystems_share_ranges_newlines_and_edit_sema
 async def test_failure_injection_preserves_session_append_atomicity():
     persistence = InMemoryPersistence(fail_after=1)
     log = SessionLog("failure", persistence=persistence)
-    await log.append(TurnStart("one"))
+    await log.append(TurnStartedEvent("one"))
     original = log.events
     with pytest.raises(OSError, match="Injected"):
-        await log.append(TurnEnd("one"))
+        await log.append(TurnEndedEvent("one"))
     assert log.events == original and await persistence.load("failure") == original
     await log.flush()
     assert persistence.flushes == 1

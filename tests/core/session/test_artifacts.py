@@ -5,7 +5,11 @@ import pytest
 from harnessed import Agent, Plugin, tool
 from harnessed.core.errors import ConfigError
 from harnessed.core.messages import SpillRef
-from harnessed.core.session.events import SpillCreated, SpillExpirationReason, SpillExpired
+from harnessed.core.session.events import (
+    SpillCreatedEvent,
+    SpillExpirationReason,
+    SpillExpiredEvent,
+)
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import JsonlSessions, MemorySessions, Spill
@@ -52,7 +56,7 @@ async def test_missing_source_artifact_is_recorded_on_the_branch_without_mutatin
         snapshot = session.events
         await session.ctx[SessionFiles].remove(ref.path)
         async with app.session(branch) as fork:
-            missing = [e for e in fork.events if isinstance(e, SpillExpired)]
+            missing = [e for e in fork.events if isinstance(e, SpillExpiredEvent)]
             assert (
                 len(missing) == 1
                 and missing[0].ref == ref
@@ -109,7 +113,9 @@ async def test_cancelled_copy_removes_acknowledged_files_and_releases_the_writer
 async def test_invalid_absolute_spill_paths_are_never_opened_by_a_fork(tmp_path):
     outside = tmp_path / "private.txt"
     outside.write_text("private", encoding="utf-8")
-    source = SessionLog("source", seed=[SpillCreated("call", SpillRef(str(outside), "unused"), 1)])
+    source = SessionLog(
+        "source", seed=[SpillCreatedEvent("call", SpillRef(str(outside), "unused"), 1)]
+    )
     async with Agent(model=ScriptedModel([]), plugins=[Spill()]).session(
         source.fork("branch")
     ) as fork:

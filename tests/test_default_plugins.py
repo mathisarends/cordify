@@ -8,7 +8,7 @@ from harnessed.core.budget import ContextBudget
 from harnessed.core.errors import PluginConflict, SessionLocked
 from harnessed.core.model import ModelChunk, ModelInfo, ModelUsage
 from harnessed.core.runtime.services import RuntimeServices
-from harnessed.core.session.events import ModelRequested
+from harnessed.core.session.events import ModelRequestedEvent
 from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
 from harnessed.plugins import (
     AgentLoop,
@@ -139,7 +139,7 @@ async def test_default_token_counter_calibrates_against_reported_input_tokens():
         text = "def handler(event): return event"
         assert counter.count_text(text) == ApproximateTokenCounter().count_text(text)
         await session.run("hello")
-        request = session.last(ModelRequested).request
+        request = session.last(ModelRequestedEvent).request
         estimate = ApproximateTokenCounter().count_request(request)
         assert counter.count_request(request) == min(1_000, estimate * 4)
         assert counter.count_text(text) > ApproximateTokenCounter().count_text(text)

@@ -5,11 +5,10 @@ from harnessed.core.errors import ConfigError
 from harnessed.core.messages import SpillRef
 from harnessed.core.session.events import (
     SessionEvent,
-    SpillCreated,
+    SpillCreatedEvent,
     SpillExpirationReason,
-    SpillExpired,
-    ToolCompleted,
-    ToolReturned,
+    SpillExpiredEvent,
+    ToolCallFinishedEvent,
 )
 from harnessed.core.session.files import SessionFiles, validate_file_key
 
@@ -19,14 +18,14 @@ def artifact_refs(events: Iterable[SessionEvent]) -> tuple[SpillRef, ...]:
     active: dict[str, SpillRef] = {}
     expired: set[str] = set()
     for event in events:
-        if isinstance(event, SpillExpired):
+        if isinstance(event, SpillExpiredEvent):
             expired.add(event.ref.path)
             active.pop(event.ref.path, None)
             continue
-        if isinstance(event, SpillCreated):
+        if isinstance(event, SpillCreatedEvent):
             ref = event.ref
             expired.discard(ref.path)
-        elif isinstance(event, ToolCompleted | ToolReturned) and event.result.spill is not None:
+        elif isinstance(event, ToolCallFinishedEvent) and event.result.spill is not None:
             ref = event.result.spill
             if ref.path in expired:
                 continue
@@ -42,7 +41,7 @@ def artifact_refs(events: Iterable[SessionEvent]) -> tuple[SpillRef, ...]:
 
 async def copy_artifacts(
     events: Iterable[SessionEvent], source: SessionFiles | None, destination: SessionFiles
-) -> tuple[SpillExpired, ...]:
+) -> tuple[SpillExpiredEvent, ...]:
     """Verify bytes before copying; missing content becomes an explicit branch event."""
     refs = artifact_refs(events)
     if not refs:
@@ -53,7 +52,7 @@ async def copy_artifacts(
         for ref in refs:
             entry = entries.get(ref.path)
             if entry is None or source is None:
-                missing.append(SpillExpired(ref, SpillExpirationReason.MISSING))
+                missing.append(SpillExpiredEvent(ref, SpillExpirationReason.MISSING))
                 continue
             pieces, offset, size = [], 0, 0
             digest = hashlib.sha256()
@@ -67,7 +66,7 @@ async def copy_artifacts(
                     pieces.append(chunk)
                     offset += len(chunk)
             except FileNotFoundError:
-                missing.append(SpillExpired(ref, SpillExpirationReason.MISSING))
+                missing.append(SpillExpiredEvent(ref, SpillExpirationReason.MISSING))
                 continue
             if size != entry.size_bytes or digest.hexdigest() != ref.sha256:
                 raise ConfigError(f"Fork artifact integrity check failed: {ref.path}")

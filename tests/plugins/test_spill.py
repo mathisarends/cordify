@@ -4,9 +4,13 @@ import pytest
 from pydantic import ValidationError
 
 from harnessed import Agent, Plugin
-from harnessed.core.messages import ImagePart, TextPart, ToolResult, ToolStatus
+from harnessed.core.messages import ImagePart, TextPart, ToolCall, ToolResult, ToolStatus
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import SpillCreated, SpillExpirationReason, SpillExpired
+from harnessed.core.session.events import (
+    SpillCreatedEvent,
+    SpillExpirationReason,
+    SpillExpiredEvent,
+)
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.output_limit import ToolOutputLimit
@@ -75,7 +79,7 @@ async def test_retention_expiration_is_durable_and_cannot_be_reactivated_by_old_
         second = (await session.run("two")).tool_calls[0][1].spill
         assert first and second
         assert [entry.key for entry in await session.ctx[SessionFiles].entries()] == [second.path]
-        assert session.last(SpillExpired).ref == first
+        assert session.last(SpillExpiredEvent).ref == first
         assert await session.ctx[SpillStore].read(second.path, limit=2) == "bb"
         with pytest.raises(ToolError, match="expired"):
             await session.ctx[SpillStore].read(first.path)
@@ -95,7 +99,10 @@ async def test_spill_budget_falls_back_to_the_final_output_limit_without_losing_
         assert result.spill is None and result.truncation
         assert len(result.text) <= 256 and "Spill budget" in result.text
         assert result.exit_code == 3 and sum(isinstance(p, ImagePart) for p in result.content) == 1
-        assert session.last(SpillCreated) is None and not await session.ctx[SessionFiles].entries()
+        assert (
+            session.last(SpillCreatedEvent) is None
+            and not await session.ctx[SessionFiles].entries()
+        )
 
 
 async def test_recovery_cleans_orphans_and_logs_missing_files(tmp_path):
@@ -111,7 +118,7 @@ async def test_recovery_cleans_orphans_and_logs_missing_files(tmp_path):
     app = configure(ScriptedModel([]), plugins=[JsonlSessions(tmp_path), Spill(threshold_tokens=8)])
     async with app.session("recover") as session:
         assert not await session.ctx[SessionFiles].entries()
-        assert session.last(SpillExpired).reason == SpillExpirationReason.MISSING
+        assert session.last(SpillExpiredEvent).reason == SpillExpirationReason.MISSING
         with pytest.raises(ToolError):
             await session.ctx[SpillStore].read(ref.path)
 
@@ -139,7 +146,7 @@ def test_spill_options_are_declarative_and_strict(options):
 
 
 async def test_late_canonical_results_do_not_resurrect_a_durably_expired_reference():
-    from harnessed.core.session.events import ToolReturned
+    from harnessed.core.session.events import ToolCallFinishedEvent
 
     app = configure(
         ScriptedModel([call("source", text="x" * 1000), "done"]),
@@ -147,8 +154,10 @@ async def test_late_canonical_results_do_not_resurrect_a_durably_expired_referen
     )
     async with app.session("late") as session:
         result = (await session.run("source")).tool_calls[0][1]
-        await session.log.append(SpillExpired(result.spill))
-        await session.log.append(ToolReturned("late-result", result))
+        await session.log.append(SpillExpiredEvent(result.spill))
+        await session.log.append(
+            ToolCallFinishedEvent(ToolCall("late-result", id="late-result"), result)
+        )
         with pytest.raises(ToolError, match="expired"):
             await session.ctx[SpillStore].read(result.spill.path)
     async with app.session("late") as session:

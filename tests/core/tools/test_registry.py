@@ -2,6 +2,7 @@ import asyncio
 from typing import Annotated, Protocol
 
 import pytest
+from pydantic import Field
 
 from harnessed import Agent, Context, Inject, Plugin, ToolCall
 from harnessed.core.messages import ToolResult
@@ -96,6 +97,69 @@ async def test_decorators_preserve_original_functions_and_annotated_descriptions
         assert await original(3) == 6
         schema = registry.definitions[0].parameters["properties"]["value"]
         assert schema["description"] == "An integer"
+
+
+@pytest.mark.parametrize(
+    "description, expected",
+    [
+        ("Find one record by its exact key.", "Find one record by its exact key."),
+        (None, "Developer documentation: resolve the configured backend and query its cache."),
+        ("", ""),
+    ],
+)
+async def test_explicit_tool_descriptions_reach_the_model_without_changing_developer_docs(
+    description, expected
+):
+    class Lookups(Plugin):
+        @tool(readonly=True, description=description)
+        async def lookup(self, key: Annotated[str, Field(description="Exact record key")]) -> str:
+            """Developer documentation: resolve the configured backend and query its cache."""
+            return key
+
+    original_doc = Lookups.lookup.__doc__
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("lookup", {"key": "record"}))], "done"])
+    async with Agent(model=model, plugins=[Lookups()]).session() as session:
+        result = await session.run("Find the record")
+        definition = next(tool for tool in model.requests[0].tools if tool.name == "lookup")
+        assert definition.description == expected
+        assert definition.parameters["properties"]["key"]["description"] == "Exact record key"
+        assert result.tool_calls[0][1].content == "record"
+    assert Lookups.lookup.__doc__ == original_doc
+
+
+async def test_registry_description_precedence_and_missing_docstring_fallback():
+    def documented() -> str:
+        """Developer documentation."""
+        return "value"
+
+    def undocumented() -> str:
+        return "value"
+
+    async with Context() as ctx:
+        registry = ToolRegistry(ctx)
+        registry.register(documented, name="direct", description="Direct prompt.")
+        registry.tool(name="decorated", description="Decorator prompt.")(documented)
+        registry.register(documented, name="fallback")
+        registry.register(documented, name="hidden", description="")
+        registry.register(undocumented)
+        assert {tool.name: tool.description for tool in registry.definitions} == {
+            "direct": "Direct prompt.",
+            "decorated": "Decorator prompt.",
+            "fallback": "Developer documentation.",
+            "hidden": "",
+            "undocumented": "",
+        }
+
+
+@pytest.mark.parametrize("description", [True, 42, [], {}])
+def test_tool_descriptions_reject_non_string_values(description):
+    def callback() -> str:
+        return "value"
+
+    with pytest.raises(TypeError, match="description must be a string or None"):
+        tool(description=description)(callback)
+    with pytest.raises(TypeError, match="description must be a string or None"):
+        ToolRegistry(Context()).register(callback, description=description)
 
 
 @pytest.mark.parametrize("arguments", [{}, {"value": True}, {"value": "1"}, {"other": 1}])

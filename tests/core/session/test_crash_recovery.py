@@ -16,13 +16,13 @@ from harnessed.core.messages import user
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import EventLogCodec, encode_event
 from harnessed.core.session.events import (
-    ApprovalRequested,
-    ApprovalResolved,
+    ApprovalRequestedEvent,
+    ApprovalResolvedEvent,
     ApprovalStatus,
-    InboxAdded,
+    InboxAddedEvent,
     InboxMode,
-    LogTailRecovered,
-    ToolReturned,
+    LogTailRecoveredEvent,
+    ToolCallFinishedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import Approvals, JsonlSessions
@@ -167,7 +167,9 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
             if phase == "tool":
                 assert len(agent.log.approvals.grants) == 1
                 interrupted = [
-                    e for e in agent.log.events if isinstance(e, ToolReturned) and e.result.is_error
+                    e
+                    for e in agent.log.events
+                    if isinstance(e, ToolCallFinishedEvent) and e.result.is_error
                 ]
                 assert (
                     len(interrupted) == 1 and "outcome is unknown" in interrupted[0].result.content
@@ -208,15 +210,15 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
 @pytest.mark.parametrize(
     "tail",
     [
-        b'{"version":1,',
-        b'{"version":1,"data":{"content":"\xf0\x9f',
-        b'{"version":1,"seq":1,"type":"turn/start","data":{"turn_id":"unfinished"}}',
+        b'{"version":2,',
+        b'{"version":2,"data":{"content":"\xf0\x9f',
+        b'{"version":2,"seq":1,"type":"turn/start","data":{"turn_id":"unfinished"}}',
     ],
 )
 async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_idempotent(
     tmp_path, tail
 ):
-    original = InboxAdded.create(user("queued"), InboxMode.FOLLOWUP)
+    original = InboxAddedEvent.create(user("queued"), InboxMode.FOLLOWUP)
     writer = JsonlPersistence(tmp_path, durability=Durability.FSYNC)
     await writer.load("tail")
     await writer.append("tail", 0, original)
@@ -233,7 +235,7 @@ async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_i
         events = await recovered.load("tail")
         assert events[0] == original and len(events) == 2
         recovery = events[-1]
-        assert isinstance(recovery, LogTailRecovered)
+        assert isinstance(recovery, LogTailRecoveredEvent)
         assert recovery.offset == len(prefix) and recovery.discarded_bytes == len(tail)
         assert recovery.sha256 == hashlib.sha256(tail).hexdigest()
         assert await asyncio.to_thread(Path(recovery.archive).read_bytes) == tail
@@ -251,9 +253,9 @@ async def test_tail_recovery_archives_only_the_uncommitted_final_record_and_is_i
 @pytest.mark.parametrize(
     "record",
     [
-        b'{"version":1,\n',
+        b'{"version":2,\n',
         b'{"version":3,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
-        b'{"version":1,"seq":0,"type":"unknown","data":{}}\n',
+        b'{"version":2,"seq":0,"type":"unknown","data":{}}\n',
         b"\xff\n",
     ],
 )
@@ -271,7 +273,7 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
     tmp_path, monkeypatch
 ):
     path = tmp_path / "interrupted-repair.jsonl"
-    tail = b'{"version":1,'
+    tail = b'{"version":2,'
     await asyncio.to_thread(path.write_bytes, tail)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
 
@@ -285,7 +287,7 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
     resumed = JsonlPersistence(tmp_path, recover_tail=True)
     try:
         events = await resumed.load("interrupted-repair")
-        assert len(events) == 1 and isinstance(events[0], LogTailRecovered)
+        assert len(events) == 1 and isinstance(events[0], LogTailRecoveredEvent)
         assert await asyncio.to_thread(Path(events[0].archive).read_bytes) == tail
     finally:
         await resumed.aclose()
@@ -294,11 +296,11 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
 async def test_recovery_rejects_invalid_approval_prefix_without_modifying_the_file(tmp_path):
     path = tmp_path / "invalid.jsonl"
     invalid = {
-        "version": 1,
+        "version": 2,
         "seq": 0,
-        **encode_event(ApprovalResolved("unknown", ApprovalAnswer.ALLOW)),
+        **encode_event(ApprovalResolvedEvent("unknown", ApprovalAnswer.ALLOW)),
     }
-    content = json.dumps(invalid).encode() + b"\n" + b'{"version":1,'
+    content = json.dumps(invalid).encode() + b"\n" + b'{"version":2,'
     await asyncio.to_thread(path.write_bytes, content)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
     with pytest.raises(ValueError, match="pending"):
@@ -310,15 +312,15 @@ async def test_recovery_rejects_invalid_approval_prefix_without_modifying_the_fi
 async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(tmp_path):
     writer = JsonlPersistence(tmp_path, durability=Durability.FSYNC)
     await writer.load("answer")
-    request = ApprovalRequested("approval", ToolCall("work"), "reason", "scope")
+    request = ApprovalRequestedEvent("approval", ToolCall("work"), "reason", "scope")
     await writer.append("answer", 0, request)
     await writer.aclose()
     path = tmp_path / "answer.jsonl"
     prefix = await asyncio.to_thread(path.read_bytes)
     answer = {
-        "version": 1,
+        "version": 2,
         "seq": 1,
-        **encode_event(ApprovalResolved("approval", ApprovalAnswer.ALWAYS)),
+        **encode_event(ApprovalResolvedEvent("approval", ApprovalAnswer.ALWAYS)),
     }
     tail = json.dumps(answer).encode()
     await asyncio.to_thread(path.write_bytes, prefix + tail)
@@ -331,13 +333,13 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     ).session("answer") as agent:
         assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
         assert agent.log.approvals.records[0].resolution.status == ApprovalStatus.INTERRUPTED
-        recovery = next(e for e in agent.log.events if isinstance(e, LogTailRecovered))
+        recovery = next(e for e in agent.log.events if isinstance(e, LogTailRecoveredEvent))
         assert await asyncio.to_thread(Path(recovery.archive).read_bytes) == tail
 
 
 async def test_failed_tail_archive_does_not_discard_any_bytes(tmp_path, monkeypatch):
     path = tmp_path / "archive-failure.jsonl"
-    tail = b'{"version":1,'
+    tail = b'{"version":2,'
     await asyncio.to_thread(path.write_bytes, tail)
     persistence = JsonlPersistence(tmp_path, recover_tail=True)
 

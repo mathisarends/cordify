@@ -3,7 +3,7 @@ from harnessed.core.hooks import SessionAppended
 from harnessed.core.model import UsagePurpose
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.system_prompt import SystemPrompt
-from harnessed.core.session.events import ModelRequested, ModelUsageRecorded
+from harnessed.core.session.events import ModelRequestedEvent, ModelUsageRecordedEvent
 from harnessed.core.tokens import CalibratedTokenCounter, TokenCounter
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context
@@ -26,9 +26,12 @@ class RuntimeServices(Plugin):
 
         def calibrate(event: SessionAppended) -> None:
             usage = event.event
-            if not isinstance(usage, ModelUsageRecorded) or usage.purpose != UsagePurpose.RESPONSE:
+            if (
+                not isinstance(usage, ModelUsageRecordedEvent)
+                or usage.purpose != UsagePurpose.RESPONSE
+            ):
                 return
-            request = event.log.last(ModelRequested)
+            request = event.log.last(ModelRequestedEvent)
             if request is not None:
                 counter.calibrate(request.request, usage.usage.input_tokens)
 

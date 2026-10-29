@@ -13,11 +13,10 @@ from harnessed.core.hooks import Next, ReviewToolResult, SessionAppended
 from harnessed.core.messages import SpillRef, ToolResult
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.events import (
-    SpillCreated,
+    SpillCreatedEvent,
     SpillExpirationReason,
-    SpillExpired,
-    ToolCompleted,
-    ToolReturned,
+    SpillExpiredEvent,
+    ToolCallFinishedEvent,
 )
 from harnessed.core.session.files import FileOffset, ReadLimit, SessionFiles
 from harnessed.core.session.session import SessionLog
@@ -48,14 +47,14 @@ class _SessionSpills:
         self._expired: set[str] = set()
 
     def apply(self, event) -> None:
-        if isinstance(event, SpillExpired):
+        if isinstance(event, SpillExpiredEvent):
             self._active.pop(event.ref.path, None)
             self._expired.add(event.ref.path)
             return
-        if isinstance(event, SpillCreated):
+        if isinstance(event, SpillCreatedEvent):
             ref = event.ref
             self._expired.discard(ref.path)
-        elif isinstance(event, ToolCompleted | ToolReturned) and event.result.spill is not None:
+        elif isinstance(event, ToolCallFinishedEvent) and event.result.spill is not None:
             ref = event.result.spill
             if ref.path in self._expired:
                 return
@@ -84,7 +83,7 @@ class _SessionSpills:
         if ref is not None:
             previously_expired = key in self._expired
             self._expired.add(key)
-            event = SpillExpired(ref, reason)
+            event = SpillExpiredEvent(ref, reason)
             try:
                 await self.session.append(event)
             except BaseException:
@@ -216,7 +215,7 @@ class Spill(Plugin, slot="spill"):
         except OSError:
             logger.exception("Session spill write failed")
             return result.with_note("Spill storage unavailable.")
-        await session.append(SpillCreated(event.call.id, ref, tokens))
+        await session.append(SpillCreatedEvent(event.call.id, ref, tokens))
         preview = truncate(
             result.text, min(self.config.preview_tokens, self.config.threshold_tokens), counter
         )

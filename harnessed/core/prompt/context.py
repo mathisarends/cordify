@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from harnessed.core.hooks import PreStep, StepDecision
 from harnessed.core.plugin import Plugin
-from harnessed.core.session.events import ContextValueChanged
+from harnessed.core.session.events import ContextValueChangedEvent
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel import Inject, Next, hook
 
@@ -17,7 +17,7 @@ class DynamicContext:
         self._values: dict[str, str] = {}
         self._lock = asyncio.Lock()
         for event in session.events:
-            if isinstance(event, ContextValueChanged):
+            if isinstance(event, ContextValueChangedEvent):
                 if event.value is None:
                     self._values.pop(event.name, None)
                 else:
@@ -36,11 +36,11 @@ class DynamicContext:
             if self._values.get(name) == value:
                 return
             # The state record and the visible contribution are one durable event.
-            event = ContextValueChanged(name, value)
+            event = ContextValueChangedEvent(name, value)
             try:
                 await self.log.append(event)
             finally:
-                if self.log.last(ContextValueChanged) is event:
+                if self.log.last(ContextValueChangedEvent) is event:
                     if value is None:
                         self._values.pop(name, None)
                     else:

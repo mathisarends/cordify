@@ -16,11 +16,11 @@ from harnessed.core.model import (
 from harnessed.core.outputs import FINAL_ANSWER, OutputTypes, OutputValues, validation_note
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
-    AssistantMessage,
+    AssistantMessageEvent,
     ContextLifetime,
-    ContextMessage,
-    OutputValidated,
-    OutputValidationFailed,
+    ContextMessageEvent,
+    OutputValidatedEvent,
+    OutputValidationFailedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel import Context
@@ -71,7 +71,7 @@ class OutputHandler:
         ordinary = [call for call in response.tool_calls if call.name != FINAL_ANSWER]
         if not outputs and ordinary:
             return {}, None
-        answer = self.log.last(AssistantMessage)
+        answer = self.log.last(AssistantMessageEvent)
         if answer is None:
             raise SessionStateError("Output validation requires a recorded assistant message")
         if not outputs and (
@@ -92,12 +92,12 @@ class OutputHandler:
         except Exception as error:
             note = str(error) if ordinary or len(outputs) > 1 else validation_note(error)
             failures = {
-                e.message_id for e in current.events if isinstance(e, OutputValidationFailed)
+                e.message_id for e in current.events if isinstance(e, OutputValidationFailedEvent)
             }
             attempt = len(failures) + 1
             for call in outputs or [None]:
                 await self.log.append(
-                    OutputValidationFailed(
+                    OutputValidationFailedEvent(
                         current.id,
                         schema.id,
                         response.id,
@@ -107,18 +107,20 @@ class OutputHandler:
                     )
                 )
             if not outputs:
-                await self.log.append(ContextMessage(User(note), ContextLifetime.TURN, current.id))
+                await self.log.append(
+                    ContextMessageEvent(User(note), ContextLifetime.TURN, current.id)
+                )
             return (
                 {call.id: ToolResult.error(note) for call in outputs},
                 note if attempt > self.options.output_retries else None,
             )
-        proof = OutputValidated(
+        proof = OutputValidatedEvent(
             current.id, schema.id, response.id, data, outputs[0].id if outputs else None
         )
         try:
             await self.log.append(proof)
         finally:
             # Persistence acknowledges before listener delivery, even if the caller is cancelled.
-            if self.log.last(OutputValidated) is proof:
+            if self.log.last(OutputValidatedEvent) is proof:
                 self.values.put(proof.id, schema.id, value)
         return {call.id: ToolResult("Structured answer accepted.") for call in outputs}, None

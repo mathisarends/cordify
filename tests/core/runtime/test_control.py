@@ -11,15 +11,15 @@ from harnessed.core.runtime.control import SessionControl
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
-    AgentControlChanged,
-    AssistantMessage,
+    AgentControlChangedEvent,
+    AssistantMessageEvent,
     ControlState,
-    ModelRequested,
-    StepStart,
-    ToolReturned,
+    ModelRequestedEvent,
+    StepStartedEvent,
+    ToolCallFinishedEvent,
     TurnOutcome,
-    TurnStart,
-    UserMessage,
+    TurnStartedEvent,
+    UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.context import ToolContext
@@ -90,7 +90,7 @@ async def test_pause_waits_for_a_whole_step_and_resume_keeps_its_turn(phase):
         await wait(pause)
         assert session.status is SessionStatus.PAUSED
         assert not first.done() and not second.done() and len(model.requests) == 1
-        returned = [e.call_id for e in session.events if isinstance(e, ToolReturned)]
+        returned = [e.call_id for e in session.events if isinstance(e, ToolCallFinishedEvent)]
         assert returned == [c.id for c in calls] and sorted(executed) == [0, 1, 2]
         await session.pause()
         await session.resume()
@@ -179,7 +179,7 @@ async def test_abort_drains_tools_or_approvals_and_repairs_outstanding_calls(pha
         assert (await wait(running)).stop_reason is StopReason.ABORTED
         assert closed.is_set() and all(c.signal.is_set() for c in contexts)
         assert not session.approvals.pending
-        results = [e.result for e in session.events if isinstance(e, ToolReturned)]
+        results = [e.result for e in session.events if isinstance(e, ToolCallFinishedEvent)]
         assert len(results) == 1 and results[0].is_error and "aborted" in results[0].content
 
 
@@ -305,12 +305,12 @@ async def test_closing_a_paused_handle_finishes_queued_waiters_without_discardin
 async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_turn(state):
     log = SessionLog("crash")
     for event in (
-        TurnStart("turn"),
-        StepStart("turn", 1),
-        UserMessage(User("task")),
-        ModelRequested(ModelRequest("model", (User("task"),))),
-        AgentControlChanged(state),
-        AssistantMessage(Assistant("visible", id="message"), interrupted=True),
+        TurnStartedEvent("turn"),
+        StepStartedEvent("turn", 1),
+        UserMessageEvent(User("task")),
+        ModelRequestedEvent(ModelRequest("model", (User("task"),))),
+        AgentControlChangedEvent(state),
+        AssistantMessageEvent(Assistant("visible", id="message"), interrupted=True),
     ):
         await log.append(event)
     await log.repair_interrupted()
@@ -319,7 +319,7 @@ async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_tu
     assert log.turns[-1].closed is not paused
     if not paused:
         assert log.turns[-1].reason == TurnOutcome.ABORTED
-    partial = next(e for e in log.events if isinstance(e, AssistantMessage))
+    partial = next(e for e in log.events if isinstance(e, AssistantMessageEvent))
     assert partial.interrupted and partial.message.text == "visible"
     prefix = log.events
     await log.repair_interrupted()
@@ -333,7 +333,7 @@ async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_tu
 @pytest.mark.parametrize("state, keep_inbox", [("unknown", False), ("paused", True), ("active", 1)])
 def test_invalid_control_events_cannot_enter_the_log(state, keep_inbox):
     with pytest.raises(ValueError):
-        AgentControlChanged(state, keep_inbox)
+        AgentControlChangedEvent(state, keep_inbox)
 
 
 async def test_cancelling_a_stop_caller_does_not_cancel_the_step():
@@ -359,7 +359,7 @@ async def test_resume_from_a_durable_pause_listener_does_not_deadlock():
             if event.state == ControlState.PAUSED:
                 await session.resume()
 
-        session.on(AgentControlChanged, resume)
+        session.on(AgentControlChangedEvent, resume)
         await wait(session.pause())
         assert session.status is SessionStatus.IDLE
         assert (await session.run("task")).text == "done"

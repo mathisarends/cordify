@@ -7,7 +7,7 @@ from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.runtime.agent_loop import AgentFactory
 from harnessed.core.runtime.session import Session
 from harnessed.core.session.artifacts import copy_artifacts
-from harnessed.core.session.events import TurnStart
+from harnessed.core.session.events import TurnStartedEvent
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import SessionPersistence, SessionStore
@@ -70,7 +70,7 @@ async def open_session(ctx: Context, target: str | SessionLog | None) -> Session
 def _restore_output_schemas(outputs: OutputTypes, log: SessionLog) -> None:
     """Fail before resuming when queued or open work needs an unrestored output type."""
     schemas = [item.output_schema for item in log.inbox.pending]
-    if log.open_turn is not None and (start := log.last(TurnStart)) is not None:
+    if log.open_turn is not None and (start := log.last(TurnStartedEvent)) is not None:
         schemas.append(start.output_schema)
     for schema in schemas:
         if schema is not None:

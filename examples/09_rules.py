@@ -2,19 +2,8 @@
 
 import asyncio
 
-from harnessed import (
-    Agent,
-    Plugin,
-    PolicyDecision,
-    Session,
-    ToolCall,
-    ToolResult,
-    ToolStatus,
-    events,
-    tool,
-)
-from harnessed.events.inbox import Added as InboxAdded
-from harnessed.events.inbox import Mode as InboxMode
+from harnessed import Agent, Plugin, PolicyDecision, Session, ToolCall, ToolResult, ToolStatus, tool
+from harnessed.events import InboxAddedEvent, InboxMode, ToolCallFinishedEvent
 from harnessed.hooks import ReviewToolResult
 from harnessed.kernel import Inject, hook
 from harnessed.models import ModelChunk, user
@@ -79,17 +68,17 @@ async def demo(name, policy):
     print(f"\n{name}")
     async with agent.session(name) as session:
 
-        @session.on(InboxAdded)
+        @session.on(InboxAddedEvent)
         def inbox_changed(event):
             if event.mode != InboxMode.FOLLOWUP:
                 print(f"{event.mode}: {event.message.text}")
 
         async for event in session.stream("Run the tests and investigate failures."):
-            if isinstance(event, events.tool.Finished):
+            if isinstance(event, ToolCallFinishedEvent):
                 print(f"exit_code={event.result.exit_code}: {event.result.content}")
         assert session.context.values
         assert any(
-            isinstance(event, InboxAdded) and event.mode == InboxMode.STEER
+            isinstance(event, InboxAddedEvent) and event.mode == InboxMode.STEER
             for event in session.events
         )
 

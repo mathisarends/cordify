@@ -1,7 +1,8 @@
 # Tools and hooks
 
-Declare public tools as `@tool` methods on a `Plugin`. Method names, docstrings
-and annotations supply their names, descriptions and strict argument schemas.
+Declare public tools as `@tool` methods on a `Plugin`. Method names, explicit
+descriptions and annotations supply their names, model instructions and strict
+argument schemas. A docstring is the fallback when no description is supplied.
 There is one public registration path, including tools mounted at runtime:
 
 ```python
@@ -13,14 +14,21 @@ from my_application import Database
 class Lookups(Plugin):
     needs = (Database,)
 
-    @tool(readonly=True)
+    @tool(readonly=True, description="Find one record by its exact key.")
     async def lookup(self, key: str, *, db: Inject[Database]) -> str:
-        """Look up a record by its key."""
+        """Resolve the injected backend and return its serialized record."""
         return await db.lookup(key)
 
 
 # plugins=[Lookups()] initially, or await session.use(Lookups()) at runtime.
 ```
+
+`description="..."` is sent to the model without replacing the Python docstring,
+so developer documentation can describe implementation details independently.
+`description=None` (the default) uses `inspect.getdoc` as a fallback; a missing
+docstring produces an empty description. An explicit `description=""` suppresses
+the description rather than falling back. Parameter descriptions stay in
+`Annotated[..., Field(description="...")]` or `parameter_fields` metadata.
 
 `needs` controls the plugin's lifetime. Removing Database disposes its tools;
 restoring the service restarts the plugin. `Inject` resolves per-call services
@@ -56,7 +64,7 @@ to this call. It does not expose the model driver. Normal service arguments use
 A tool that discovers a risky step mid-call asks with `await call.approve(reason)`.
 The request is durable and runs through the session approval flow: an `ALWAYS`
 grant for the tool and scope (default `"tool-call"`), the approver configured on
-`Approvals(approver=...)`, or a stream consumer answering `events.approval.Needed`.
+`Approvals(approver=...)`, or a stream consumer answering `events.ApprovalNeededEvent`.
 It returns True for allow or always and raises `ApprovalUnavailable` when nobody
 can answer.
 
@@ -75,8 +83,9 @@ the question; the user's answer arrives as the next run.
 
 Each finished invocation writes and flushes a `tool.execution.finished` receipt
 before waiting for ordered result review. The receipt contains unreviewed output in
-the audit log; it is not a model-visible result. `tool.completed` records the
-reviewed and limited result, and `tool.returned` publishes it in model order.
+the audit log; it is not a model-visible result. `ToolCallFinishedEvent`
+(`tool.call.finished`) commits the reviewed and limited result in model order,
+once for both history and the UI stream. There is no separate completion event.
 If execution finished but review did not, recovery retains the receipt and returns
 an explicit interrupted-review error without exposing raw output or repeating the
 action. Audit consumers must treat execution receipts as unreviewed data.

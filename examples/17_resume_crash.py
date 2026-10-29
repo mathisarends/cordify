@@ -8,8 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
-from harnessed.events.session import LogRecovered as LogTailRecovered
-from harnessed.events.tool import Returned as ToolReturned
+from harnessed.events import LogTailRecoveredEvent, ToolCallFinishedEvent
 from harnessed.models import ModelChunk
 from harnessed.plugins import ApprovalGate, Approvals, JsonlSessions
 from harnessed.plugins.sessions import Durability
@@ -83,10 +82,12 @@ async def resume(root: Path):
             "External state changed" in message.text for message in model.requests[0].messages
         )
         print("Second process: queued run and quiet context restored.")
-        recovered = next(e for e in session.events if isinstance(e, LogTailRecovered))
+        recovered = next(e for e in session.events if isinstance(e, LogTailRecoveredEvent))
         print(f"Archived {recovered.discarded_bytes} incomplete bytes: {recovered.archive}")
         await session.run("Run the same tool in a fresh task.")
-        result = next(e.result for e in reversed(session.events) if isinstance(e, ToolReturned))
+        result = next(
+            e.result for e in reversed(session.events) if isinstance(e, ToolCallFinishedEvent)
+        )
         assert not result.is_error and asked == []
         print("Persisted ALWAYS grant reused; no new approval question.")
         grant = session.approvals.grant_for("work", scope="demo-work")

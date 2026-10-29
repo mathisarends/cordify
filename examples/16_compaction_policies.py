@@ -2,9 +2,10 @@
 
 import asyncio
 
-from harnessed import Agent, Role, events
+from harnessed import Agent, Role
 from harnessed.core.session.session import SessionLog
 from harnessed.errors import ContextBudgetExceeded
+from harnessed.events import CompactionAppliedEvent
 from harnessed.plugins import AgentLoop, Compaction, at_ratio, every_turns
 from harnessed.testing import ScriptedModel
 
@@ -32,9 +33,7 @@ async def compare(name, trigger):
         prefix = session.events
         for index in range(1, 6):
             await session.run(f"task {index}: " + "detail " * 240)
-        applied = [
-            event for event in session.events if isinstance(event, events.compaction.Applied)
-        ]
+        applied = [event for event in session.events if isinstance(event, CompactionAppliedEvent)]
         print(f"{name}: {len(applied)} compactions")
         for event in applied:
             print(

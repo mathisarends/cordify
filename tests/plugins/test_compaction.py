@@ -11,11 +11,11 @@ from harnessed.core.messages import Assistant, System, ToolCall
 from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, ModelUsage, UsagePurpose
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    CompactionApplied,
+    CompactionAppliedEvent,
     ControlState,
-    ModelRequested,
-    ModelUsageRecorded,
-    StepEnd,
+    ModelRequestedEvent,
+    ModelUsageRecordedEvent,
+    StepEndedEvent,
     TurnOutcome,
 )
 from harnessed.core.session.session import SessionLog
@@ -51,7 +51,7 @@ async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_ins
             "current",
         ]
         assert await session.prompt.render() == "Fixed instructions."
-        applied = session.last(CompactionApplied)
+        applied = session.last(CompactionAppliedEvent)
         assert applied.before_tokens > applied.after_tokens
         records = [decode_event(encode_event(event)) for event in session.events]
         assert SessionLog("replay", seed=records).messages == session.messages
@@ -76,12 +76,13 @@ async def test_compaction_usage_is_counted_and_replayed_even_when_no_summary_is_
         summaries = [
             event
             for event in session.events
-            if isinstance(event, ModelUsageRecorded) and event.purpose is UsagePurpose.COMPACTION
+            if isinstance(event, ModelUsageRecordedEvent)
+            and event.purpose is UsagePurpose.COMPACTION
         ]
         assert len(summaries) == 1 and summaries[0].usage == ModelUsage(123, 12)
         records = [decode_event(encode_event(event)) for event in session.events]
         assert SessionLog("replay", seed=records).usage == session.usage
-        assert (session.last(CompactionApplied) is not None) == reduces_context
+        assert (session.last(CompactionAppliedEvent) is not None) == reduces_context
 
 
 @pytest.mark.parametrize("message", [Assistant("  "), Assistant(tool_calls=(ToolCall("work"),))])
@@ -96,7 +97,7 @@ async def test_invalid_summarizer_responses_still_contribute_their_usage(message
         with pytest.raises(ValueError, match="Summarizer returned"):
             await session.run("current")
         assert session.usage.input_tokens == 151 and session.usage.output_tokens == 16
-        assert session.last(ModelUsageRecorded).purpose is UsagePurpose.COMPACTION
+        assert session.last(ModelUsageRecordedEvent).purpose is UsagePurpose.COMPACTION
         records = [decode_event(encode_event(event)) for event in session.events]
         assert SessionLog("replay", seed=records).usage == session.usage
 
@@ -111,7 +112,9 @@ async def test_periodic_trigger_counts_new_closed_turns_and_reuses_the_previous_
         counts = []
         for index in range(6):
             await session.run(f"task {index}: " + "x" * 500)
-            counts.append(sum(isinstance(event, CompactionApplied) for event in session.events))
+            counts.append(
+                sum(isinstance(event, CompactionAppliedEvent) for event in session.events)
+            )
         assert counts == [0, 0, 1, 1, 2, 2]
         assert any(
             message.text == "Conversation summary:\nsummary 1" for message in brief.sources[1]
@@ -150,7 +153,7 @@ async def test_budget_overflow_forces_compaction_even_when_the_trigger_is_not_du
     ).session() as session:
         await session.run("x" * 1000)
         await session.run("y" * 1000)
-        assert session.last(CompactionApplied) is not None and len(brief.sources) == 1
+        assert session.last(CompactionAppliedEvent) is not None and len(brief.sources) == 1
         assert not any(message.text == "x" * 1000 for message in model.requests[-1].messages)
 
 
@@ -324,7 +327,7 @@ async def test_provider_context_error_compacts_once_then_retries_as_a_new_step()
             "completed",
         ]
         assert all(
-            sum(isinstance(event, ModelRequested) for event in step.events) == 1
+            sum(isinstance(event, ModelRequestedEvent) for event in step.events) == 1
             for step in session.turns[-1].steps
         )
         assert not any(message.text == "x" * 4000 for message in model.requests[2].messages)
@@ -405,7 +408,7 @@ async def test_paused_context_retry_survives_restart_without_reusing_its_retry(t
         release.set()
         await asyncio.wait_for(pausing, 3)
         assert session.status is SessionStatus.PAUSED
-        assert session.last(StepEnd).reason == "context_limit"
+        assert session.last(StepEndedEvent).reason == "context_limit"
     with pytest.raises(SessionClosed):
         await asyncio.wait_for(running, 3)
     recovered = ScriptedModel(["continued"])

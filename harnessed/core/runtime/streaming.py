@@ -5,41 +5,39 @@ from typing import TYPE_CHECKING, Any, Self
 
 from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import RequestApproval, SessionAppended
-from harnessed.core.messages import ApprovalAnswer, ToolCall
+from harnessed.core.messages import ApprovalAnswer
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.approvals import LiveApproval, LiveApprovals
 from harnessed.core.runtime.control import SessionStatus
 from harnessed.core.runtime.result import RunResults
 from harnessed.core.session.events import (
-    AgentControlChanged,
-    ApprovalResolved,
+    AgentControlChangedEvent,
+    ApprovalResolvedEvent,
     ApprovalStatus,
-    CompactionApplied,
+    CompactionAppliedEvent,
     ControlState,
     DurableEvent,
-    InboxAdded,
-    OutputValidated,
-    OutputValidationFailed,
+    InboxAddedEvent,
+    OutputValidatedEvent,
+    OutputValidationFailedEvent,
     SessionEvent,
-    SpillCreated,
-    SpillExpired,
-    ToolCalled,
-    ToolProgress,
-    ToolReturned,
-    TurnStart,
+    SpillCreatedEvent,
+    SpillExpiredEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
+    ToolProgressEvent,
+    TurnStartedEvent,
 )
 from harnessed.core.stream import (
-    ApprovalNeeded,
+    ApprovalNeededEvent,
     CustomTransientEvent,
     EventStream,
-    ReasoningDelta,
-    StatusChanged,
-    TextDelta,
-    ToolArgumentsDelta,
-    ToolCallStarted,
-    ToolFinished,
-    ToolStarted,
-    TurnFinished,
+    ReasoningDeltaEvent,
+    SessionStatusChangedEvent,
+    TextDeltaEvent,
+    ToolArgumentsDeltaEvent,
+    ToolCallGenerationStartedEvent,
+    TurnFinishedEvent,
 )
 from harnessed.kernel import Priority
 
@@ -56,7 +54,7 @@ class StreamApprovals:
         self.input_id: str | None = None
         self.pending: dict[str, LiveApproval] = {}
 
-    def prepared(self, item: InboxAdded) -> None:
+    def prepared(self, item: InboxAddedEvent) -> None:
         self.input_id = item.message.id
 
     async def __aenter__(self) -> Self:
@@ -71,7 +69,7 @@ class StreamApprovals:
         start = turn.events[0] if turn is not None else None
         if (
             event.session is not self.session
-            or not isinstance(start, TurnStart)
+            or not isinstance(start, TurnStartedEvent)
             or self.input_id is None
             or start.input_id != self.input_id
         ):
@@ -80,7 +78,7 @@ class StreamApprovals:
         self.pending[request.request_id] = request
         try:
             await self.session.log.publish(
-                ApprovalNeeded(request.request_id, request.call, request.reason)
+                ApprovalNeededEvent(request.request_id, request.call, request.reason)
             )
             return await request.decision()
         except BaseException:
@@ -91,7 +89,7 @@ class StreamApprovals:
             raise
 
     def _ack(self, event: SessionAppended) -> None:
-        if event.log is not self.session.log or not isinstance(event.event, ApprovalResolved):
+        if event.log is not self.session.log or not isinstance(event.event, ApprovalResolvedEvent):
             return
         record = event.event
         request = self.pending.pop(record.request_id, None)
@@ -113,11 +111,11 @@ class StreamApprovals:
         self.pending.clear()
 
 
-def _stream_status(event: TurnStart | AgentControlChanged) -> SessionStatus:
+def _stream_status(event: TurnStartedEvent | AgentControlChangedEvent) -> SessionStatus:
     match event:
-        case AgentControlChanged(state=ControlState.PAUSED):
+        case AgentControlChangedEvent(state=ControlState.PAUSED):
             return SessionStatus.PAUSED
-        case AgentControlChanged(
+        case AgentControlChangedEvent(
             state=ControlState.STOPPING | ControlState.ABORTING | ControlState.STOPPED
         ):
             return SessionStatus.STOPPING
@@ -133,7 +131,7 @@ async def project_stream_events(
 ) -> AsyncGenerator[EventStream[Any], None]:
     """Project raw events into stream notifications and exactly one terminal result."""
     events: list[SessionEvent] = []
-    calls: dict[str, ToolCall] = {}
+    calls: set[str] = set()
     control_calls: set[str] = set()
     previous_status: SessionStatus | None = None
     try:
@@ -141,34 +139,38 @@ async def project_stream_events(
             if isinstance(event, SessionEvent):
                 events.append(event)
             match event:
-                case OutputValidated(call_id=call_id) | OutputValidationFailed(call_id=call_id):
+                case (
+                    OutputValidatedEvent(call_id=call_id)
+                    | OutputValidationFailedEvent(call_id=call_id)
+                ):
                     if call_id is not None:
                         control_calls.add(call_id)
                 case (
-                    TextDelta()
-                    | ReasoningDelta()
-                    | ApprovalNeeded()
-                    | ToolCallStarted()
-                    | ToolArgumentsDelta()
+                    TextDeltaEvent()
+                    | ReasoningDeltaEvent()
+                    | ApprovalNeededEvent()
+                    | ToolCallGenerationStartedEvent()
+                    | ToolArgumentsDeltaEvent()
                 ):
                     yield event
-                case CompactionApplied() | SpillCreated() | SpillExpired():
+                case CompactionAppliedEvent() | SpillCreatedEvent() | SpillExpiredEvent():
                     yield event
                 case DurableEvent() | CustomTransientEvent():
                     yield event
-                case ToolCalled(call=call) if call.id not in control_calls:
-                    calls[call.id] = call
-                    yield ToolStarted(call)
-                case ToolProgress(call_id=call_id) if call_id in calls:
+                case ToolCallRequestedEvent(call=call) if call.id not in control_calls:
+                    calls.add(call.id)
                     yield event
-                case ToolReturned(call_id=call_id, result=result) if call_id in calls:
-                    yield ToolFinished(calls[call_id], result)
-                case TurnStart() | AgentControlChanged():
+                case ToolProgressEvent(call_id=call_id) if call_id in calls:
+                    yield event
+                case ToolCallFinishedEvent(call_id=call_id) if call_id in calls:
+                    yield event
+                    calls.discard(call_id)
+                case TurnStartedEvent() | AgentControlChangedEvent():
                     # A subsequent turn may already be running when this consumer resumes.
                     status = _stream_status(event)
                     if status != previous_status:
                         previous_status = status
-                        yield StatusChanged(status)
-        yield TurnFinished(results.build(tuple(events), schema=schema))
+                        yield SessionStatusChangedEvent(status)
+        yield TurnFinishedEvent(results.build(tuple(events), schema=schema))
     finally:
         await raw.aclose()

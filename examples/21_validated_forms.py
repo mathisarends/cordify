@@ -7,7 +7,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from harnessed import Agent, Plugin, ToolCall, ToolContext, tool
-from harnessed.events.tool import Returned as ToolReturned
+from harnessed.events import ToolCallFinishedEvent
 from harnessed.kernel import Inject
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals
@@ -71,7 +71,9 @@ async def validated_tool():
         model=model, plugins=[tools, Approvals(trust=[IssuesTools.create_issue])]
     ).session("forms") as agent:
         result = await agent.run("Create an authentication issue for alice.")
-        results = [event.result for event in result.events if isinstance(event, ToolReturned)]
+        results = [
+            event.result for event in result.events if isinstance(event, ToolCallFinishedEvent)
+        ]
         assert results[0].is_error and "ValidationError" in results[0].content
         assert not results[1].is_error and len(created) == 1
         print("Invalid form rejected before the tool body ran.")

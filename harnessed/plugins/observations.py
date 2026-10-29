@@ -3,7 +3,7 @@ from typing import Annotated
 from pydantic import Field
 
 from harnessed.core.plugin import Plugin, PluginConfig
-from harnessed.core.session.events import ObservationPolicyApplied
+from harnessed.core.session.events import ObservationPolicyAppliedEvent
 from harnessed.core.session.session import SessionLog
 from harnessed.kernel import Inject
 
@@ -23,9 +23,9 @@ class LatestObservationOnly(Plugin):
         super().__init__(max_summaries=max_summaries)
 
     async def setup(self, session: Inject[SessionLog]) -> None:
-        previous = session.last(ObservationPolicyApplied)
+        previous = session.last(ObservationPolicyAppliedEvent)
         self._previous = previous.max_summaries if previous is not None else None
-        await session.append(ObservationPolicyApplied(self.config.max_summaries))
+        await session.append(ObservationPolicyAppliedEvent(self.config.max_summaries))
 
     async def teardown(self, session: Inject[SessionLog]) -> None:
-        await session.append(ObservationPolicyApplied(self._previous))
+        await session.append(ObservationPolicyAppliedEvent(self._previous))

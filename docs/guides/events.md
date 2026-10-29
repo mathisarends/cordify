@@ -1,27 +1,77 @@
-# Event namespaces and extensions
+# Typed events and extensions
 
-Use the `harnessed.events` namespaces when matching built-in notifications:
+Import built-in event classes directly from `harnessed.events`. Every concrete
+built-in class has a full name ending in `Event`:
 
 ```python
-from harnessed import events
+from harnessed.events import (
+    CompactionAppliedEvent,
+    ReasoningDeltaEvent,
+    SpillCreatedEvent,
+    TextDeltaEvent,
+)
 
 async for event in session.stream("Inspect the project."):
     match event:
-        case events.text.Delta(text=text):
+        case TextDeltaEvent(text=text):
             print(text, end="", flush=True)
-        case events.reasoning.Delta(text=text):
+        case ReasoningDeltaEvent(text=text):
             show_reasoning(text)
-        case events.compaction.Applied(summary=summary):
+        case CompactionAppliedEvent(summary=summary):
             show_summary(summary)
-        case events.spill.Created(ref=ref):
+        case SpillCreatedEvent(ref=ref):
             show_artifact(ref.path)
 ```
 
 Tags are stable namespaced strings, including `text.delta`, `reasoning.delta`,
-`tool.started`, `approval.needed`, `compaction.applied` and `spill.created`.
-They do not depend on the Python class name. Use namespaces for built-in classes.
-The corresponding discriminator members are available as `events.EventKind`;
-closed states and outcomes are exported alongside their event namespaces.
+`tool.call.requested`, `approval.needed`, `compaction.applied` and `spill.created`.
+They do not depend on the Python class name. `EventKind`, closed states and
+outcomes such as `TurnOutcome` are also exported directly from `harnessed.events`.
+
+## Observe events in plugins
+
+The same classes work with kernel hooks and session subscriptions:
+
+```python
+from harnessed import Plugin
+from harnessed.events import TurnEndedEvent
+from harnessed.kernel import hook
+
+
+class TurnObserver(Plugin):
+    @hook(TurnEndedEvent)
+    async def on_turn(self, event: TurnEndedEvent) -> None:
+        print(event.turn_id, event.reason)
+```
+
+`TurnEndedEvent` is the durable record closing a turn, with its ID and outcome.
+`TurnFinishedEvent[T]` is the terminal UI stream notification carrying the
+assembled `RunResult[T]`. Likewise, `ToolExecutionFinishedEvent` records execution
+before result review, while `ToolCallFinishedEvent` commits the final result to
+history and the UI stream. These remain separate events.
+
+## Tool lifecycle
+
+For an application asking whether a tool is finished, observe
+`ToolCallFinishedEvent`. It includes the complete `call` and final `result`, also
+when policy denied the call or recovery supplied an interruption error.
+
+| Event | Meaning | Durable log | UI stream |
+| --- | --- | --- | --- |
+| `ToolCallGenerationStartedEvent` | The model began generating a call preview; no scheduling or execution yet | No | Yes |
+| `ToolCallRequestedEvent` | A complete call was accepted for scheduling, before policy checks | Yes | Yes |
+| `ToolExecutionStartedEvent` | Execution is about to be invoked, after policy permits it | Yes | No |
+| `ToolExecutionFinishedEvent` | Raw execution output is safely recorded, before result review | Yes | No |
+| `ToolCallFinishedEvent` | The final reviewed and limited result is committed in model order | Yes | Yes |
+
+`ToolArgumentsDeltaEvent` updates the generation preview and `ToolProgressEvent`
+reports progress. Neither is a completion signal. UI request and completion
+events are the same immutable objects recorded in the durable log. Structured
+output control calls remain hidden from the application tool UI.
+
+Successful calls proceed from request through execution to completion. Denied
+calls skip execution. Recovery never publishes an unreviewed execution receipt as
+a final result or repeats a tool to recover its output.
 
 ## Declare application events
 
@@ -34,7 +84,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
 
-from harnessed import Plugin, ToolContext, events, tool
+from harnessed import Plugin, ToolContext, tool
+from harnessed.events import DurableEvent
 
 
 class ProjectEventKind(StrEnum):
@@ -42,7 +93,7 @@ class ProjectEventKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ProjectIndexed(events.DurableEvent):
+class ProjectIndexed(DurableEvent):
     files: int
     type: Literal[ProjectEventKind.INDEXED] = field(default=ProjectEventKind.INDEXED, kw_only=True)
 
@@ -81,10 +132,10 @@ Pydantic supplies validation and schemas without requiring BaseModel events:
 ```python
 from typing import Annotated
 from pydantic import Field, TypeAdapter
-from harnessed import events
+from harnessed.events import BuiltinEvent
 
 type ProjectEvent = Annotated[
-    events.BuiltinEvent | ProjectIndexed,
+    BuiltinEvent | ProjectIndexed,
     Field(discriminator="type"),
 ]
 
@@ -95,7 +146,7 @@ schema = adapter.json_schema()
 `StreamEvent[T]` is the concrete discriminated union of built-in UI notifications,
 including compaction and spill. `BuiltinEvent` also includes the durable audit
 events. The open return type `EventStream[T]` includes application extension
-bases; class patterns preserve the structured `TurnFinished[T]` result type.
+bases; class patterns preserve the structured `TurnFinishedEvent[T]` result type.
 An explicit application union gives the type checker knowledge of its custom
 variants. Loading a plugin dynamically cannot alter an existing static union.
 

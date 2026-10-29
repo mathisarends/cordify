@@ -15,7 +15,12 @@ from harnessed.core.messages import ToolCall, ToolResult, to_dict, user
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.runtime.inbox import SessionInbox
-from harnessed.core.session.events import RuleAction, RuleTriggered, ToolCalled, ToolReturned
+from harnessed.core.session.events import (
+    RuleAction,
+    RuleTriggeredEvent,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
+)
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter, count_content
 from harnessed.kernel import Inject, Next, PluginState, hook
@@ -140,9 +145,9 @@ class Rules(Plugin):
         # Match bits are recorded with the canonical tool result.
         calls: dict[str, ToolCall] = {}
         for event in session.events:
-            if isinstance(event, ToolCalled):
+            if isinstance(event, ToolCallRequestedEvent):
                 calls[event.call.id] = event.call
-            elif isinstance(event, ToolReturned) and event.call_id in calls:
+            elif isinstance(event, ToolCallFinishedEvent) and event.call_id in calls:
                 recorded = dict(event.result.rule_matches)
                 for index, rule in enumerate(self.rules):
                     rule_id = f"{self.name}:{index}"
@@ -188,7 +193,7 @@ class Rules(Plugin):
                     await context.remove(f"rule:{self.name}:{index}")
                 continue
             await session.append(
-                RuleTriggered(
+                RuleTriggeredEvent(
                     f"{self.name}:{index}",
                     event.call.id,
                     count,

@@ -12,13 +12,13 @@ from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    ApprovalRequested,
-    ApprovalResolved,
-    ApprovalRevoked,
+    ApprovalRequestedEvent,
+    ApprovalResolvedEvent,
+    ApprovalRevokedEvent,
     ApprovalStatus,
-    ToolExecutionStarted,
-    ToolPolicyApplied,
-    ToolReturned,
+    ToolCallFinishedEvent,
+    ToolExecutionStartedEvent,
+    ToolPolicyAppliedEvent,
 )
 from harnessed.core.session.files import MemoryFiles
 from harnessed.core.session.session import SessionLog
@@ -38,7 +38,7 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
     class ToolsPlugin(Plugin):
         @tool
         async def work(self, agent: Inject[Session]) -> str:
-            assert isinstance(agent.log.events[-1], ToolExecutionStarted)
+            assert isinstance(agent.log.events[-1], ToolExecutionStartedEvent)
             assert agent.log.approvals.records[-1].decision is ApprovalAnswer.ALWAYS
             executed.append(True)
             return "ok"
@@ -120,7 +120,9 @@ async def test_single_call_answers_are_logged_without_becoming_persistent_grants
             await agent.run("task")
             assert not agent.log.approvals.grants
             assert agent.log.approvals.records[-1].decision is decision
-            policy = next(e for e in reversed(agent.log.events) if isinstance(e, ToolPolicyApplied))
+            policy = next(
+                e for e in reversed(agent.log.events) if isinstance(e, ToolPolicyAppliedEvent)
+            )
         assert policy.decision is PolicyDecision(decision.value)
     assert len(asked) == 2
     assert len(executed) == (2 if decision is ApprovalAnswer.ALLOW else 0)
@@ -217,8 +219,10 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
         await agent.abort()
         assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
         assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.INTERRUPTED
-        assert not any(isinstance(e, ToolExecutionStarted) for e in agent.log.events)
-        assert any(isinstance(e, ToolReturned) and e.result.is_error for e in agent.log.events)
+        assert not any(isinstance(e, ToolExecutionStartedEvent) for e in agent.log.events)
+        assert any(
+            isinstance(e, ToolCallFinishedEvent) and e.result.is_error for e in agent.log.events
+        )
 
 
 async def test_uncommitted_approval_answer_cannot_start_execution():
@@ -231,7 +235,7 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
             pass
 
         async def append(self, session_id, seq, event):
-            if isinstance(event, ApprovalResolved) and event.status == "answered":
+            if isinstance(event, ApprovalResolvedEvent) and event.status == "answered":
                 raise OSError("approval could not be saved")
 
     @plugin(slot="sessions")
@@ -271,19 +275,19 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
     ).session("failed-answer") as agent:
         await agent.run("task")
         assert not agent.log.approvals.pending and (not agent.log.approvals.grants)
-        assert not any(isinstance(e, ToolExecutionStarted) for e in agent.log.events)
+        assert not any(isinstance(e, ToolExecutionStartedEvent) for e in agent.log.events)
 
 
 @pytest.mark.parametrize(
     "events",
     [
-        (ApprovalResolved("unknown", ApprovalAnswer.ALLOW),),
-        (ApprovalRevoked("unknown"),),
-        (ApprovalRequested("id", ToolCall("work"), "reason", "scope", grant_id="missing"),),
+        (ApprovalResolvedEvent("unknown", ApprovalAnswer.ALLOW),),
+        (ApprovalRevokedEvent("unknown"),),
+        (ApprovalRequestedEvent("id", ToolCall("work"), "reason", "scope", grant_id="missing"),),
         (
-            ApprovalRequested("id", ToolCall("work"), "reason", "scope"),
-            ApprovalResolved("id", ApprovalAnswer.DENY),
-            ApprovalRevoked("id"),
+            ApprovalRequestedEvent("id", ToolCall("work"), "reason", "scope"),
+            ApprovalResolvedEvent("id", ApprovalAnswer.DENY),
+            ApprovalRevokedEvent("id"),
         ),
     ],
 )

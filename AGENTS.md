@@ -94,7 +94,8 @@ captures one `PreparedToolCall`; it must not silently follow replaced bindings.
 
 Use `Context.register()` for owned registrations and `RegistrationState.active`
 for visibility; do not inspect private Context state from higher layers. Public
-event classes live behind the `harnessed.events` namespaces. Feature/model facades
+event classes use full names ending in `Event` and are exported directly from
+`harnessed.events`. Feature/model facades
 use explicit re-exports; only the SDK root stays lazy to preserve kernel isolation,
 with its type stub checked against the runtime export table.
 

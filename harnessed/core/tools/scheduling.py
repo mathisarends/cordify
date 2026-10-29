@@ -63,11 +63,10 @@ class ToolScheduler:
     async def run(
         self,
         plans: tuple[PreparedToolCall, ...],
-        worker: Callable[[int, PreparedToolCall], Awaitable[ToolResult]],
-        commit: Callable[[ToolCall, ToolResult], Awaitable[None]],
+        worker: Callable[[int, PreparedToolCall], Awaitable[None]],
     ) -> None:
         if len(plans) == 1:
-            await commit(plans[0].call, await worker(0, plans[0]))
+            await worker(0, plans[0])
             return
 
         async def invoke(index, plan, predecessors):
@@ -75,7 +74,7 @@ class ToolScheduler:
                 await asyncio.shield(predecessor)
             return await worker(index, plan)
 
-        tasks, resources = [], {}
+        resources: dict[str, asyncio.Task[None]] = {}
         async with asyncio.TaskGroup() as group:
             for index, plan in enumerate(plans):
                 predecessors = tuple(
@@ -86,8 +85,5 @@ class ToolScheduler:
                 task = group.create_task(
                     invoke(index, plan, predecessors), name=f"harnessed:tool:{plan.call.id}"
                 )
-                tasks.append(task)
                 for key in plan.scheduling.resources:
                     resources[key] = task
-            for plan, task in zip(plans, tasks, strict=True):
-                await commit(plan.call, await task)

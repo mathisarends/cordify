@@ -1,6 +1,6 @@
 # Compact long conversations
 
-Compaction appends a `CompactionApplied` record. It changes the projected model
+Compaction appends a `CompactionAppliedEvent` record. It changes the projected model
 history; original messages, tool calls and results remain in the session log.
 Replay and forks apply the same projection.
 
@@ -83,8 +83,8 @@ Summaries must be nonempty. Their text is bounded by `summary_tokens` before com
 
 `Summary(text, usage=...)` reports available `ModelUsage`. Model summarizers return
 this value automatically. Summary calls contribute to session and turn usage even
-when their result is invalid or does not reduce context. Their `ModelUsageRecorded`
-events carry `UsagePurpose.COMPACTION` from `harnessed.events.model`.
+when their result is invalid or does not reduce context. Their `ModelUsageRecordedEvent`
+events carry `UsagePurpose.COMPACTION` from `harnessed.events`.
 
 ## Compact manually
 

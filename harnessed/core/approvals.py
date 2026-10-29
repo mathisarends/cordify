@@ -9,9 +9,9 @@ from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import ApprovalAnswer, PolicyDecision
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.events import (
-    ApprovalRequested,
-    ApprovalResolved,
-    ApprovalRevoked,
+    ApprovalRequestedEvent,
+    ApprovalResolvedEvent,
+    ApprovalRevokedEvent,
     ApprovalStatus,
     SessionEvent,
 )
@@ -24,11 +24,11 @@ from .messages import ToolCall
 
 @runtime_checkable
 class Approver(Protocol):
-    async def ask(self, request: ApprovalRequested) -> ApprovalAnswer | None: ...
+    async def ask(self, request: ApprovalRequestedEvent) -> ApprovalAnswer | None: ...
 
 
 type ApprovalCallback = Callable[
-    [ApprovalRequested], ApprovalAnswer | bool | None | Awaitable[ApprovalAnswer | bool | None]
+    [ApprovalRequestedEvent], ApprovalAnswer | bool | None | Awaitable[ApprovalAnswer | bool | None]
 ]
 
 
@@ -38,7 +38,7 @@ class CallbackApprover:
     def __init__(self, callback: ApprovalCallback) -> None:
         self.callback = callback
 
-    async def ask(self, request: ApprovalRequested) -> ApprovalAnswer | None:
+    async def ask(self, request: ApprovalRequestedEvent) -> ApprovalAnswer | None:
         value = self.callback(request)
         value = await value if inspect.isawaitable(value) else value
         if value is None or isinstance(value, ApprovalAnswer):
@@ -111,8 +111,8 @@ def validate_approval_timeout(value: float) -> None:
 
 @dataclass(frozen=True)
 class Approval:
-    request: ApprovalRequested
-    resolution: ApprovalResolved | None = None
+    request: ApprovalRequestedEvent
+    resolution: ApprovalResolvedEvent | None = None
     revoked: bool = False
 
     @property
@@ -174,7 +174,7 @@ class ApprovalState:
 
 
 def approval_transition(records, event: SessionEvent) -> Approval | None:
-    if isinstance(event, ApprovalRequested):
+    if isinstance(event, ApprovalRequestedEvent):
         if event.request_id in records:
             raise ValueError("Duplicate approval request_id")
         if event.grant_id is not None:
@@ -189,7 +189,7 @@ def approval_transition(records, event: SessionEvent) -> Approval | None:
                     "Cached approval must reference an active grant for its tool and scope"
                 )
         return Approval(event)
-    elif isinstance(event, ApprovalResolved):
+    elif isinstance(event, ApprovalResolvedEvent):
         record = records.get(event.request_id)
         if record is None or not record.pending:
             raise ValueError("Approval resolution requires a pending request")
@@ -198,7 +198,7 @@ def approval_transition(records, event: SessionEvent) -> Approval | None:
             if not grant.is_grant or event.decision is not ApprovalAnswer.ALWAYS:
                 raise ValueError("Cached approval grant is no longer active")
         return replace(record, resolution=event)
-    elif isinstance(event, ApprovalRevoked):
+    elif isinstance(event, ApprovalRevokedEvent):
         record = records.get(event.request_id)
         if record is None or not record.is_grant:
             raise ValueError("Approval revocation requires an active ALWAYS grant")

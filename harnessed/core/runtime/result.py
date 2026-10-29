@@ -15,16 +15,16 @@ from harnessed.core.model import ModelUsage, OutputSchema, StopReason, sum_usage
 from harnessed.core.outputs import OutputTypes, OutputValues
 from harnessed.core.session.codec import CURRENT_VERSION, decode_event
 from harnessed.core.session.events import (
-    AssistantMessage,
-    ModelUsageRecorded,
-    OutputValidated,
-    OutputValidationFailed,
+    AssistantMessageEvent,
+    ModelUsageRecordedEvent,
+    OutputValidatedEvent,
+    OutputValidationFailedEvent,
     SessionEvent,
-    ToolCalled,
-    ToolReturned,
-    TurnEnd,
+    ToolCallFinishedEvent,
+    ToolCallRequestedEvent,
+    TurnEndedEvent,
     TurnOutcome,
-    TurnStart,
+    TurnStartedEvent,
 )
 from harnessed.core.session.history import derive_messages
 
@@ -90,24 +90,24 @@ class RunResult[T]:
         control_calls = {
             e.call_id
             for e in self.events
-            if isinstance(e, OutputValidated | OutputValidationFailed)
+            if isinstance(e, OutputValidatedEvent | OutputValidationFailedEvent)
         }
         calls = {
             event.call.id: event.call
             for event in self.events
-            if isinstance(event, ToolCalled) and event.call.id not in control_calls
+            if isinstance(event, ToolCallRequestedEvent) and event.call.id not in control_calls
         }
         return tuple(
             (calls[event.call_id], event.result)
             for event in self.events
-            if isinstance(event, ToolReturned) and event.call_id in calls
+            if isinstance(event, ToolCallFinishedEvent) and event.call_id in calls
         )
 
 
 def result_from_events(events: tuple[SessionEvent, ...], *, output: Any = None) -> RunResult[Any]:
     """Build a turn-scoped result, giving explicit termination precedence."""
-    final = next((e for e in reversed(events) if isinstance(e, AssistantMessage)), None)
-    turn = next((e for e in events if isinstance(e, TurnEnd)), None)
+    final = next((e for e in reversed(events) if isinstance(e, AssistantMessageEvent)), None)
+    turn = next((e for e in events if isinstance(e, TurnEndedEvent)), None)
     if turn is None:
         reason = StopReason.DISCARDED
     elif turn.reason != TurnOutcome.COMPLETED:
@@ -119,7 +119,7 @@ def result_from_events(events: tuple[SessionEvent, ...], *, output: Any = None) 
     else:
         reason = final.stop_reason if final and final.stop_reason else StopReason.END
         if reason == StopReason.TOOL_CALLS and any(
-            isinstance(e, OutputValidated)
+            isinstance(e, OutputValidatedEvent)
             and final is not None
             and e.message_id == final.message.id
             for e in events
@@ -128,7 +128,7 @@ def result_from_events(events: tuple[SessionEvent, ...], *, output: Any = None) 
     return RunResult(
         final.message.text if final else "",
         events,
-        sum_usage(e.usage for e in events if isinstance(e, ModelUsageRecorded)),
+        sum_usage(e.usage for e in events if isinstance(e, ModelUsageRecordedEvent)),
         reason,
         turn.turn_id if turn else None,
         derive_messages(events),
@@ -146,15 +146,15 @@ class RunResults:
     def build(
         self, events: tuple[SessionEvent, ...], *, schema: OutputSchema | None = None
     ) -> RunResult[Any]:
-        start = next((e for e in events if isinstance(e, TurnStart)), None)
+        start = next((e for e in events if isinstance(e, TurnStartedEvent)), None)
         schema = start.output_schema if start is not None else schema
         value = _NO_OUTPUT if schema is not None else None
-        final = next((e for e in reversed(events) if isinstance(e, AssistantMessage)), None)
+        final = next((e for e in reversed(events) if isinstance(e, AssistantMessageEvent)), None)
         proof = next(
             (
                 e
                 for e in reversed(events)
-                if isinstance(e, OutputValidated)
+                if isinstance(e, OutputValidatedEvent)
                 and final is not None
                 and e.message_id == final.message.id
             ),

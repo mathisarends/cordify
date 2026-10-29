@@ -16,9 +16,9 @@ from harnessed.core.messages import ApprovalAnswer, ToolCall
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
-    ApprovalRequested,
-    ApprovalResolved,
-    ApprovalRevoked,
+    ApprovalRequestedEvent,
+    ApprovalResolvedEvent,
+    ApprovalRevokedEvent,
     ApprovalStatus,
 )
 from harnessed.core.session.session import SessionLog
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 class LiveApproval:
     """A live approval handle; answer() waits for its decision's durable acknowledgement."""
 
-    def __init__(self, request: ApprovalRequested) -> None:
+    def __init__(self, request: ApprovalRequestedEvent) -> None:
         self.request_id = request.request_id
         self.call = request.call
         self.reason = request.reason
@@ -74,7 +74,7 @@ class LiveApprovals:
     def __init__(self) -> None:
         self._items: dict[str, LiveApproval] = {}
 
-    def open(self, request: ApprovalRequested) -> LiveApproval:
+    def open(self, request: ApprovalRequestedEvent) -> LiveApproval:
         approval = LiveApproval(request)
         self._items[request.request_id] = approval
         return approval
@@ -152,7 +152,7 @@ class SessionApprovals:
     ) -> ApprovalAnswer:
         self.control.check_open()
         grant = self.log.approval_grant(call.name, scope=scope)
-        request = ApprovalRequested(
+        request = ApprovalRequestedEvent(
             uuid4().hex, call, reason, scope, grant.request_id if grant else None
         )
         await self.log.append(request)
@@ -161,13 +161,13 @@ class SessionApprovals:
                 decision = ApprovalAnswer.ALWAYS
             else:
                 decision = await self._answer_request(request, approver, timeout=timeout)
-            await self.log.append(ApprovalResolved(request.request_id, decision))
+            await self.log.append(ApprovalResolvedEvent(request.request_id, decision))
             return decision
         except BaseException as exc:
             record = self.log.approval(request.request_id)
             if record is not None and record.pending:
                 await self.log.append(
-                    ApprovalResolved(
+                    ApprovalResolvedEvent(
                         request.request_id,
                         status=ApprovalStatus.UNAVAILABLE
                         if isinstance(exc, ApprovalUnavailable)
@@ -179,7 +179,7 @@ class SessionApprovals:
 
     async def _answer_request(
         self,
-        request: ApprovalRequested,
+        request: ApprovalRequestedEvent,
         approver: Approver | None,
         *,
         timeout: float | None = None,
@@ -189,7 +189,7 @@ class SessionApprovals:
 
     async def _wait(
         self,
-        request: ApprovalRequested,
+        request: ApprovalRequestedEvent,
         approver: Approver | None,
         *,
         timeout: float | None = None,
@@ -228,4 +228,4 @@ class SessionApprovals:
         if record is None:
             raise KeyError(request_id)
         if not record.revoked:
-            await self.log.append(ApprovalRevoked(request_id, reason))
+            await self.log.append(ApprovalRevokedEvent(request_id, reason))

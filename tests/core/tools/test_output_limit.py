@@ -9,7 +9,7 @@ from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import ToolExecutionFinished, ToolReturned
+from harnessed.core.session.events import ToolCallFinishedEvent, ToolExecutionFinishedEvent
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.output_limit import ToolOutputLimit
@@ -61,17 +61,17 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         plugins=[Approvals(default=PolicyDecision.ALLOW), features, JsonlSessions(tmp_path)],
     ).session("bounded") as agent:
         await agent.run("inspect")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) == 32000
         assert result.content.startswith("HEAD") and result.content.endswith("TAIL ERROR")
         assert model.requests[1].messages[-1].text == result.content
         assert result.truncation.original_chars == len(source)
-        receipt = agent.last(ToolExecutionFinished).result
+        receipt = agent.last(ToolExecutionFinishedEvent).result
         assert len(receipt.content) == 32000
         assert receipt.truncation.original_chars == len(source)
         restored = tuple(decode_event(encode_event(e)) for e in agent.log.events)
         assert SessionLog("replay", seed=restored).messages == agent.log.messages
-        replayed = next(e.result for e in restored if isinstance(e, ToolReturned))
+        replayed = next(e.result for e in restored if isinstance(e, ToolCallFinishedEvent))
         assert replayed == result and replayed.exit_code == 3
     # The unreviewed receipt adds one bounded copy to the durable audit trail.
     assert (tmp_path / "bounded.jsonl").stat().st_size < 5 * ToolOutputLimit().max_chars
@@ -101,12 +101,14 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
         plugins=[Approvals(default=PolicyDecision.ALLOW), ToolOutputLimit(512), features],
     ).session("enriched") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) <= 512 and result.truncation is not None
         assert (result.status == ToolStatus.ERROR) == (stage == "error")
         assert decode_event(
-            json.loads(json.dumps(encode_event(ToolReturned("call", result))))
-        ) == ToolReturned("call", result)
+            json.loads(
+                json.dumps(encode_event(ToolCallFinishedEvent(ToolCall("call", id="call"), result)))
+            )
+        ) == ToolCallFinishedEvent(ToolCall("call", id="call"), result)
         assert model.requests[-1].messages[-1].text == result.content
 
 
@@ -126,7 +128,7 @@ async def test_output_budget_is_configured_with_the_plugin_slot():
     )
     async with harness.session("small-budget") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) == 512
 
 
@@ -152,7 +154,7 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
         ],
     ).session("spill-budget") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert result.spill is not None and len(result.content) <= 4096
         files = agent.ctx[SessionFiles]
         chunks = [
@@ -224,7 +226,7 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
         ],
     ).session("shell-budget") as agent:
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolReturned))
+        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) == 1024 and "TAIL_ERROR" in result.content
         assert result.status == ToolStatus.ERROR and result.exit_code == 3
         assert 500000 < result.truncation.original_chars < 1048576

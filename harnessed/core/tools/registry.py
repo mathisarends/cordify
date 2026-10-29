@@ -50,6 +50,7 @@ class ToolSpec:
     """A tool method declaration installed for one plugin lifetime."""
 
     name: str | None = None
+    description: str | None = None
     timeout: float | None = None
     parallel: bool = False
     resources: ResourceSpec = ()
@@ -59,6 +60,8 @@ class ToolSpec:
     parameter_fields: ParameterFields | None = None
 
     def __post_init__(self) -> None:
+        if self.description is not None and not isinstance(self.description, str):
+            raise TypeError("Tool description must be a string or None")
         validate_output_limit(self.output_limit)
 
     @property
@@ -177,6 +180,7 @@ class ToolRegistry:
         self,
         *,
         name: str | None = None,
+        description: str | None = None,
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
@@ -192,6 +196,7 @@ class ToolRegistry:
         /,
         *,
         name: str | None = None,
+        description: str | None = None,
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
@@ -204,6 +209,7 @@ class ToolRegistry:
             self.register(
                 callback,
                 name=name,
+                description=description,
                 timeout=timeout,
                 parallel=parallel,
                 resources=resources,
@@ -221,6 +227,7 @@ class ToolRegistry:
         callback: Callable,
         *,
         name: str | None = None,
+        description: str | None = None,
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
@@ -232,7 +239,14 @@ class ToolRegistry:
         parameter_fields: Mapping[str, FieldInfo] | None = None,
     ) -> Disposer:
         spec = spec or ToolSpec(
-            name, timeout, parallel, resources, readonly, override, output_limit
+            name=name,
+            description=description,
+            timeout=timeout,
+            parallel=parallel,
+            resources=resources,
+            readonly=readonly,
+            override=override,
+            output_limit=output_limit,
         )
         name, timeout, parallel = spec.name, spec.timeout, spec.parallel
         resources, readonly, override = spec.resources, spec.readonly, spec.override
@@ -263,7 +277,7 @@ class ToolRegistry:
         )
         definition = ToolDefinition(
             tool_name,
-            inspect.getdoc(callback) or "",
+            spec.description if spec.description is not None else inspect.getdoc(callback) or "",
             arguments.schema,
         )
 

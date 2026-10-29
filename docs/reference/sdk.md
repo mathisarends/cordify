@@ -26,7 +26,7 @@ and SDK errors from `harnessed.errors`.
 | --- | --- |
 | run(prompt, output=None, attachments=(), context=None, settings=None, max_steps=None, token_budget=None) | Queue and await this turn's RunResult[T] |
 | submit(prompt, output=None, ...) | Acknowledge queued input and return RunHandle[T] |
-| stream(prompt, output=None, ...) | Namespaced UI and custom events, ending with events.turn.Finished |
+| stream(prompt, output=None, ...) | Typed UI and custom events, ending with TurnFinishedEvent |
 | steer(content, attachments=()) | Send a next-step correction and return its InboxItem |
 | observe(observation) | Buffer the latest state per source for the next step; starts nothing |
 | context.set(name, value) / remove(name) | Await a durable changed fact/removal |
@@ -90,6 +90,7 @@ unhashable. See [values and record versions](../concepts/values.md).
 | API | Purpose |
 | --- | --- |
 | Plugin / @tool | Class-based reusable capability |
+| @tool(description="...") | Explicit model-facing description; None falls back to the docstring |
 | PluginConfig / Config = MyConfig | Module-level validated configuration model |
 | PluginState(factory) | Typed state freshly created before each mount's setup; available through cleanup |
 | Plugin.create_instance() | Customize fresh instance construction; defaults to shallow copying shared inputs |
@@ -107,13 +108,16 @@ Model-filled parameters become a strict Pydantic form; unknown fields and invali
 values fail before invocation. See [tools and hooks](../guides/tools.md) and
 [composition](../guides/plugins.md).
 
-## Event data and namespaces
+## Event classes and data
 
-`harnessed.events` exposes `text.Delta`, `reasoning.Delta`, `tool.Started`,
-`tool.CallStarted`, `tool.ArgumentsDelta`, `tool.Finished`, `approval.Needed`,
-`turn.Finished`, `compaction.Applied` and
-`spill.Created`, among other namespaces. Every event has an explicit namespaced
-`type` discriminator. See [events and schemas](../guides/events.md).
+`harnessed.events` exposes `TextDeltaEvent`, `ReasoningDeltaEvent`, `ToolCallRequestedEvent`,
+`ToolCallGenerationStartedEvent`, `ToolArgumentsDeltaEvent`, `ToolCallFinishedEvent`, `ApprovalNeededEvent`,
+`TurnFinishedEvent`, `CompactionAppliedEvent` and `SpillCreatedEvent`, among other
+classes. Import these full names directly; they are the canonical class names,
+also used by `@hook`. `TurnEndedEvent` is the durable turn-end record;
+`TurnFinishedEvent[T]` carries the assembled result at the end of a UI stream.
+Every event has an explicit namespaced `type` discriminator.
+See [events and schemas](../guides/events.md).
 
 `StreamEvent[T]` describes the built-in UI union. `EventStream[T]` includes the
 application extension bases. Declare frozen dataclasses extending `DurableEvent`

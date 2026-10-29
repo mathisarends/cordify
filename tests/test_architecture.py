@@ -116,11 +116,19 @@ def test_validation_is_explicit_and_otel_is_not_added():
 
 @pytest.mark.parametrize(
     "module",
-    ["harnessed", "harnessed.errors", "harnessed.hooks", "harnessed.models", "harnessed.plugins"],
+    [
+        "harnessed",
+        "harnessed.errors",
+        "harnessed.events",
+        "harnessed.hooks",
+        "harnessed.models",
+        "harnessed.plugins",
+    ],
 )
 def test_public_exports_resolve_to_their_canonical_classes_and_functions(module):
     facade = importlib.import_module(module)
     declarations = dict(getattr(facade, "_EXPORTS", {}))
+    type_aliases = set()
     if not declarations:
         source = Path(facade.__file__).read_text(encoding="utf-8")
         for node in ast.parse(source).body:
@@ -133,7 +141,9 @@ def test_public_exports_resolve_to_their_canonical_classes_and_functions(module)
                 for alias in node.names:
                     if (name := alias.asname or alias.name) in facade.__all__:
                         declarations[name] = (canonical, alias.name)
-    assert set(declarations) == set(facade.__all__)
+            elif isinstance(node, ast.TypeAlias) and node.name.id in facade.__all__:
+                type_aliases.add(node.name.id)
+    assert set(declarations) | type_aliases == set(facade.__all__)
     for name, (canonical, attribute) in declarations.items():
         assert getattr(facade, name) is getattr(importlib.import_module(canonical), attribute)
     assert facade.__all__ == sorted(set(facade.__all__))
@@ -146,9 +156,15 @@ def test_application_facade_stays_small_and_has_no_transitional_names():
     assert {"Agent", "Session", "Plugin", "tool", "RunResult", "ToolContext"} <= set(
         harnessed.__all__
     )
-    assert not {"Harness", "LLM", "Bundle", "FileSystemBackend", "Shell", "SystemPrompt"} & set(
-        harnessed.__all__
-    )
+    assert not {
+        "ApprovalRequest",
+        "Harness",
+        "LLM",
+        "Bundle",
+        "FileSystemBackend",
+        "Shell",
+        "SystemPrompt",
+    } & set(harnessed.__all__)
 
 
 def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
