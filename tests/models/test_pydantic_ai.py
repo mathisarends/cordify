@@ -475,7 +475,8 @@ async def test_user_images_are_translated_without_flattening_the_prompt():
     assert prompt[1].url == "https://example.test/image.png"
 
 
-async def test_owned_and_borrowed_models_follow_the_native_resource_context(monkeypatch):
+@pytest.mark.parametrize("model_input", ["string", "native", "adapter"])
+async def test_sessions_enter_native_model_contexts_and_support_reuse(monkeypatch, model_input):
     import pydantic_ai.models as models
 
     depth = [0]
@@ -499,33 +500,107 @@ async def test_owned_and_borrowed_models_follow_the_native_resource_context(monk
         "infer_model",
         lambda value, *a, **kw: model if isinstance(value, str) else original(value, *a, **kw),
     )
-    owned = PydanticAIModel("test:owned")
-    app = Agent(model=owned)
+    configured = (
+        "test:resource"
+        if model_input == "string"
+        else model
+        if model_input == "native"
+        else PydanticAIModel(model)
+    )
+    app = Agent(model=configured)
     async with app.session() as one:
+        assert depth[0] == 1
         async with app.session() as two:
-            await one.run("One")
-            await two.run("Two")
+            await asyncio.gather(one.run("One"), two.run("Two"))
             assert depth[0] == 2
         assert depth[0] == 1
     assert depth[0] == 0
+    assert (await app.run("Reused")).text == "done"
+    assert depth[0] == 0
     async with model:
-        await Agent(model=model).run("Borrowed")
+        await app.run("Shared")
         assert depth[0] == 1
     assert depth[0] == 0
+
+
+async def test_native_provider_closes_and_reopens_its_own_client_between_sessions():
+    pytest.importorskip("openai")
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    provider = OpenAIProvider(api_key="test")
+    model = OpenAIResponsesModel("gpt-6.1-terra", provider=provider)
+    agent = Agent(model=model)
+    async with agent.session():
+        assert not provider.client.is_closed()
+        async with Agent(model=model).session():
+            assert not provider.client.is_closed()
+        assert not provider.client.is_closed()
+    assert provider.client.is_closed()
+
+    async with model:
+        assert not provider.client.is_closed()
+        async with agent.session():
+            assert not provider.client.is_closed()
+        assert not provider.client.is_closed()
+    assert provider.client.is_closed()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+async def test_standalone_native_requests_exit_the_model_context_on_success_and_failure(fails):
+    depth = [0]
+    errors = []
+
+    class ResourceModel(FunctionModel):
+        async def __aenter__(self):
+            depth[0] += 1
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            depth[0] -= 1
+            errors.append(exc_type)
+
+    def respond(messages, info):
+        assert depth[0] == 1
+        if fails:
+            raise RuntimeError("request failed")
+        return native.ModelResponse(parts=[native.TextPart("done")])
+
+    adapter = PydanticAIModel(ResourceModel(respond))
+    request = ModelRequest("fixture", (User("hi"),))
+    if fails:
+        with pytest.raises(RuntimeError, match="request failed"):
+            await adapter.request(request)
+    else:
+        assert (await adapter.request(request)).message.text == "done"
+    assert depth[0] == 0
+    assert errors == [RuntimeError if fails else None]
 
 
 async def test_aborting_a_native_stream_closes_its_generator():
     closed, started = asyncio.Event(), asyncio.Event()
+    depth = [0]
+    errors = []
+
+    class ResourceModel(FunctionModel):
+        async def __aenter__(self):
+            depth[0] += 1
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            depth[0] -= 1
+            errors.append(exc_type)
 
     async def chunks(messages, info):
         try:
+            assert depth[0] == 1
             yield "partial"
             started.set()
             await asyncio.Event().wait()
         finally:
             closed.set()
 
-    model = PydanticAIModel(FunctionModel(stream_function=chunks))
+    model = PydanticAIModel(ResourceModel(stream_function=chunks))
 
     async def consume():
         async with model.stream(ModelRequest("fixture", (User("hi"),))) as stream:
@@ -538,6 +613,8 @@ async def test_aborting_a_native_stream_closes_its_generator():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert closed.is_set()
+    assert depth[0] == 0
+    assert errors == [asyncio.CancelledError]
 
 
 @pytest.mark.parametrize("outcome", ["failure", "abort", "success"])
