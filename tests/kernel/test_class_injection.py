@@ -84,6 +84,22 @@ async def test_deferred_annotation_is_resolved_before_mount():
             await ctx.install([recipe], strict=True)
 
 
+async def test_private_deferred_injection_has_the_same_recipe_guard_and_mount_binding():
+    class Private(PluginBase, provides=True):
+        _backend: "Inject[str]"
+
+    recipe = Private()
+    with pytest.raises(RuntimeError, match="mounted plugin"):
+        _ = recipe._backend
+    async with Context() as ctx:
+        ctx.provide(str, "ready")
+        await ctx.plugin(recipe)
+        assert ctx[Private]._backend == "ready"
+        compiled = Private._compiled_injections
+        assert as_plugin_spec(recipe).needs == (str,)
+        assert Private._compiled_injections is compiled
+
+
 async def test_failed_setup_removes_automatic_provision():
     class Broken(PluginBase, provides=True):
         async def setup(self) -> None:

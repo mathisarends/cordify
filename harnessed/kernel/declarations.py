@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import inspect
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any, Protocol, Self, get_type_hints
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self, get_type_hints
 
 from .di import Dependency, _dependency, bind_injected, injections
 from .effects import resolve
@@ -100,6 +100,9 @@ class _InjectedAttribute:
 
 
 def _class_dependencies(cls: type[PluginBase]) -> dict[str, Dependency]:
+    compiled = cls.__dict__.get("_compiled_injections")
+    if compiled is not None:
+        return compiled
     dependencies = {
         name: dependency
         for name, annotation in get_type_hints(cls, include_extras=True).items()
@@ -108,6 +111,7 @@ def _class_dependencies(cls: type[PluginBase]) -> dict[str, Dependency]:
     for name in dependencies:
         if not isinstance(inspect.getattr_static(cls, name, None), _InjectedAttribute):
             setattr(cls, name, _InjectedAttribute(name))
+    cls._compiled_injections = dependencies
     return dependencies
 
 
@@ -125,6 +129,7 @@ class PluginBase:
     _mount_state: dict[PluginState[Any], Any] | None = None
     _mount_injections: dict[str, Any] | None = None
     _provides: ServiceKey[Any] | None = None
+    _compiled_injections: ClassVar[dict[str, Dependency] | None] = None
 
     def __init_subclass__(
         cls,
@@ -153,7 +158,7 @@ class PluginBase:
 
     def __getattr__(self, name: str) -> Any:
         # Resolve deferred class annotations only once their module is available.
-        if not name.startswith("_") and name in _class_dependencies(type(self)):
+        if not name.startswith("__") and name in _class_dependencies(type(self)):
             return getattr(self, name)
         raise AttributeError(name)
 
