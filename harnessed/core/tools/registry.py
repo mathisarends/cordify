@@ -1,7 +1,7 @@
 import asyncio
 import inspect
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from types import MappingProxyType, MethodType
@@ -97,15 +97,30 @@ def format_tool_error(
 
 
 @dataclass(eq=False)
-class _Tool:
+class _RegisteredTool:
     definition: ToolDefinition
     callback: Callable
     owner: Context
     registration: RegistrationState
-    plan: BindingPlan
     spec: ToolSpec
-    arguments: ToolArguments
     enabled: Callable[[Context], bool]
+
+
+@dataclass(eq=False)
+class _PythonTool(_RegisteredTool):
+    plan: BindingPlan
+    arguments: ToolArguments
+
+
+type ExternalToolHandler = Callable[[Mapping[str, object], ToolContext], Awaitable[ToolResult]]
+
+
+@dataclass(eq=False)
+class _ExternalTool(_RegisteredTool):
+    handler: ExternalToolHandler
+
+
+type _Tool = _PythonTool | _ExternalTool
 
 
 @dataclass(eq=False)
@@ -292,12 +307,58 @@ class ToolRegistry:
         )
 
         def install(registration: RegistrationState):
-            entry = _Tool(
-                definition, callback, owner, registration, plan, spec, arguments, check_enabled
+            entry = _PythonTool(
+                definition, callback, owner, registration, spec, check_enabled, plan, arguments
             )
             entries = self._tools.setdefault(definition.name, [])
             entries.append(entry)
             logger.debug("Registered tool %s with owner %s", tool_name, owner.owner_name)
+
+            def remove() -> None:
+                entries.remove(entry)
+                if not entries:
+                    del self._tools[definition.name]
+
+            return remove
+
+        return owner.register(install)
+
+    def register_external(
+        self,
+        definition: ToolDefinition,
+        handler: ExternalToolHandler,
+        *,
+        owner: Context,
+        spec: ToolSpec | None = None,
+    ) -> Disposer:
+        """Own a schema-defined tool on the normal execution and policy pipeline.
+
+        The handler validates the external schema before performing any action.
+        It receives JSON arguments without Python coercion and the call context.
+        Ordinary Python tools continue to use decorated Plugin methods.
+        """
+        spec = spec or ToolSpec()
+        if spec.name is not None and spec.name != definition.name:
+            raise ValueError("External tool spec name must match its definition")
+        if spec.parameter_fields is not None:
+            raise ValueError("External tools use their definition's parameter schema")
+        spec = replace(
+            spec,
+            timeout=_TIMEOUT.validate_python(spec.timeout),
+            resources=resource_spec(spec.resources),
+        )
+        ToolScheduling(spec.parallel)
+        check_enabled = bind_enabled(spec.enabled, handler, owner)
+        existing = self._tools.get(definition.name, ())
+        if existing and not spec.override:
+            raise ToolNameConflict(f"Tool {definition.name!r} is already registered")
+
+        def install(registration: RegistrationState) -> Callable[[], None]:
+            entry = _ExternalTool(
+                definition, handler, owner, registration, spec, check_enabled, handler
+            )
+            entries = self._tools.setdefault(definition.name, [])
+            entries.append(entry)
 
             def remove() -> None:
                 entries.remove(entry)
@@ -321,6 +382,8 @@ class ToolRegistry:
         return self.visible_definitions(self._ctx)
 
     def _available(self, tool: _Tool, ctx: Context) -> bool:
+        if isinstance(tool, _ExternalTool):
+            return ToolContexts in ctx
         return all(
             dependency.optional
             or dependency.key in ctx
@@ -404,17 +467,27 @@ class ToolRegistry:
                 return ToolResult.error(
                     f"Tool {call.name} is unavailable: missing injected service"
                 )
-            arguments = tool.arguments.parse(call.arguments)
-            if call_context is None and any(
-                dependency.key is ToolContext for dependency in tool.plan.dependencies.values()
-            ):
+            needs_context = isinstance(tool, _ExternalTool) or (
+                isinstance(tool, _PythonTool)
+                and any(
+                    dependency.key is ToolContext for dependency in tool.plan.dependencies.values()
+                )
+            )
+            if call_context is None and needs_context:
                 call_context = ctx[ToolContexts].create(call)
-            extra: dict[type, Any] = {ToolContext: call_context} if call_context is not None else {}
-            bound = tool.plan.bind(ctx, kwargs=arguments, extra=extra)
             with tool.owner.activate():
                 async with asyncio.timeout(
                     tool.spec.timeout if tool.spec.timeout is not None else default_timeout
                 ):
+                    if isinstance(tool, _ExternalTool):
+                        if call_context is None:
+                            raise TypeError("External tools require a ToolContext")
+                        return await tool.handler(call.arguments, call_context)
+                    arguments = tool.arguments.parse(call.arguments)
+                    extra: dict[type, Any] = (
+                        {ToolContext: call_context} if call_context is not None else {}
+                    )
+                    bound = tool.plan.bind(ctx, kwargs=arguments, extra=extra)
                     if inspect.iscoroutinefunction(tool.callback):
                         value = await tool.callback(*bound.args, **bound.kwargs)
                     else:

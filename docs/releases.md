@@ -28,6 +28,10 @@ library. Harnessed is distributed under the
 
 ## Unreleased
 
+Install `harnessed[mcp]` to expose MCP server tools through an optional plugin.
+`MCP.http()` and `MCP.stdio()` configure reusable server recipes with connections
+owned by each session or runtime mount. See [MCP tools](guides/mcp.md).
+
 Tools can now declare `@tool(enabled=...)` with a bool or a synchronous predicate
 using `Inject` and mounted plugin state. Disabled tools are hidden from model
 requests and cannot execute; conditions are checked again after approval and

@@ -16,6 +16,7 @@ public APIs or persisted session formats.
 | Receive typed answers | [Structured output](guides/structured-output.md) |
 | Build a live consumer with approvals | [Streaming](guides/streaming.md) |
 | Replace defaults or share services | [Plugins](guides/plugins.md) |
+| Connect MCP server tools | [MCP tools](guides/mcp.md) |
 | Provide instructions, facts or memories | [Context](guides/context.md) |
 | Load task instructions and resources on demand | [Skills](guides/skills.md) |
 | Bound or spill large tool results | [Output](guides/output.md) |

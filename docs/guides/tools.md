@@ -3,7 +3,7 @@
 Declare public tools as `@tool` methods on a `Plugin`. Method names, explicit
 descriptions and annotations supply their names, model instructions and strict
 argument schemas. A docstring is the fallback when no description is supplied.
-There is one public registration path, including tools mounted at runtime:
+Python tools use this declaration path, including tools mounted at runtime:
 
 ```python
 from harnessed import Plugin, tool
@@ -39,6 +39,13 @@ configuration and cleanup belong to the same class.
 function-list registration. Functional kernel plugins remain useful for services
 and hooks. Kernel consumers use `harnessed.kernel.Context` without importing
 Pydantic or the agent runtime.
+
+[MCP](mcp.md) is the schema-defined remote integration. It registers external
+definitions through `ToolRegistry.register_external(definition, handler, *,
+owner, spec=None)`. The typed asynchronous handler receives JSON arguments and
+a `ToolContext`, validates its external schema and returns `ToolResult`. Core
+owns registrations and uses the same availability, scheduling, approval and
+execution pipeline as Python tools; it has no MCP or JSON Schema dependency.
 
 ## Conditional tools
 

@@ -15,6 +15,17 @@ integration explicitly; public SDK facades remain usable without the extra.
 See [tracing](../guides/tracing.md) for Phoenix and Langfuse configuration,
 content capture, parent context and the emitted attributes.
 
+## MCP client
+
+Install `harnessed[mcp]` and import `MCP` from `harnessed.plugins.mcp`.
+`MCP.http(name, *, url, headers=None, auth=None, ...)` connects over Streamable
+HTTP. `MCP.stdio(name, *, command, args=(), env=None, cwd=None, ...)` launches
+a local server. Both accept `include_tools=None`, `readonly_tools=()`,
+`startup_timeout=10.0`, `call_timeout=60.0`, `parallel=False` and `enabled=True`.
+`MCP(name, *, transport: MCPTransport, ...)` accepts a custom transport recipe.
+Each mount owns one connection and a fixed catalog of namespaced tools. See
+[MCP tools](../guides/mcp.md) for approvals, results and cancellation boundaries.
+
 ## Agent
 
 `Agent(*, model=None, instructions=None, plugins=(),
