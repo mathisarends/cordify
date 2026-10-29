@@ -58,18 +58,36 @@ from harnessed.core.stream import SessionPublished, TransientEvent
 from harnessed.kernel.context import Context
 
 
-def _validate_compaction(events, event: CompactionApplied, seq: int) -> None:
+def _validate_compaction(events: list[SessionEvent], event: CompactionApplied, seq: int) -> None:
     if type(event.through) is not int or not 0 < event.through <= seq:
         raise ValueError("Compaction must replace an existing event prefix")
-    if not isinstance(events[event.through - 1], TurnEnd):
-        raise ValueError("Compaction must end at a closed turn boundary")
+    boundary = events[event.through - 1]
+    if not (
+        isinstance(boundary, TurnEnd)
+        or isinstance(boundary, StepEnd)
+        and boundary.reason is StepOutcome.COMPLETED
+    ):
+        raise ValueError("Compaction must end at a closed turn or completed step boundary")
+    unanswered: set[str] = set()
+    for item in events[: event.through]:
+        if isinstance(item, AssistantMessage):
+            unanswered.update(call.id for call in item.message.tool_calls)
+        elif isinstance(item, ToolReturned):
+            unanswered.discard(item.call_id)
+    if unanswered:
+        raise ValueError("Compaction must not split unanswered tool calls")
+    if any(
+        offset >= event.through or not isinstance(events[offset], UserMessage | ContextMessage)
+        for offset in event.preserve_inputs
+    ):
+        raise ValueError("Preserved inputs must reference messages inside the compacted prefix")
     previous = max((e.through for e in events[:seq] if isinstance(e, CompactionApplied)), default=0)
     if event.through <= previous:
         raise ValueError("Compaction must advance the previous boundary")
     if not isinstance(event.summary, str) or not event.summary.strip():
         raise ValueError("Compaction requires a non-empty summary")
     closed = {item.turn_id for item in events[: event.through] if isinstance(item, TurnEnd)}
-    if not set(event.preserve_turns) <= closed:
+    if not set((*event.preserve_turns, *event.retained_turns)) <= closed:
         raise ValueError("Preserved turns must be closed inside the compaction prefix")
 
 

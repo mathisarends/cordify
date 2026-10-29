@@ -446,6 +446,8 @@ class CompactionApplied(SessionEvent):
     before_tokens: int | None = None
     after_tokens: int | None = None
     id: str | None = None
+    preserve_inputs: tuple[int, ...] = ()
+    retained_turns: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.id is not None and (not isinstance(self.id, str) or not self.id):
@@ -456,6 +458,18 @@ class CompactionApplied(SessionEvent):
         ):
             raise ValueError("Preserved turn ids must be unique non-empty strings")
         object.__setattr__(self, "preserve_turns", turns)
+        inputs = tuple(self.preserve_inputs)
+        if any(type(offset) is not int or offset < 0 for offset in inputs) or len(
+            set(inputs)
+        ) != len(inputs):
+            raise ValueError("Preserved input offsets must be unique non-negative integers")
+        object.__setattr__(self, "preserve_inputs", inputs)
+        retained = tuple(self.retained_turns)
+        if any(not isinstance(turn, str) or not turn for turn in retained) or len(
+            set(retained)
+        ) != len(retained):
+            raise ValueError("Retained turn ids must be unique non-empty strings")
+        object.__setattr__(self, "retained_turns", retained)
         if any(
             value is not None and (type(value) is not int or value < 0)
             for value in (self.before_tokens, self.after_tokens)

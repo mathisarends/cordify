@@ -20,12 +20,17 @@ from harnessed.core.model import (
 )
 from harnessed.core.session.events import (
     CompactionApplied,
+    ContextMessage,
     ModelUsageRecorded,
     SessionEvent,
+    StepEnd,
+    StepOutcome,
     TurnEnd,
     TurnStart,
+    UserMessage,
 )
 from harnessed.core.session.session import SessionLog, _derive_message_entries, derive_messages
+from harnessed.core.session.turns import derive_turns
 from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.core.tracing import span
 from harnessed.kernel import Context
@@ -103,6 +108,7 @@ class CompactionSettings(BaseModel):
     )
 
     keep_turns: Annotated[int, Field(ge=0)] = 2
+    keep_steps: Annotated[int, Field(ge=1)] = 2
     keep_first_turns: Annotated[int, Field(ge=0)] = 0
     preserve_turns: Annotated[
         tuple[Annotated[str, Field(min_length=1)], ...], Field(strict=False)
@@ -141,6 +147,7 @@ class CompactionManager:
         self.context_window = context_window
         self._lock = asyncio.Lock()
         self._retry_after_turns = 0
+        self._retry_after_step: tuple[str, int] | None = None
 
     async def state(self, request: ModelRequest) -> ContextState:
         budget = self.ctx[ContextBudget] if ContextBudget in self.ctx else ContextBudget()
@@ -176,13 +183,21 @@ class CompactionManager:
         async with self._lock:
             policy = self.ctx[CompactionPolicy] if CompactionPolicy in self.ctx else None
             settings = policy.settings if policy is not None else CompactionSettings()
+            current = self.log.open_turn
             if not force and self.log.closed_turn_count < self._retry_after_turns:
-                return None, request
+                if (
+                    self._retry_after_step is None
+                    or current is None
+                    or current.id != self._retry_after_step[0]
+                    or sum(step.closed for step in current.steps) < self._retry_after_step[1]
+                ):
+                    return None, request
             plan = plan_compaction(
                 self.log,
                 keep_turns=settings.keep_turns,
                 keep_first_turns=settings.keep_first_turns,
                 preserve_turns=settings.preserve_turns,
+                keep_steps=settings.keep_steps,
             )
             if plan is None:
                 return None, request
@@ -222,15 +237,22 @@ class CompactionManager:
                 preserve_turns=plan.preserve_turns,
                 policy="Compaction" if policy is not None else "manual",
                 id=uuid4().hex,
+                preserve_inputs=plan.preserve_inputs,
+                retained_turns=plan.retained_turns,
             )
             compacted = replace(request, messages=compact_request(request, events, applied))
             before = await count_request(counter, request)
             after = await count_request(counter, compacted)
             if after >= before:
                 self._retry_after_turns = self.log.closed_turn_count + 2
+                self._retry_after_step = (
+                    (current.id, sum(step.closed for step in current.steps) + 2)
+                    if current is not None
+                    else None
+                )
                 logger.warning(
                     "Compaction did not reduce context (%s -> %s tokens); "
-                    "retry after two more turns",
+                    "retry after two more turns or steps in the active turn",
                     before,
                     after,
                 )
@@ -246,6 +268,8 @@ class CompactionPlan:
     preserve_turns: tuple[str, ...]
     messages: tuple[Message, ...]
     new_turns: int
+    preserve_inputs: tuple[int, ...] = ()
+    retained_turns: tuple[str, ...] = ()
 
 
 def plan_compaction(
@@ -254,6 +278,7 @@ def plan_compaction(
     keep_turns: int,
     keep_first_turns: int,
     preserve_turns: tuple[str, ...],
+    keep_steps: int = 2,
 ) -> CompactionPlan | None:
     session = None
     fold_events = ()
@@ -264,6 +289,8 @@ def plan_compaction(
         previous = session.last(CompactionApplied)
         new_turns = session.uncompacted_turn_count
         origin = session._history.origin
+        current = session.open_turn
+        records = session.events
     else:
         events = tuple(events)
         fold_events = events
@@ -290,12 +317,31 @@ def plan_compaction(
             if isinstance(event, TurnEnd):
                 current = None
         origin = offsets.get
+        turns = derive_turns(events)
+        current = turns[-1] if turns and not turns[-1].closed else None
+        records = events
     if not set(preserve_turns) <= known_turns:
         raise ValueError("preserve_turns must refer to existing turns in the session log")
     eligible_count = len(closed) - keep_turns
-    if eligible_count <= 0:
-        return None
-    through = closed[eligible_count - 1][0]
+    through = closed[eligible_count - 1][0] if eligible_count > 0 else 0
+    active_boundary = 0
+    preserve_inputs: tuple[int, ...] = ()
+    if current is not None and current.id not in preserve_turns and len(closed) >= keep_first_turns:
+        boundaries = [
+            seq + 1
+            for seq, event in enumerate(records)
+            if isinstance(event, StepEnd)
+            and event.turn_id == current.id
+            and event.reason is StepOutcome.COMPLETED
+        ]
+        if len(boundaries) > keep_steps:
+            active_boundary = boundaries[-keep_steps - 1]
+            through = max(through, active_boundary)
+            preserve_inputs = tuple(
+                seq
+                for seq, event in enumerate(records[:through])
+                if origin(seq) == current.id and isinstance(event, UserMessage | ContextMessage)
+            )
     if through <= (previous.through if previous is not None else 0):
         return None
     closed_ids = {turn for boundary, turn in closed if boundary <= through}
@@ -309,6 +355,9 @@ def plan_compaction(
         )
     )
     preserved = tuple(turn for turn in preserved if turn in closed_ids)
+    retained = (
+        tuple(turn for _, turn in closed[-keep_turns:]) if active_boundary and keep_turns else ()
+    )
     entries = (
         session._history.entries(session._events)
         if session is not None
@@ -319,12 +368,17 @@ def plan_compaction(
         for seq, message in entries
         if message.id != "system"
         and (
-            message.id.startswith("compaction:") or (seq < through and origin(seq) not in preserved)
+            message.id.startswith("compaction:")
+            or (
+                seq < through
+                and origin(seq) not in (*preserved, *retained)
+                and seq not in preserve_inputs
+            )
         )
     )
     if not messages:
         return None
-    return CompactionPlan(through, preserved, messages, new_turns)
+    return CompactionPlan(through, preserved, messages, new_turns, preserve_inputs, retained)
 
 
 def compact_request(

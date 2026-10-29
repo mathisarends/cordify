@@ -896,6 +896,7 @@ agent = Agent(
         Compaction(
             trigger=at_ratio(0.8),  # or every_turns(10), or any callable
             keep_turns=2,
+            keep_steps=2,  # completed steps retained inside the active turn
             summarizer=None,  # None = the Agent's model
             focus="Keep file paths, decisions and open TODOs.",  # hint for the summarizer
         ),
@@ -918,6 +919,7 @@ Compaction(
 ```
 
 - Manuell compacten: `await session.compact()`. Der Mechanismus ist Core, nur das *Wann* ist ein Plugin.
+- Auch im ersten, noch offenen Turn können ältere abgeschlossene Schritte zusammengefasst werden. `keep_steps >= 1` schützt die jüngsten Schritte; Auftrag, Steuerungsnachrichten und mitgegebener Kontext bleiben erhalten. Toolcall/Ergebnis-Paare werden nie getrennt, Provider-State erhaltener Antworten bleibt unverändert. Ein gepinnter Turn wird vollständig erhalten.
 - Spill-Dateien gehören zur Session. Sie liegen bei der Persistenz und werden mit der Session gelöscht.
 
 ---
