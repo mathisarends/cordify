@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-29)
+
+This release adds explicit system prompt composition, optional MCP server tools
+and conditional tool availability. It includes breaking prompt API changes from
+0.3.0; the session record format remains version **2**.
 
 ### Explicit system prompt composition
 
@@ -55,6 +59,58 @@
   called. Conditions are checked before policy/approval and again before execution,
   including after approval or resource waits, without following replaced tool
   registrations. Other tools in the plugin keep their normal availability.
+
+### Upgrade from 0.3.0
+
+1. Replace `Agent(instructions="...")` with `Agent(system_prompt="...")`.
+   For instruction lists, use `SystemPrompt(sections=(...))`. Import
+   `SystemPrompt`, `SystemSection`, `PluginSections`, `PromptFormat`, `Unplaced`,
+   `SectionDelivery` and `system_section` from `harnessed` as needed; `Section`
+   is no longer exported.
+2. Replace `Section("name", "text")` with
+   `SystemSection(title="Name", text="text")`. All section constructors and
+   factories are keyword-only: use `SystemSection.from_file(path="AGENTS.md")`
+   and `SystemSection.from_factory(factory=callback, title="Name")`. Section
+   identity now follows declarations and configured recipes rather than names
+   or text; equal content is no longer silently deduplicated.
+3. Replace plugin `guidance` attributes or constructor overrides with named
+   `SystemSection` declarations or synchronous `@system_section` providers.
+   Providers may read recipe configuration, but cannot use injected services or
+   per-mount state. Built-ins expose `filesystem.usage`, `shell.usage`,
+   `spill.usage` and `skills.catalog`. Place or exclude those references through
+   `SystemPrompt`; replace `guidance=None` with an explicit exclusion and replace
+   `override=True` sections with an exclusion plus the replacement section.
+4. Review runtime `session.use(...)` calls. Plugins with system sections now
+   require `section_delivery=SectionDelivery.CONTEXT` to deliver guidance, or
+   `SectionDelivery.IGNORE` to omit it. The default raises `ConfigError` before
+   mounting such a plugin. Context delivery ends on suspension or unmount and
+   is not restored from historical requests when reopening a session.
+5. Keep existing version **2** session stores; no record format migration is
+   required from 0.3.0. Review rendered prompts and application assertions after
+   migrating, including any reliance on text deduplication. MCP and conditional
+   tools are opt-in; existing tools remain enabled by default.
+
+For a migrated composition with a file section and built-in tools:
+
+```python
+from harnessed import Agent, SystemPrompt, SystemSection
+from harnessed.plugins import Filesystem, Shell
+
+agent = Agent(
+    system_prompt=SystemPrompt(
+        sections=(
+            "Inspect relevant code before editing.",
+            SystemSection.from_file(path="AGENTS.md", missing_ok=True),
+        ),
+    ),
+    plugins=[Filesystem("."), Shell(".")],
+)
+```
+
+The built-in sections append automatically. See the
+[context guide](docs/guides/context.md) for explicit placement, exclusions and
+runtime delivery, and the [MCP guide](docs/guides/mcp.md) for the new optional
+integration.
 
 ## 0.3.0 (2026-10-29)
 
