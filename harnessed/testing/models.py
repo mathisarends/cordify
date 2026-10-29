@@ -3,6 +3,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
 
+from harnessed.core.errors import HarnessedError
 from harnessed.core.messages import Assistant, ToolCall
 from harnessed.core.model import (
     ModelChunk,
@@ -13,6 +14,10 @@ from harnessed.core.model import (
     StopReason,
 )
 from harnessed.core.tools.references import ToolSelector, call_arguments, tool_reference
+
+
+class ScriptExhausted(HarnessedError, RuntimeError):
+    """A ScriptedModel received more requests than it has scripted responses."""
 
 
 class ScriptedModel:
@@ -32,7 +37,7 @@ class ScriptedModel:
     async def stream(self, request: ModelRequest):
         self.requests.append(request)
         if not self.responses:
-            raise RuntimeError("ScriptedModel ran out of responses")
+            raise ScriptExhausted("ScriptedModel ran out of responses")
         response = self.responses.popleft()
         chunks = (ModelChunk(text=response),) if isinstance(response, str) else response
         stream = _Stream(chunks)

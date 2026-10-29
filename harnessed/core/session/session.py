@@ -7,6 +7,7 @@ from typing import cast
 
 from harnessed.core.approvals import Approval, ApprovalState, approval_transition
 from harnessed.core.buffering import EventBuffer
+from harnessed.core.errors import ConfigError, SessionStateError
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.hooks import SessionAppended
 from harnessed.core.messages import (
@@ -230,6 +231,13 @@ class SessionLog:
     def open_turn(self) -> Turn | None:
         return self._turns.open_turn
 
+    def current_turn(self) -> Turn:
+        """Return the open turn that runtime steps require."""
+        turn = self._turns.open_turn
+        if turn is None:
+            raise SessionStateError("No turn is open")
+        return turn
+
     @property
     def inbox(self) -> Inbox:
         if self._inbox is None:
@@ -445,9 +453,9 @@ class SessionLog:
     ) -> SessionLog:
         """Copy an event prefix ending at a closed turn; ``at`` is an exclusive offset."""
         if session_id == self.id:
-            raise ValueError("A fork requires a distinct session ID")
+            raise ConfigError("A fork requires a distinct session ID")
         if at is not None and (type(at) is not int or not 0 <= at <= len(self._events)):
-            raise ValueError("Fork offset must lie inside the session log")
+            raise ConfigError("Fork offset must lie inside the session log")
         seed = self._events[:at]
         open_turn = False
         for event in seed:
@@ -456,7 +464,7 @@ class SessionLog:
             elif isinstance(event, TurnEnd):
                 open_turn = False
         if open_turn:
-            raise ValueError("Fork at a closed turn boundary")
+            raise ConfigError("Fork at a closed turn boundary")
         approvals = ApprovalState(seed)
         seed.extend(
             ApprovalResolved(item.request_id, status=ApprovalStatus.INTERRUPTED)

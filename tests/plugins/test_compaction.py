@@ -5,7 +5,7 @@ import pytest
 
 from harnessed import Agent, Plugin, SessionClosed, SessionStatus, hook
 from harnessed.core.compaction import ContextState
-from harnessed.core.errors import ConfigError, ContextLengthExceeded
+from harnessed.core.errors import ConfigError, ContextLengthExceeded, SessionStateError
 from harnessed.core.hooks import ConfigureRequest
 from harnessed.core.messages import Assistant, System, ToolCall
 from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, ModelUsage, UsagePurpose
@@ -183,7 +183,7 @@ async def test_running_compaction_requires_an_explicit_pause():
     async with Agent(model=CallbackModel(chunks)).session() as session:
         running = asyncio.create_task(session.run("task"))
         await asyncio.wait_for(started.wait(), 3)
-        with pytest.raises(RuntimeError, match="Pause the session"):
+        with pytest.raises(SessionStateError, match="Pause the session"):
             await session.compact()
         await session.abort()
         await running

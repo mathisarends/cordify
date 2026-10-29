@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from harnessed.core.errors import ConfigError
+from harnessed.core.errors import ConfigError, SessionStateError
 from harnessed.core.messages import Assistant, ToolResult, User
 from harnessed.core.model import (
     Model,
@@ -66,14 +66,14 @@ class OutputHandler:
         """Commit the verdict before control-call pairs; return a bounded terminal failure."""
         if schema is None:
             return {}, None
-        current = self.log.open_turn
-        assert current is not None
+        current = self.log.current_turn()
         outputs = [call for call in response.tool_calls if call.name == FINAL_ANSWER]
         ordinary = [call for call in response.tool_calls if call.name != FINAL_ANSWER]
         if not outputs and ordinary:
             return {}, None
         answer = self.log.last(AssistantMessage)
-        assert answer is not None
+        if answer is None:
+            raise SessionStateError("Output validation requires a recorded assistant message")
         if not outputs and (
             answer.stop_reason in (StopReason.CONTENT_FILTER, StopReason.ERROR)
             or answer.stop_reason == StopReason.MAX_TOKENS

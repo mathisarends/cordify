@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Callable, Coroutine
 from contextlib import asynccontextmanager
 
-from harnessed.core.errors import SessionClosed
+from harnessed.core.errors import SessionClosed, SessionStateError
 from harnessed.core.session.control import SessionStatus as SessionStatus
 from harnessed.core.session.events import AgentControlChanged, ControlState
 from harnessed.core.session.session import SessionLog
@@ -57,7 +57,9 @@ class SessionControl:
     def _check_external(self) -> None:
         self.check_open()
         if self._inside_driver():
-            raise RuntimeError("A driver hook or tool cannot wait for its own control boundary")
+            raise SessionStateError(
+                "A driver hook or tool cannot wait for its own control boundary"
+            )
 
     def notify(self) -> None:
         self._changed.set()
@@ -90,7 +92,7 @@ class SessionControl:
             target = SessionStatus.IDLE
         if target != self.status:
             if target not in _TRANSITIONS[self.status]:
-                raise RuntimeError(f"Invalid session transition: {self.status} -> {target}")
+                raise SessionStateError(f"Invalid session transition: {self.status} -> {target}")
             self.status = target
         self.notify()
 
@@ -146,11 +148,15 @@ class SessionControl:
         self._check_external()
         task = asyncio.current_task()
         if self._maintenance_owner is task:
-            raise RuntimeError("A maintenance hook cannot reserve its own boundary recursively")
+            raise SessionStateError(
+                "A maintenance hook cannot reserve its own boundary recursively"
+            )
         async with self._request(), self._maintenance:
             self.check_open()
             if self.status not in (SessionStatus.IDLE, SessionStatus.PAUSED):
-                raise RuntimeError("Pause the session before changing a running turn's history")
+                raise SessionStateError(
+                    "Pause the session before changing a running turn's history"
+                )
             self._maintenance_owner = task
             try:
                 yield
@@ -189,7 +195,9 @@ class SessionControl:
             if not during_close:
                 self.check_open()
             task = self.task
-            busy = task is not None and not task.done() and not self.finishing
+            if task is not None and (task.done() or self.finishing):
+                task = None
+            busy = task is not None
             if not busy and self.log.open_turn is None and not self.log.inbox.pending:
                 if self.log.control.state != ControlState.ACTIVE:
                     await self.log.append(AgentControlChanged(ControlState.ACTIVE))
@@ -200,14 +208,16 @@ class SessionControl:
                 try:
                     await self.log.append(AgentControlChanged(requested, keep_inbox))
                 finally:
-                    if immediate and busy and self.log.control.state == ControlState.ABORTING:
-                        assert task is not None
+                    if (
+                        immediate
+                        and task is not None
+                        and self.log.control.state == ControlState.ABORTING
+                    ):
                         if not task.cancelling():
                             task.cancel()
             if not busy:
                 await self.finish_termination()
-        if busy:
-            assert task is not None
+        if task is not None:
             try:
                 await asyncio.shield(task)
             except asyncio.CancelledError:

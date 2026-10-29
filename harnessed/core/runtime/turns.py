@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from harnessed.core.errors import OutputTokenLimit
 from harnessed.core.hooks import TurnStopping
 from harnessed.core.model import StopReason, TokenLimitBehavior
 from harnessed.core.runtime.control import SessionControl
@@ -72,9 +73,7 @@ class TurnRunner:
                 if not await self.steps.run(turn, step, settings):
                     return True
             await self.control.checkpoint()
-            current = self.log.open_turn
-            assert current is not None
-            if await self.continue_from(current.steps[-1]):
+            if await self.continue_from(self.log.current_turn().steps[-1]):
                 continue
             await self.log.append(TurnEnd(turn))
             return True
@@ -90,7 +89,7 @@ class TurnRunner:
         )
         if response is not None and response.stop_reason == StopReason.MAX_TOKENS:
             if self.options.on_max_tokens == TokenLimitBehavior.FAIL:
-                raise RuntimeError("The model reached its output token limit")
+                raise OutputTokenLimit("The model reached its output token limit")
             if self.options.on_max_tokens == TokenLimitBehavior.CONTINUE:
                 return True
         verdicts = [

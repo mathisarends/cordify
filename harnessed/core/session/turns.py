@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from harnessed.core.errors import SessionFormatError
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
     AssistantMessage,
@@ -59,6 +60,14 @@ class Turn:
     @property
     def closed(self) -> bool:
         return self.reason is not None
+
+    @property
+    def start(self) -> TurnStart:
+        """The event that opened this turn."""
+        event = self.events[0]
+        if not isinstance(event, TurnStart):
+            raise SessionFormatError("A turn must begin with TurnStart")
+        return event
 
 
 def derive_turns(events: Iterable[SessionEvent]) -> tuple[Turn, ...]:

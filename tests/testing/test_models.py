@@ -3,9 +3,10 @@ from dataclasses import replace
 
 import pytest
 
+from harnessed.core.errors import HarnessedError
 from harnessed.core.messages import ToolCall
 from harnessed.core.model import Model, ModelChunk, ModelRequest, ModelUsage, StopReason
-from harnessed.testing import CallbackModel, ScriptedModel
+from harnessed.testing import CallbackModel, ScriptedModel, ScriptExhausted
 
 
 async def test_callback_model_aggregates_the_same_response_for_request_and_stream():
@@ -94,3 +95,11 @@ async def test_callback_model_preserves_source_failures_and_closes_the_generator
     with pytest.raises(ValueError, match="broken source"):
         await CallbackModel(chunks).request(ModelRequest("test", ()))
     assert closed == [True]
+
+
+async def test_scripted_model_reports_an_exhausted_script_as_a_harnessed_error():
+    model = ScriptedModel([])
+    with pytest.raises(ScriptExhausted, match="ran out of responses") as raised:
+        async with model.stream(ModelRequest("test", ())):
+            pytest.fail("an empty script has no response to stream")
+    assert isinstance(raised.value, HarnessedError)

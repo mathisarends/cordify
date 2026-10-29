@@ -10,7 +10,7 @@ from harnessed.core.approvals import Approver
 from harnessed.core.attachments import Attachment
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.compaction import CompactionManager
-from harnessed.core.errors import SessionClosed
+from harnessed.core.errors import SessionClosed, SessionStateError
 from harnessed.core.hooks import (
     SessionAppended,
 )
@@ -424,7 +424,8 @@ class Session:
             if submitted is None:
                 self._output_values.release(schema)
             raise
-        assert submitted is not None
+        if submitted is None:
+            raise SessionStateError("The inbox accepted input without preparing its run")
         return submitted.handle
 
     @overload

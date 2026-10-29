@@ -7,8 +7,9 @@ from dataclasses import fields, is_dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import ConfigDict, TypeAdapter
+from pydantic import ConfigDict, TypeAdapter, ValidationError
 
+from harnessed.core.errors import SessionFormatError
 from harnessed.core.messages import (
     freeze,
     to_dict,
@@ -92,27 +93,32 @@ def encode_event(event: SessionEvent, *, registry: EventRegistry | None = None) 
 def decode_event(record: dict[str, Any], *, registry: EventRegistry | None = None) -> SessionEvent:
     """Validate the canonical envelope and frozen discriminated event payload."""
     if not isinstance(record, dict) or set(record) - {"version", "seq", "type", "data"}:
-        raise ValueError("Invalid session record envelope")
+        raise SessionFormatError("Invalid session record envelope")
     version = record.get("version")
     if type(version) is not int or version != CURRENT_VERSION:
-        raise ValueError("Unsupported session record version")
+        raise SessionFormatError("Unsupported session record version")
     if "seq" in record and (type(record["seq"]) is not int or record["seq"] < 0):
-        raise ValueError("Session sequence must be a non-negative integer")
+        raise SessionFormatError("Session sequence must be a non-negative integer")
     tag = record.get("type")
     if not isinstance(tag, str):
-        raise ValueError("Session records require a type tag")
+        raise SessionFormatError("Session records require a type tag")
     kinds = registry._types if registry is not None else SESSION_EVENT_TYPES
     if tag not in kinds or not issubclass(kinds[tag], SessionEvent):
-        raise ValueError(f"Unknown session event type: {tag}")
+        raise SessionFormatError(f"Unknown session event type: {tag}")
     body = record.get("data")
     if not isinstance(body, dict):
-        raise ValueError("Session record data must be an object")
+        raise SessionFormatError("Session record data must be an object")
     freeze(record)  # A Python caller must not smuggle non-JSON keys or non-finite values.
     body = dict(body)
     if "type" in body and body["type"] != tag:
-        raise ValueError("Session envelope and payload type tags disagree")
+        raise SessionFormatError("Session envelope and payload type tags disagree")
     adapter = registry.adapter if registry is not None else _ADAPTER
-    event = adapter.validate_json(json.dumps({**body, "type": tag}, allow_nan=False), strict=True)
+    try:
+        event = adapter.validate_json(
+            json.dumps({**body, "type": tag}, allow_nan=False), strict=True
+        )
+    except ValidationError as error:
+        raise SessionFormatError(f"Invalid {tag} record payload") from error
     registry.validate(event) if registry is not None else _validate_event(event)
     return event
 
@@ -158,7 +164,7 @@ class EventLogCodec:
 
     def decode(self, record: dict[str, Any]) -> SessionEvent:
         if not isinstance(record, dict):
-            raise ValueError("Invalid session record envelope")
+            raise SessionFormatError("Invalid session record envelope")
         freeze(record)
         previous = self._previous
         prefix = 0
@@ -173,12 +179,12 @@ class EventLogCodec:
                 or not 0 <= delta["prefix"] <= (len(previous.messages) if previous else 0)
                 or not isinstance(delta["items"], list)
             ):
-                raise ValueError("Invalid model request prefix delta")
+                raise SessionFormatError("Invalid model request prefix delta")
             prefix = delta["prefix"]
             request["messages"] = delta["items"]
             if "tools" in request and request["tools"] is None:
                 if previous is None:
-                    raise ValueError("Tool reuse requires a preceding model request")
+                    raise SessionFormatError("Tool reuse requires a preceding model request")
                 reuse_tools = True
                 request["tools"] = []
             record = {**record, "data": {**record["data"], "request": request}}

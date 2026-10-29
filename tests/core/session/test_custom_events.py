@@ -9,6 +9,7 @@ from pydantic import Field, TypeAdapter, ValidationError
 from pydantic.errors import PydanticInvalidForJsonSchema
 
 from harnessed import Agent, Plugin, ToolContext, events, tool
+from harnessed.core.errors import SessionFormatError
 from harnessed.core.runtime.result import RunResult
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
@@ -85,7 +86,7 @@ async def test_event_catalogs_are_isolated_and_unknown_logs_fail_without_rewriti
         await session.emit(ProjectIndexed(1))
     original = (tmp_path / "custom.jsonl").read_bytes()
     bare = Agent(model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path)])
-    with pytest.raises(ValueError, match="Unknown session event"):
+    with pytest.raises(SessionFormatError, match="Unknown session event"):
         async with bare.session("custom"):
             pytest.fail("custom types must be known before loading")
     assert (tmp_path / "custom.jsonl").read_bytes() == original
@@ -100,9 +101,9 @@ def test_custom_event_schema_is_strict_and_registry_rejects_collisions_atomicall
     assert registry.decode(registry.encode(value)) == value
     with pytest.raises(ValidationError):
         registry.encode(ProjectIndexed("five"))
-    with pytest.raises(ValidationError):
+    with pytest.raises(SessionFormatError):
         registry.decode({"version": 1, "type": "project.indexed", "data": {"files": True}})
-    with pytest.raises(ValidationError):
+    with pytest.raises(SessionFormatError):
         registry.decode({"version": 1, "type": "project.indexed", "data": {"files": 1, "extra": 2}})
 
     @dataclass(frozen=True)

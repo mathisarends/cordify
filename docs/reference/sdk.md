@@ -44,6 +44,10 @@ examples live in the topic guides. Optional features are imported from
 | log | Advanced append-only SessionLog service and event catalog |
 
 Await methods that perform durable writes. Closed handles raise SessionClosed.
+SDK failures derive from `HarnessedError` in `harnessed.core.errors`: operations
+invalid in the current status raise `SessionStateError` (SessionClosed is one),
+corrupt stored records raise `SessionFormatError`, and `on_max_tokens=FAIL` raises
+`OutputTokenLimit`.
 See [session boundaries and restart behavior](../guides/sessions.md).
 
 Configure loop options on `AgentLoop(...)` in `plugins=`: step/output budgets,

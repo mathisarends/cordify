@@ -2,6 +2,7 @@ import asyncio
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision
+from harnessed.core.errors import OutputTokenLimit
 from harnessed.core.model import ModelChunk, ModelUsage, TokenLimitBehavior
 from harnessed.core.session.events import InboxAdded
 from harnessed.core.stream import TextDelta, TurnFinished
@@ -99,7 +100,7 @@ async def test_public_max_token_policies_return_typed_stop_reasons_or_fail():
             model=model, plugins=[AgentLoop(on_max_tokens=policy)]
         ).session() as session:
             if policy == "fail":
-                with pytest.raises(RuntimeError, match="output token limit"):
+                with pytest.raises(OutputTokenLimit, match="output token limit"):
                     await session.run("task")
                 assert session.turns[-1].closed
             else:

@@ -14,8 +14,20 @@ class SessionLocked(HarnessedError, RuntimeError):
     pass
 
 
-class SessionClosed(HarnessedError, RuntimeError):
+class SessionStateError(HarnessedError, RuntimeError):
+    """An operation is not valid in the session's current state."""
+
+
+class SessionClosed(SessionStateError):
     """An operation requires an open live session."""
+
+
+class SessionFormatError(HarnessedError, ValueError):
+    """A stored session record does not match the current log format."""
+
+
+class OutputTokenLimit(HarnessedError, RuntimeError):
+    """The model stopped at its output token limit under ``on_max_tokens=FAIL``."""
 
 
 class StreamOverflow(HarnessedError, RuntimeError):

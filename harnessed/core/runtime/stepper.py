@@ -29,7 +29,6 @@ from harnessed.core.session.events import (
     SystemMessage,
     TurnEnd,
     TurnOutcome,
-    TurnStart,
     UserMessage,
 )
 from harnessed.core.session.session import SessionLog
@@ -126,11 +125,7 @@ class StepRunner:
             ConfigureRequest(self.session, request),
             default=lambda request=request: request,
         )
-        current = self.log.open_turn
-        assert current is not None
-        starter = current.events[0]
-        assert isinstance(starter, TurnStart)
-        request = self.outputs.prepare(request, starter.output_schema)
+        request = self.outputs.prepare(request, self.log.current_turn().start.output_schema)
         request = resolve_request_settings(request, self.ctx[Model].info.default_settings)
         request = await self.compaction.prepare(request)
         if ContextBudget in self.ctx:
@@ -143,8 +138,7 @@ class StepRunner:
         try:
             response = await self.responder.respond(request)
         except ContextLengthExceeded:
-            current = self.log.open_turn
-            assert current is not None
+            current = self.log.current_turn()
             if (
                 CompactionPolicy not in self.ctx
                 or step >= self.options.max_steps

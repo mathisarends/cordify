@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from harnessed.core.errors import SessionFormatError
 from harnessed.core.messages import ToolCall, User
 from harnessed.core.model import ModelRequest, ToolDefinition
 from harnessed.core.session.codec import EventLogCodec, decode_event, encode_event, event_schema
@@ -37,7 +38,7 @@ def test_canonical_tags_roundtrip_with_discriminated_schema():
     ],
 )
 def test_invalid_records_fail_at_the_codec_boundary(record):
-    with pytest.raises(ValueError):
+    with pytest.raises(SessionFormatError):
         decode_event(record)
 
 
@@ -48,7 +49,7 @@ def test_nested_values_reject_non_json_keys_and_obsolete_fields():
         decode_event(record)
     record = encode_event(ModelRequested(ModelRequest("test", (User("hello"),))))
     record["data"]["request"]["cache_breakpoints"] = [1]
-    with pytest.raises(ValueError):
+    with pytest.raises(SessionFormatError):
         decode_event(record)
 
 
@@ -62,7 +63,7 @@ def test_messages_reject_fields_from_other_variants(role):
         "type": "model.requested",
         "data": {"request": {"model": "test", "messages": [payload]}},
     }
-    with pytest.raises(ValueError):
+    with pytest.raises(SessionFormatError):
         decode_event(record)
 
 
@@ -97,5 +98,5 @@ def test_log_codec_rejects_invalid_or_missing_prefix_bases(prefix):
     event = ModelRequested(ModelRequest("test", (User("hello"),)))
     record = EventLogCodec().encode(event)
     record["data"]["request"]["messages"]["prefix"] = prefix
-    with pytest.raises(ValueError, match="prefix delta"):
+    with pytest.raises(SessionFormatError, match="prefix delta"):
         EventLogCodec().decode(record)

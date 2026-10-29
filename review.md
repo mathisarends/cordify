@@ -106,12 +106,13 @@ make the rest private.
 
 ### Code cleanliness and consistency of abstractions
 
-**C4. Errors and invariants.** About 196 bare `ValueError`/`RuntimeError`/
-`TypeError` raises exist outside the kernel. User-facing ones (invalid status
-transition, "pause before changing history", token-limit FAIL, `ScriptedModel ran
-out of responses`) should derive from `HarnessedError`, so `except HarnessedError`
-works. Production `assert`s guard invariants in `agent.py`, `Session.submit` and
-`TurnRunner`; they vanish under `python -O`.
+**C4. Error exports.** Session state misuse, corrupt records, token-limit failures
+and exhausted scripts now raise typed `HarnessedError` subclasses, and runtime
+invariants no longer rely on `assert`. Applications still import `HarnessedError`
+and its subclasses from `harnessed.core.errors`, because the root SDK exports only
+`PluginConflict`, `SessionClosed` and `StreamOverflow`. Deciding which errors join the
+root SDK belongs with U6. Input validation in event and tool constructors still
+raises plain `ValueError`/`TypeError` on purpose.
 
 ### Missing capabilities agents need
 
