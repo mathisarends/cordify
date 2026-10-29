@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- Agent sessions now reject plugins still waiting for required services with
+  `PluginDependencyError` before starting the runtime or resuming queued work.
+  Validation runs after `Session`, `SessionLog` and other session services have
+  been published and plugin setup has settled. The error's `.issues` tuple names
+  all waiting recipes and preserves the identities of their missing service keys.
+  Complete compositions need no changes. Supply the missing services, or set
+  `Agent(..., plugin_validation=PluginValidation.WARN)` for deliberately deferred
+  compositions. Import `PluginValidation` from `harnessed`; warning mode emits
+  `PluginDependencyWarning` with the same structured issues. Both diagnostics are
+  importable from `harnessed.errors`. Setup failures still propagate in either
+  mode. Startup validation also applies to `Agent.run()`.
+
+### Plugin diagnostics
+
+- `Context.plugin_diagnostics()` exposes immutable snapshots of waiting plugins
+  in its shared runtime after `await ctx.settle()`, including nested installs,
+  extended scopes and transitively blocked plugins. The standalone kernel's
+  deferred dependency behavior and `Context.install(strict=...)` remain unchanged. Runtime plugin
+  additions and later service changes retain their temporal lifecycle behavior.
+
 ## 0.2.0 (2026-10-29)
 
 This release introduces breaking event API and session storage changes from

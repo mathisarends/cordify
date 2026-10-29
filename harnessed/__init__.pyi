@@ -1,6 +1,7 @@
 from harnessed.agent import Agent as Agent
 from harnessed.core.attachments import File as File
 from harnessed.core.attachments import Image as Image
+from harnessed.core.composition import PluginValidation as PluginValidation
 from harnessed.core.errors import PluginConflict as PluginConflict
 from harnessed.core.errors import SessionClosed as SessionClosed
 from harnessed.core.errors import StreamOverflow as StreamOverflow
@@ -46,6 +47,7 @@ __all__ = [
     "Plugin",
     "PluginConfig",
     "PluginConflict",
+    "PluginValidation",
     "PolicyDecision",
     "Role",
     "RunHandle",

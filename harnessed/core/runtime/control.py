@@ -265,8 +265,8 @@ class SessionControl:
         self._check_external()
         async with self._request():
             self.closing = True
-        # A durable pause survives closing its live handle and reopening it later.
-        if not self.log.control.paused:
+        # Startup rollback preserves queued work; a durable pause also survives close.
+        if self.ready and not self.log.control.paused:
             await self._terminate(immediate=True, keep_inbox=False, during_close=True)
         if self.task is not None and not self.task.done():
             self.task.cancel()

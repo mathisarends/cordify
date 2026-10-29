@@ -1,3 +1,6 @@
+from harnessed.kernel import PluginDependencyIssue
+
+
 class HarnessedError(Exception):
     pass
 
@@ -8,6 +11,32 @@ class ConfigError(HarnessedError, ValueError):
 
 class PluginConflict(ConfigError):
     pass
+
+
+class PluginDependencyError(ConfigError):
+    """The agent's settled composition still contains waiting plugins."""
+
+    def __init__(self, issues: tuple[PluginDependencyIssue, ...]) -> None:
+        self.issues = issues
+        super().__init__(_plugin_dependency_message(issues))
+
+
+class PluginDependencyWarning(UserWarning):
+    """An explicitly permissive agent starts with unresolved plugins."""
+
+    def __init__(self, issues: tuple[PluginDependencyIssue, ...]) -> None:
+        self.issues = issues
+        super().__init__(_plugin_dependency_message(issues))
+
+
+def _plugin_dependency_message(issues: tuple[PluginDependencyIssue, ...]) -> str:
+    details = "\n".join(
+        f"  {issue.plugin.name} requires {', '.join(key.__name__ for key in issue.missing)}"
+        if issue.missing
+        else f"  {issue.plugin.name} is waiting"
+        for issue in issues
+    )
+    return f"Agent composition is incomplete:\n{details}"
 
 
 class ToolNameConflict(ConfigError):

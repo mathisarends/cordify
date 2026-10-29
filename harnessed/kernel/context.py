@@ -16,7 +16,7 @@ from .hooks import HookFactory, ListenerFactory
 from .keys import Key as Key
 from .keys import MissingService, ServiceKey
 from .plugin import PluginHandle, PluginLike, _Runtime, as_plugin_spec
-from .spec import PluginSpec
+from .spec import PluginDependencyIssue, PluginSpec
 
 _current: ContextVar[Context | None] = ContextVar("harnessed_context", default=None)
 
@@ -301,6 +301,19 @@ class Context:
                 await handle.aclose()
             raise
         return tuple(mounted)
+
+    def plugin_diagnostics(self) -> tuple[PluginDependencyIssue, ...]:
+        """Snapshot waiting plugins in the shared runtime, including extended scopes.
+
+        Call ``await settle()`` first to observe completed dependency reconciliation.
+        Each issue resolves services in the waiting plugin's own mount scope.
+        Inspection neither activates plugins nor rejects deferred dependencies.
+        """
+        return tuple(
+            PluginDependencyIssue(handle.spec, handle.missing_services)
+            for handle in self._scope.runtime.handles
+            if handle.status == PluginStatus.WAITING and not handle._mount._closed
+        )
 
     async def settle(self) -> None:
         """Wait for scheduled dependency teardown/rebuild; report background setup failures."""

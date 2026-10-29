@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from harnessed.core.composition import PluginValidation, validate_plugins
 from harnessed.core.errors import ConfigError
 from harnessed.core.outputs import OutputTypes
 from harnessed.core.plugin import Service
@@ -15,7 +16,9 @@ from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context
 
 
-async def open_session(ctx: Context, target: str | SessionLog | None) -> Session:
+async def open_session(
+    ctx: Context, target: str | SessionLog | None, *, plugin_validation: PluginValidation
+) -> Session:
     """Lease, seed and repair one log in ``ctx``, then install and start its runtime.
 
     ``target`` is a session ID to open or resume, a forked log to seed a new ID, or
@@ -62,6 +65,7 @@ async def open_session(ctx: Context, target: str | SessionLog | None) -> Session
         raise
     ctx.effect(runtime.aclose)
     await ctx.settle()
+    validate_plugins(ctx, plugin_validation)
     ctx[ToolRegistry].validate_references()
     runtime.start()
     return runtime

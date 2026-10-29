@@ -18,6 +18,7 @@ _EXPORTS = {
     "OutputContract": ("harnessed.core.outputs", "OutputContract"),
     "Plugin": ("harnessed.core.plugin", "Plugin"),
     "PluginConfig": ("harnessed.core.plugin", "PluginConfig"),
+    "PluginValidation": ("harnessed.core.composition", "PluginValidation"),
     "PluginState": ("harnessed.kernel", "PluginState"),
     "PluginConflict": ("harnessed.core.errors", "PluginConflict"),
     "PolicyDecision": ("harnessed.core.messages", "PolicyDecision"),

@@ -17,18 +17,30 @@ content capture, parent context and the emitted attributes.
 
 ## Agent
 
-`Agent(*, model=None, instructions=None, plugins=())` resolves reusable configuration.
+`Agent(*, model=None, instructions=None, plugins=(),
+plugin_validation=PluginValidation.ERROR)` resolves reusable configuration.
 
 | Member | Behavior |
 | --- | --- |
 | model | Harnessed Model, native PydanticAI model, or provider:model string |
 | instructions | Text or a sequence of text/Section values |
 | plugins | Explicit configured plugins, merged with default slots |
+| plugin_validation | ERROR rejects unresolved plugins at session startup; WARN emits PluginDependencyWarning and retains them for later activation |
 | agent.plugins | Tuple of resolved plugins |
 | agent.prompt | Inspectable PromptComposition of instructions and guidance |
 | agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types/contracts |
 | agent.run(prompt, **options) | One run in a fresh session |
 | agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
+
+Import `PluginValidation` from `harnessed`. Session startup checks all waiting
+plugins after publishing session services and settling their setup, before
+starting the runtime or resuming queued work. By default it raises
+`PluginDependencyError`, a `ConfigError` from `harnessed.errors`. Its `.issues`
+tuple contains immutable `PluginDependencyIssue` snapshots with `.plugin`
+(`PluginSpec`) and `.missing` (service keys, preserving their identity).
+`PluginValidation.WARN` emits one `PluginDependencyWarning` with the same `.issues`
+and permits later activation. Setup failures still propagate in either mode.
+See [startup validation](../guides/plugins.md#session-startup-validation).
 
 ## Session
 

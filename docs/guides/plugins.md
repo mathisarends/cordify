@@ -142,6 +142,46 @@ contract; third-party implementations need no Harnessed base class.
 named context because the system instructions are fixed. Closing its handle
 removes the capability and guidance; temporal restarts refresh both.
 
+## Session startup validation
+
+`Agent` requires its configured plugins to be active when opening a session.
+After publishing `Session`, `SessionLog` and the other session services, it waits
+for dependency-driven setup to settle and checks the full service scope, including
+nested plugin installs. A waiting plugin raises `PluginDependencyError` before
+the runtime starts, a model request is made or queued work resumes. Acquired
+resources and the session lease are closed normally on failure.
+
+The error is a `ConfigError`, importable from `harnessed.errors`. Its `.issues`
+tuple lists every waiting plugin, including transitively blocked plugins. Each
+immutable issue exposes `.plugin` (the exact `PluginSpec`) and `.missing` (the
+currently unavailable service keys). Messages name the plugins and services;
+applications can inspect the keys directly instead of parsing the message.
+
+For a composition that deliberately waits for services added after opening,
+select the warning policy explicitly:
+
+```python
+from harnessed import Agent, PluginValidation
+
+agent = Agent(
+    model=model,
+    plugins=plugins,
+    plugin_validation=PluginValidation.WARN,
+)
+```
+
+This emits a `PluginDependencyWarning` from `harnessed.errors` with the same
+`.issues` data and retains waiting plugins for later activation. It does not
+suppress setup failures. `PluginValidation.ERROR` is the default and also applies
+to the session opened by `agent.run()`.
+
+Validation guarantees startup readiness. Later service removal, restoration and
+`session.use()` retain their temporal lifecycle behavior. The standalone kernel's
+`Context.install()` continues to allow deferred services by default; its `strict`
+option is unchanged. `ctx.plugin_diagnostics()` provides a read-only snapshot of
+waiting plugins in its shared runtime after `await ctx.settle()`, resolving each
+plugin's needs in its own mount scope.
+
 ## Separate a backend from its tools
 
 `Filesystem` and `Shell` own their backend and tools together. Use

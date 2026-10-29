@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Unpack, overload
 
 from harnessed.core.approvals import Approvals
+from harnessed.core.composition import PluginValidation
 from harnessed.core.errors import PluginConflict
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
@@ -44,7 +45,9 @@ class Agent:
         model: Model | str | NativeModel | None = None,
         instructions: InstructionValues | None = None,
         plugins: Iterable[PluginLike] = (),
+        plugin_validation: PluginValidation = PluginValidation.ERROR,
     ) -> None:
+        self.plugin_validation = PluginValidation(plugin_validation)
         supplied: list[PluginLike] = list(plugins)
         if instructions is not None:
             supplied.insert(0, Instructions(instructions))
@@ -108,7 +111,7 @@ class Agent:
                 outputs.register(output)
             ctx.provide(OutputTypes, outputs)
             await ctx.install(self.plugins, settle=True)
-            yield await open_session(ctx, session_id)
+            yield await open_session(ctx, session_id, plugin_validation=self.plugin_validation)
 
     @overload
     async def run[T](
