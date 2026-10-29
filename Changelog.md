@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Model lifecycle
+
+- Supplied PydanticAI models now enter and exit their native resource context,
+  just like models resolved from strings. Pass a native model directly to
+  `Agent(model=...)`; an outer model context is optional. PydanticAI keeps shared
+  clients open until the last active context exits and reopens them on reuse.
+  Explicitly supplied HTTP and provider SDK clients remain caller-owned.
+
 ### Breaking changes
 
 - Import built-in event classes directly from `harnessed.events`. The short-name

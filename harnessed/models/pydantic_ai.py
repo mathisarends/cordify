@@ -4,7 +4,8 @@ import json
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Self
 
 from harnessed.core.errors import (
     AuthError,
@@ -65,9 +66,11 @@ def _extra(model: object) -> str:
 class PydanticAIModel:
     """Translate the Direct API without implementing providers, HTTP or retries.
 
-    Strings are resolved by PydanticAI. Passed native model instances and their
-    clients stay owned by the caller. Provider response state is persisted with
-    assistant messages so signatures and reasoning survive tool rounds/replay.
+    Strings are resolved by PydanticAI. Both resolved and supplied native models
+    enter their resource context for sessions and standalone requests. PydanticAI
+    manages nested scopes and preserves caller-supplied clients. Provider response
+    state is persisted with assistant messages so signatures and reasoning survive
+    tool rounds/replay.
 
     ``native_tools`` forwards PydanticAI's provider-executed tools, such as
     ``WebSearchTool`` or ``CodeExecutionTool``, with every request. The provider
@@ -105,7 +108,6 @@ class PydanticAIModel:
         ):
             raise ConfigError("native_tools must be a sequence of PydanticAI native tools")
         self.native_tools = tuple(native_tools)
-        self._owned = isinstance(model, str)
         self.settings = dict(settings or {})
         profile = self._native.profile
         self._info = ModelInfo(
@@ -120,15 +122,17 @@ class PydanticAIModel:
     def info(self) -> ModelInfo:
         return self._info
 
-    async def __aenter__(self):
-        if self._owned:
-            await self._native.__aenter__()
+    async def __aenter__(self) -> Self:
+        await self._native.__aenter__()
         return self
 
-    async def __aexit__(self, *exc):
-        if self._owned:
-            return await self._native.__aexit__(*exc)
-        return None
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
+        return await self._native.__aexit__(exc_type, exc_val, exc_tb)
 
     def _settings(self, request: ModelRequest) -> ModelSettings:
         request = resolve_request_settings(request, self.info.default_settings)
