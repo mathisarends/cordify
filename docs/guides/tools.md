@@ -1,7 +1,8 @@
 # Tools and hooks
 
-Declare public tools as `@tool` methods on a `Plugin`. Method names, docstrings
-and annotations supply their names, descriptions and strict argument schemas.
+Declare public tools as `@tool` methods on a `Plugin`. Method names, explicit
+descriptions and annotations supply their names, model instructions and strict
+argument schemas. A docstring is the fallback when no description is supplied.
 There is one public registration path, including tools mounted at runtime:
 
 ```python
@@ -13,14 +14,21 @@ from my_application import Database
 class Lookups(Plugin):
     needs = (Database,)
 
-    @tool(readonly=True)
+    @tool(readonly=True, description="Find one record by its exact key.")
     async def lookup(self, key: str, *, db: Inject[Database]) -> str:
-        """Look up a record by its key."""
+        """Resolve the injected backend and return its serialized record."""
         return await db.lookup(key)
 
 
 # plugins=[Lookups()] initially, or await session.use(Lookups()) at runtime.
 ```
+
+`description="..."` is sent to the model without replacing the Python docstring,
+so developer documentation can describe implementation details independently.
+`description=None` (the default) uses `inspect.getdoc` as a fallback; a missing
+docstring produces an empty description. An explicit `description=""` suppresses
+the description rather than falling back. Parameter descriptions stay in
+`Annotated[..., Field(description="...")]` or `parameter_fields` metadata.
 
 `needs` controls the plugin's lifetime. Removing Database disposes its tools;
 restoring the service restarts the plugin. `Inject` resolves per-call services

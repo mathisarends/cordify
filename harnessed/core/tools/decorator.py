@@ -14,6 +14,7 @@ def tool[F: Callable[..., Any]](fn: F, /) -> F: ...
 def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
+    description: str | None = None,
     timeout: float | None = None,
     parallel: bool = False,
     resources: ResourceSpec = (),
@@ -29,6 +30,7 @@ def tool(
     /,
     *,
     name: str | None = None,
+    description: str | None = None,
     timeout: float | None = None,
     parallel: bool = False,
     resources: ResourceSpec = (),
@@ -37,11 +39,21 @@ def tool(
     override: bool = False,
     parameter_fields: ParameterFields | None = None,
 ):
+    """Declare a tool; an explicit model description overrides its docstring."""
+
     resources = resource_spec(resources)
 
     def decorate(callback):
         spec = ToolSpec(
-            name, timeout, parallel, resources, readonly, override, output_limit, parameter_fields
+            name=name,
+            description=description,
+            timeout=timeout,
+            parallel=parallel,
+            resources=resources,
+            readonly=readonly,
+            override=override,
+            output_limit=output_limit,
+            parameter_fields=parameter_fields,
         )
         callback._harnessed_tool = spec
         callback._harnessed_registrations = [

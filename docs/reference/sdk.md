@@ -90,6 +90,7 @@ unhashable. See [values and record versions](../concepts/values.md).
 | API | Purpose |
 | --- | --- |
 | Plugin / @tool | Class-based reusable capability |
+| @tool(description="...") | Explicit model-facing description; None falls back to the docstring |
 | PluginConfig / Config = MyConfig | Module-level validated configuration model |
 | PluginState(factory) | Typed state freshly created before each mount's setup; available through cleanup |
 | Plugin.create_instance() | Customize fresh instance construction; defaults to shallow copying shared inputs |

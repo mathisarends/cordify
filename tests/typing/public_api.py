@@ -50,7 +50,7 @@ class EventObserver(Plugin):
 class CountingTools(Plugin):
     counts = PluginState[dict[str, int]](dict)
 
-    @tool(readonly=True, output_limit=None)
+    @tool(readonly=True, output_limit=None, description="Count a value for the selected service.")
     async def count(self, value: int, *, injected: Inject[str]) -> int:
         assert_type(injected, str)
         assert_type(self.counts, dict[str, int])
@@ -63,6 +63,10 @@ async def consumer(agent: Session) -> None:
     assert_type(CountingTools().create_instance(), CountingTools)
     assert_type(await CountingTools().count(1, injected="service"), int)
     assert_type(await agent.run("hello"), RunResult[None])
+
+
+def invalid_tool_description() -> None:
+    tool(description=42)  # ty: ignore[invalid-argument-type]
 
 
 class Triage(BaseModel):

@@ -81,3 +81,11 @@ review; `ToolCallFinishedEvent` carries the final reviewed result.
 
 See the [event guide](docs/guides/events.md) for lifecycle phases and the
 [release history](docs/releases.md) for published versions.
+
+### Added
+
+- `@tool(description="...")` supplies an explicit model-facing description while
+  leaving the method's docstring available for developer documentation. An
+  explicit string wins over the docstring, including `""` to suppress it.
+  `None` retains the existing `inspect.getdoc` fallback. The tool registry accepts
+  the same option, and parameter descriptions continue to use `Field` metadata.
