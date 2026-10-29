@@ -1,4 +1,6 @@
 import asyncio
+import gc
+import weakref
 
 import pytest
 
@@ -103,6 +105,24 @@ async def test_runtime_guidance_is_context_and_disposes_with_its_plugin():
         assert await session.prompt.render() == "Fixed."
         await handle.aclose()
         assert session.context.values == {}
+
+
+async def test_removed_runtime_plugins_are_collectable_while_the_session_stays_open():
+    class Missing:
+        pass
+
+    async with Agent(model=ScriptedModel([])).session() as session:
+        references = []
+        for index in range(10):
+            recipe = Plugin(guidance=f"Runtime help {index}", needs=(Missing,) if index % 2 else ())
+            handle = await session.use(recipe)
+            references.extend((weakref.ref(handle), weakref.ref(recipe)))
+            await handle.aclose()
+        del handle, recipe
+        await session.ctx.settle()
+        gc.collect()
+        assert all(reference() is None for reference in references)
+        assert not session._runtime_guidance and not session.context.values
 
 
 async def test_default_approvals_allow_reads_and_reject_side_effects_without_a_responder():

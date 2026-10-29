@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Mapping
 from contextvars import ContextVar
 from typing import Any, Unpack, overload
+from weakref import WeakKeyDictionary
 
 from harnessed.core.approvals import Approver
 from harnessed.core.attachments import Attachment
@@ -80,7 +81,7 @@ class Session:
         self.id = session.id
         self.context = DynamicContext(session)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
-        self._runtime_guidance: dict[PluginHandle, str] = {}
+        self._runtime_guidance: WeakKeyDictionary[PluginHandle, str] = WeakKeyDictionary()
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
         self.approvals = SessionApprovals(ctx, session, self.control, options, self)
         self.inbox = SessionInbox(session, self.control)

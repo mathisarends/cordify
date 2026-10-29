@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Self, cast, overload
+from weakref import ref
 
 from harnessed.kernel.plugin import PluginStatus
 
@@ -243,7 +244,16 @@ class Context:
         spec = as_plugin_spec(spec)
         handle = PluginHandle(spec, self)
         self._scope.runtime.handles.append(handle)
-        self.effect(handle.aclose)
+        retained = ref(handle)
+
+        async def close_handle() -> None:
+            # Runtime ownership keeps live handles alive; the exit stack must
+            # not retain handles already removed by an explicit aclose().
+            current = retained()
+            if current is not None:
+                await current.aclose()
+
+        self.effect(close_handle)
         try:
             if handle._signature() is not None:
                 await handle._activate()
