@@ -18,7 +18,7 @@ from harnessed.core.runtime.inbox import SessionInbox
 from harnessed.core.session.events import RuleAction, RuleTriggered, ToolCalled, ToolReturned
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter, count_content
-from harnessed.kernel import Inject, Next, hook
+from harnessed.kernel import Inject, Next, PluginState, hook
 
 
 def _synchronous(callback):
@@ -102,6 +102,9 @@ def when(
 
 
 class Rules(Plugin):
+    _counts = PluginState[Counter[tuple[int, str]]](Counter)
+    _last_counts = PluginState[dict[int, int]](dict)
+
     def __init__(self, rules: Iterable[Rule], *, name: str = "rules") -> None:
         super().__init__(name=name)
         self.rules = tuple(rules)
@@ -134,8 +137,6 @@ class Rules(Plugin):
         context: Inject[DynamicContext],
         counter: Inject[TokenCounter],
     ) -> None:
-        self._counts: Counter[tuple[int, str]] = Counter()
-        self._last_counts: dict[int, int] = {}
         # Match bits are recorded with the canonical tool result.
         calls: dict[str, ToolCall] = {}
         for event in session.events:

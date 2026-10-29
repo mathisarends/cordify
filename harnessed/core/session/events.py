@@ -434,6 +434,12 @@ class CacheMetrics(SessionEvent):
 
 @dataclass(frozen=True)
 class CompactionApplied(SessionEvent):
+    """Replace a history prefix at a closed turn or completed step boundary.
+
+    preserve_turns pins full turns; retained_turns is temporary sliding retention.
+    preserve_inputs holds event offsets of active-turn inputs kept verbatim.
+    """
+
     __hash__ = None
 
     type: Literal[EventKind.COMPACTION_APPLIED] = field(
@@ -446,6 +452,8 @@ class CompactionApplied(SessionEvent):
     before_tokens: int | None = None
     after_tokens: int | None = None
     id: str | None = None
+    preserve_inputs: tuple[int, ...] = ()
+    retained_turns: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.id is not None and (not isinstance(self.id, str) or not self.id):
@@ -456,6 +464,18 @@ class CompactionApplied(SessionEvent):
         ):
             raise ValueError("Preserved turn ids must be unique non-empty strings")
         object.__setattr__(self, "preserve_turns", turns)
+        inputs = tuple(self.preserve_inputs)
+        if any(type(offset) is not int or offset < 0 for offset in inputs) or len(
+            set(inputs)
+        ) != len(inputs):
+            raise ValueError("Preserved input offsets must be unique non-negative integers")
+        object.__setattr__(self, "preserve_inputs", inputs)
+        retained = tuple(self.retained_turns)
+        if any(not isinstance(turn, str) or not turn for turn in retained) or len(
+            set(retained)
+        ) != len(retained):
+            raise ValueError("Retained turn ids must be unique non-empty strings")
+        object.__setattr__(self, "retained_turns", retained)
         if any(
             value is not None and (type(value) is not int or value < 0)
             for value in (self.before_tokens, self.after_tokens)
@@ -551,6 +571,23 @@ class ToolReturned(SessionEvent):
 
 
 @dataclass(frozen=True)
+class ToolExecutionFinished(SessionEvent):
+    """The unreviewed execution receipt, saved before ordered result review.
+
+    Text respects the captured output limit. This is audit data, not a
+    model-visible result. Recovery must never bypass ReviewToolResult by
+    publishing this receipt as ToolReturned.
+    """
+
+    __hash__ = None
+    type: Literal[EventKind.TOOL_EXECUTION_FINISHED] = field(
+        default=EventKind.TOOL_EXECUTION_FINISHED, kw_only=True
+    )
+    call_id: Identifier
+    result: ToolResult
+
+
+@dataclass(frozen=True)
 class ToolCompleted(SessionEvent):
     __hash__ = None
 
@@ -637,6 +674,7 @@ type LogEvent = Annotated[
         | ApprovalRevoked
         | ToolPolicyApplied
         | ToolExecutionStarted
+        | ToolExecutionFinished
         | LogTailRecovered
         | InboxAdded
         | InboxRemoved

@@ -14,6 +14,7 @@ agent = Agent(
         Compaction(
             trigger=at_ratio(0.8),
             keep_turns=2,
+            keep_steps=2,
             keep_first_turns=1,
             summary_tokens=2048,
             focus="Keep file paths, decisions and unresolved failures.",
@@ -33,16 +34,27 @@ A custom synchronous trigger receives a frozen `ContextState` with `input_tokens
 return a boolean. `ratio` is `None` when the window is unknown.
 
 `keep_turns` retains recent closed turns, `keep_first_turns` retains initial turns,
-and `preserve_turns` pins specific existing turn IDs. Retained turns remain verbatim,
-including paired tool calls and results. The current turn, fixed instructions and
-tool schemas are never summarized away. Earlier summaries are input to the next
-summary, so old summaries do not accumulate.
+and `preserve_turns` pins specific existing turn IDs. `keep_steps` retains at least
+one completed step in the active turn (default: two). Once more steps have finished,
+compaction can summarize their older prefix even in the very first turn. Only
+completed step boundaries are eligible; tool calls and their results stay together.
+Retained assistant messages keep their provider state unchanged.
+
+The active turn's task, steering messages and supplied context stay verbatim, as do
+fixed instructions and tool schemas. Pinning the active turn, including through
+`keep_first_turns`, protects its entire history. Recent closed turns remain verbatim
+while retained by `keep_turns`; this does not pin them permanently. Earlier summaries
+are input to the next summary, so old summaries do not accumulate.
 
 Automatic compaction runs after request hooks, before the provider call and its
 tool effects. An over-budget request forces an attempt even if its normal trigger
 is not due. If retained content still exceeds the budget, the request fails before
 calling the provider. A summary that does not reduce the estimated request size
-is discarded; automatic attempts back off for two more closed turns.
+is discarded; automatic attempts back off for two more closed turns or two more
+finished steps in the same active turn. Over-budget and manual attempts bypass this
+backoff. Step retries require an advanced compaction boundary. Compaction cannot
+help if the protected inputs and retained steps alone
+exceed the budget.
 
 If the provider raises `ContextLengthExceeded` before a visible partial response,
 an installed policy can force one smaller projection and retry in a new step.
