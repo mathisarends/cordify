@@ -41,6 +41,10 @@ provides `id`, `done()` and an awaitable `result()`. Runs execute in queue order
 under the session's existing driver. No background task is created per handle.
 `run()` is the convenience form that submits and waits for the result.
 
+`StepDecision.reject()` in a `PreStep` hook permanently consumes that step's
+pending inputs and ends the turn with `StopReason.REJECTED`. Later runs never
+retry rejected work. Use the session's pause/resume controls to hold work instead.
+
 Repeated result waits return the same result, including the originally validated
 structured output. Cancelling a result waiter leaves the run queued or executing.
 Driver errors are delivered through the handle; closing the session fails unfinished

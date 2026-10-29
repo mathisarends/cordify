@@ -29,6 +29,7 @@ class StepDecision:
 
     @classmethod
     def reject(cls) -> Self:
+        """End this turn and permanently remove its pending step inputs."""
         return cls(accepted=False)
 
 

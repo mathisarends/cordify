@@ -22,6 +22,7 @@ from harnessed.core.session.events import (
     ContextMessage,
     InboxAdded,
     InboxMode,
+    InboxRemovalReason,
     InboxRemoved,
     ModelRequested,
     ObservationRecorded,
@@ -92,6 +93,8 @@ class StepRunner:
         finally:
             self._preparing.reset(token)
         if not decision.accepted:
+            for item in (*pending, *self._step_push):
+                await self.log.append(InboxRemoved(item.message.id, InboxRemovalReason.REJECTED))
             await self.log.append(TurnEnd(turn, TurnOutcome.REJECTED))
             return False
         pending = (*pending, *self._step_push)

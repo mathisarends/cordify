@@ -89,6 +89,7 @@ class InboxRemovalReason(StrEnum):
     CANCELED = "canceled"
     STOPPED = "stopped"
     DISCARDED = "discarded"
+    REJECTED = "rejected"
 
 
 class SpillExpirationReason(StrEnum):

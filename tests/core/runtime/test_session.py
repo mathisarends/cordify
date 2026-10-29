@@ -8,7 +8,7 @@ from harnessed import Session as Agent
 from harnessed.core.approvals import ApprovalGate, Approver, CallbackApprover
 from harnessed.core.hooks import ExecuteTool, PreStep, ReviewToolResult, StepDecision, ToolPolicy
 from harnessed.core.messages import PolicyDecision, Role, ToolStatus
-from harnessed.core.model import ModelChunk, ModelInfo
+from harnessed.core.model import ModelChunk, ModelInfo, StopReason
 from harnessed.core.session.events import (
     AssistantMessage,
     ModelRequested,
@@ -267,8 +267,8 @@ async def test_explicit_and_live_registration():
         assert {d.name for d in agent.ctx[ToolRegistry].definitions} == {"echo", "alias"}
 
 
-async def test_pre_step_rejection_keeps_input_until_another_wake():
-    model = ScriptedModel(["accepted", "second"])
+async def test_pre_step_rejection_consumes_input_permanently():
+    model = ScriptedModel(["second"])
     harness = Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)])
     async with harness.session("reject") as agent:
         reject = True
@@ -277,13 +277,15 @@ async def test_pre_step_rejection_keeps_input_until_another_wake():
         async def gate(event, next_):
             return StepDecision.reject() if reject else await next_()
 
-        await agent.followup("first")
-        await agent.control.join()
-        assert not model.requests and len(agent.log.inbox.next_turn) == 1
+        result = await agent.run("first")
+        assert result.stop_reason == StopReason.REJECTED
+        assert not model.requests and not agent.inbox.pending
         reject = False
         await agent.followup("second")
         await agent.control.join()
-        assert len(model.requests) == 2 and (not agent.inbox.pending)
+        assert len(model.requests) == 1 and not agent.inbox.pending
+        assert all(message.text != "first" for message in model.requests[0].messages)
+        assert len(agent.turns) == 2
 
 
 async def test_cancel_before_driver_starts_and_reuse_agent():

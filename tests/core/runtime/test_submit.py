@@ -6,6 +6,7 @@ from pydantic import BaseModel, field_validator
 from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
 from harnessed.core.messages import User
 from harnessed.events.inbox import Added as InboxAdded
+from harnessed.hooks import PreStep, StepDecision
 from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
 
@@ -128,6 +129,18 @@ async def test_driver_errors_are_delivered_through_the_run_handle():
         with pytest.raises(RuntimeError, match="ran out"):
             await handle.result()
         assert handle.done()
+
+
+async def test_rejecting_queued_runs_completes_every_handle_without_another_wakeup():
+    async with Agent(model=ScriptedModel([])).session() as session:
+        session.add_hook(PreStep, lambda event, next_: StepDecision.reject())
+        await session.pause()
+        handles = [await session.submit(str(index)) for index in range(3)]
+        await session.resume()
+        async with asyncio.timeout(2):
+            results = [await handle.result() for handle in handles]
+        assert all(result.stop_reason is StopReason.REJECTED for result in results)
+        assert not session.inbox.pending and len(session.turns) == 3
 
 
 async def test_delayed_structured_results_retain_the_original_validated_values():

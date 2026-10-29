@@ -70,7 +70,7 @@ class TurnRunner:
         for step in range(first_step, self.options.max_steps + 1):
             with span(self.ctx, "step", session_id=self.log.id, turn_id=turn, step=step):
                 if not await self.steps.run(turn, step, settings):
-                    return False
+                    return True
             await self.control.checkpoint()
             current = self.log.open_turn
             assert current is not None
