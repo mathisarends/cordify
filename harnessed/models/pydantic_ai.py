@@ -33,6 +33,7 @@ from harnessed.core.model import (
     ModelUsage,
     OutputMode,
     StopReason,
+    resolve_request_settings,
 )
 
 if TYPE_CHECKING:
@@ -93,6 +94,7 @@ class PydanticAIModel:
             context_window=context_window or profile.get("context_window"),
             supports_images=bool(profile.get("supports_image_input")),
             supports_structured_output=bool(profile.get("supports_json_schema_output")),
+            default_settings={**(self._native.settings or {}), **self.settings},
         )
 
     @property
@@ -110,10 +112,11 @@ class PydanticAIModel:
         return None
 
     def _settings(self, request: ModelRequest) -> ModelSettings:
-        settings = dict(self.settings)
+        request = resolve_request_settings(request, self.info.default_settings)
+        settings = to_dict(request.settings)
         if request.max_tokens is not None:
             settings["max_tokens"] = request.max_tokens
-        return {**settings, **to_dict(request.settings)}
+        return settings
 
     async def request(self, request: ModelRequest) -> ModelResponse:
         from pydantic_ai.direct import model_request

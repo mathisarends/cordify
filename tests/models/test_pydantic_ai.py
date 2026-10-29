@@ -12,6 +12,7 @@ from pydantic_ai import messages as native
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 
 from harnessed import Agent, Plugin
+from harnessed.core.budget import ContextBudgetExceeded
 from harnessed.core.errors import (
     AuthError,
     ConfigError,
@@ -25,6 +26,7 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.tools.decorator import tool
 from harnessed.models import PydanticAIModel
+from harnessed.plugins import AgentLoop
 
 
 @pytest.mark.parametrize("native_output", [True, False])
@@ -110,6 +112,44 @@ async def test_non_streaming_request_and_settings_are_delegated_to_pydantic_ai()
         ModelRequest("fixture", (User("hi"),), settings={"temperature": 0})
     )
     assert response.message.text == "answer" and seen == [{"temperature": 0}]
+
+
+@pytest.mark.parametrize("source", ["native", "adapter", "run"])
+async def test_effective_output_limit_is_budgeted_before_the_provider_is_called(source):
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(info.model_settings)
+        yield "answer"
+
+    provider = FunctionModel(
+        stream_function=stream, settings={"max_tokens": 900} if source == "native" else None
+    )
+    model = PydanticAIModel(provider, settings={"max_tokens": 900} if source == "adapter" else None)
+    options = AgentLoop(context_window=500, max_tokens=100 if source == "run" else None)
+    async with Agent(model=model, plugins=[options]).session() as session:
+        with pytest.raises(ContextBudgetExceeded) as error:
+            await session.run("hi", settings={"max_tokens": 900} if source == "run" else None)
+        assert error.value.reserve_tokens == 900
+        assert seen == []
+
+
+async def test_recorded_request_and_provider_share_resolved_settings():
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(info.model_settings)
+        yield "answer"
+
+    model = PydanticAIModel(
+        FunctionModel(stream_function=stream, settings={"max_tokens": 700}),
+        settings={"max_tokens": 900, "temperature": 0.5},
+    )
+    async with Agent(model=model, plugins=[AgentLoop(max_tokens=100)]).session() as session:
+        await session.run("hi", settings={"max_tokens": 200})
+        request = session.log.requests[-1]
+        assert request.max_tokens == 200 and request.settings == {"temperature": 0.5}
+        assert seen == [{"max_tokens": 200, "temperature": 0.5}]
 
 
 @pytest.mark.parametrize(

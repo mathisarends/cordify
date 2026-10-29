@@ -2,11 +2,11 @@
 
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Annotated, Any, Protocol, runtime_checkable
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, TypeAdapter
 from pydantic.dataclasses import dataclass as validated_dataclass
 
 from .messages import Assistant, Message, ToolCall, freeze
@@ -14,6 +14,7 @@ from .messages import Assistant, Message, ToolCall, freeze
 _VALUE_CONFIG = ConfigDict(
     strict=True, extra="forbid", allow_inf_nan=False, hide_input_in_errors=True
 )
+_MAX_TOKENS = TypeAdapter(Annotated[int, Field(ge=1)] | None, config=_VALUE_CONFIG)
 
 
 class StopReason(StrEnum):
@@ -80,7 +81,27 @@ class ModelRequest:
     def __post_init__(self) -> None:
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
-        object.__setattr__(self, "settings", freeze(self.settings))
+        settings = dict(self.settings)
+        if "max_tokens" in settings:
+            object.__setattr__(
+                self, "max_tokens", _MAX_TOKENS.validate_python(settings.pop("max_tokens"))
+            )
+        object.__setattr__(self, "settings", freeze(settings))
+
+
+def resolve_request_settings(request: ModelRequest, defaults: Mapping[str, Any]) -> ModelRequest:
+    """Apply model defaults before compaction, budgeting, audit and execution.
+
+    Per-request settings override the explicit max_tokens field; that field
+    overrides model defaults. ModelRequest keeps the resolved limit canonical.
+    """
+    settings = dict(defaults)
+    default_max = settings.pop("max_tokens", None)
+    return replace(
+        request,
+        max_tokens=request.max_tokens if request.max_tokens is not None else default_max,
+        settings={**settings, **request.settings},
+    )
 
 
 @validated_dataclass(frozen=True, config=_VALUE_CONFIG)
@@ -150,6 +171,10 @@ class ModelInfo:
     max_output: Annotated[int, Field(ge=1)] | None = None
     supports_images: bool = False
     supports_structured_output: bool = False
+    default_settings: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "default_settings", freeze(self.default_settings))
 
 
 @dataclass(frozen=True, slots=True)

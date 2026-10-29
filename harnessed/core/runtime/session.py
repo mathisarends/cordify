@@ -18,7 +18,13 @@ from harnessed.core.messages import (
     Observation,
     ToolCall,
 )
-from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema
+from harnessed.core.model import (
+    Model,
+    ModelRequest,
+    ModelUsage,
+    OutputSchema,
+    resolve_request_settings,
+)
 from harnessed.core.outputs import OutputContract, OutputTypes, OutputValues
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
@@ -360,6 +366,7 @@ class Session:
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
                 self.options.max_tokens,
             )
+            request = resolve_request_settings(request, self.ctx[Model].info.default_settings)
             applied, _ = await self._compaction.compact(request)
             return applied
 

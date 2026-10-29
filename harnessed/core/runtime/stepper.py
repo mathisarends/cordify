@@ -9,7 +9,7 @@ from harnessed.core.compaction import CompactionManager, CompactionPolicy
 from harnessed.core.errors import ContextLengthExceeded, OutputValidationError
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
 from harnessed.core.messages import Observation, Role, User
-from harnessed.core.model import ModelRequest
+from harnessed.core.model import Model, ModelRequest, resolve_request_settings
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.executor import ToolExecutor
@@ -146,6 +146,7 @@ class StepRunner:
         starter = current.events[0]
         assert isinstance(starter, TurnStart)
         request = self.outputs.prepare(request, starter.output_schema)
+        request = resolve_request_settings(request, self.ctx[Model].info.default_settings)
         request = await self.compaction.prepare(request)
         if ContextBudget in self.ctx:
             await self.ctx[ContextBudget].check(
