@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from harnessed.core.errors import (
     AuthError,
@@ -308,6 +308,15 @@ def _tool_call(part: NativeToolCall) -> ToolCall:
         )
 
 
+_STOP_REASONS = {
+    "stop": StopReason.END,
+    "length": StopReason.MAX_TOKENS,
+    "tool_call": StopReason.TOOL_CALLS,
+    "content_filter": StopReason.CONTENT_FILTER,
+    "error": StopReason.ERROR,
+}
+
+
 def _response(response: NativeResponse) -> ModelResponse:
     from pydantic_ai import messages as native
 
@@ -329,13 +338,9 @@ def _response(response: NativeResponse) -> ModelResponse:
         provider_state=raw,
     )
     usage = response.usage
-    reason = {
-        "stop": "end",
-        "length": "max_tokens",
-        "tool_call": "tool_calls",
-        "content_filter": "content_filter",
-        "error": "error",
-    }.get(response.finish_reason or "", "tool_calls" if calls else "end")
+    reason = _STOP_REASONS.get(
+        response.finish_reason or "", StopReason.TOOL_CALLS if calls else StopReason.END
+    )
     return ModelResponse(
         message,
         ModelUsage(
@@ -346,7 +351,7 @@ def _response(response: NativeResponse) -> ModelResponse:
             usage.details.get("reasoning_tokens"),
             float(usage.cost) if usage.cost is not None else None,
         ),
-        cast(StopReason, reason),
+        reason,
     )
 
 

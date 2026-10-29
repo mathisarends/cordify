@@ -106,12 +106,6 @@ make the rest private.
 
 ### Code cleanliness and consistency of abstractions
 
-**C3. Reflection where a contract is missing.** `getattr(plugin, "events", ())` in
-both `Agent.__init__` and `Session.use` stands in for an `events` member on
-`PluginLike`. `Service` special-cases `Model` (slot and async context entry). There
-are 31 `getattr`/`cast` uses outside the kernel and bridge; AGENTS.md limits these
-to genuinely dynamic boundaries.
-
 **C4. Errors and invariants.** About 196 bare `ValueError`/`RuntimeError`/
 `TypeError` raises exist outside the kernel. User-facing ones (invalid status
 transition, "pause before changing history", token-limit FAIL, `ScriptedModel ran

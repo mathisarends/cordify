@@ -39,7 +39,7 @@ class SpillCapacityExceeded(ValueError):
 
 
 class _SessionSpills:
-    def __init__(self, files: SessionFiles, session: SessionLog, config: Spill.Config) -> None:
+    def __init__(self, files: SessionFiles, session: SessionLog, config: SpillConfig) -> None:
         self.files = files
         self.session = session
         self.config = config

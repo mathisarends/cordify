@@ -1,7 +1,7 @@
 import inspect
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
-from typing import Annotated, Protocol, Self, cast
+from typing import Annotated, Protocol, Self, runtime_checkable
 
 from pydantic import ConfigDict, Field, TypeAdapter
 
@@ -23,6 +23,7 @@ from harnessed.kernel import Context, Inject, Next, Priority, hook
 from .messages import ToolCall
 
 
+@runtime_checkable
 class Approver(Protocol):
     async def ask(self, request: ApprovalRequested) -> ApprovalAnswer | None: ...
 
@@ -229,7 +230,11 @@ class Approvals(Plugin, slot="approvals"):
         timeout: float = 300.0,
     ) -> None:
         super().__init__(timeout=timeout)
-        self.approver = approver
+        self.approver: Approver | None = (
+            approver
+            if approver is None or isinstance(approver, Approver)
+            else CallbackApprover(approver)
+        )
         if not isinstance(default, PolicyDecision):
             raise TypeError("default must be a PolicyDecision")
         if any(isinstance(items, str) for items in (trust, require, deny)):
@@ -270,13 +275,10 @@ class Approvals(Plugin, slot="approvals"):
         if decision is not None and not isinstance(decision, PolicyDecision):
             raise TypeError("Approval policies must return PolicyDecision or None")
         if decision is PolicyDecision.ASK:
-            selected = self.approver
-            if selected is not None and callable(selected):
-                selected = CallbackApprover(cast(ApprovalCallback, selected))
             answer = await session.request_approval(
                 event.call,
                 "Tool may have side effects",
-                approver=selected,
+                approver=self.approver,
                 timeout=self.config.timeout,
             )
             decision = (

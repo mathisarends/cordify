@@ -4,8 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
-from harnessed.kernel import Context, PluginLike
-from harnessed.kernel.plugin import as_plugin_spec
+from harnessed.kernel import Context
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,22 +68,6 @@ class PromptContribution:
     name: str
     guidance: str | Section | None = None
     context_description: tuple[str, str] | None = None
-
-    @classmethod
-    def from_plugin(cls, plugin: PluginLike) -> Self:
-        """Normalize the extensible kernel metadata once at the agent boundary."""
-        spec = as_plugin_spec(plugin)
-        guidance = spec.guidance
-        if guidance is not None and not isinstance(guidance, str | Section):
-            raise TypeError("Plugin guidance must be a string, Section or None")
-        description = getattr(plugin, "context_description", None)
-        if description is not None and (
-            not isinstance(description, tuple)
-            or len(description) != 2
-            or not all(isinstance(value, str) for value in description)
-        ):
-            raise TypeError("Context descriptions must contain a name and text")
-        return cls(spec.name, guidance, description)
 
 
 class PromptComposition:

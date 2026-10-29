@@ -28,6 +28,7 @@ from harnessed.core.model import (
     resolve_request_settings,
 )
 from harnessed.core.outputs import OutputContract, OutputTypes, OutputValues
+from harnessed.core.plugin import plugin_events
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
@@ -159,7 +160,7 @@ class Session:
 
     async def use(self, plugin: PluginLike) -> PluginHandle:
         """Mount a recipe at runtime; its guidance is context, never system text."""
-        self.log.registry.register(getattr(plugin, "events", ()))
+        self.log.registry.register(plugin_events(plugin))
         handle = await self.ctx.plugin(plugin)
         try:
             await self.ctx.settle()

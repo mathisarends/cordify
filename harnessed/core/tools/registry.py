@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from types import MappingProxyType, MethodType
-from typing import Annotated, Any, cast, overload
+from typing import Annotated, Any, overload
 
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
@@ -332,9 +332,11 @@ class ToolRegistry:
             if inspect.iscoroutine(keys):
                 keys.close()
             raise TypeError("Resource resolvers must return resource names, not an awaitable")
+        if isinstance(keys, str) or not isinstance(keys, Iterable):
+            raise TypeError("Resource resolvers must return an iterable of resource names")
         return PreparedToolCall(
             call,
-            ToolScheduling(tool.spec.parallel, tuple(cast(Iterable[str], keys))),
+            ToolScheduling(tool.spec.parallel, tuple(keys)),
             binding=tool,
             output_limit=tool.spec.output_limit,
         )

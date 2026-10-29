@@ -9,9 +9,9 @@ from harnessed.core.errors import PluginConflict
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
 from harnessed.core.outputs import OutputContract, OutputTypes
-from harnessed.core.plugin import Service
+from harnessed.core.plugin import Service, plugin_contribution, plugin_events
 from harnessed.core.prompt.instructions import Instructions
-from harnessed.core.prompt.values import InstructionValues, PromptComposition, PromptContribution
+from harnessed.core.prompt.values import InstructionValues, PromptComposition
 from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.runtime.opener import open_session
 from harnessed.core.runtime.options import RunOptions
@@ -60,7 +60,7 @@ class Agent:
         declared = next((value for value in normalized if isinstance(value, Instructions)), None)
         self.prompt = PromptComposition(
             declared.values if declared is not None else (),
-            (PromptContribution.from_plugin(value) for value in normalized),
+            (plugin_contribution(value) for value in normalized),
         )
         defaults: list[PluginLike] = [
             AgentLoop(),
@@ -87,7 +87,7 @@ class Agent:
             defaults.append(value)
         self.plugins = tuple(defaults)
         self._events = EventRegistry(
-            kind for plugin in self.plugins for kind in getattr(plugin, "events", ())
+            kind for plugin in self.plugins for kind in plugin_events(plugin)
         )
         self.sessions = SessionRepository(self.plugins, registry=self._events)
 
