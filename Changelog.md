@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-10-29)
 
 This release introduces breaking event API and session storage changes from
 0.1.0. Back up existing sessions and start a new session store after upgrading.

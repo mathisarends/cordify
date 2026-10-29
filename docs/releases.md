@@ -26,7 +26,7 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-10-29)
 
 This minor release adds explicit event and request lifecycles, declarative plugin
 injection and observation delivery provenance. It includes breaking API and
