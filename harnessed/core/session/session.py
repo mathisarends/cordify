@@ -36,6 +36,7 @@ from harnessed.core.session.events import (
     StepOutcome,
     StepStart,
     ToolCompleted,
+    ToolExecutionFinished,
     ToolExecutionStarted,
     ToolReturned,
     TurnEnd,
@@ -387,6 +388,7 @@ class SessionLog:
         unanswered: dict[str, ToolCall] = {}
         completed: dict[str, ToolResult] = {}
         started = set()
+        executed: set[str] = set()
         for event in self._events:
             match event:
                 case TurnStart(turn_id=turn_id):
@@ -398,12 +400,15 @@ class SessionLog:
                         unanswered[call.id] = call
                         completed.pop(call.id, None)
                         started.discard(call.id)
+                        executed.discard(call.id)
                 case ToolReturned(call_id=call_id):
                     unanswered.pop(call_id, None)
                 case ToolCompleted(call_id=call_id, result=result):
                     completed[call_id] = result
                 case ToolExecutionStarted(call_id=call_id):
                     started.add(call_id)
+                case ToolExecutionFinished(call_id=call_id):
+                    executed.add(call_id)
                 case StepEnd():
                     step = None
                 case TurnEnd():
@@ -411,6 +416,18 @@ class SessionLog:
         for call in unanswered.values():
             if call.id in completed:
                 await self.append(ToolReturned(call.id, completed[call.id]))
+                continue
+            if call.id in executed:
+                await self.append(
+                    ToolReturned(
+                        call.id,
+                        ToolResult.error(
+                            "Tool execution finished, but result review was interrupted. "
+                            "The raw result is retained in tool.execution.finished for inspection. "
+                            "Do not repeat the action solely to recover its result."
+                        ),
+                    )
+                )
                 continue
             message = "Tool execution interrupted" if control.paused else "Tool execution aborted"
             if call.id in started:

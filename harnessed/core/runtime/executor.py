@@ -22,6 +22,7 @@ from harnessed.core.session.events import (
     PolicySource,
     ToolCalled,
     ToolCompleted,
+    ToolExecutionFinished,
     ToolExecutionStarted,
     ToolPolicyApplied,
     ToolReturned,
@@ -92,6 +93,8 @@ class ToolExecutor:
                 if result is None:
                     async with scheduler.slots:
                         result, reviewable = await self.invoke(plan)
+                    await self.log.append(ToolExecutionFinished(plan.call.id, result))
+                    await self.log.flush()
                 if index:
                     await reviewed[index - 1].wait()
                 if reviewable:
@@ -104,6 +107,7 @@ class ToolExecutor:
                     )
                     result = limit.apply(result)
                 await self.log.append(ToolCompleted(plan.call.id, result))
+                await self.log.flush()
                 return result
             finally:
                 reviewed[index].set()

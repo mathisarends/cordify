@@ -53,6 +53,14 @@ to this call. It does not expose the model driver. Normal service arguments use
 
 ## Cancellation and parallel work
 
+Each finished invocation writes and flushes a `tool.execution.finished` receipt
+before waiting for ordered result review. The receipt contains the raw output in
+the audit log; it is not a model-visible result. `tool.completed` records the
+reviewed and limited result, and `tool.returned` publishes it in model order.
+If execution finished but review did not, recovery retains the receipt and returns
+an explicit interrupted-review error without exposing raw output or repeating the
+action. Audit consumers must treat execution receipts as unreviewed data.
+
 Async tools receive task cancellation on abort or timeout. Put resource cleanup
 in `finally`. Synchronous tools run in a worker thread: Python cannot forcibly
 stop a running thread. Long synchronous operations must poll `call.cancelled`

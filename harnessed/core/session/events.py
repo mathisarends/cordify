@@ -551,6 +551,22 @@ class ToolReturned(SessionEvent):
 
 
 @dataclass(frozen=True)
+class ToolExecutionFinished(SessionEvent):
+    """The raw execution receipt, durably saved before ordered result review.
+
+    This is audit data, not a model-visible result. Recovery must never bypass
+    ReviewToolResult by publishing this receipt as ToolReturned.
+    """
+
+    __hash__ = None
+    type: Literal[EventKind.TOOL_EXECUTION_FINISHED] = field(
+        default=EventKind.TOOL_EXECUTION_FINISHED, kw_only=True
+    )
+    call_id: Identifier
+    result: ToolResult
+
+
+@dataclass(frozen=True)
 class ToolCompleted(SessionEvent):
     __hash__ = None
 
@@ -637,6 +653,7 @@ type LogEvent = Annotated[
         | ApprovalRevoked
         | ToolPolicyApplied
         | ToolExecutionStarted
+        | ToolExecutionFinished
         | LogTailRecovered
         | InboxAdded
         | InboxRemoved
