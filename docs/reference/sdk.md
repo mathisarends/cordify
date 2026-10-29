@@ -26,6 +26,15 @@ a local server. Both accept `include_tools=None`, `readonly_tools=()`,
 Each mount owns one connection and a fixed catalog of namespaced tools. See
 [MCP tools](../guides/mcp.md) for approvals, results and cancellation boundaries.
 
+## Subagents
+
+`Subagents(agents, *, max_parallel=3, max_calls=16, max_depth=1, timeout=180.0,
+max_steps=8, token_budget=None)` from `harnessed.plugins` adds the parallel-capable
+`delegate(agent, task)` tool. Values in `agents` implement `ChildSessionFactory`,
+including `Agent`. Each call opens an isolated child, waits for its answer and
+returns a receipt. See [subagents](../guides/subagents.md) for approvals, limits,
+recovery and ownership.
+
 ## Agent
 
 `Agent(*, model=None, instructions=None, plugins=(),
@@ -41,6 +50,7 @@ plugin_validation=PluginValidation.ERROR)` resolves reusable configuration.
 | agent.prompt | Inspectable PromptComposition of instructions and guidance |
 | agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types/contracts |
 | agent.run(prompt, **options) | One run in a fresh session |
+| agent.child_session(request) | Factory boundary for a fresh parent-owned child; application code normally uses Subagents |
 | agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
 
 Import `PluginValidation` from `harnessed`. Session startup checks all waiting
@@ -54,6 +64,12 @@ and permits later activation. Setup failures still propagate in either mode.
 See [startup validation](../guides/plugins.md#session-startup-validation).
 
 ## Session
+
+`session.children` exposes immutable child snapshots; `session.parent` is the
+child's `SubagentLinkedEvent` or `None`. `session.usage` remains local;
+`session.tree_usage` adds recorded child receipts recursively. These inspection
+properties are also available on `SessionLog`. Running or interrupted children
+may have incomplete recorded usage.
 
 | Member | Behavior |
 | --- | --- |

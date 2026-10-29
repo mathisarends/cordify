@@ -45,6 +45,9 @@ protocol instead.
 - `events/`, `hooks.py` and `errors.py` expose public names for core domain values,
   hooks and the error tree.
 - `agent.py` resolves the model/instructions/plugin recipe and opens owned sessions.
+- `plugins/subagents.py` declares the optional delegation tool. Core owns its
+  supervisor, parent links, child projections and approval routing; the feature
+  accepts `ChildSessionFactory` implementations without importing `Agent`.
 
 Do not restore `seams`, `adapters`, `app`, `llms`, `presets` or native provider
 clients. Applications use the small root SDK, `harnessed.plugins`,

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Subagents
+
+- Add `Subagents` with parallel delegation to isolated child sessions, explicit
+  task context, depth/call/turn limits and parent-owned cancellation and cleanup.
+- Add durable parent/child links, lifecycle events, routed approvals and progress,
+  `session.children`, `session.parent` and recorded `session.tree_usage` inspection.
+  Interrupted delegations are marked without automatically replaying child tools.
+- Add a core child-session factory protocol, an offline example and a guide.
+
 ### MCP client
 
 - Add `harnessed[mcp]` and the explicit `harnessed.plugins.mcp.MCP` plugin with

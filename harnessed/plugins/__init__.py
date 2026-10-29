@@ -23,6 +23,7 @@ from harnessed.plugins.shell import ShellTools as ShellTools
 from harnessed.plugins.skills import Skill as Skill
 from harnessed.plugins.skills import Skills as Skills
 from harnessed.plugins.spill import Spill as Spill
+from harnessed.plugins.subagents import Subagents as Subagents
 
 from .sessions import Durability as Durability
 
@@ -49,6 +50,7 @@ __all__ = [
     "Skill",
     "Skills",
     "Spill",
+    "Subagents",
     "ToolOutputLimit",
     "at_ratio",
     "every_turns",

@@ -47,3 +47,7 @@ class EventKind(StrEnum):
     STATUS_CHANGED = "session.status.changed"
     TURN_FINISHED = "turn.finished"
     OUTPUT_UNAVAILABLE = "output.unavailable"
+    SUBAGENT_LINKED = "subagent.linked"
+    SUBAGENT_STARTED = "subagent.started"
+    SUBAGENT_FINISHED = "subagent.finished"
+    SUBAGENT_APPROVAL_REQUESTED = "subagent.approval.requested"

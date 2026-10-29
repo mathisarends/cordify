@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Unpack, overload
 
 from harnessed.core.approvals import Approvals
+from harnessed.core.children import ChildSessionRequest
 from harnessed.core.composition import PluginValidation
 from harnessed.core.errors import PluginConflict
 from harnessed.core.event_registry import EventRegistry
@@ -103,7 +104,26 @@ class Agent:
         restore_outputs: Iterable[type[Any] | OutputContract[Any]] = (),
     ) -> AsyncGenerator[Session]:
         """Open or resume a conversation; omit its ID to create a new one."""
+        async with self._open_session(session_id, restore_outputs=restore_outputs) as session:
+            yield session
+
+    @asynccontextmanager
+    async def child_session(self, request: ChildSessionRequest) -> AsyncGenerator[Session]:
+        """Open a fresh isolated session for a parent-owned delegation."""
+        async with self._open_session(request.session_id, child=request) as session:
+            yield session
+
+    @asynccontextmanager
+    async def _open_session(
+        self,
+        session_id: str | SessionLog | None,
+        *,
+        restore_outputs: Iterable[type[Any] | OutputContract[Any]] = (),
+        child: ChildSessionRequest | None = None,
+    ) -> AsyncGenerator[Session]:
         async with Context() as ctx:
+            if child is not None:
+                ctx.provide(ChildSessionRequest, child)
             ctx.provide(EventRegistry, self._events.copy())
             # Validators are per session, so dynamic output types never leak between them.
             outputs = OutputTypes()

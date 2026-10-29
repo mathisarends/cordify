@@ -23,11 +23,14 @@ refresh remain future candidates.
 
 ## Subagents
 
-Subagents are explicitly deferred. A future design would need child sessions with
-their own logs and parent references, parent/child inspection, approval routing
-through the parent and progress forwarding. The feature should depend on a small
-core protocol rather than importing the application-level `Agent` into a plugin.
-Names such as `Subagent` and `session.children` are proposals, not available APIs.
+[Subagents](../guides/subagents.md) now support delegation until completion with
+isolated child logs, parent references, inspection, routed approvals, progress and
+owned cleanup. The feature accepts a small core factory protocol rather than
+importing the application-level `Agent` into its plugin.
+
+Background spawn/wait/message controls, automatic cross-process continuation,
+structured delegation outputs and shared tree-wide spending limits remain future
+candidates. Existing per-turn token budgets are step-boundary limits.
 
 ## Skills
 
