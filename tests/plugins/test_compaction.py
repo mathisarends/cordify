@@ -8,19 +8,20 @@ from harnessed.core.compaction import ContextState
 from harnessed.core.errors import ConfigError, ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest
 from harnessed.core.messages import System, ToolCall
-from harnessed.core.model import ModelChunk, ModelInfo
+from harnessed.core.model import ModelChunk, ModelInfo, ModelUsage, UsagePurpose
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionApplied,
     ControlState,
     ModelRequested,
+    ModelUsageRecorded,
     StepEnd,
     TurnOutcome,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
 from harnessed.plugins import AgentLoop, Compaction, JsonlSessions, at_ratio, every_turns
-from harnessed.testing import CallbackModel, ScriptedModel
+from harnessed.testing import CallbackModel, ScriptedModel, reply
 
 
 class Brief:
@@ -54,6 +55,33 @@ async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_ins
         assert applied.before_tokens > applied.after_tokens
         records = [decode_event(encode_event(event)) for event in session.events]
         assert SessionLog("replay", seed=records).messages == session.messages
+
+
+@pytest.mark.parametrize("reduces_context", [True, False])
+async def test_compaction_usage_is_counted_and_replayed_even_when_no_summary_is_applied(
+    reduces_context,
+):
+    summary = "summary" if reduces_context else "y" * 8000
+    model = ScriptedModel(
+        [reply("first", usage=ModelUsage(28, 4)), reply(summary, usage=ModelUsage(123, 12)), "next"]
+    )
+    async with Agent(
+        model=model,
+        plugins=[Compaction(trigger=every_turns(1), keep_turns=0)],
+    ).session() as session:
+        await session.run("x" * 4000)
+        result = await session.run("current")
+        assert session.usage.input_tokens == 151 and session.usage.output_tokens == 16
+        assert result.usage.input_tokens == 123 and result.usage.output_tokens == 12
+        summaries = [
+            event
+            for event in session.events
+            if isinstance(event, ModelUsageRecorded) and event.purpose is UsagePurpose.COMPACTION
+        ]
+        assert len(summaries) == 1 and summaries[0].usage == ModelUsage(123, 12)
+        records = [decode_event(encode_event(event)) for event in session.events]
+        assert SessionLog("replay", seed=records).usage == session.usage
+        assert (session.last(CompactionApplied) is not None) == reduces_context
 
 
 async def test_periodic_trigger_counts_new_closed_turns_and_reuses_the_previous_summary():

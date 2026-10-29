@@ -42,6 +42,11 @@ class TokenLimitBehavior(StrEnum):
     FAIL = "fail"
 
 
+class UsagePurpose(StrEnum):
+    RESPONSE = "response"
+    COMPACTION = "compaction"
+
+
 @validated_dataclass(frozen=True, config=_VALUE_CONFIG)
 class ToolDefinition:
     __hash__ = None

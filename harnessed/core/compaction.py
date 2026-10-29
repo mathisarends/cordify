@@ -11,8 +11,20 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from harnessed.core.budget import ContextBudget, truncate
 from harnessed.core.messages import Message, System, User, to_dict
-from harnessed.core.model import Model, ModelRequest
-from harnessed.core.session.events import CompactionApplied, SessionEvent, TurnEnd, TurnStart
+from harnessed.core.model import (
+    Model,
+    ModelRequest,
+    ModelUsage,
+    UsagePurpose,
+    resolve_request_settings,
+)
+from harnessed.core.session.events import (
+    CompactionApplied,
+    ModelUsageRecorded,
+    SessionEvent,
+    TurnEnd,
+    TurnStart,
+)
 from harnessed.core.session.session import SessionLog as Session
 from harnessed.core.session.session import _derive_message_entries, derive_messages
 from harnessed.core.tokens import TokenCounter, count_request
@@ -24,9 +36,17 @@ _TRIGGER_RESULT = TypeAdapter(bool, config=ConfigDict(strict=True, hide_input_in
 _SUMMARY_RESULT = TypeAdapter(str, config=ConfigDict(strict=True, hide_input_in_errors=True))
 
 
+@dataclass(frozen=True)
+class Summary:
+    text: str
+    usage: ModelUsage | None = None
+
+
 @runtime_checkable
 class Summarizer(Protocol):
-    async def summarize(self, messages: tuple[Message, ...], *, max_tokens: int) -> str: ...
+    async def summarize(
+        self, messages: tuple[Message, ...], *, max_tokens: int
+    ) -> str | Summary: ...
 
 
 class ModelSummarizer:
@@ -37,7 +57,7 @@ class ModelSummarizer:
         self.model_name = model_name or model.info.name
         self.focus = focus
 
-    async def summarize(self, messages: tuple[Message, ...], *, max_tokens: int) -> str:
+    async def summarize(self, messages: tuple[Message, ...], *, max_tokens: int) -> Summary:
         transcript = "\n\n".join(
             f"{message.role}: {message.text}"
             + (
@@ -53,19 +73,21 @@ class ModelSummarizer:
         )
         if self.focus:
             instructions += f"\nFocus: {self.focus}"
-        response = await self.model.request(
+        request = resolve_request_settings(
             ModelRequest(
                 self.model_name,
                 (System(instructions), User(transcript)),
                 max_tokens=max_tokens,
-            )
+            ),
+            self.model.info.default_settings,
         )
+        response = await self.model.request(request)
         if response.message.tool_calls:
             raise ValueError("Summarizer returned a tool call")
         summary = response.message.text.strip()
         if not summary:
             raise ValueError("Summarizer returned an empty summary")
-        return summary
+        return Summary(summary, response.usage)
 
 
 class CompactionSettings(BaseModel):
@@ -169,6 +191,12 @@ class CompactionManager:
                 summary = await summarizer.summarize(
                     plan.messages, max_tokens=settings.summary_tokens
                 )
+            if isinstance(summary, Summary):
+                if summary.usage is not None:
+                    await self.log.append(
+                        ModelUsageRecorded(summary.usage, purpose=UsagePurpose.COMPACTION)
+                    )
+                summary = summary.text
             summary = _SUMMARY_RESULT.validate_python(summary)
             summary = truncate(summary.strip(), settings.summary_tokens, counter)
             if not summary.strip():

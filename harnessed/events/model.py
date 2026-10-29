@@ -6,4 +6,6 @@ __all__ = [
     "CacheMetrics",
     "Requested",
     "UsageRecorded",
+    "UsagePurpose",
 ]
+from harnessed.core.model import UsagePurpose as UsagePurpose

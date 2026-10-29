@@ -20,7 +20,7 @@ from harnessed.core.messages import (
     User,
     freeze,
 )
-from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema, StopReason
+from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema, StopReason, UsagePurpose
 from harnessed.kernel.events import Emit
 
 
@@ -414,6 +414,10 @@ class ModelUsageRecorded(SessionEvent):
         default=EventKind.MODEL_USAGE_RECORDED, kw_only=True
     )
     usage: ModelUsage
+    purpose: UsagePurpose = UsagePurpose.RESPONSE
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "purpose", UsagePurpose(self.purpose))
 
 
 @dataclass(frozen=True)
