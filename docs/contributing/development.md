@@ -70,10 +70,14 @@ and development tools stay outside the distribution and its runtime dependencies
 
 ## Prepare a release
 
-Set the package version in `pyproject.toml`, update the
-[release notes](../releases.md) and run the checks above with all provider extras.
-Keep the release notes marked unreleased until publication. The build produces
-`dist/harnessed-<version>.tar.gz` and `dist/harnessed-<version>-py3-none-any.whl`.
+Set the package version in `pyproject.toml` and run `uv lock` to synchronize the
+project version in `uv.lock` without upgrading dependencies. Update both the
+[release notes](../releases.md) and the repository
+[changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md),
+including breaking changes and upgrade instructions, then run the checks above
+with all provider extras. Keep both entries marked unreleased until publication.
+The build produces `dist/harnessed-<version>.tar.gz` and
+`dist/harnessed-<version>-py3-none-any.whl`.
 Use a clean `dist/` directory so the wheel smoke check selects exactly one version.
 
 Validate both artifacts and the rendered package description before uploading:
@@ -116,9 +120,10 @@ first successful upload; see the
    wheel and validates metadata with Twine. Download `python-distributions` and
    `distribution-hashes` to inspect the artifacts. Manual runs never upload to
    PyPI or change a GitHub release.
-3. Confirm the PyPI publisher is registered. Replace the unreleased label with
-   the publication date, merge that change and target the release at that final
-   commit. Keep the release notes consistent with the version being published.
+3. Confirm the PyPI publisher is registered. Replace the unreleased labels in
+   the release notes and changelog with the publication date, merge that change
+   and target the release at that final commit. Keep both entries consistent
+   with the version being published.
 4. Publish the GitHub release. This triggers the release workflow, which requires
    the tagged commit to belong to `main` and its tag to match `pyproject.toml`.
    It reruns the full CI matrix and builds and verifies the distributions before
