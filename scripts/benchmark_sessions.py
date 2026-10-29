@@ -20,7 +20,7 @@ from time import perf_counter
 
 from harnessed import Agent
 from harnessed.core.messages import Assistant
-from harnessed.core.model import ModelChunk, ModelInfo, ModelRequest, ModelResponse
+from harnessed.core.model import ModelChunk, ModelInfo, ModelRequest, ModelResponse, ModelUsage
 from harnessed.core.session.codec import EventLogCodec
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import MemorySessions
@@ -39,6 +39,10 @@ class EchoStream:
             raise StopAsyncIteration
         self.done = True
         return ModelChunk(text=self.value.message.text)
+
+    @property
+    def usage(self) -> ModelUsage | None:
+        return None
 
     def response(self) -> ModelResponse:
         if not self.done:

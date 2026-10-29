@@ -4,7 +4,7 @@ from dataclasses import replace
 from uuid import uuid4
 
 from harnessed.core.messages import Assistant, ToolCall
-from harnessed.core.model import Model, ModelRequest
+from harnessed.core.model import Model, ModelRequest, ModelStream
 from harnessed.core.session.events import AssistantMessage, ModelUsageRecorded
 from harnessed.core.session.session import SessionLog
 from harnessed.core.stream import ReasoningDelta, TextDelta, ToolArgumentsDelta, ToolCallStarted
@@ -26,7 +26,7 @@ class ModelResponder:
         calls: list[ToolCall] = []
         text: list[str] = []
         reasoning: list[str] = []
-        last_usage = None
+        stream: ModelStream | None = None
 
         def message() -> Assistant:
             return Assistant(
@@ -39,8 +39,6 @@ class ModelResponder:
         try:
             async with self.ctx[Model].stream(request) as stream:
                 async for chunk in stream:
-                    if chunk.usage is not None:
-                        last_usage = chunk.usage
                     if chunk.text or chunk.reasoning:
                         text.append(chunk.text)
                         reasoning.append(chunk.reasoning)
@@ -58,8 +56,8 @@ class ModelResponder:
                         )
                 response = stream.response()
         except BaseException:
-            if last_usage is not None:
-                await self.log.append(ModelUsageRecorded(last_usage))
+            if stream is not None and (usage := stream.usage) is not None:
+                await self.log.append(ModelUsageRecorded(usage))
             if text or reasoning:
                 await self.log.append(AssistantMessage(message(), interrupted=True))
             raise

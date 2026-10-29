@@ -1,5 +1,6 @@
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from dataclasses import replace
 
 import pytest
@@ -23,6 +24,7 @@ from harnessed.core.errors import (
 from harnessed.core.messages import ImagePart, TextPart
 from harnessed.core.model import ModelRequest, StopReason, ToolArgumentsMode
 from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import ModelUsageRecorded
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
 from harnessed.models import PydanticAIModel
@@ -534,6 +536,47 @@ async def test_aborting_a_native_stream_closes_its_generator():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert closed.is_set()
+
+
+@pytest.mark.parametrize("outcome", ["failure", "abort", "success"])
+async def test_native_stream_usage_is_recorded_once_even_when_interrupted(outcome):
+    started = asyncio.Event()
+
+    class RecordedModel(FunctionModel):
+        @asynccontextmanager
+        async def request_stream(self, *args, **kwargs):
+            async with super().request_stream(*args, **kwargs) as response:
+                self.last_stream = response
+                yield response
+
+    async def chunks(messages, info):
+        yield "This response was started and then interrupted."
+        started.set()
+        if outcome == "failure":
+            raise RuntimeError("connection lost")
+        if outcome == "abort":
+            await asyncio.Event().wait()
+
+    provider = RecordedModel(stream_function=chunks)
+    async with Agent(model=provider).session() as session:
+        handle = await session.submit("hello")
+        async with asyncio.timeout(3):
+            await started.wait()
+            if outcome == "abort":
+                await session.abort()
+            if outcome == "failure":
+                with pytest.raises(RuntimeError, match="connection lost"):
+                    await handle.result()
+            else:
+                result = await handle.result()
+                assert result.stop_reason is (
+                    StopReason.ABORTED if outcome == "abort" else StopReason.END
+                )
+        usage = provider.last_stream.usage
+        assert usage.input_tokens > 0 and usage.output_tokens > 0
+        assert session.usage.input_tokens == usage.input_tokens
+        assert session.usage.output_tokens == usage.output_tokens
+        assert sum(isinstance(event, ModelUsageRecorded) for event in session.events) == 1
 
 
 def _openai_sse(parts, finish):

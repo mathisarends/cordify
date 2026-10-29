@@ -98,7 +98,7 @@ class _Stream:
         self._text: list[str] = []
         self._reasoning: list[str] = []
         self._calls = []
-        self._usage = ModelUsage(0)
+        self._usage: ModelUsage | None = None
         self._stop_reason = None
         self._response: ModelResponse | None = None
         self._closed = False
@@ -123,7 +123,7 @@ class _Stream:
                     tuple(self._calls),
                     reasoning="".join(self._reasoning),
                 ),
-                self._usage,
+                self._usage or ModelUsage(0),
                 self._stop_reason or (StopReason.TOOL_CALLS if self._calls else StopReason.END),
             )
             raise StopAsyncIteration from None
@@ -136,6 +136,10 @@ class _Stream:
         if chunk.stop_reason is not None:
             self._stop_reason = chunk.stop_reason
         return chunk
+
+    @property
+    def usage(self) -> ModelUsage | None:
+        return self._response.usage if self._response is not None else self._usage
 
     def response(self) -> ModelResponse:
         if self._response is None:

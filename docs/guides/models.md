@@ -69,6 +69,11 @@ input, output, cache-read, cache-write and available reasoning counters separate
 A cache hit rate is cache-read tokens divided by input tokens; a cache write is not
 a cache miss. Missing optional counters remain unknown when usages are combined.
 
+Custom `ModelStream` implementations expose a `usage` property containing the
+cumulative `ModelUsage` snapshot, or `None` while usage is unknown. Keep this
+snapshot readable after interruption or cleanup. The runtime records it once when
+a stream fails or is aborted; successful requests use the final response's usage.
+
 ## Streaming tool calls
 
 Custom models can emit `ModelChunk(tool_call_start=ToolCallStart(index, name, call_id))`

@@ -4,7 +4,15 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from harnessed import Agent
-from harnessed.models import Assistant, Model, ModelChunk, ModelInfo, ModelRequest, ModelResponse
+from harnessed.models import (
+    Assistant,
+    Model,
+    ModelChunk,
+    ModelInfo,
+    ModelRequest,
+    ModelResponse,
+    ModelUsage,
+)
 
 
 class EchoStream:
@@ -19,6 +27,10 @@ class EchoStream:
             raise StopAsyncIteration
         self.finished = True
         return ModelChunk(text=self.text)
+
+    @property
+    def usage(self) -> ModelUsage | None:
+        return None
 
     def response(self) -> ModelResponse:
         if not self.finished:

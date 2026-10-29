@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from pydantic_ai.models import ModelRequestParameters, StreamedResponse
     from pydantic_ai.native_tools import AbstractNativeTool
     from pydantic_ai.settings import ModelSettings
+    from pydantic_ai.usage import RequestUsage as NativeUsage
 
 
 def _extra(model: object) -> str:
@@ -362,7 +363,6 @@ def _response(response: NativeResponse) -> ModelResponse:
         reasoning="".join(thinking),
         provider_state=raw,
     )
-    usage = response.usage
     reason = _STOP_REASONS.get(
         response.finish_reason or "", StopReason.TOOL_CALLS if calls else StopReason.END
     )
@@ -371,15 +371,19 @@ def _response(response: NativeResponse) -> ModelResponse:
         reason = StopReason.END
     return ModelResponse(
         message,
-        ModelUsage(
-            usage.input_tokens,
-            usage.output_tokens,
-            usage.cache_read_tokens,
-            usage.cache_write_tokens,
-            usage.details.get("reasoning_tokens"),
-            float(usage.cost) if usage.cost is not None else None,
-        ),
+        _usage(response.usage),
         reason,
+    )
+
+
+def _usage(usage: NativeUsage) -> ModelUsage:
+    return ModelUsage(
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.cache_read_tokens,
+        usage.cache_write_tokens,
+        usage.details.get("reasoning_tokens"),
+        float(usage.cost) if usage.cost is not None else None,
     )
 
 
@@ -401,6 +405,11 @@ class _Stream:
 
     async def __anext__(self) -> ModelChunk:
         return await anext(self._iterator)
+
+    @property
+    def usage(self) -> ModelUsage | None:
+        usage = self._native.usage
+        return _usage(usage) if usage.has_values() else None
 
     def response(self) -> ModelResponse:
         if self._response is None:
