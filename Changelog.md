@@ -24,7 +24,8 @@
   compositions. Import `PluginValidation` from `harnessed`; warning mode emits
   `PluginDependencyWarning` with the same structured issues. Both diagnostics are
   importable from `harnessed.errors`. Setup failures still propagate in either
-  mode. Startup validation also applies to `Agent.run()`.
+  mode. Startup validation also applies to `Agent.run()`. A failed startup closes
+  acquired resources without discarding persisted queued input.
 
 ### Plugin diagnostics
 

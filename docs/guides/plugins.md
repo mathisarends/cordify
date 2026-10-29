@@ -159,7 +159,8 @@ After publishing `Session`, `SessionLog` and the other session services, it wait
 for dependency-driven setup to settle and checks the full service scope, including
 nested plugin installs. A waiting plugin raises `PluginDependencyError` before
 the runtime starts, a model request is made or queued work resumes. Acquired
-resources and the session lease are closed normally on failure.
+resources and the session lease are closed normally on failure. Persisted queued
+input remains available after correcting the composition and reopening.
 
 The error is a `ConfigError`, importable from `harnessed.errors`. Its `.issues`
 tuple lists every waiting plugin, including transitively blocked plugins. Each
