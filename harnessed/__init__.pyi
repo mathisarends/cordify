@@ -17,9 +17,12 @@ from harnessed.core.model import StopReason as StopReason
 from harnessed.core.outputs import OutputContract as OutputContract
 from harnessed.core.plugin import Plugin as Plugin
 from harnessed.core.plugin import PluginConfig as PluginConfig
+from harnessed.core.prompt.values import PluginSections as PluginSections
 from harnessed.core.prompt.values import PromptFormat as PromptFormat
+from harnessed.core.prompt.values import SectionDelivery as SectionDelivery
 from harnessed.core.prompt.values import SystemPrompt as SystemPrompt
 from harnessed.core.prompt.values import SystemSection as SystemSection
+from harnessed.core.prompt.values import Unplaced as Unplaced
 from harnessed.core.prompt.values import system_section as system_section
 from harnessed.core.runtime.control import SessionStatus as SessionStatus
 from harnessed.core.runtime.handles import RunHandle as RunHandle
@@ -56,6 +59,9 @@ __all__ = [
     "RunHandle",
     "RunResult",
     "PromptFormat",
+    "PluginSections",
+    "SectionDelivery",
+    "Unplaced",
     "SystemPrompt",
     "SystemSection",
     "system_section",

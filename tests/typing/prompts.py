@@ -1,6 +1,17 @@
 from typing import assert_type
 
-from harnessed import Agent, Plugin, PromptFormat, SystemPrompt, SystemSection, system_section
+from harnessed import (
+    Agent,
+    Plugin,
+    PluginSections,
+    PromptFormat,
+    SectionDelivery,
+    Session,
+    SystemPrompt,
+    SystemSection,
+    Unplaced,
+    system_section,
+)
 from harnessed.core.prompt.values import BoundSystemSection, SystemSectionProvider
 from harnessed.kernel import Context
 
@@ -35,5 +46,13 @@ async def catalog(ctx: Context) -> str:
 SystemSection.from_factory(factory=catalog, title="Catalog")
 SystemSection.from_file(path="AGENTS.md", missing_ok=True)
 SystemSection(text=42)  # ty: ignore[invalid-argument-type]
-SystemPrompt(sections=("raw text",))  # ty: ignore[invalid-argument-type]
+SystemPrompt(
+    sections=("raw text", PluginSections(feature), PluginSections()), unplaced=Unplaced.ERROR
+)
+SystemPrompt(sections=(42,))  # ty: ignore[invalid-argument-type]
 Agent(system_prompt=42)  # ty: ignore[invalid-argument-type]
+
+
+async def mount(session: Session) -> None:
+    await session.use(feature, section_delivery=SectionDelivery.CONTEXT)
+    await session.use(feature, section_delivery=SectionDelivery.IGNORE)

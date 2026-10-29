@@ -14,7 +14,10 @@ import re
 
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from harnessed import Agent, OutputContract, Plugin, PromptFormat, SystemPrompt, SystemSection, tool
+from harnessed import (
+    Agent, OutputContract, Plugin, PluginSections, PromptFormat, SectionDelivery,
+    SystemPrompt, SystemSection, Unplaced, tool,
+)
 from harnessed.events import TextDeltaEvent, TurnFinishedEvent
 from harnessed.plugins import Skill, Skills
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
@@ -52,7 +55,24 @@ class Calculator(Plugin):
 class Answer(BaseModel):
     value: int
 
+class Guidance(Plugin):
+    usage = SystemSection(text='Plugin guidance.')
+
 async def main():
+    guidance = Guidance()
+    simple = Agent(system_prompt='Role.', plugins=[guidance])
+    assert await simple.prompt.render() == 'Role.\n\nPlugin guidance.'
+    ordered = Agent(plugins=[guidance], system_prompt=SystemPrompt(
+        sections=(PluginSections(), 'Tail.'), unplaced=Unplaced.ERROR))
+    assert await ordered.prompt.render() == 'Plugin guidance.\n\nTail.'
+    async with Agent(model=ScriptedModel([reply('Ready')]),
+                     system_prompt='Fixed.').session() as session:
+        handle = await session.use(guidance, section_delivery=SectionDelivery.CONTEXT)
+        assert list(session.context.values.values()) == ['Plugin guidance.']
+        await session.run('Mounted')
+        await handle.aclose()
+        assert not session.context.values
+        assert await session.prompt.render() == 'Fixed.'
     agent = Agent(model=ScriptedModel([call(Calculator.add, a=19, b=23), reply('42')]),
                   plugins=[Calculator()], system_prompt=SystemPrompt(
                       format=PromptFormat.MARKDOWN,

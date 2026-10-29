@@ -1,7 +1,17 @@
 # System prompts and changing context
 
-Use explicitly composed system instructions for rules, named context for changing
+Use system instructions for rules, named context for changing
 facts, steering for course corrections, and tools for knowledge retrieved on demand.
+
+## Start with plain text
+
+`Agent(system_prompt="Be concise.", plugins=[observe, interaction])` places the
+application text first and appends declared plugin sections automatically. Omitting
+`system_prompt` includes just the plugin sections. The default is `Unplaced.APPEND`;
+no explicit composition is required for a simple agent.
+
+Automatic sections follow the configured `plugins` list, then each plugin's
+declaration order. Dependencies may change setup order without changing the prompt.
 
 ## Declare system sections
 
@@ -74,20 +84,49 @@ agent = Agent(
 print(agent.prompt)
 ```
 
-Plugin installation order does not determine prompt order. Nested groups expand
+Explicit placements determine prompt order. Nested groups expand
 at their exact position and inherit the outermost document's format. Sections
 are referenced through Python attributes; there are no public keys or
 string-based override registries.
 
-Every section declared by an installed plugin must be placed or explicitly
-excluded, for example `exclude=(observe.freshness,)`. To replace a section,
-place its replacement and exclude the original. Unplaced sections, repeated
-references, placement/exclusion conflicts and references to uninstalled plugin
-recipes raise `ConfigError` before configuration providers are evaluated.
-Equal text from different sections is retained.
+Strings within `sections` are shortcuts for untitled SystemSection values.
+`PluginSections(observe)` places that configured plugin's declarations as a group.
+Exclusions such as `exclude=(observe.freshness,)` also apply within groups. To replace
+a section, place its replacement and exclude the original. Overlapping explicit
+placements, repeated references, placement/exclusion conflicts and references to
+uninstalled recipes raise `ConfigError` before configuration providers run.
+Identity follows the plugin instance and declaration; equal text is retained.
 
-For agents without plugin sections, `Agent(system_prompt="Be concise.")`
-is the plain-text shortcut.
+```python
+from harnessed import PluginSections, Unplaced
+
+prompt = SystemPrompt(
+    sections=(
+        "You are a browser agent.",
+        PluginSections(),
+        "Finish with a concise answer.",
+        interaction.refs,
+    ),
+    exclude=(observe.freshness,),
+    unplaced=Unplaced.ERROR,
+)
+```
+
+The empty `PluginSections()` is a rest slot: all explicit placements (including
+plugin groups) and exclusions across the entire nested prompt are collected first,
+then the slot receives the remaining sections in configured plugin/declaration
+order. Here `interaction.refs` appears only at its later explicit position.
+A complete prompt allows at most one rest slot, including nested documents.
+Without a slot, remaining sections append at the end by default.
+
+`Unplaced.ERROR` rejects any section left without placement or exclusion. It checks
+complete placement; it does not guarantee an unchanged prompt after plugin updates.
+`PluginSections(plugin)` includes future declarations on that plugin, and a rest
+slot includes new remaining declarations. To detect newly added sections, reference
+individual sections and avoid open groups and slots. Changes to existing section
+content still require application review. The outermost document controls both
+format and unplaced policy. There is no implicit drop policy; omit sections with
+explicit exclusions.
 
 ## Select a renderer
 
@@ -112,7 +151,7 @@ Place these values in `SystemPrompt(sections=(...))` too.
 
 Built-in plugins expose sections through their configured recipe:
 `filesystem.usage`, `shell.usage`, `spill.usage` and `skills.catalog`.
-Place or exclude them explicitly.
+They append automatically; place them explicitly to control order, or exclude them.
 
 `print(agent.prompt)` lists the format, final order, plugin/attribute origins,
 previews and exclusions. Configuration providers show resolved content; files
@@ -122,10 +161,39 @@ and session factories show paths or descriptions. Inside a session,
 `session.log.request(request_id)` expose actual requests for assertions.
 
 The system prompt is an immutable session snapshot, including when a configured
-plugin later waits for dependencies or is suspended. `session.use(plugin)`
-rejects plugins declaring system sections before setup or event registration.
-It never silently relocates instructions into context. Compose those plugins
-at agent construction; use `ContextValue` for runtime facts.
+plugin later waits for dependencies or is suspended.
+
+## Runtime section delivery
+
+`session.use(plugin)` defaults to `SectionDelivery.ERROR`: a runtime plugin with
+declared system sections is rejected before setup or event registration. Choose
+delivery explicitly when mounting such a capability:
+
+```python
+from harnessed import SectionDelivery
+
+handle = await session.use(interaction, section_delivery=SectionDelivery.CONTEXT)
+await handle.aclose()
+```
+
+`CONTEXT` evaluates configuration providers and session factories once per mount
+activation and owns their guidance on that mount. The guidance is immediately
+available through `session.context.values` and subsequent model requests, and
+disappears from active context on unmount or dependency suspension. A restart
+evaluates it again. Setup, provider, file or factory failures roll back the mount's
+registrations and resources. Factory effects belong to the mount too.
+
+`SectionDelivery.IGNORE` mounts tools without evaluating section providers,
+reading section files or running section factories. Runtime guidance does not
+become a durable named fact and is not restored when reopening a session. Actual
+request records still retain the delivered content for inspection.
+
+The system text remains stable; new tools still change the tool catalog. This
+alone does not guarantee provider prompt-cache reuse.
+
+Keep guidance about one tool's parameters, return values and normal use in that
+tool's description. Use sections for rules spanning multiple tools, workflows or
+the whole agent. Use `ContextValue` for changing runtime facts.
 
 
 ## Facts and automatic context

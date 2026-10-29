@@ -124,7 +124,7 @@ class StepRunner:
         model = self.ctx[Model]
         request = ModelRequest(
             model.info.name,
-            self.log.messages,
+            (*self.log.messages, *self.session.context.owned_messages),
             self.ctx[ToolRegistry].visible_definitions(self.ctx),
             self.options.max_tokens,
             settings=settings,

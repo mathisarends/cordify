@@ -102,8 +102,9 @@ async def test_workspace(harnessed_session):
 ```
 
 The fixture also accepts an existing `Agent` as its first argument. When replacing
-plugins declaring system sections, supply `system_prompt=` with references to the
-replacement recipes. Provider SDKs
+plugins declaring system sections, automatic placement includes the replacement
+recipes. If composing individual references, update `system_prompt=` to refer to
+those replacement recipes. Provider SDKs
 and credentials are unnecessary for these tests. Configure pytest-asyncio as you
 normally would for asynchronous tests; Harnessed does not change its settings.
 

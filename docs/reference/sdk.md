@@ -55,9 +55,11 @@ See [startup validation](../guides/plugins.md#session-startup-validation).
 
 ## System prompt composition
 
-`SystemPrompt(*, sections=(), format=PromptFormat.PLAIN, exclude=())` is an
-immutable document. Sections are keyword-only `SystemSection(text="", title=None,
-description="")` values, plugin-bound references, or nested SystemPrompt groups.
+`SystemPrompt(*, sections=(), format=PromptFormat.PLAIN, exclude=(),
+unplaced=Unplaced.APPEND)` is an immutable document. Sections are strings,
+keyword-only `SystemSection(text="", title=None, description="")` values,
+plugin-bound references, `PluginSections(plugin)` groups, a `PluginSections()`
+rest slot, or nested SystemPrompt documents.
 The outermost format governs the flattened document: PLAIN joins text with blank
 lines, MARKDOWN adds optional level-two headings, and XML renders escaped section
 elements. Untitled and empty sections have defined behavior in every format; see
@@ -69,12 +71,23 @@ construction. `SystemSection.from_file(path=..., title=..., missing_ok=False)`
 and `SystemSection.from_factory(factory=..., title=..., description=...)` run once
 per opened session. Factories are async callbacks accepting the session Context.
 
-Every plugin section must be placed or excluded. Reference identity follows the
-configured recipe and declaration; there are no public keys or text-based
-deduplication. Missing, duplicate, foreign and conflicting references fail before
-configuration providers run. `await session.prompt.render()` returns the actual
-session text. Runtime mounts declaring system sections fail before mounting;
-use ContextValue for dynamic facts.
+Unplaced sections append in configured plugin and declaration order by default,
+including with `Agent(system_prompt="...")` or no application text. Setup order
+does not affect them. A rest slot is resolved globally after all explicit placements
+and exclusions, including later nested ones; at most one slot is allowed per prompt.
+The outermost document controls format and unplaced policy. `Unplaced.ERROR`
+requires complete placement or exclusion, but open groups and slots accept future
+sections. Use individual references without open groups/slots to detect additions.
+Reference identity follows the configured recipe and declaration; equal text is
+retained. Duplicate, foreign and conflicting references fail before providers run.
+`await session.prompt.render()` returns the actual session text.
+
+`session.use(plugin, section_delivery=SectionDelivery.ERROR)` rejects declared
+sections before mounting. `CONTEXT` delivers guidance as mount-owned active context,
+removed on suspension or unmount; providers/factories run once per activation and
+failures roll back the mount. `IGNORE` does not execute section providers, factories
+or file reads. The system text stays fixed; new tools still change the tool catalog.
+Use ContextValue for dynamic facts. All prompt policies are exported by `harnessed`.
 
 ## Session
 
@@ -91,7 +104,7 @@ use ContextValue for dynamic facts.
 | stop(keep_inbox=False) | Finish this step, end its turn, return to idle |
 | abort(keep_inbox=False) | Cancel now, drain cleanup, repair and end its turn |
 | wait_until_idle() | Wait for idle and an empty inbox |
-| use(plugin) | Mount a reversible runtime capability |
+| use(plugin, section_delivery=SectionDelivery.ERROR) | Mount a reversible capability; CONTEXT owns guidance per activation, IGNORE skips sections |
 | compact() | Summarize completed history while idle or paused; return its record or None |
 | fork(id, at=None, inherit_approvals=False) | Create a closed-prefix branch for Agent.session |
 | subscribe(transient=False) | Independent raw log subscription |

@@ -7,18 +7,32 @@
 - Replace `Agent(instructions=...)`, `Section` and plugin `guidance` with
   `Agent(system_prompt=...)`, keyword-only `SystemSection` declarations and
   synchronous, configuration-dependent `@system_section` providers.
-- `SystemPrompt(sections=..., exclude=..., format=...)` controls exact order
-  across plugins and nested groups. References use Python attributes without
-  public keys. Every declared section must be placed or explicitly excluded.
-  Missing, duplicate, conflicting and foreign references fail before providers run.
+- Plain `Agent(system_prompt="...", plugins=[...])` stays simple: plugin sections
+  append automatically through `Unplaced.APPEND`, in configured plugin and
+  declaration order, independent of dependency setup order.
+- `SystemPrompt(sections=..., exclude=..., format=..., unplaced=...)` accepts
+  strings, individual references, nested documents and `PluginSections(plugin)`
+  groups. One `PluginSections()` rest slot per complete prompt is resolved after
+  all explicit placements and exclusions, even those appearing later or nested.
+- `Unplaced.ERROR` checks complete placement. Open groups and rest slots also
+  include future declarations; use individual references without open groups or
+  slots to detect newly added sections. There is no DROP policy; exclusions are
+  explicit. Duplicate, conflicting and foreign references fail before providers run.
 - Add PLAIN (default), XML and MARKDOWN rendering with consistent ordering,
   optional titles, empty-section omission and XML escaping. Remove silent
   content-based deduplication.
-- Files and async factories still run once per session. Runtime mounts declaring
-  system sections fail before setup; use ContextValue for runtime facts.
+- Files and async factories run once per session for configured system text.
+  Runtime mounts default to `SectionDelivery.ERROR`; explicit `CONTEXT` owns guidance
+  per activation and removes it on suspension or unmount. Provider/factory/setup
+  failures roll back mount resources. `IGNORE` skips all section evaluation.
+  Historical requests retain delivered guidance without restoring it on reopen.
   The internal rendered-text service is now SystemPromptStore.
 - Built-in declarations are `filesystem.usage`, `shell.usage`, `spill.usage` and
-  `skills.catalog`. Place or exclude them through their configured recipes.
+  `skills.catalog`. They append by default; place or exclude them through their
+  configured recipes. Inspection shows section order, provenance and exclusions.
+- Put advice specific to one tool in its description; sections describe shared
+  rules and workflows. Runtime delivery leaves system text stable, while new
+  tools still change the tool catalog; cache reuse is not guaranteed.
 - See the [context guide](docs/guides/context.md) and offline example
   `uv run python -m examples.32_system_prompts` for the new API.
 

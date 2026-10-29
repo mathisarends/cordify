@@ -149,8 +149,9 @@ two implementations of the same contract. A narrow Protocol is the service
 contract; third-party implementations need no Harnessed base class.
 
 `await session.use(plugin)` mounts a capability at runtime. Plugins declaring
-system sections are rejected before setup, because system instructions are fixed.
-Compose those sections at agent construction. Runtime facts use `ContextValue`;
+system sections are rejected before setup by default. Explicitly select
+`section_delivery=SectionDelivery.CONTEXT` for mount-owned guidance or
+`SectionDelivery.IGNORE` to skip section evaluation. Runtime facts use `ContextValue`;
 closing its handle removes its value and temporal restarts refresh it.
 See [system prompt composition](context.md) for explicit ordering and rendering.
 

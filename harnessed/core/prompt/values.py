@@ -20,6 +20,25 @@ class PromptFormat(StrEnum):
     MARKDOWN = "markdown"
 
 
+class Unplaced(StrEnum):
+    """Append remaining plugin sections, or require complete placement.
+
+    ERROR checks coverage, not prompt stability: plugin groups and the rest slot
+    also place future declarations. Use individual references to detect additions.
+    """
+
+    APPEND = "append"
+    ERROR = "error"
+
+
+class SectionDelivery(StrEnum):
+    """How runtime mounts handle declared system sections."""
+
+    ERROR = "error"
+    CONTEXT = "context"
+    IGNORE = "ignore"
+
+
 class PromptOwner(Protocol):
     name: str
 
@@ -186,16 +205,31 @@ def system_section[T: PromptOwner](
     return decorate
 
 
-type PromptPart = SystemSection | BoundSystemSection | SystemPrompt
+@dataclass(frozen=True, slots=True)
+class PluginSections:
+    """Place one plugin's sections, or all remaining sections when plugin is None.
+
+    A complete prompt may contain at most one remaining-sections slot, including
+    nested documents. Explicit placements and exclusions are resolved first.
+    """
+
+    plugin: PromptOwner | None = None
+
+
+type PromptPart = str | SystemSection | BoundSystemSection | PluginSections | SystemPrompt
 
 
 @dataclass(frozen=True, slots=True, init=False)
 class SystemPrompt:
-    """An ordered document. Nested groups inherit the outermost rendering format."""
+    """An ordered document with automatic placement of remaining plugin sections.
+
+    Nested documents inherit the outermost format and unplaced policy.
+    """
 
     sections: tuple[PromptPart, ...]
     format: PromptFormat
     exclude: tuple[BoundSystemSection | SystemSection, ...]
+    unplaced: Unplaced
 
     def __init__(
         self,
@@ -203,10 +237,12 @@ class SystemPrompt:
         sections: Iterable[PromptPart] = (),
         format: PromptFormat = PromptFormat.PLAIN,
         exclude: Iterable[BoundSystemSection | SystemSection] = (),
+        unplaced: Unplaced = Unplaced.APPEND,
     ) -> None:
         object.__setattr__(self, "sections", tuple(sections))
         object.__setattr__(self, "format", PromptFormat(format))
         object.__setattr__(self, "exclude", tuple(exclude))
+        object.__setattr__(self, "unplaced", Unplaced(unplaced))
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +250,7 @@ class PromptContribution:
     name: str
     sections: tuple[BoundSystemSection, ...] = ()
     context_description: tuple[str, str] | None = None
+    owner: PromptOwner | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +269,7 @@ class PromptComposition:
     ) -> None:
         contributions = tuple(contributions)
         if isinstance(prompt, str):
-            prompt = SystemPrompt(sections=(SystemSection(text=prompt),))
+            prompt = SystemPrompt(sections=(prompt,))
         if prompt is None:
             prompt = SystemPrompt()
         if not isinstance(prompt, SystemPrompt):
@@ -251,7 +288,7 @@ class PromptComposition:
         by_declaration: dict[int, list[BoundSystemSection]] = {}
         for section in available.values():
             by_declaration.setdefault(id(section.declaration), []).append(section)
-        selected: list[SystemSection | BoundSystemSection] = []
+        selected: list[SystemSection | BoundSystemSection | PluginSections] = []
         excluded: list[SystemSection | BoundSystemSection] = []
 
         def flatten(group: SystemPrompt) -> None:
@@ -259,10 +296,14 @@ class PromptComposition:
             for part in group.sections:
                 if isinstance(part, SystemPrompt):
                     flatten(part)
-                elif isinstance(part, SystemSection | BoundSystemSection):
+                elif isinstance(part, str):
+                    selected.append(SystemSection(text=part))
+                elif isinstance(part, SystemSection | BoundSystemSection | PluginSections):
                     selected.append(part)
                 else:
-                    raise TypeError("SystemPrompt sections must be section references or groups")
+                    raise TypeError(
+                        "SystemPrompt sections must be strings, section references or groups"
+                    )
 
         flatten(prompt)
         seen: set[tuple[int, int]] = set()
@@ -296,17 +337,49 @@ class PromptComposition:
                     raise ConfigError("The same system section was placed twice")
                 literal_seen.add(id(value))
 
-        selected = [reference(value) for value in selected]
         excluded = [reference(value) for value in excluded]
-        for value in selected:
-            claim(value, exclusion=False)
         for value in excluded:
             claim(value, exclusion=True)
-        missing = [
-            section.origin for identity, section in available.items() if identity not in seen
-        ]
-        if missing:
-            raise ConfigError("Unplaced system sections: " + ", ".join(missing))
+        excluded_ids = set(seen)
+        placed: list[SystemSection | BoundSystemSection | PluginSections] = []
+        rest: PluginSections | None = None
+        for value in selected:
+            if isinstance(value, PluginSections):
+                if value.plugin is None:
+                    if rest is not None:
+                        raise ConfigError(
+                            "Only one PluginSections() rest slot is allowed per prompt"
+                        )
+                    rest = value
+                    placed.append(value)
+                    continue
+                contribution = next(
+                    (item for item in contributions if item.owner is value.plugin), None
+                )
+                if contribution is None:
+                    raise ConfigError("PluginSections refers to an uninstalled plugin")
+                for section in contribution.sections:
+                    if section.identity not in excluded_ids:
+                        claim(section, exclusion=False)
+                        placed.append(section)
+            else:
+                section = reference(value)
+                claim(section, exclusion=False)
+                placed.append(section)
+        remaining = [section for identity, section in available.items() if identity not in seen]
+        resolved: list[SystemSection | BoundSystemSection] = []
+        for value in placed:
+            if isinstance(value, PluginSections):
+                resolved.extend(remaining)
+            else:
+                resolved.append(value)
+        if rest is None:
+            if remaining and prompt.unplaced is Unplaced.ERROR:
+                raise ConfigError(
+                    "Unplaced system sections: "
+                    + ", ".join(section.origin for section in remaining)
+                )
+            resolved.extend(remaining)
         self.excluded = tuple(
             value.origin for value in excluded if isinstance(value, BoundSystemSection)
         )
@@ -314,7 +387,7 @@ class PromptComposition:
             PromptEntry(value.resolve(), value.origin)
             if isinstance(value, BoundSystemSection)
             else PromptEntry(value, value.title or "application section")
-            for value in selected
+            for value in resolved
         )
 
     async def render(self, ctx: Context | None = None) -> str:

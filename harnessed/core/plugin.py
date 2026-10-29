@@ -97,7 +97,9 @@ def plugin_contribution(value: PluginLike) -> PromptContribution:
         or not all(isinstance(part, str) for part in description)
     ):
         raise TypeError("Context descriptions must contain a name and text")
-    return PromptContribution(spec.name, sections, description)
+    return PromptContribution(
+        spec.name, sections, description, value if isinstance(value, Plugin) else None
+    )
 
 
 class Service[T](Plugin):

@@ -1,12 +1,22 @@
 import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from xml.sax.saxutils import escape, quoteattr
 
 from harnessed.core.hooks import PreStep, StepDecision
+from harnessed.core.messages import User
 from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import ContextValueChangedEvent
 from harnessed.core.session.session import SessionLog
-from harnessed.kernel import Inject, Next, hook
+from harnessed.kernel import Context, Disposer, Inject, Next, RegistrationState, hook
+
+
+@dataclass(frozen=True, eq=False)
+class _OwnedContext:
+    name: str
+    value: str
+    registration: RegistrationState
 
 
 class DynamicContext:
@@ -16,6 +26,7 @@ class DynamicContext:
         self.log = session
         self._values: dict[str, str] = {}
         self._lock = asyncio.Lock()
+        self._owned: list[_OwnedContext] = []
         for event in session.events:
             if isinstance(event, ContextValueChangedEvent):
                 if event.value is None:
@@ -25,7 +36,39 @@ class DynamicContext:
 
     @property
     def values(self) -> dict[str, str]:
-        return dict(self._values)
+        return {**self._values, **self._owned_values()}
+
+    def _owned_values(self) -> dict[str, str]:
+        return {item.name: item.value for item in self._owned if item.registration.active}
+
+    @property
+    def owned_messages(self) -> tuple[User, ...]:
+        """Active mount instructions, kept out of durable named-fact history."""
+        return tuple(
+            User(
+                f"<context name={quoteattr(name)}>{escape(value)}</context>",
+                id=f"mount-context:{name}",
+            )
+            for name, value in self._owned_values().items()
+        )
+
+    def register(self, name: str, value: str, *, owner: Context) -> Disposer:
+        """Own runtime guidance; suspension and disposal immediately hide it.
+
+        Model request records retain what was delivered, but reopening a session
+        never restores these values without a new mount.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError("Context names must be non-empty strings")
+        if not isinstance(value, str):
+            raise TypeError("Context values must be strings")
+
+        def install(registration: RegistrationState) -> Callable[[], None]:
+            item = _OwnedContext(name, value, registration)
+            self._owned.append(item)
+            return lambda: self._owned.remove(item)
+
+        return owner.register(install)
 
     async def set(self, name: str, value: str | None) -> None:
         if not name or not isinstance(name, str):

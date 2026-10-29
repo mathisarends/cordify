@@ -77,10 +77,14 @@ Internal modules import their owning layer rather than the root facade.
   `RegistrationState.active`. Higher layers do not inspect private kernel state.
 - Prompt metadata is normalized into typed `PromptContribution` values at the agent
   boundary and rendered by `PromptComposition`. SystemSection declarations bind
-  to recipe identities. SystemPrompt explicitly orders sections and exclusions;
-  its outer format governs nested groups. Session factories remain session-owned,
-  and SystemPromptStore holds the immutable rendered session snapshot. Runtime
-  mounts never relocate system sections into context.
+  to recipe identities. SystemPrompt orders strings, sections, plugin groups and
+  one globally resolved rest slot; remaining sections append by configured plugin
+  and declaration order unless Unplaced.ERROR requires full placement. Its outer
+  format and unplaced policy govern nested groups. SystemPromptStore holds the
+  immutable session snapshot. Runtime section delivery is explicit: ERROR rejects,
+  CONTEXT owns guidance for the mount activation, and IGNORE never runs providers.
+  Active registrations hide runtime guidance during suspension and disposal;
+  historical request records remain inspectable without restoring mount context.
 - Durable events use explicit versions and dotted discriminators. Replay restores
   state without rerunning tools. Output restoration matches registered Python
   validator identity and schema; equal schemas alone are insufficient.

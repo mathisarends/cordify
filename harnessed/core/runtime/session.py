@@ -8,7 +8,7 @@ from typing import Any, Unpack, overload
 from harnessed.core.attachments import Attachment
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.compaction import CompactionManager
-from harnessed.core.errors import ConfigError, SessionClosed, SessionStateError
+from harnessed.core.errors import SessionClosed, SessionStateError
 from harnessed.core.hooks import (
     SessionAppended,
 )
@@ -26,7 +26,9 @@ from harnessed.core.model import (
 from harnessed.core.outputs import OutputContract, OutputTypes, OutputValues
 from harnessed.core.plugin import plugin_contribution, plugin_events
 from harnessed.core.prompt.context import DynamicContext
+from harnessed.core.prompt.delivery import runtime_sections
 from harnessed.core.prompt.system_prompt import SystemPromptStore
+from harnessed.core.prompt.values import SectionDelivery
 from harnessed.core.runtime.approvals import LiveApprovals, SessionApprovals
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.executor import ToolExecutor
@@ -152,16 +154,19 @@ class Session:
         async for event in self.log.subscribe(transient=transient, buffer_size=buffer_size):
             yield event
 
-    async def use(self, plugin: PluginLike) -> PluginHandle:
-        """Mount a runtime capability. System sections require a new agent composition."""
+    async def use(
+        self, plugin: PluginLike, *, section_delivery: SectionDelivery = SectionDelivery.ERROR
+    ) -> PluginHandle:
+        """Mount a capability, with explicit delivery of any declared system sections.
+
+        CONTEXT owns guidance for each activation; IGNORE never evaluates section
+        providers. Neither policy changes the session's fixed system text.
+        """
+        delivery = SectionDelivery(section_delivery)
         contribution = plugin_contribution(plugin)
-        if contribution.sections:
-            raise ConfigError(
-                f"Cannot mount {contribution.name} at runtime: it declares system sections. "
-                "Compose them when constructing Agent, or use ContextValue for runtime context."
-            )
+        spec = runtime_sections(plugin, contribution, delivery)
         self.log.registry.register(plugin_events(plugin))
-        handle = await self.ctx.plugin(plugin)
+        handle = await self.ctx.plugin(spec)
         try:
             await self.ctx.settle()
             self.ctx[ToolRegistry].validate_references()
@@ -305,7 +310,7 @@ class Session:
         async with self.control.maintenance():
             request = ModelRequest(
                 self.ctx[Model].info.name,
-                self.log.messages,
+                (*self.log.messages, *self.context.owned_messages),
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
                 self._options.max_tokens,
             )

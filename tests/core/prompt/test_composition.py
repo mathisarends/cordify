@@ -4,9 +4,11 @@ from harnessed import (
     Agent,
     Plugin,
     PluginConfig,
+    PluginSections,
     PromptFormat,
     SystemPrompt,
     SystemSection,
+    Unplaced,
     system_section,
 )
 from harnessed.core.errors import ConfigError
@@ -98,7 +100,7 @@ def test_unplaced_duplicate_excluded_and_foreign_references_fail_before_provider
     feature = Feature()
     foreign = Feature()
     for prompt, message in [
-        (SystemPrompt(), "Unplaced"),
+        (SystemPrompt(unplaced=Unplaced.ERROR), "Unplaced"),
         (SystemPrompt(sections=(feature.state, feature.state)), "twice"),
         (SystemPrompt(sections=(feature.state,), exclude=(feature.state,)), "twice"),
         (SystemPrompt(sections=(foreign.state,)), "uninstalled"),
@@ -186,7 +188,7 @@ def test_sections_are_keyword_only_and_invalid_inputs_fail_early():
     with pytest.raises(ValueError):
         SystemPrompt(format="yaml")
     with pytest.raises(TypeError, match="section references"):
-        Agent(system_prompt=SystemPrompt(sections=("raw text",)))
+        Agent(system_prompt=SystemPrompt(sections=(42,)))
 
 
 def test_async_configuration_provider_is_rejected_at_declaration():
@@ -227,3 +229,134 @@ def test_duplicate_standalone_section_and_unknown_exclusion_are_rejected():
         Agent(system_prompt=SystemPrompt(sections=(section, section)))
     with pytest.raises(ConfigError, match="does not belong"):
         Agent(system_prompt=SystemPrompt(exclude=(section,)))
+
+
+@pytest.mark.parametrize("prompt", [None, "Role.", SystemPrompt(sections=("Role.",))])
+async def test_defaults_append_plugin_sections_in_configured_and_declaration_order(prompt):
+    one, two = Observe(name="one"), Observe(name="two")
+    agent = Agent(plugins=[two, one], system_prompt=prompt)
+    assert [entry.origin for entry in agent.prompt.entries][-4:] == [
+        "two.state",
+        "two.freshness",
+        "one.state",
+        "one.freshness",
+    ]
+    assert (await agent.prompt.render()).count("DOM snapshot.") == 2
+
+
+async def test_plugin_groups_expand_in_place_and_respect_global_exclusions():
+    observe, interaction = Observe(), Interaction()
+    agent = Agent(
+        plugins=[observe, interaction],
+        system_prompt=SystemPrompt(
+            sections=(PluginSections(interaction), "Middle.", PluginSections(observe)),
+            exclude=(observe.freshness,),
+            unplaced=Unplaced.ERROR,
+        ),
+    )
+    assert await agent.prompt.render() == "Use current refs.\n\nMiddle.\n\nDOM snapshot."
+    assert "excluded: Observe.freshness" in str(agent.prompt)
+
+
+async def test_rest_slot_resolves_globally_before_later_nested_placements_and_exclusions():
+    observe, interaction = Observe(), Interaction()
+    agent = Agent(
+        plugins=[observe, interaction],
+        system_prompt=SystemPrompt(
+            sections=(
+                "Start.",
+                PluginSections(),
+                "Middle.",
+                SystemPrompt(sections=(interaction.refs,), exclude=(observe.freshness,)),
+            ),
+            unplaced=Unplaced.ERROR,
+        ),
+    )
+    assert await agent.prompt.render() == (
+        "Start.\n\nDOM snapshot.\n\nMiddle.\n\nUse current refs."
+    )
+
+
+async def test_rest_slot_reserves_later_plugin_groups():
+    observe, interaction = Observe(), Interaction()
+    agent = Agent(
+        plugins=[observe, interaction],
+        system_prompt=SystemPrompt(
+            sections=(PluginSections(), "Middle.", PluginSections(observe)),
+        ),
+    )
+    assert await agent.prompt.render() == (
+        "Use current refs.\n\nMiddle.\n\nDOM snapshot.\n\nUse the latest observation."
+    )
+
+
+@pytest.mark.parametrize(
+    ("sections", "message"),
+    [
+        ((PluginSections(), SystemPrompt(sections=(PluginSections(),))), "Only one"),
+        ((PluginSections(Observe()),), "uninstalled"),
+    ],
+)
+def test_invalid_groups_fail_before_any_provider_runs(sections, message):
+    class Feature(Plugin):
+        @system_section()
+        def state(self) -> str:
+            pytest.fail("Placement validation must run before providers")
+
+    with pytest.raises(ConfigError, match=message):
+        Agent(plugins=[Feature()], system_prompt=SystemPrompt(sections=sections))
+
+
+def test_overlapping_groups_and_individual_placements_are_rejected():
+    feature = Observe()
+    for sections in [
+        (PluginSections(feature), feature.state),
+        (PluginSections(feature), PluginSections(feature)),
+    ]:
+        with pytest.raises(ConfigError, match="twice"):
+            Agent(plugins=[feature], system_prompt=SystemPrompt(sections=sections))
+
+
+async def test_strict_mode_checks_coverage_but_open_groups_accept_new_declarations():
+    class Extended(Interaction):
+        extra = SystemSection(text="New guidance.")
+
+    feature = Extended()
+    with pytest.raises(ConfigError, match="Extended.extra"):
+        Agent(
+            plugins=[feature],
+            system_prompt=SystemPrompt(sections=(feature.refs,), unplaced=Unplaced.ERROR),
+        )
+    for group in [PluginSections(feature), PluginSections()]:
+        agent = Agent(
+            plugins=[feature],
+            system_prompt=SystemPrompt(sections=(group,), unplaced=Unplaced.ERROR),
+        )
+        assert await agent.prompt.render() == "Use current refs.\n\nNew guidance."
+
+
+async def test_prompt_order_does_not_follow_dependency_setup_order():
+    from harnessed.kernel import Context
+
+    class Backend:
+        pass
+
+    setup = []
+
+    class Consumer(Plugin, needs=(Backend,)):
+        usage = SystemSection(text="Consumer first.")
+
+        async def setup(self) -> None:
+            setup.append("consumer")
+
+    class Provider(Plugin):
+        usage = SystemSection(text="Provider second.")
+
+        async def setup(self, ctx: Context) -> None:
+            setup.append("provider")
+            ctx.provide(Backend, Backend())
+
+    agent = Agent(model=ScriptedModel([]), plugins=[Consumer(), Provider()])
+    async with agent.session() as session:
+        assert setup == ["provider", "consumer"]
+        assert await session.prompt.render() == "Consumer first.\n\nProvider second."
