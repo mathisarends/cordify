@@ -17,6 +17,7 @@ from harnessed.core.errors import (
     AuthError,
     ConfigError,
     InvalidRequest,
+    ProviderError,
     ProviderUnavailable,
     RateLimited,
 )
@@ -205,6 +206,32 @@ async def test_native_object_argument_patches_and_part_replacements_emit_snapsho
     assert [start.call_id for start in starts] == ["early", "replacement"]
     final = stream.response().message.tool_calls[0]
     assert final.arguments == {"a": 3, "b": 4} and final.id == "replacement"
+
+
+async def test_provider_native_tool_deltas_are_not_previewed_and_fail_with_a_provider_error():
+    from harnessed.models.pydantic_ai import _Stream
+
+    search = native.NativeToolCallPart("web_search", None, "srv", provider_name="anthropic")
+    native_events = [
+        native.PartStartEvent(index=0, part=native.ToolCallPart("add", None, "call")),
+        native.PartStartEvent(index=0, part=search),
+        native.PartDeltaEvent(index=0, delta=native.ToolCallPartDelta(args_delta='{"q":"x"}')),
+    ]
+
+    class NativeStream:
+        async def __aiter__(self):
+            for event in native_events:
+                yield event
+
+        def get(self):
+            return native.ModelResponse([replace(search, args='{"q":"x"}')])
+
+    chunks = []
+    with pytest.raises(ProviderError, match="NativeToolCallPart"):
+        async for chunk in _Stream(NativeStream()):
+            chunks.append(chunk)
+    assert [c.tool_call_start.name for c in chunks if c.tool_call_start] == ["add"]
+    assert not [c for c in chunks if c.tool_call_delta]
 
 
 @pytest.mark.parametrize("arguments", ['{"a":', "[1,2]", "null", '{"a":NaN}'])

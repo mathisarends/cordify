@@ -378,6 +378,8 @@ class _Stream:
         previews: dict[int, _ToolPreview] = {}
         async for event in self._native:
             if isinstance(event, native.PartStartEvent):
+                # A start replaces whatever part previously used this index.
+                previews.pop(event.index, None)
                 if isinstance(event.part, native.TextPart):
                     yield ModelChunk(text=event.part.content)
                 elif isinstance(event.part, native.ThinkingPart):
@@ -410,8 +412,12 @@ class _Stream:
                 ):
                     yield ModelChunk(reasoning=event.delta.content_delta)
                 elif isinstance(event.delta, native.ToolCallPartDelta):
+                    # Provider-executed native calls share this delta type but are
+                    # not previewed; the final response decides whether they are valid.
+                    preview = previews.get(event.index)
+                    if preview is None:
+                        continue
                     delta = event.delta
-                    preview = previews[event.index]
                     preview.name += delta.tool_name_delta or ""
                     if delta.tool_call_id is not None:
                         preview.call_id = delta.tool_call_id

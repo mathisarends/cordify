@@ -17,35 +17,7 @@ are transient, never become executable, and tool scheduling still waits for the
 completed `ModelResponse`. The `_tool_call` change that validates the raw payload
 instead of PydanticAI's convenience serializers is a correct hardening.
 
-### 1. High: native tool deltas crash the PydanticAI stream with `KeyError`
-
-`harnessed/models/pydantic_ai.py`, `_Stream._chunks`: the `PartStartEvent` branch
-records a preview only for `native.ToolCallPart`, but the `PartDeltaEvent` branch
-handles every `native.ToolCallPartDelta` and looks it up with `previews[event.index]`.
-In PydanticAI 2.63, `NativeToolCallPart` derives from `BaseToolCallPart`, not
-`ToolCallPart`, and its arguments also stream as `ToolCallPartDelta`. Anthropic
-server tools (web search, code execution, MCP) do exactly this in
-`models/anthropic/_streaming.py`: `handle_part(NativeToolCallPart)` followed by
-`handle_tool_call_delta(args=...)`.
-
-Repro: feed `_Stream` a `PartStartEvent(NativeToolCallPart("web_search", None, "srv_1"))`
-followed by `PartDeltaEvent(ToolCallPartDelta(args_delta='{"query":"x"}'))`; the
-iterator raises `KeyError: 0`. This is a regression: before this commit, tool call
-deltas were ignored, so these streams succeeded.
-
-Reachability: the bridge's `_parameters` never requests native tools, so this
-needs a provider that starts one on its own or a wrapped native model that adds
-them. Gemini's `media_processing` does both: `google.py` emits the native part and
-later a `handle_tool_call_delta(tool_call_id=...)` for it. Any new support for
-PydanticAI native tools (see M5 below) makes this path common.
-
-Fix: decide whether provider-executed native calls get previews at all. They are
-not application tools, so the simplest contract is to skip them: ignore deltas
-whose index has no preview (`previews.get(event.index)`), and drop a stale preview
-when a non-`ToolCallPart` `PartStartEvent` replaces an index. Add a bridge test with
-a native tool part plus a string delta.
-
-### 2. Low: preview volume can now overflow existing stream consumers
+### 1. Low: preview volume can now overflow existing stream consumers
 
 Argument deltas go to every transient subscriber, including `session.stream()`
 consumers that never match the new events. Large tool arguments, such as file
@@ -62,7 +34,7 @@ accumulated argument dict, so payload size grows quadratically with the number o
 patches. Fine for today's providers, which send few patches; note it in the bridge
 if a provider starts streaming many small patches.
 
-### 3. Low: `_tool_call` serializes dict arguments outside its `try`
+### 2. Low: `_tool_call` serializes dict arguments outside its `try`
 
 `raw = ... json.dumps(part.args or {})` runs before the `try`. If a provider SDK ever
 returns a dict containing a non-JSON value, the `TypeError` escapes and fails the
@@ -218,7 +190,9 @@ count, or compaction runs too early or too late for code and non-Latin text.
 **M5. No access to provider-native tools.** PydanticAI supports server-side tools
 (web search, code execution, URL context), but `_parameters` never forwards them,
 so agents cannot use them through the bridge. This fits the "PydanticAI is the
-integration" direction without adding native clients. Fix finding 1 first.
+integration" direction without adding native clients. It also needs `_response` and
+history replay to accept `NativeToolCallPart` / `NativeToolReturnPart`, which they
+currently reject with `ProviderError`.
 
 ## Deferred scope
 
