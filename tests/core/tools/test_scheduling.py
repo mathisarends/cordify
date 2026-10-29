@@ -14,6 +14,7 @@ from harnessed.core.session.events import (
     StepStart,
     ToolCalled,
     ToolCompleted,
+    ToolExecutionFinished,
     ToolExecutionStarted,
     ToolProgress,
     ToolReturned,
@@ -342,6 +343,101 @@ async def test_resume_uses_durable_completions_without_reexecuting_tools():
     prefix = replay.events
     await replay.repair_interrupted()
     assert replay.events == prefix
+
+
+async def test_fast_execution_is_durable_before_slow_sibling_review_and_safe_to_recover(tmp_path):
+    from harnessed.core.session.codec import EventLogCodec
+    from harnessed.plugins import JsonlSessions
+    from harnessed.plugins.sessions import JsonlPersistence
+
+    receipt = asyncio.Event()
+    release = asyncio.Event()
+    executions = []
+    reviews = []
+
+    class Work(Plugin):
+        @tool(readonly=True, parallel=True)
+        async def work(self, index: int) -> str:
+            executions.append(index)
+            if index == 0:
+                await release.wait()
+            return f"raw secret {index}"
+
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            from harnessed import ToolResult
+
+            reviews.append(event.call.arguments["index"])
+            return ToolResult("reviewed")
+
+    calls = (ToolCall("work", {"index": 0}), ToolCall("work", {"index": 1}))
+    model = ScriptedModel([[ModelChunk(tool_call=call) for call in calls], "done"])
+    async with Application(model=model, plugins=[Work(), JsonlSessions(tmp_path)]).session(
+        "receipts"
+    ) as session:
+        session.on(ToolExecutionFinished, lambda event: receipt.set())
+        handle = await session.submit("go")
+        try:
+            await asyncio.wait_for(receipt.wait(), 2)
+            # The per-writer lock makes this an explicit durability barrier.
+            await session.log.flush()
+            prefix = session.events
+            assert not reviews
+            assert not any(isinstance(e, ToolCompleted) for e in prefix)
+            raw = [e for e in prefix if isinstance(e, ToolExecutionFinished)]
+            assert len(raw) == 1 and raw[0].call_id == calls[1].id
+            # Copy the exact acknowledged disk prefix to emulate a process crash.
+            data = await asyncio.to_thread((tmp_path / "receipts.jsonl").read_bytes)
+            await asyncio.to_thread((tmp_path / "recovered.jsonl").write_bytes, data)
+            writer = JsonlPersistence(tmp_path)
+            try:
+                persisted = await writer.load("recovered")
+                assert persisted == prefix
+            finally:
+                await writer.aclose()
+            replay = SessionLog("replay", seed=persisted)
+            await replay.repair_interrupted()
+            returns = [e for e in replay.events if isinstance(e, ToolReturned)]
+            assert [e.call_id for e in returns] == [call.id for call in calls]
+            assert "outcome is unknown" in returns[0].result.content
+            assert "execution finished" in returns[1].result.content
+            assert "raw secret" not in returns[1].result.content
+            assert executions == [0, 1]
+            repaired = replay.events
+            await replay.repair_interrupted()
+            assert replay.events == repaired
+            codec = EventLogCodec()
+            assert all(codec.decode(codec.encode(e)) == e for e in repaired)
+        finally:
+            release.set()
+        result = await asyncio.wait_for(handle.result(), 2)
+        assert reviews == [0, 1]
+        assert [result.content for _, result in result.tool_calls] == ["reviewed", "reviewed"]
+
+
+async def test_abort_during_review_preserves_raw_receipt_without_bypassing_review():
+    reviewing = asyncio.Event()
+
+    class Work(Plugin):
+        @tool(readonly=True)
+        async def work(self) -> str:
+            return "private raw result"
+
+        @hook(ReviewToolResult)
+        async def review(self, event, next_):
+            reviewing.set()
+            await asyncio.Event().wait()
+            return await next_()
+
+    model = ScriptedModel([[ModelChunk(tool_call=ToolCall("work"))]])
+    async with Application(model=model, plugins=[Work()]).session() as session:
+        handle = await session.submit("go")
+        await asyncio.wait_for(reviewing.wait(), 2)
+        await session.abort()
+        result = await handle.result()
+        assert session.last(ToolExecutionFinished).result.content == "private raw result"
+        assert "execution finished" in result.tool_calls[0][1].content
+        assert "private raw result" not in result.tool_calls[0][1].content
 
 
 async def test_sync_timeout_keeps_resource_until_the_worker_finishes():

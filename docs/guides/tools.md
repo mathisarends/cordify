@@ -73,6 +73,19 @@ the question; the user's answer arrives as the next run.
 
 ## Cancellation and parallel work
 
+Each finished invocation writes and flushes a `tool.execution.finished` receipt
+before waiting for ordered result review. The receipt contains unreviewed output in
+the audit log; it is not a model-visible result. `tool.completed` records the
+reviewed and limited result, and `tool.returned` publishes it in model order.
+If execution finished but review did not, recovery retains the receipt and returns
+an explicit interrupted-review error without exposing raw output or repeating the
+action. Audit consumers must treat execution receipts as unreviewed data.
+Receipt text respects the tool's configured output limit, including truncation
+metadata; review hooks and Spill still receive the complete execution result.
+Execution and reviewed-result checkpoints drain their write and flush on cancellation,
+even if another append holds the log lock. Event observers run after that checkpoint
+and remain cancellable.
+
 Async tools receive task cancellation on abort or timeout. Put resource cleanup
 in `finally`. Synchronous tools run in a worker thread: Python cannot forcibly
 stop a running thread. Long synchronous operations must poll `call.cancelled`
@@ -97,7 +110,7 @@ when execution finishes out of order. An explicit `override=True` is required to
 replace an existing live tool name. Removing that registration restores the
 previous owner.
 
-See [the runnable class plugin example](https://github.com/mathisarends/cordify/blob/main/examples/06_explicit_registration.py).
+See [the runnable class plugin example](https://github.com/mathisarends/harnessed/blob/main/examples/06_explicit_registration.py).
 
 ## Hook signatures
 
@@ -152,11 +165,13 @@ Use decorated method references in policies and scripted model responses:
 from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel, call
 
-model = ScriptedModel([
-    call(Filesystem.read_file, path="large.log", offset=0, limit=40),
-    call(Filesystem.read_file, path="large.log", offset=40, limit=40),
-    "Read the requested ranges.",
-])
+model = ScriptedModel(
+    [
+        call(Filesystem.read_file, path="large.log", offset=0, limit=40),
+        call(Filesystem.read_file, path="large.log", offset=40, limit=40),
+        "Read the requested ranges.",
+    ]
+)
 policy = Approvals(require=[Filesystem.delete_file])
 ```
 

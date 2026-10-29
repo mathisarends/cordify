@@ -1,10 +1,13 @@
 import asyncio
+from typing import Self
 
 import pytest
 from pydantic import BaseModel, Field, ValidationError
 
-from harnessed.core.plugin import Plugin
+from harnessed import Agent, ApprovalAnswer, Plugin, PluginState, tool
 from harnessed.kernel import Context, Emit, PluginFailed, Priority, hook
+from harnessed.plugins import Approvals
+from harnessed.testing import ScriptedModel, call
 
 
 async def test_plugin_mount_does_not_deepcopy_external_clients_or_locks():
@@ -72,3 +75,55 @@ async def test_direct_listener_registration_returns_an_idempotent_disposer():
         await ctx.dispatch(Changed())
     assert seen == [True]
     assert "Lower priorities" in hook.__doc__
+
+
+async def test_custom_instance_factory_preserves_bound_tool_references_and_isolates_sessions():
+    clients, mounts = [], []
+
+    class Counter(Plugin):
+        values = PluginState[list[str]](list)
+
+        def __init__(self, client: object) -> None:
+            super().__init__()
+            self.client = client
+
+        def __copy__(self) -> Self:
+            raise AssertionError("Custom factory must replace copying")
+
+        def create_instance(self) -> Self:
+            instance = type(self)(self.client)
+            mounts.append(instance)
+            return instance
+
+        @tool(readonly=True)
+        async def count(self) -> int:
+            clients.append(self.client)
+            self.values.append("called")
+            return len(self.values)
+
+    client = asyncio.Lock()
+    recipe = Counter(client)
+    approvals = []
+
+    def allow(request):
+        approvals.append(request)
+        return ApprovalAnswer.ALLOW
+
+    model = ScriptedModel(
+        [
+            call(recipe.count),
+            "first",
+            call(recipe.count),
+            "second",
+            call(recipe.count),
+            "third",
+        ]
+    )
+    agent = Agent(model=model, plugins=[recipe, Approvals(require=[recipe.count], approver=allow)])
+    async with agent.session() as first, agent.session() as second:
+        assert (await first.run("count")).tool_calls[0][1].text == "1"
+        assert (await second.run("count")).tool_calls[0][1].text == "1"
+        assert (await first.run("again")).tool_calls[0][1].text == "2"
+        assert len(mounts) == 2 and mounts[0] is not mounts[1]
+    assert len(approvals) == 3
+    assert all(value is client for value in clients)

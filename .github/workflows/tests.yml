@@ -4,12 +4,13 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -33,6 +34,8 @@ jobs:
         run: uv sync --locked --all-extras
       - name: Run repository checks
         run: uv run --locked --no-sync pre-commit run --all-files --show-diff-on-failure
+      - name: Check Python and Markdown formatting
+        run: uv run --locked --no-sync ruff format --check .
       - name: Build documentation with strict link checks
         run: uv run --locked --no-sync mkdocs build --strict
 

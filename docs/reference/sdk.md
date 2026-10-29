@@ -91,6 +91,8 @@ unhashable. See [values and record versions](../concepts/values.md).
 | --- | --- |
 | Plugin / @tool | Class-based reusable capability |
 | PluginConfig / Config = MyConfig | Module-level validated configuration model |
+| PluginState(factory) | Typed state freshly created before each mount's setup; available through cleanup |
+| Plugin.create_instance() | Customize fresh instance construction; defaults to shallow copying shared inputs |
 | @plugin | Kernel services and hooks in an async generator |
 | class Capability(Plugin, needs=(Backend,)) / Inject[T] | Temporal lifetime / per-call service resolution |
 | @hook / Context.hook | Typed observer, bail or waterfall extension |

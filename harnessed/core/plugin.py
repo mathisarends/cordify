@@ -37,7 +37,11 @@ class PluginConfig(BaseModel):
 
 
 class Plugin(KernelPlugin):
-    """A plugin recipe with validated configuration and state allocated in setup."""
+    """A recipe with shared constructor inputs and explicit per-mount PluginState.
+
+    Allocate resources in setup and own their cleanup through Context effects.
+    create_instance may customize construction without changing registration.
+    """
 
     Config: ClassVar[type[BaseModel]] = PluginConfig
     config: Any

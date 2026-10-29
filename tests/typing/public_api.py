@@ -4,7 +4,7 @@ from typing import assert_type
 from pydantic import BaseModel
 
 from harnessed import Agent as AppAgent
-from harnessed import OutputContract, Plugin, RunHandle, ToolContext, tool
+from harnessed import OutputContract, Plugin, PluginState, RunHandle, ToolContext, tool
 from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
@@ -26,13 +26,19 @@ assert_type(configured("workspace", enabled=False), PluginSpec)
 
 
 class CountingTools(Plugin):
+    counts = PluginState[dict[str, int]](dict)
+
     @tool(readonly=True, output_limit=None)
     async def count(self, value: int, *, injected: Inject[str]) -> int:
         assert_type(injected, str)
+        assert_type(self.counts, dict[str, int])
+        assert_type(type(self).counts, PluginState[dict[str, int]])
+        self.counts[injected] = value
         return value
 
 
 async def consumer(agent: Session) -> None:
+    assert_type(CountingTools().create_instance(), CountingTools)
     assert_type(await CountingTools().count(1, injected="service"), int)
     assert_type(await agent.run("hello"), RunResult[None])
 

@@ -68,7 +68,7 @@ def test_offline_sdk_example_runs(module):
     assert result.stdout
 
 
-# Names without a public facade yet; see review.md U6. Shrink this, never grow it.
+# Names without a public facade yet. Shrink this, never grow it.
 _INTERNAL_EXAMPLE_IMPORTS = {
     ("harnessed.core.prompt.system_prompt", "SystemPrompt"),
     ("harnessed.core.session.codec", "decode_event"),

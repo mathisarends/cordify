@@ -37,6 +37,7 @@ from harnessed.core.session.events import (
     StepOutcome,
     StepStart,
     ToolCompleted,
+    ToolExecutionFinished,
     ToolExecutionStarted,
     ToolReturned,
     TurnEnd,
@@ -58,18 +59,36 @@ from harnessed.core.stream import SessionPublished, TransientEvent, coalesce_del
 from harnessed.kernel.context import Context
 
 
-def _validate_compaction(events, event: CompactionApplied, seq: int) -> None:
+def _validate_compaction(events: list[SessionEvent], event: CompactionApplied, seq: int) -> None:
     if type(event.through) is not int or not 0 < event.through <= seq:
         raise ValueError("Compaction must replace an existing event prefix")
-    if not isinstance(events[event.through - 1], TurnEnd):
-        raise ValueError("Compaction must end at a closed turn boundary")
+    boundary = events[event.through - 1]
+    if not (
+        isinstance(boundary, TurnEnd)
+        or isinstance(boundary, StepEnd)
+        and boundary.reason is StepOutcome.COMPLETED
+    ):
+        raise ValueError("Compaction must end at a closed turn or completed step boundary")
+    unanswered: set[str] = set()
+    for item in events[: event.through]:
+        if isinstance(item, AssistantMessage):
+            unanswered.update(call.id for call in item.message.tool_calls)
+        elif isinstance(item, ToolReturned):
+            unanswered.discard(item.call_id)
+    if unanswered:
+        raise ValueError("Compaction must not split unanswered tool calls")
+    if any(
+        offset >= event.through or not isinstance(events[offset], UserMessage | ContextMessage)
+        for offset in event.preserve_inputs
+    ):
+        raise ValueError("Preserved inputs must reference messages inside the compacted prefix")
     previous = max((e.through for e in events[:seq] if isinstance(e, CompactionApplied)), default=0)
     if event.through <= previous:
         raise ValueError("Compaction must advance the previous boundary")
     if not isinstance(event.summary, str) or not event.summary.strip():
         raise ValueError("Compaction requires a non-empty summary")
     closed = {item.turn_id for item in events[: event.through] if isinstance(item, TurnEnd)}
-    if not set(event.preserve_turns) <= closed:
+    if not set((*event.preserve_turns, *event.retained_turns)) <= closed:
         raise ValueError("Preserved turns must be closed inside the compaction prefix")
 
 
@@ -285,6 +304,30 @@ class SessionLog:
     async def append(self, event: SessionEvent) -> None:
         self.registry.validate(event)
         cancelled = False
+        if isinstance(event, ToolExecutionFinished | ToolCompleted):
+            # An invocation/review already finished. Drain its checkpoint even if
+            # abort arrives while another append owns the log lock. Observers stay
+            # outside this shield so an unresponsive hook cannot block cancellation.
+            checkpoint = asyncio.create_task(self._append(event))
+            while not checkpoint.done():
+                try:
+                    await asyncio.shield(checkpoint)
+                except asyncio.CancelledError:
+                    cancelled = True
+            seq, interrupted = checkpoint.result()
+            cancelled |= interrupted
+        else:
+            seq, cancelled = await self._append(event)
+        if cancelled and isinstance(event, ToolExecutionFinished | ToolCompleted):
+            raise asyncio.CancelledError
+        if self.ctx is not None:
+            await self.ctx.dispatch(SessionAppended(self, event, seq))
+            await self.ctx.dispatch(event)
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _append(self, event: SessionEvent) -> tuple[int, bool]:
+        cancelled = False
         async with self._lock:
             if isinstance(event, InboxAdded) and event.message.id in self._pending:
                 raise ValueError(f"Duplicate pending message id: {event.message.id}")
@@ -300,7 +343,7 @@ class SessionLog:
 
                 async def persist() -> None:
                     await persistence.append(self.id, seq, event)
-                    if isinstance(event, TurnEnd):
+                    if isinstance(event, TurnEnd | ToolExecutionFinished | ToolCompleted):
                         await persistence.flush()
 
                 write = asyncio.create_task(persist())
@@ -349,12 +392,8 @@ class SessionLog:
                     event.usage if self._usage is None else sum_usage((self._usage, event.usage))
                 )
             self.registry.validate(event)
-        self._notify(event)
-        if self.ctx is not None:
-            await self.ctx.dispatch(SessionAppended(self, event, seq))
-            await self.ctx.dispatch(event)
-        if cancelled:
-            raise asyncio.CancelledError
+            self._notify(event)
+        return seq, cancelled
 
     async def flush(self) -> None:
         """Wait for persistence to acknowledge every preceding append."""
@@ -396,6 +435,7 @@ class SessionLog:
         unanswered: dict[str, ToolCall] = {}
         completed: dict[str, ToolResult] = {}
         started = set()
+        executed: set[str] = set()
         for event in self._events:
             match event:
                 case TurnStart(turn_id=turn_id):
@@ -407,12 +447,15 @@ class SessionLog:
                         unanswered[call.id] = call
                         completed.pop(call.id, None)
                         started.discard(call.id)
+                        executed.discard(call.id)
                 case ToolReturned(call_id=call_id):
                     unanswered.pop(call_id, None)
                 case ToolCompleted(call_id=call_id, result=result):
                     completed[call_id] = result
                 case ToolExecutionStarted(call_id=call_id):
                     started.add(call_id)
+                case ToolExecutionFinished(call_id=call_id):
+                    executed.add(call_id)
                 case StepEnd():
                     step = None
                 case TurnEnd():
@@ -420,6 +463,18 @@ class SessionLog:
         for call in unanswered.values():
             if call.id in completed:
                 await self.append(ToolReturned(call.id, completed[call.id]))
+                continue
+            if call.id in executed:
+                await self.append(
+                    ToolReturned(
+                        call.id,
+                        ToolResult.error(
+                            "Tool execution finished, but result review was interrupted. "
+                            "The raw result is retained in tool.execution.finished for inspection. "
+                            "Do not repeat the action solely to recover its result."
+                        ),
+                    )
+                )
                 continue
             message = "Tool execution interrupted" if control.paused else "Tool execution aborted"
             if call.id in started:

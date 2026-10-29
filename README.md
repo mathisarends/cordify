@@ -4,6 +4,10 @@ A Python agent SDK built from reversible plugins. Harnessed owns the loop,
 tool policies and append-only session log; optional provider integrations use
 PydanticAI's Direct API. Python **3.12-3.14**, Pydantic v2 and modern generics.
 
+Harnessed 0.1.x is **alpha software**. APIs and persisted session formats may
+change in minor releases before 1.0. See the
+[release notes and compatibility policy](https://github.com/mathisarends/harnessed/blob/main/docs/releases.md).
+
 ## Core SDK
 
 ```bash
@@ -65,22 +69,24 @@ agent = Agent(model=model, plugins=[Calculator()])
 
 ## Read by topic
 
-Start with the [documentation index](docs/index.md) or the
-[SDK reference](docs/reference/sdk.md).
+Start with the [documentation index](https://github.com/mathisarends/harnessed/blob/main/docs/index.md) or the
+[SDK reference](https://github.com/mathisarends/harnessed/blob/main/docs/reference/sdk.md).
 
-- [Models and provider settings](docs/guides/models.md)
-- [Tools, hooks and cancellation](docs/guides/tools.md)
-- [Plugin composition and lifecycle](docs/guides/plugins.md)
-- [Instructions and changing context](docs/guides/context.md)
-- [Sessions, controls, persistence and forks](docs/guides/sessions.md)
-- [Namespaced events and custom extensions](docs/guides/events.md)
-- [Approvals and headless operation](docs/guides/approvals.md)
-- [Offline testing](docs/guides/testing.md)
-- [Executable examples](docs/guides/examples.md)
-- [Development and CI](docs/contributing/development.md)
+- [Models and provider settings](https://github.com/mathisarends/harnessed/blob/main/docs/guides/models.md)
+- [Tools, hooks and cancellation](https://github.com/mathisarends/harnessed/blob/main/docs/guides/tools.md)
+- [Plugin composition and lifecycle](https://github.com/mathisarends/harnessed/blob/main/docs/guides/plugins.md)
+- [Instructions and changing context](https://github.com/mathisarends/harnessed/blob/main/docs/guides/context.md)
+- [Sessions, controls, persistence and forks](https://github.com/mathisarends/harnessed/blob/main/docs/guides/sessions.md)
+- [Namespaced events and custom extensions](https://github.com/mathisarends/harnessed/blob/main/docs/guides/events.md)
+- [Approvals and headless operation](https://github.com/mathisarends/harnessed/blob/main/docs/guides/approvals.md)
+- [Offline testing](https://github.com/mathisarends/harnessed/blob/main/docs/guides/testing.md)
+- [Executable examples](https://github.com/mathisarends/harnessed/blob/main/docs/guides/examples.md)
+- [Development and CI](https://github.com/mathisarends/harnessed/blob/main/docs/contributing/development.md)
 
 The standalone `harnessed.kernel` uses only the standard library. Optional
 features live under `harnessed.plugins`; providers live under `harnessed.models`.
 
 Inspired by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 and [Cordis](https://github.com/cordiverse/cordis).
+
+Released under the [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).

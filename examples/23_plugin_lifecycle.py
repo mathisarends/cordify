@@ -7,7 +7,7 @@ from typing import Protocol
 from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, tool
 from harnessed.events.turn import Ended as TurnEnd
 from harnessed.hooks import ExecuteTool, SessionAppended
-from harnessed.kernel import Context, Inject, plugin
+from harnessed.kernel import Context, Inject, PluginState, plugin
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
@@ -41,16 +41,20 @@ class NotesConfig:
 
 
 class NotesTools(Plugin, needs=(Notes,)):
+    saved = PluginState[int](int)
+
     def __init__(self, config: NotesConfig):
         super().__init__(guidance=config.instruction)
 
     @tool
     async def save_note(self, text: str, notes: Inject[Notes]) -> str:
         """Save a note."""
-        return await notes.save(text)
+        result = await notes.save(text)
+        self.saved += 1
+        return result
 
     async def teardown(self):
-        print("Notes plugin stopped; owned tools are removed automatically.")
+        print(f"Notes plugin stopped after {self.saved} saves in this mount.")
 
 
 @plugin()

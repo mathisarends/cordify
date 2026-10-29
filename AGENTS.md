@@ -34,7 +34,10 @@ core, kernel and their own extras; features never import another plugin.
 Only `models/pydantic_ai.py` imports PydanticAI; only `plugins/skills.py` imports
 YAML. Internal modules import their owning layer, not the root facade.
 
-Follow `api-target.md` and `structure-target.md`. Do not restore `seams`,
+Follow `docs/reference/sdk.md`, the topic guides and `structure-target.md`.
+Future scope belongs in `docs/contributing/roadmap.md`; those proposals are not
+implemented API contracts. Subagents, MCP and OTel remain deferred until requested.
+Do not restore `seams`,
 `adapters`, `app`, `llms` or `presets`, or add native provider clients. Prefer
 canonical `core.messages` / `core.model` imports inside the library. Applications
 use the small root SDK, `harnessed.plugins`, `harnessed.models`, `harnessed.errors`

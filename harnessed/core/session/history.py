@@ -59,6 +59,7 @@ class MessageProjection:
                 UserMessage,
                 AssistantMessage,
                 ToolReturned,
+                ContextMessage,
                 ContextValueChanged,
                 ModelRequested,
                 SystemMessage,
@@ -94,6 +95,8 @@ class MessageProjection:
             applied is None
             or seq >= applied.through
             or self._origins.get(seq) in applied.preserve_turns
+            or self._origins.get(seq) in applied.retained_turns
+            or seq in applied.preserve_inputs
         )
 
     def _put(self, seq: int, message: Message) -> None:
@@ -337,6 +340,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     ),
                 )
             case CompactionApplied(through=through, summary=summary, preserve_turns=preserved):
+                preserved = (*preserved, *event.retained_turns)
                 entries = [
                     (offset, message)
                     for offset, message in entries
@@ -344,6 +348,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                         offset >= through
                         or message.id == "system"
                         or turn_offsets.get(offset) in preserved
+                        or offset in event.preserve_inputs
                     )
                     and not message.id.startswith("compaction:")
                 ]
@@ -352,7 +357,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     (offset, message)
                     for offset, message in originals
                     if offset < through
-                    and turn_offsets.get(offset) in preserved
+                    and (turn_offsets.get(offset) in preserved or offset in event.preserve_inputs)
                     and offset not in retained_offsets
                 )
                 # Latest dynamic facts survive compaction, independently of summaries.

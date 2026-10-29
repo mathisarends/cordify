@@ -27,6 +27,7 @@ from harnessed.core.tools.decorator import tool as tool
 from harnessed.core.tools.registry import ToolError as ToolError
 from harnessed.kernel import Context as Context
 from harnessed.kernel import Inject as Inject
+from harnessed.kernel import PluginState as PluginState
 from harnessed.kernel import hook as hook
 from harnessed.kernel import plugin as plugin
 
