@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from harnessed.core.model import TokenLimitBehavior
+from harnessed.core.model import Model, TokenLimitBehavior
 from harnessed.core.plugin import Plugin
 from harnessed.core.runtime.options import AgentLoopConfig, AgentOptions
 from harnessed.core.runtime.session import Session
@@ -61,6 +61,8 @@ class ReactLoopFactory:
         self.error_formatter = error_formatter
 
     def create(self, ctx: Context, session: SessionLog) -> Session:
+        # Require a model before opening the runtime, without caching its metadata.
+        ctx[Model]
         options = AgentOptions.resolve(
             self.config,
             tool_output_limit=ctx[ToolOutputLimit],
