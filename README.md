@@ -1,5 +1,11 @@
 # Harnessed
 
+[![PyPI version](https://img.shields.io/pypi/v/harnessed?style=for-the-badge&logo=pypi&logoColor=white&color=3776AB)](https://pypi.org/project/harnessed/)
+[![Python versions](https://img.shields.io/pypi/pyversions/harnessed?style=for-the-badge&logo=python&logoColor=white&color=3776AB)](https://pypi.org/project/harnessed/)
+[![CI status](https://img.shields.io/github/actions/workflow/status/mathisarends/harnessed/tests.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/mathisarends/harnessed/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)](https://github.com/mathisarends/harnessed/blob/main/LICENSE)
+[![Status: Alpha](https://img.shields.io/badge/status-alpha-f59e0b?style=for-the-badge)](https://github.com/mathisarends/harnessed/blob/main/docs/releases.md)
+
 A Python agent SDK built from reversible plugins. Harnessed owns the loop,
 tool policies and append-only session log; optional provider integrations use
 PydanticAI's Direct API. Python **3.12-3.14**, Pydantic v2 and modern generics.
