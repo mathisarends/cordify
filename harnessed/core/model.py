@@ -176,7 +176,7 @@ class ModelInfo:
     max_output: Annotated[int, Field(ge=1)] | None = None
     supports_images: bool = False
     supports_structured_output: bool = False
-    default_settings: Mapping[str, Any] = field(default_factory=dict)
+    default_settings: Mapping[str, Any] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "default_settings", freeze(self.default_settings))

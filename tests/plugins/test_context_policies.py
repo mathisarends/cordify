@@ -10,7 +10,7 @@ from harnessed.core.compaction import ModelSummarizer
 from harnessed.core.hooks import PreStep
 from harnessed.core.messages import Assistant, ToolStatus, User
 from harnessed.core.model import ModelChunk, ModelUsage
-from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.codec import EventLogCodec, decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionApplied,
     ModelUsageRecorded,
@@ -168,8 +168,9 @@ async def test_threshold_compaction_commits_once_and_replays_and_forks(tmp_path)
         assert any(
             isinstance(e, UserMessage) and "x" * 1200 in e.message.text for e in agent.log.events
         )
+    codec = EventLogCodec()
     persisted = tuple(
-        decode_event(json.loads(line))
+        codec.decode(json.loads(line))
         for line in (tmp_path / "compact.jsonl").read_text().splitlines()
     )
     assert any(isinstance(e, CompactionApplied) for e in persisted)
@@ -351,12 +352,10 @@ async def test_cache_usage_is_preserved_as_provider_reported_usage():
 
 async def test_model_summarizer_uses_explicit_model_without_tools_and_closes_stream():
     llm = ScriptedModel(["summary"])
-    assert (
-        await ModelSummarizer(llm, model_name="summary-model").summarize(
-            (User("history"),), max_tokens=32
-        )
-        == "summary"
+    summary = await ModelSummarizer(llm, model_name="summary-model").summarize(
+        (User("history"),), max_tokens=32
     )
+    assert summary.text == "summary"
     assert llm.requests[0].model == "summary-model"
     assert not llm.requests[0].tools and llm.requests[0].max_tokens == 32
 
