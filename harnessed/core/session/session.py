@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Iterable
 from typing import cast
 
 from harnessed.core.approvals import Approval, ApprovalState, approval_transition
+from harnessed.core.buffering import EventBuffer
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.hooks import SessionAppended
 from harnessed.core.messages import (
@@ -98,7 +99,7 @@ class SessionLog:
         self._files = files
         self._fork_files: SessionFiles | None = None
         self._usage: ModelUsage | None = None
-        self._observers: dict[asyncio.Queue, bool] = {}
+        self._observers: dict[EventBuffer[SessionEvent | TransientEvent | None], bool] = {}
         self._subscriptions_closed = False
         self._lock = asyncio.Lock()
         self._repair_lock = asyncio.Lock()
@@ -161,12 +162,12 @@ class SessionLog:
         return self._usage if self._usage is not None else ModelUsage(0)
 
     async def subscribe(
-        self, *, transient: bool = False
+        self, *, transient: bool = False, buffer_size: int = 256
     ) -> AsyncIterator[SessionEvent | TransientEvent]:
         """Observe acknowledged records; optionally include live notifications."""
         if self._subscriptions_closed:
             return
-        queue = asyncio.Queue()
+        queue: EventBuffer[SessionEvent | TransientEvent | None] = EventBuffer(buffer_size)
         self._observers[queue] = transient
         try:
             while (event := await queue.get()) is not None:
@@ -177,13 +178,14 @@ class SessionLog:
     def _notify(self, event: SessionEvent | TransientEvent) -> None:
         for queue, transient in tuple(self._observers.items()):
             if isinstance(event, SessionEvent) or transient:
-                queue.put_nowait(event)
+                if not queue.put(event):
+                    self._observers.pop(queue, None)
 
     def finish_subscriptions(self) -> None:
         """Finish audit subscriptions after dependent plugins have torn down."""
         self._subscriptions_closed = True
         for queue in tuple(self._observers):
-            queue.put_nowait(None)
+            queue.put(None)
 
     @property
     def uncompacted_turn_count(self) -> int:

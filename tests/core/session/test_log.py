@@ -1,9 +1,10 @@
+import asyncio
 import json
 
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import PolicyDecision, ToolCall, ToolResult
+from harnessed import PolicyDecision, StreamOverflow, ToolCall, ToolResult
 from harnessed.core.messages import Assistant, User
 from harnessed.core.model import ModelRequest, ToolDefinition
 from harnessed.core.session.codec import decode_event, encode_event
@@ -26,6 +27,34 @@ from harnessed.core.session.session import derive_messages
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
+
+
+async def test_slow_subscription_disconnects_without_affecting_other_consumers_or_the_log():
+    session = Session("subscribers")
+    slow = session.subscribe(buffer_size=2)
+    fast = session.subscribe(buffer_size=2)
+    slow_first = asyncio.create_task(anext(slow))
+    fast_next = asyncio.create_task(anext(fast))
+    await asyncio.sleep(0)
+    try:
+        for index in range(4):
+            event = UserMessage(User(str(index)))
+            await session.append(event)
+            assert await fast_next == event
+            if index == 0:
+                assert await slow_first == event
+            if index < 3:
+                fast_next = asyncio.create_task(anext(fast))
+                await asyncio.sleep(0)
+        with pytest.raises(StreamOverflow):
+            await anext(slow)
+        assert len(session.events) == 4
+        assert len(session._observers) == 1
+        assert [message.text for message in session.messages] == ["0", "1", "2", "3"]
+    finally:
+        await slow.aclose()
+        await fast.aclose()
+    assert not session._observers
 
 
 async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):

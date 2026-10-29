@@ -29,6 +29,7 @@ _EXPORTS = {
     "SessionClosed": ("harnessed.core.errors", "SessionClosed"),
     "SessionStatus": ("harnessed.core.runtime.control", "SessionStatus"),
     "StopReason": ("harnessed.core.model", "StopReason"),
+    "StreamOverflow": ("harnessed.core.errors", "StreamOverflow"),
     "ToolCall": ("harnessed.core.messages", "ToolCall"),
     "ToolContext": ("harnessed.core.tools.context", "ToolContext"),
     "ToolError": ("harnessed.core.tools.registry", "ToolError"),

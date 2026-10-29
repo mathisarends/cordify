@@ -8,6 +8,7 @@ from weakref import WeakKeyDictionary
 
 from harnessed.core.approvals import Approver
 from harnessed.core.attachments import Attachment
+from harnessed.core.buffering import EventBuffer
 from harnessed.core.compaction import CompactionManager
 from harnessed.core.errors import SessionClosed
 from harnessed.core.hooks import (
@@ -88,7 +89,7 @@ class Session:
         ctx.provide(SessionControl, self.control)
         ctx.provide(SessionInbox, self.inbox)
         ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox))
-        self._subscribers: set[asyncio.Queue[AgentEvent | None]] = set()
+        self._subscribers: set[EventBuffer[AgentEvent | None]] = set()
         self._submissions: dict[RunHandle[Any], SubmittedRun] = {}
         self._queued_submissions: dict[str, SubmittedRun] = {}
         self._submitted_turns: dict[str, SubmittedRun] = {}
@@ -145,9 +146,11 @@ class Session:
         self.control.check_open()
         await self.log.emit(event)
 
-    async def subscribe(self, *, transient: bool = False) -> AsyncIterator[AgentEvent]:
+    async def subscribe(
+        self, *, transient: bool = False, buffer_size: int = 256
+    ) -> AsyncIterator[AgentEvent]:
         """Observe the raw log independently of any individual run/stream call."""
-        async for event in self.log.subscribe(transient=transient):
+        async for event in self.log.subscribe(transient=transient, buffer_size=buffer_size):
             yield event
 
     async def use(self, plugin: PluginLike) -> PluginHandle:
@@ -279,8 +282,9 @@ class Session:
             if failure is not None:
                 for submitted in tuple(self._submissions.values()):
                     self._finish_submission(submitted, failure)
-        for queue in self._subscribers:
-            queue.put_nowait(event)
+        for queue in tuple(self._subscribers):
+            if not queue.put(event):
+                self._subscribers.discard(queue)
 
     def _stream_event(self, event: SessionPublished) -> None:
         if event.log is self.log:
@@ -466,12 +470,18 @@ class Session:
         content: str | Message,
         *,
         output: type[T] | OutputContract[T],
+        buffer_size: int = 256,
         **options: Unpack[RunOptions],
     ) -> AsyncGenerator[EventStream[T], None]: ...
 
     @overload
     def stream(
-        self, content: str | Message, *, output: None = None, **options: Unpack[RunOptions]
+        self,
+        content: str | Message,
+        *,
+        output: None = None,
+        buffer_size: int = 256,
+        **options: Unpack[RunOptions],
     ) -> AsyncGenerator[EventStream[None], None]: ...
 
     async def stream(
@@ -482,6 +492,7 @@ class Session:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
+        buffer_size: int = 256,
     ) -> AsyncGenerator[EventStream[Any], None]:
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
@@ -494,6 +505,7 @@ class Session:
                     settings=settings,
                     output_schema=schema,
                     prepared=approvals.prepared,
+                    buffer_size=buffer_size,
                 )
                 projected = project_stream_events(raw, results=self._results, schema=schema)
                 try:
@@ -553,8 +565,9 @@ class Session:
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
         prepared: Callable[[InboxAdded], None] | None = None,
+        buffer_size: int = 256,
     ) -> AsyncGenerator[AgentEvent, None]:
-        queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
+        queue: EventBuffer[AgentEvent | None] = EventBuffer(buffer_size)
         self._subscribers.add(queue)
         try:
             item = await self.inbox._send(

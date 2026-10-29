@@ -91,6 +91,13 @@ plugin teardown. They end when the session's owning scope finishes. Start the
 consumer before the work whose records you need; existing records are available
 through `session.events`.
 
+`session.subscribe(buffer_size=256)` and `session.stream(..., buffer_size=256)`
+bound each consumer's queue. A consumer that falls behind is disconnected and
+raises `harnessed.StreamOverflow`; the producer and other consumers continue.
+Durable events and completed answers remain available in `session.events`.
+Live deltas are transient and cannot be replayed. Increase the positive buffer
+size or consume faster before reconnecting.
+
 See [the immutable value and codec contract](../concepts/values.md) for record
 versions, validation and replay semantics.
 

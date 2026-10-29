@@ -3,7 +3,16 @@ import asyncio
 import pytest
 from pydantic import BaseModel, field_validator
 
-from harnessed import Agent, ApprovalAnswer, Plugin, StopReason, ToolCall, ToolContext, tool
+from harnessed import (
+    Agent,
+    ApprovalAnswer,
+    Plugin,
+    StopReason,
+    StreamOverflow,
+    ToolCall,
+    ToolContext,
+    tool,
+)
 from harnessed.core.errors import ApprovalUnavailable, OutputUnavailable, SessionClosed
 from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
@@ -33,6 +42,35 @@ class Work(Plugin):
         await call.progress("Publishing")
         self.effects.append("published")
         return "done"
+
+
+async def test_slow_stream_overflows_without_blocking_the_run_or_losing_the_durable_answer():
+    model = ScriptedModel([[ModelChunk(text="x") for _ in range(100)], "after"])
+    async with Agent(model=model).session() as session:
+        stream = session.stream("large reply", buffer_size=16)
+        try:
+            async for event in stream:
+                if isinstance(event, TextDelta):
+                    break
+            await session.wait_until_idle()
+            with pytest.raises(StreamOverflow) as error:
+                await anext(stream)
+            assert error.value.capacity == 16
+            assert session.messages[-1].text == "x" * 100
+            assert not session._subscribers
+            assert (await session.run("continue")).text == "after"
+        finally:
+            await stream.aclose()
+
+
+@pytest.mark.parametrize("capacity", [0, -1, True])
+async def test_invalid_stream_buffer_is_rejected_before_enqueueing_input(capacity):
+    model = ScriptedModel([])
+    async with Agent(model=model).session() as session:
+        stream = session.stream("work", buffer_size=capacity)
+        with pytest.raises(ValueError, match="buffer_size"):
+            await anext(stream)
+        assert not session.inbox.pending and not model.requests
 
 
 async def test_answering_through_a_closed_session_fails_even_for_an_acknowledged_id():
@@ -279,7 +317,8 @@ async def test_slow_stream_consumers_do_not_repeat_validators_after_many_complet
         streams = []
         try:
             for _ in range(130):
-                stream = session.stream("Report", output=Report)
+                # This test deliberately holds 130 streams without consuming them.
+                stream = session.stream("Report", output=Report, buffer_size=4096)
                 streams.append(stream)
                 async for event in stream:
                     if isinstance(event, TextDelta):

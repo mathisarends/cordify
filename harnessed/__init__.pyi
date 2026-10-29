@@ -3,6 +3,7 @@ from harnessed.core.attachments import File as File
 from harnessed.core.attachments import Image as Image
 from harnessed.core.errors import PluginConflict as PluginConflict
 from harnessed.core.errors import SessionClosed as SessionClosed
+from harnessed.core.errors import StreamOverflow as StreamOverflow
 from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
 from harnessed.core.messages import ImageDetail as ImageDetail
 from harnessed.core.messages import Observation as Observation
@@ -54,6 +55,7 @@ __all__ = [
     "SessionClosed",
     "SessionStatus",
     "StopReason",
+    "StreamOverflow",
     "ToolCall",
     "ToolContext",
     "ToolError",
