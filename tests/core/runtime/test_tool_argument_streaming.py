@@ -7,6 +7,7 @@ from harnessed import Agent, Plugin, StopReason, ToolCall, events, tool
 from harnessed.core.model import ModelChunk, ToolArgumentsMode, ToolCallDelta, ToolCallStart
 from harnessed.core.session.codec import encode_event
 from harnessed.core.session.events import AssistantMessage, ToolCalled
+from harnessed.core.stream import TextDelta, ToolArgumentsDelta, coalesce_deltas
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
@@ -130,3 +131,45 @@ def test_tool_previews_roundtrip_in_the_public_discriminated_stream_union():
     for event in (start, delta):
         assert adapter.validate_json(adapter.dump_json(event)) == event
     assert events.tool.ArgumentsMode.REPLACE == "replace"
+
+
+async def test_large_argument_previews_coalesce_for_a_slow_consumer_instead_of_overflowing():
+    effects = []
+    fragments = ['{"a":', *["1"] * 500, ',"b":2}']
+    first = [
+        ModelChunk(tool_call_start=ToolCallStart(0, "add", "call")),
+        *(ModelChunk(tool_call_delta=ToolCallDelta(0, f, "add", "call")) for f in fragments),
+        ModelChunk(tool_call=ToolCall("add", {"a": int("1" * 500), "b": 2}, "call")),
+    ]
+    model = ScriptedModel([first, "done"])
+    async with Agent(model=model, plugins=[Add(effects)]).session() as session:
+        stream = session.stream("add", buffer_size=32)
+        try:
+            notifications = []
+            async for event in stream:
+                notifications.append(event)
+                if isinstance(event, events.tool.ArgumentsDelta):
+                    break
+            await session.wait_until_idle()  # read nothing while the model streams
+            notifications += [event async for event in stream]
+        finally:
+            await stream.aclose()
+    deltas = [e for e in notifications if isinstance(e, events.tool.ArgumentsDelta)]
+    assert len(deltas) < len(fragments)
+    assert "".join(e.delta.arguments for e in deltas) == "".join(fragments)
+    assert notifications[-1].result.text == "done"
+
+
+def test_only_adjacent_deltas_of_the_same_call_or_message_coalesce():
+    def args(text, index=0, mode=ToolArgumentsMode.APPEND, message="m"):
+        return ToolArgumentsDelta(message, ToolCallDelta(index, text, "add", "call", mode))
+
+    assert coalesce_deltas(TextDelta("m", "a"), TextDelta("m", "b")) == TextDelta("m", "ab")
+    assert coalesce_deltas(TextDelta("m", "a"), TextDelta("n", "b")) is None
+    assert coalesce_deltas(args("{"), args("}")) == args("{}")
+    assert coalesce_deltas(args("{"), args("}", index=1)) is None
+    assert coalesce_deltas(args("{"), args("}", message="n")) is None
+    snapshot = args('{"a":1}', mode=ToolArgumentsMode.REPLACE)
+    assert coalesce_deltas(args("{"), snapshot) == snapshot
+    assert coalesce_deltas(snapshot, args("}")) is None
+    assert coalesce_deltas(TextDelta("m", "a"), args("{")) is None

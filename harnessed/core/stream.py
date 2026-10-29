@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Annotated, Literal, final
 
 from pydantic import Field
 
 from harnessed.core.event_kinds import EventKind
 from harnessed.core.messages import ToolCall, ToolResult
-from harnessed.core.model import ToolCallDelta, ToolCallStart
+from harnessed.core.model import ToolArgumentsMode, ToolCallDelta, ToolCallStart
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.session.control import SessionStatus
 from harnessed.core.session.events import (
@@ -128,6 +128,31 @@ type StreamEvent[T] = Annotated[
 ]
 
 type EventStream[T] = StreamEvent[T] | DurableEvent | CustomTransientEvent
+
+
+def coalesce_deltas[E](previous: E, event: E) -> E | None:
+    """Fold adjacent deltas of the same message into one, or return None.
+
+    Text and reasoning fragments concatenate. Argument APPEND fragments of the
+    same call concatenate and keep the newer name and call ID; a REPLACE snapshot
+    supersedes any earlier fragment of its call. Everything else stays separate.
+    """
+    if isinstance(previous, TextDelta) and isinstance(event, TextDelta):
+        if previous.message_id == event.message_id:
+            return replace(event, text=previous.text + event.text)
+    elif isinstance(previous, ReasoningDelta) and isinstance(event, ReasoningDelta):
+        if previous.message_id == event.message_id:
+            return replace(event, text=previous.text + event.text)
+    elif isinstance(previous, ToolArgumentsDelta) and isinstance(event, ToolArgumentsDelta):
+        before, after = previous.delta, event.delta
+        if previous.message_id != event.message_id or before.index != after.index:
+            return None
+        if after.mode is ToolArgumentsMode.REPLACE:
+            return event
+        if before.mode is ToolArgumentsMode.APPEND:
+            merged = replace(after, arguments=before.arguments + after.arguments)
+            return replace(event, delta=merged)
+    return None
 
 
 @dataclass(frozen=True, slots=True)

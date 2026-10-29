@@ -45,7 +45,9 @@ class Work(Plugin):
 
 
 async def test_slow_stream_overflows_without_blocking_the_run_or_losing_the_durable_answer():
-    model = ScriptedModel([[ModelChunk(text="x") for _ in range(100)], "after"])
+    # Alternating text and reasoning cannot be coalesced, so the buffer fills.
+    chunks = [ModelChunk(text="x") if i % 2 else ModelChunk(reasoning="r") for i in range(200)]
+    model = ScriptedModel([chunks, "after"])
     async with Agent(model=model).session() as session:
         stream = session.stream("large reply", buffer_size=16)
         try:

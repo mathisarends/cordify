@@ -68,8 +68,14 @@ continues to describe the later application-tool lifecycle.
 The final assistant message and its complete calls remain authoritative. Execution,
 validation and approval happen after the provider stream completes. Cancellation
 can leave a preview without any completed call; clear outstanding previews at turn
-completion. Previews are not replayed from the durable log. Slow consumers use
-the same bounded buffers and overflow behavior as text deltas.
+completion. Previews are not replayed from the durable log.
+
+Stream buffers coalesce adjacent deltas that the consumer has not read yet: text
+and reasoning fragments of one message concatenate, APPEND fragments of one call
+concatenate, and a REPLACE snapshot supersedes earlier fragments of its call. A
+fast consumer sees every fragment; a slow one receives fewer, larger deltas with
+the same result. `StreamOverflow` remains for consumers that fall behind on other
+events, and `session.events` stays the durable record.
 
 ## Answer approvals by ID
 

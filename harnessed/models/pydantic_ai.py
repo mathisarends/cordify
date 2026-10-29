@@ -429,6 +429,8 @@ class _Stream:
                     if delta.tool_call_id is not None:
                         preview.call_id = delta.tool_call_id
                     if isinstance(delta.args_delta, dict):
+                        # Each patch re-sends the full snapshot: payload grows with the
+                        # number of patches. Fine while providers send few of them.
                         preview.arguments = {**(preview.arguments or {}), **delta.args_delta}
                         arguments = json.dumps(preview.arguments, ensure_ascii=False)
                         mode = ToolArgumentsMode.REPLACE

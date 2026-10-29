@@ -54,7 +54,7 @@ from harnessed.core.session.history import derive_requests as derive_requests
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.store import SessionPersistence, validate_session_id
 from harnessed.core.session.turns import Turn, TurnProjection
-from harnessed.core.stream import SessionPublished, TransientEvent
+from harnessed.core.stream import SessionPublished, TransientEvent, coalesce_deltas
 from harnessed.kernel.context import Context
 
 
@@ -171,7 +171,9 @@ class SessionLog:
         """Observe acknowledged records; optionally include live notifications."""
         if self._subscriptions_closed:
             return
-        queue: EventBuffer[SessionEvent | TransientEvent | None] = EventBuffer(buffer_size)
+        queue: EventBuffer[SessionEvent | TransientEvent | None] = EventBuffer(
+            buffer_size, merge=coalesce_deltas
+        )
         self._observers[queue] = transient
         try:
             while (event := await queue.get()) is not None:

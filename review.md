@@ -9,31 +9,6 @@ an optional Direct API integration; the Harnessed kernel, loop and log remain in
 Implemented findings have been removed; the tests, topic guides and Git history
 record the resulting contracts.
 
-## Open findings: tool call previews (335e7a1)
-
-Scope: `feat: stream typed tool call previews and argument deltas`. Ruff and the
-full test suite pass (768 passed, 2 skipped). The core contract is sound: previews
-are transient, never become executable, and tool scheduling still waits for the
-completed `ModelResponse`. The `_tool_call` change that validates the raw payload
-instead of PydanticAI's convenience serializers is a correct hardening.
-
-### 1. Low: preview volume can now overflow existing stream consumers
-
-Argument deltas go to every transient subscriber, including `session.stream()`
-consumers that never match the new events. Large tool arguments, such as file
-contents for a write tool, produce many deltas. With the default `buffer_size=256`,
-a consumer that was fast enough before can now hit `StreamOverflow` while only
-the tool's `Started`/`Finished` events used to reach it. Text deltas already carry
-a similar risk, so this is not a contract break, but consumers cannot opt out.
-Consider an opt-in (`tool_previews=False` by default on stream entry points) or
-coalescing adjacent `APPEND` deltas for the same `(message_id, index)` before
-buffering.
-
-Related: each object patch emits a `REPLACE` snapshot that re-serializes the full
-accumulated argument dict, so payload size grows quadratically with the number of
-patches. Fine for today's providers, which send few patches; note it in the bridge
-if a provider starts streaming many small patches.
-
 ## Open findings: SDK usability, abstractions and agent capabilities
 
 Scope: the public SDK as of 335e7a1 (root facade, `Agent`, `Session`, `AgentLoop`,

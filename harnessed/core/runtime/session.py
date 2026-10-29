@@ -58,6 +58,7 @@ from harnessed.core.stream import (
     EventStream,
     SessionPublished,
     TransientEvent,
+    coalesce_deltas,
 )
 from harnessed.core.tools.context import BoundToolContexts, ToolContexts
 from harnessed.core.tools.registry import ToolRegistry
@@ -534,7 +535,7 @@ class Session:
         prepared: Callable[[InboxAdded], None] | None = None,
         buffer_size: int = 256,
     ) -> AsyncGenerator[AgentEvent, None]:
-        queue: EventBuffer[AgentEvent | None] = EventBuffer(buffer_size)
+        queue: EventBuffer[AgentEvent | None] = EventBuffer(buffer_size, merge=coalesce_deltas)
         self._subscribers.add(queue)
         try:
             item = await self._inbox_writer.send(
