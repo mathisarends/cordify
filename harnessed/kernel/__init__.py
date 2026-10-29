@@ -17,6 +17,7 @@ from .events import (
 from .hooks import Next
 from .keys import ServiceKey
 from .plugin import PluginHandle, PluginLike, PluginSpec, PluginStatus, hook, plugin
+from .spec import PluginDependencyIssue
 from .state import PluginState
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "Parallel",
     "PluginActivated",
     "PluginBase",
+    "PluginDependencyIssue",
     "PluginFailed",
     "PluginHandle",
     "PluginLike",

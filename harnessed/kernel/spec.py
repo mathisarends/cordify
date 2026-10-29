@@ -20,3 +20,11 @@ class PluginSpec:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kwargs", MappingProxyType(dict(self.kwargs)))
+
+
+@dataclass(frozen=True)
+class PluginDependencyIssue:
+    """A waiting recipe and the service identities unavailable to its mount."""
+
+    plugin: PluginSpec
+    missing: tuple[ServiceKey[Any], ...]

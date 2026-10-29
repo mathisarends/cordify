@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from harnessed import Agent, PolicyDecision, ToolCall
+from harnessed import Agent, PluginValidation, PolicyDecision, ToolCall
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.events import ToolCallFinishedEvent
 from harnessed.kernel import Context, plugin
@@ -37,7 +37,12 @@ async def main():
             "The replacement backend handled the command.",
         ]
     )
-    agent = Agent(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), ShellTools()])
+    # This example deliberately opens before adding the shell backend at runtime.
+    agent = Agent(
+        model=model,
+        plugins=[Approvals(default=PolicyDecision.ALLOW), ShellTools()],
+        plugin_validation=PluginValidation.WARN,
+    )
     async with agent.session("tool-lifetimes") as session:
         registry = session.ctx[ToolRegistry]
         assert registry.definitions == ()

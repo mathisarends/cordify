@@ -34,6 +34,20 @@ the plugin class, `@plugin(needs=(...))` or `Bundle(..., needs=(...))` so missin
 providers suspend the plugin and provider changes restart it. See the
 [plugin guide](guides/plugins.md) for examples and optional injection behavior.
 
+Agent sessions validate their plugin composition after session services have been
+published and setup has settled, before starting the runtime or resuming queued
+work. Missing required services now raise `PluginDependencyError` with structured
+`.issues` listing all waiting plugins and missing service keys. This also applies
+to `Agent.run()`.
+
+This changes the behavior of incomplete compositions. Provide their required
+services, or explicitly select `Agent(..., plugin_validation=PluginValidation.WARN)`
+to retain deliberately waiting plugins and emit `PluginDependencyWarning` with
+the same diagnostic data. Import the policy from `harnessed` and the error/warning
+from `harnessed.errors`. Complete compositions need no changes. Standalone kernel
+installation and later service changes keep their deferred lifecycle behavior.
+See [plugin startup validation](guides/plugins.md#session-startup-validation).
+
 ## 0.2.0 (2026-10-29)
 
 This minor release adds explicit event and request lifecycles, declarative plugin

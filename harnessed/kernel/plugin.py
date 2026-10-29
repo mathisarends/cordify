@@ -111,6 +111,21 @@ class PluginHandle:
         self._start_task: asyncio.Task | None = None
         self._dependents: set[PluginHandle] = set()
 
+    @property
+    def missing_services(self) -> tuple[ServiceKey[Any], ...]:
+        """Required keys unavailable under the same visibility rules as activation."""
+        missing: list[ServiceKey[Any]] = []
+        for key in self.spec.needs:
+            try:
+                binding = self._mount._binding(key, exclude=self)
+            except MissingService:
+                missing.append(key)
+                continue
+            provider = binding.owner._handle
+            if provider is not None and provider.status != PluginStatus.ACTIVE:
+                missing.append(key)
+        return tuple(missing)
+
     def _signature(self):
         try:
             bindings = tuple(self._mount._binding(key, exclude=self) for key in self.spec.needs)

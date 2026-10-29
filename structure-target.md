@@ -51,8 +51,11 @@ Internal modules import their owning layer rather than the root facade.
 
 ## Runtime and ownership invariants
 
-- `Agent` has only `model`, `instructions` and `plugins` configuration inputs.
-  Defaults are normal plugins replaced through slots.
+- `Agent` resolves `model`, `instructions` and `plugins`; `plugin_validation`
+  controls session startup readiness. Defaults are normal plugins replaced through
+  slots. Startup validation runs after session services settle and before the
+  runtime starts. The kernel exposes dependency diagnostics while retaining
+  deferred-service lifetimes.
 - `RuntimeServices` has no slot and is installed first. It provides the tool
   registry, system prompt, calibrated token counter and context budget, so replacing
   the `loop` slot keeps them.

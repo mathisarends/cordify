@@ -4,11 +4,21 @@ from typing import assert_type
 from pydantic import BaseModel
 
 from harnessed import Agent as AppAgent
-from harnessed import OutputContract, Plugin, PluginState, RunHandle, SessionLog, ToolContext, tool
+from harnessed import (
+    OutputContract,
+    Plugin,
+    PluginState,
+    PluginValidation,
+    RunHandle,
+    SessionLog,
+    ToolContext,
+    tool,
+)
 from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelRequest, ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session
+from harnessed.errors import PluginDependencyError
 from harnessed.events import (
     AssistantMessageEvent,
     EventStream,
@@ -24,7 +34,7 @@ from harnessed.events import (
     TurnFinishedEvent,
     TurnOutcome,
 )
-from harnessed.kernel import Context, Inject, PluginSpec, hook, plugin
+from harnessed.kernel import Context, Inject, PluginDependencyIssue, PluginSpec, hook, plugin
 from harnessed.models import ToolArgumentsMode, ToolCallDelta, ToolCallStart
 from harnessed.plugins import AgentLoop, JsonlSessions, MemorySessions, Spill
 
@@ -146,6 +156,9 @@ def invalid_message_shapes() -> None:
 
 
 def plugin_configuration_signatures() -> None:
+    agent = AppAgent(plugin_validation=PluginValidation.WARN)
+    assert_type(agent.plugin_validation, PluginValidation)
+    AppAgent(plugin_validation="ignore")  # ty: ignore[invalid-argument-type]
     loop = AgentLoop(max_steps=8)
     assert_type(loop.config.max_steps, int)
     assert_type(Spill(max_files=4).config.max_files, int)
@@ -153,6 +166,12 @@ def plugin_configuration_signatures() -> None:
     assert_type(MemorySessions(max_sessions=0).config.max_sessions, int | None)
     AgentLoop(max_steps="8")  # ty: ignore[invalid-argument-type]
     AgentLoop(max_step=8)  # ty: ignore[unknown-argument]
+
+
+def dependency_diagnostics(ctx: Context, error: PluginDependencyError) -> None:
+    assert_type(ctx.plugin_diagnostics(), tuple[PluginDependencyIssue, ...])
+    assert_type(error.issues, tuple[PluginDependencyIssue, ...])
+    assert_type(error.issues[0].plugin, PluginSpec)
 
 
 async def repository_consumer(agent: AppAgent) -> None:
