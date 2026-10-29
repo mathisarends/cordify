@@ -122,6 +122,8 @@ unhashable. See [values and record versions](../concepts/values.md).
 | Service(T, implementation) | Structural dependency registration |
 
 A keyword-only ToolContext is implicit; ordinary dependencies use Inject.
+Declare service requirements explicitly with `needs=(...)` for composition and
+temporal restarts. `Inject` binds values without adding lifetime dependencies.
 Model-filled parameters become a strict Pydantic form; unknown fields and invalid
 values fail before invocation. See [tools and hooks](../guides/tools.md) and
 [composition](../guides/plugins.md).

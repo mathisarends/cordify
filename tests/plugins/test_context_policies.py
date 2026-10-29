@@ -318,7 +318,7 @@ async def test_empty_or_non_advancing_compaction_is_rejected_on_replay():
 
 async def test_latest_observation_policy_limits_old_summaries_per_source_and_unwinds():
 
-    class Observer(Plugin):
+    class Observer(Plugin, needs=(Session,)):
         def __init__(self):
             self.index = 0
 

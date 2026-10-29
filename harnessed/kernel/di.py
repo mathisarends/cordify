@@ -119,11 +119,9 @@ def binding_plan(callback: Callable) -> BindingPlan:
     return plan
 
 
-def injections(callback: Callable, *, required_only: bool = False) -> dict[str, ServiceKey[Any]]:
+def injections(callback: Callable) -> dict[str, ServiceKey[Any]]:
     return {
-        name: dependency.key
-        for name, dependency in binding_plan(callback).dependencies.items()
-        if not required_only or not dependency.optional
+        name: dependency.key for name, dependency in binding_plan(callback).dependencies.items()
     }
 
 

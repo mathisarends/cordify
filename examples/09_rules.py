@@ -16,7 +16,7 @@ def is_pytest(call: ToolCall) -> bool:
     return "pytest" in call.command
 
 
-class TestDiscipline(Plugin):
+class TestDiscipline(Plugin, needs=(Session,)):
     def __init__(self):
         self.failures = 0
 

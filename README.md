@@ -54,8 +54,8 @@ It is reusable; each session owns its runtime and plugin lifetimes.
 - **Composition:** tools, policies and capabilities are plugins. Slots replace
   defaults, and `agent.plugins` shows the resolved composition.
 - **Ownership:** removing a plugin removes its registrations and effects.
-  Class `Inject[T]` dependencies suspend and rebuild mounts as services change;
-  `provides=True` publishes the mounted plugin as a service.
+  Explicit `needs=(...)` requirements suspend and rebuild mounts as services
+  change. `Inject[T]` binds values; `provides=True` publishes the mounted plugin.
 - **Context:** instructions and plugin guidance are fixed per session; named
   context values and steering supply changes during a run.
 - **History:** immutable events are the source of truth. Persistence, replay,
