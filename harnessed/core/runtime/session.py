@@ -312,22 +312,6 @@ class Session:
         )
         return item.id
 
-    async def followup(
-        self,
-        content: str | Message,
-        *,
-        attachments: Iterable[Attachment] = (),
-        context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
-    ) -> str:
-        return await self._send(
-            content,
-            InboxMode.FOLLOWUP,
-            attachments=attachments,
-            context=context,
-            settings=settings,
-        )
-
     async def steer(self, content: str | Message) -> InboxItem:
         return await self.inbox.steer(content)
 

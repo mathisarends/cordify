@@ -68,7 +68,7 @@ async def test_stream_ends_with_its_turn_and_does_not_emit_the_following_turn():
 
         streaming = asyncio.create_task(collect())
         await model.started[0].wait()
-        await session.followup("second")
+        await session.submit("second")
         try:
             model.release[0].set()
             await model.started[1].wait()

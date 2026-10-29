@@ -301,7 +301,7 @@ async def test_cancelling_a_parallel_batch_drains_tasks_and_repairs_results_in_m
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools]
     ).session("cancel") as agent:
-        await agent.followup("go")
+        await agent.submit("go")
         await asyncio.wait_for(started.wait(), 2)
         await agent.abort()
         assert sorted(cleaned) == [0, 1, 2] and all(call.signal.is_set() for call in contexts)

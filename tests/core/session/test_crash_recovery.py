@@ -85,15 +85,15 @@ async def main():
     async with harness.session('crash') as agent:
         if phase == 'tool':
             await agent.run('first task')
-            await agent.followup('inflight task')
+            await agent.submit('inflight task')
             await started.wait()
         elif phase == 'approval':
-            await agent.followup('awaiting approval')
+            await agent.submit('awaiting approval')
             await started.wait()
         await agent.inject(system('door opened'))
         if phase != 'idle':
             await agent.steer('inspect interrupted work')
-            await agent.followup('queued followup')
+            await agent.submit('queued followup')
         await asyncio.to_thread((root / 'ready').write_text, 'ready')
         await asyncio.Event().wait()
 asyncio.run(main())

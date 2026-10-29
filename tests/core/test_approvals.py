@@ -211,7 +211,7 @@ async def test_cancellation_closes_an_unanswered_approval_and_does_not_execute_t
             ApprovalGate(risky={"work"}, ask=wait),
         ],
     ).session("cancel-approval") as agent:
-        await agent.followup("task")
+        await agent.submit("task")
         await asked.wait()
         assert len(agent.log.approvals.pending) == 1
         await agent.abort()

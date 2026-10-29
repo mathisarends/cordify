@@ -185,7 +185,7 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
         ],
     ).session("concurrent") as agent:
         await agent.run("x" * 2000)
-        await agent.followup("current")
+        await agent.submit("current")
         await started.wait()
         await agent.inject("NEXT STEP CONTEXT")
         release.set()

@@ -93,7 +93,7 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
     async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "routing"
     ) as agent:
-        await agent.followup("task")
+        await agent.submit("task")
         await model.started.wait()
         first_snapshot = model.requests[0]
         await getattr(agent, mode)(

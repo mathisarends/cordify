@@ -76,11 +76,11 @@ async def test_inject_stays_idle_steering_enters_next_step_followup_gets_own_tur
         await agent.inject("quiet")
         await asyncio.sleep(0)
         assert agent.status == "idle" and (not model.requests)
-        await agent.followup("first")
+        await agent.submit("first")
         await model.started.wait()
         await agent.steer("steering")
         await agent.inject("context")
-        await agent.followup("second")
+        await agent.submit("second")
         model.release.set()
         await agent.control.join()
         users = [[m.content for m in r.messages if m.role == Role.USER] for r in model.requests]
@@ -280,7 +280,7 @@ async def test_pre_step_rejection_consumes_input_permanently():
         assert result.stop_reason == StopReason.REJECTED
         assert not model.requests and not agent.inbox.pending
         reject = False
-        await agent.followup("second")
+        await agent.submit("second")
         await agent.control.join()
         assert len(model.requests) == 1 and not agent.inbox.pending
         assert all(message.text != "first" for message in model.requests[0].messages)
@@ -292,7 +292,7 @@ async def test_cancel_before_driver_starts_and_reuse_agent():
     async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "cancel-before-start"
     ) as agent:
-        await agent.followup("discard")
+        await agent.submit("discard")
         await agent.abort()
         assert agent.status == "idle" and (not agent.inbox.pending)
         assert (await agent.run("new")).text == "after cancel"
@@ -313,7 +313,7 @@ async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
     async with Application(
         model=PartialModel(), plugins=[Approvals(default=PolicyDecision.ALLOW)]
     ).session("partial") as agent:
-        await agent.followup("go")
+        await agent.submit("go")
         await started.wait()
         await agent.abort()
         partial = next(e for e in agent.log.events if isinstance(e, AssistantMessage))
@@ -340,7 +340,7 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), bundle]
     ).session("cancel-tool") as agent:
-        await agent.followup("go")
+        await agent.submit("go")
         await started.wait()
         await agent.abort()
         assert calls[0].signal.is_set()
@@ -435,7 +435,7 @@ async def test_canceling_when_idle_waiter_does_not_cancel_the_agent():
     async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "waiter"
     ) as agent:
-        await agent.followup("go")
+        await agent.submit("go")
         await model.started.wait()
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(agent.control.join(), timeout=0.01)

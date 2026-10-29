@@ -240,7 +240,7 @@ async def test_control_service_rejects_self_waits_and_abort_before_runner_starts
 
     model = ScriptedModel([call("work"), "done"])
     async with Agent(model=model, plugins=[Tools()]).session() as session:
-        await session.followup("discard before the task starts")
+        await session.submit("discard before the task starts")
         await session.abort()
         assert not session.inbox.pending and session.status is SessionStatus.IDLE
         assert (await session.run("real task")).text == "done"

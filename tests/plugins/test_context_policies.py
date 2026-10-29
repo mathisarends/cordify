@@ -227,7 +227,7 @@ async def test_failed_or_cancelled_compactor_does_not_commit_partial_compaction(
     )
     async with harness.session("cancel-compact") as agent:
         await agent.run("x" * 1000)
-        await agent.followup("next")
+        await agent.submit("next")
         await started.wait()
         await agent.abort()
         assert not any(isinstance(e, CompactionApplied) for e in agent.log.events)

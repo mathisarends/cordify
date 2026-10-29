@@ -44,14 +44,14 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), features]
     ).session("turns") as agent:
-        await agent.followup("first task")
+        await agent.submit("first task")
         await started.wait()
         live = agent.log.turns[-1]
         assert not live.closed and (not live.steps[-1].closed)
         assert live.steps[-1].request is model.requests[0]
         await agent.steer("focus here")
         await agent.inject("extra context")
-        await agent.followup("second task")
+        await agent.submit("second task")
         assert len(model.requests) == 1
         release.set()
         await agent.control.join()
@@ -87,7 +87,7 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
         async def reject(event, next_):
             return StepDecision.reject()
 
-        await agent.followup("task")
+        await agent.submit("task")
         await agent.control.join()
         turn = agent.log.turns[-1]
         assert turn.closed and turn.reason == TurnOutcome.REJECTED and (turn.steps == ())
@@ -109,7 +109,7 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
     async with Application(
         model=WaitingModel(), plugins=[Approvals(default=PolicyDecision.ALLOW)]
     ).session("canceled-turn") as agent:
-        await agent.followup("task")
+        await agent.submit("task")
         await started.wait()
         await agent.abort()
         turn = agent.log.turns[-1]
