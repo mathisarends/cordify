@@ -4,8 +4,8 @@ import asyncio
 from pathlib import Path
 
 from harnessed import Agent, PolicyDecision, ToolCall
-from harnessed.core.session.events import ToolReturned
 from harnessed.core.tools.registry import ToolRegistry
+from harnessed.events.tool import Returned as ToolReturned
 from harnessed.kernel import Context, plugin
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals

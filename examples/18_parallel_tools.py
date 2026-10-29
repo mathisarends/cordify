@@ -5,9 +5,8 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, PolicyDecision, Section, ToolCall, tool
-from harnessed.core.messages import Role
-from harnessed.core.session.events import ToolReturned
+from harnessed import Agent, Plugin, PolicyDecision, Role, Section, ToolCall, tool
+from harnessed.events.tool import Returned as ToolReturned
 from harnessed.kernel import Inject
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Approvals, Filesystem, Instructions

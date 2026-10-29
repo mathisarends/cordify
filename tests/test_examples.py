@@ -1,3 +1,4 @@
+import ast
 import os
 import subprocess
 import sys
@@ -65,3 +66,33 @@ def test_offline_sdk_example_runs(module):
         pytest.fail(f"{module} timed out; child traceback:\n{details[-8000:]}", pytrace=False)
     assert result.returncode == 0, result.stderr
     assert result.stdout
+
+
+# Names without a public facade yet; see review.md U6. Shrink this, never grow it.
+_INTERNAL_EXAMPLE_IMPORTS = {
+    ("harnessed.core.approvals", "ApprovalUnavailable"),
+    ("harnessed.core.budget", "ContextBudgetExceeded"),
+    ("harnessed.core.hooks", "SessionAppended"),
+    ("harnessed.core.messages", "Assistant"),
+    ("harnessed.core.messages", "User"),
+    ("harnessed.core.messages", "user"),
+    ("harnessed.core.prompt.system_prompt", "SystemPrompt"),
+    ("harnessed.core.session.codec", "decode_event"),
+    ("harnessed.core.session.codec", "encode_event"),
+    ("harnessed.core.session.session", "SessionLog"),
+    ("harnessed.core.session.session", "derive_messages"),
+    ("harnessed.core.session.session", "derive_requests"),
+    ("harnessed.core.tools.registry", "ToolRegistry"),
+}
+
+
+def test_examples_use_public_facades_except_for_known_gaps():
+    root = Path(__file__).resolve().parents[1] / "examples"
+    found = set()
+    for path in root.glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
+                "harnessed.core"
+            ):
+                found.update((node.module, alias.name) for alias in node.names)
+    assert found <= _INTERNAL_EXAMPLE_IMPORTS, found - _INTERNAL_EXAMPLE_IMPORTS

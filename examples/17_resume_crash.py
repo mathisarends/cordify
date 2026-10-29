@@ -8,10 +8,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
-from harnessed.core.approvals import ApprovalGate
-from harnessed.core.session.events import LogTailRecovered, ToolReturned
+from harnessed.events.session import LogRecovered as LogTailRecovered
+from harnessed.events.tool import Returned as ToolReturned
 from harnessed.models import ModelChunk
-from harnessed.plugins import Approvals, JsonlSessions
+from harnessed.plugins import ApprovalGate, Approvals, JsonlSessions
 from harnessed.plugins.sessions import Durability
 from harnessed.testing import ScriptedModel
 

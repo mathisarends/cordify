@@ -3,8 +3,7 @@
 import asyncio
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, tool
-from harnessed.core.messages import ToolResult, ToolStatus
+from harnessed import Agent, Plugin, ToolResult, ToolStatus, tool
 from harnessed.plugins import JsonlSessions, Spill
 from harnessed.testing import ScriptedModel, call
 

@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from harnessed import Agent, ToolCall
-from harnessed.core.model import ModelChunk
+from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop
 from harnessed.testing import ScriptedModel
 

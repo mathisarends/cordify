@@ -87,20 +87,20 @@ and `AgentLoop`. There is no per-run override: `RunOptions` only has
 `attachments`, `context` and `settings`. Move the shared services out of the loop
 plugin and allow per-run limits (see M1).
 
-**U6. The facades are not enough for the examples.** 18 of 28 examples import
-`harnessed.core.*`, against the AGENTS.md rule that applications use the root SDK,
-`plugins`, `models`, `hooks` and `events`. Some of these are already public
-(`ToolStatus`, `Role`, `ModelChunk`, `plugins.ApprovalGate`, `plugins.Durability`,
-`events.tool.Returned`, `hooks.PreStep`); the examples should use those. Others
-have no public home:
-- message types (`User`, `Assistant`, `Message`), although `run()` accepts a `Message`;
+**U6. Some application types have no public home.** The examples now use the
+existing facades wherever one exists, and `tests/test_examples.py` pins the remaining
+`harnessed.core` imports to an explicit list. Still missing (needs a decision,
+because api-target.md keeps the root at about 20 names and lists no errors facade):
+- message types and constructors (`User`, `Assistant`, `user()`), although `run()`
+  accepts a `Message`;
 - provider errors (`ProviderError`, `RateLimited`, `AuthError`,
-  `ContextLengthExceeded`) that applications must catch;
-- `ContextBudgetExceeded`, `ApprovalUnavailable`, `OutputUnavailable`;
-- `SessionLog`, `ToolRegistry`, `SystemPrompt` for inspection.
+  `ContextLengthExceeded`) that applications must catch, plus
+  `ContextBudgetExceeded`, `ApprovalUnavailable` and `OutputUnavailable`;
+- `SessionAppended` (not in the 14.3 hook catalog);
+- inspection types (`SessionLog`, `ToolRegistry`, `SystemPrompt`, the event codec),
+  which may legitimately stay level 3.
 
-Export what applications need and add a test that examples import only public
-facades.
+An `harnessed.errors` facade would cover the largest group.
 
 **U7. `RunHandle` cannot cancel.** It has `done()` and `result()` only: no
 `cancel()`, no `turn_id`, no event access. Cancelling one queued run requires

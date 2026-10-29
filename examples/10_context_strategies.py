@@ -3,7 +3,7 @@
 import asyncio
 
 from harnessed import Agent, Observation, Plugin, Session, events, tool
-from harnessed.core.hooks import PreStep
+from harnessed.hooks import PreStep
 from harnessed.kernel import Inject, hook
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, Compaction, LatestObservationOnly, Spill, at_ratio

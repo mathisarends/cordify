@@ -2,8 +2,7 @@
 
 import asyncio
 
-from harnessed import Agent, PolicyDecision
-from harnessed.core.messages import Role
+from harnessed import Agent, PolicyDecision, Role
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel

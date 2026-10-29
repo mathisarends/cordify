@@ -4,13 +4,11 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, PolicyDecision, ToolResult, tool
-from harnessed.core.messages import Role, ToolStatus
-from harnessed.core.session.events import ToolReturned
-from harnessed.core.tools.output_limit import ToolOutputLimit
+from harnessed import Agent, Plugin, PolicyDecision, Role, ToolResult, ToolStatus, tool
+from harnessed.events.tool import Returned as ToolReturned
 from harnessed.hooks import ExecuteTool
 from harnessed.kernel import Inject, hook
-from harnessed.plugins import Approvals, Service
+from harnessed.plugins import Approvals, Service, ToolOutputLimit
 from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools, LocalFileSystem
 from harnessed.testing import ScriptedModel, call
 
