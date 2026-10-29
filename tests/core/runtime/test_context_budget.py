@@ -7,7 +7,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.budget import ContextBudget
-from harnessed.core.errors import ContextBudgetExceeded
+from harnessed.core.errors import ContextBudgetExceeded, ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
 from harnessed.core.messages import Assistant, Role, System, user
 from harnessed.core.model import ModelChunk
@@ -24,7 +24,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import AgentLoop, Approvals, Compaction, at_ratio, every_turns
-from harnessed.testing import ExtractiveSummarizer, ScriptedModel
+from harnessed.testing import CallbackModel, ExtractiveSummarizer, ScriptedModel
 
 
 class RecordingCompactor:
@@ -325,6 +325,35 @@ async def test_budget_reserve_uses_maximum_and_keeps_the_stricter_window_limit()
                     await session.run("hello")
                 assert error.value.reserve_tokens == 120 and error.value.limit == 100
     assert len(model.requests) == 1
+
+
+@pytest.mark.parametrize("default_steps,run_steps", [(1, 3), (3, 1)])
+async def test_context_overflow_retry_uses_the_effective_turn_step_limit(default_steps, run_steps):
+    async def respond(request):
+        if len(model.requests) == 2:
+            raise ContextLengthExceeded("Provider context exceeded")
+        yield ModelChunk(text="old answer " * 100 if len(model.requests) == 1 else "recovered")
+
+    model = CallbackModel(respond)
+    summaries = RecordingCompactor()
+    async with Application(
+        model=model,
+        plugins=[
+            AgentLoop(max_steps=default_steps),
+            Compaction(trigger=lambda state: False, summarizer=summaries, keep_turns=0),
+        ],
+    ).session() as session:
+        await session.run("old question " * 100)
+        if run_steps == 1:
+            with pytest.raises(ContextLengthExceeded):
+                await session.run("new question", max_steps=run_steps)
+            assert not summaries.sources
+            assert len(model.requests) == 2
+        else:
+            result = await session.run("new question", max_steps=run_steps)
+            assert result.completed and result.text == "recovered"
+            assert len(summaries.sources) == 1
+            assert len(model.requests) == 3
 
 
 @pytest.mark.parametrize(

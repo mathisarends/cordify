@@ -141,7 +141,7 @@ class StepRunner:
             current = self.log.current_turn()
             if (
                 CompactionPolicy not in self.ctx
-                or step >= self.options.max_steps
+                or step >= (current.start.limits.max_steps or self.options.max_steps)
                 or any(item.reason == StepOutcome.CONTEXT_LIMIT for item in current.steps)
                 or any(isinstance(event, AssistantMessage) for event in current.steps[-1].events)
             ):
