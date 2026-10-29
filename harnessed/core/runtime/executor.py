@@ -80,10 +80,19 @@ class ToolExecutor:
     async def run_group(
         self, plans: tuple[PreparedToolCall, ...], scheduler: ToolScheduler
     ) -> None:
-        authorizations = [
-            plan.error if plan.error is not None else await self.authorize(plan.call)
-            for plan in plans
-        ]
+        authorizations: list[ToolResult | None] = []
+        for plan in plans:
+            result = plan.error
+            if result is None:
+                try:
+                    result = self.ctx[ToolRegistry].check_enabled(plan, ctx=self.ctx)
+                except Exception as exc:
+                    result = ToolResult.error(
+                        format_tool_error(plan.call, exc, self.options.error_formatter)
+                    )
+            if result is None:
+                result = await self.authorize(plan.call)
+            authorizations.append(result)
         reviewed = [asyncio.Event() for _ in plans]
 
         async def worker(index: int, plan: PreparedToolCall) -> None:

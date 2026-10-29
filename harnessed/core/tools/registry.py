@@ -15,6 +15,7 @@ from harnessed.core.messages import ToolCall, ToolResult, ToolStatus
 from harnessed.core.model import ToolDefinition
 from harnessed.core.tools.arguments import ToolArguments, tool_result_content
 from harnessed.core.tools.context import ToolContext, ToolContexts
+from harnessed.core.tools.enabled import ToolEnabled, bind_enabled, validate_enabled
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting, validate_output_limit
 from harnessed.core.tools.references import ToolReference, ToolSelector, tool_selector
 from harnessed.core.tools.scheduling import (
@@ -51,6 +52,7 @@ class ToolSpec:
 
     name: str | None = None
     description: str | None = None
+    enabled: ToolEnabled = True
     timeout: float | None = None
     parallel: bool = False
     resources: ResourceSpec = ()
@@ -63,6 +65,7 @@ class ToolSpec:
         if self.description is not None and not isinstance(self.description, str):
             raise TypeError("Tool description must be a string or None")
         validate_output_limit(self.output_limit)
+        validate_enabled(self.enabled)
 
     @property
     def needs(self) -> tuple[type, ...]:
@@ -102,6 +105,7 @@ class _Tool:
     plan: BindingPlan
     spec: ToolSpec
     arguments: ToolArguments
+    enabled: Callable[[Context], bool]
 
 
 @dataclass(eq=False)
@@ -181,6 +185,7 @@ class ToolRegistry:
         *,
         name: str | None = None,
         description: str | None = None,
+        enabled: ToolEnabled = True,
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
@@ -197,6 +202,7 @@ class ToolRegistry:
         *,
         name: str | None = None,
         description: str | None = None,
+        enabled: ToolEnabled = True,
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
@@ -210,6 +216,7 @@ class ToolRegistry:
                 callback,
                 name=name,
                 description=description,
+                enabled=enabled,
                 timeout=timeout,
                 parallel=parallel,
                 resources=resources,
@@ -228,6 +235,7 @@ class ToolRegistry:
         *,
         name: str | None = None,
         description: str | None = None,
+        enabled: ToolEnabled = True,
         timeout: float | None = None,
         parallel: bool = False,
         resources: ResourceSpec = (),
@@ -241,6 +249,7 @@ class ToolRegistry:
         spec = spec or ToolSpec(
             name=name,
             description=description,
+            enabled=enabled,
             timeout=timeout,
             parallel=parallel,
             resources=resources,
@@ -251,6 +260,7 @@ class ToolRegistry:
         name, timeout, parallel = spec.name, spec.timeout, spec.parallel
         resources, readonly, override = spec.resources, spec.readonly, spec.override
         owner = owner if owner is not None else Context.current() or self._ctx
+        check_enabled = bind_enabled(spec.enabled, callback, owner)
         ToolScheduling(parallel)
         resources = resource_spec(resources)
         timeout = _TIMEOUT.validate_python(timeout)
@@ -282,7 +292,9 @@ class ToolRegistry:
         )
 
         def install(registration: RegistrationState):
-            entry = _Tool(definition, callback, owner, registration, plan, spec, arguments)
+            entry = _Tool(
+                definition, callback, owner, registration, plan, spec, arguments, check_enabled
+            )
             entries = self._tools.setdefault(definition.name, [])
             entries.append(entry)
             logger.debug("Registered tool %s with owner %s", tool_name, owner.owner_name)
@@ -320,11 +332,24 @@ class ToolRegistry:
         return tuple(
             tool.definition
             for entries in self._tools.values()
-            if (tool := self._visible(entries)) is not None and self._available(tool, ctx)
+            if (tool := self._visible(entries)) is not None
+            and self._available(tool, ctx)
+            and tool.enabled(ctx)
         )
 
     def _visible(self, entries: list[_Tool]) -> _Tool | None:
         return next((tool for tool in reversed(entries) if tool.registration.active), None)
+
+    def check_enabled(self, plan: PreparedToolCall, *, ctx: Context) -> ToolResult | None:
+        """Reject disabled calls before policy/approval without following a replaced binding."""
+        tool = self._visible(self._tools.get(plan.call.name, []))
+        if tool is not plan.binding:
+            return ToolResult.error(
+                "Tool registration changed during batch planning; issue a fresh call"
+            )
+        if tool is not None and not tool.enabled(ctx):
+            return ToolResult.unavailable(f"Tool {plan.call.name} is currently disabled")
+        return None
 
     def plan(self, call: ToolCall) -> PreparedToolCall:
         if call.malformed is not None:
@@ -372,9 +397,13 @@ class ToolRegistry:
         if tool is None:
             return ToolResult.error(f"Unknown tool: {call.name}")
         ctx = ctx or self._ctx
-        if not self._available(tool, ctx):
-            return ToolResult.error(f"Tool {call.name} is unavailable: missing injected service")
         try:
+            if not tool.enabled(ctx):
+                return ToolResult.unavailable(f"Tool {call.name} is currently disabled")
+            if not self._available(tool, ctx):
+                return ToolResult.error(
+                    f"Tool {call.name} is unavailable: missing injected service"
+                )
             arguments = tool.arguments.parse(call.arguments)
             if call_context is None and any(
                 dependency.key is ToolContext for dependency in tool.plan.dependencies.values()

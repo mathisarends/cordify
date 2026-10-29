@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Any, overload
 
+from harnessed.core.tools.enabled import ToolEnabled
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.core.tools.registry import ParameterFields, ToolSpec
 from harnessed.core.tools.scheduling import ResourceSpec, resource_spec
@@ -15,6 +16,7 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     description: str | None = None,
+    enabled: ToolEnabled = True,
     timeout: float | None = None,
     parallel: bool = False,
     resources: ResourceSpec = (),
@@ -31,6 +33,7 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
+    enabled: ToolEnabled = True,
     timeout: float | None = None,
     parallel: bool = False,
     resources: ResourceSpec = (),
@@ -47,6 +50,7 @@ def tool(
         spec = ToolSpec(
             name=name,
             description=description,
+            enabled=enabled,
             timeout=timeout,
             parallel=parallel,
             resources=resources,

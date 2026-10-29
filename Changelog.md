@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Conditional tools
+
+- `@tool(enabled=...)` accepts a bool or a synchronous predicate with `Inject`
+  parameters. Instance predicates bind to the tool's mounted plugin. Disabled
+  tools disappear from model requests and return an unavailable result when
+  called. Conditions are checked before policy/approval and again before execution,
+  including after approval or resource waits, without following replaced tool
+  registrations. Other tools in the plugin keep their normal availability.
+
 ## 0.3.0 (2026-10-29)
 
 This release adds optional OpenTelemetry tracing, explicit plugin lifetime

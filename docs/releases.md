@@ -26,6 +26,13 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
+## Unreleased
+
+Tools can now declare `@tool(enabled=...)` with a bool or a synchronous predicate
+using `Inject` and mounted plugin state. Disabled tools are hidden from model
+requests and cannot execute; conditions are checked again after approval and
+scheduling waits. See [conditional tools](guides/tools.md#conditional-tools).
+
 ## 0.3.0 (2026-10-29)
 
 This minor release adds optional OpenTelemetry tracing, explicit plugin lifetime

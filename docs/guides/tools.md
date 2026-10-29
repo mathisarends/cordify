@@ -40,6 +40,60 @@ function-list registration. Functional kernel plugins remain useful for services
 and hooks. Kernel consumers use `harnessed.kernel.Context` without importing
 Pydantic or the agent runtime.
 
+## Conditional tools
+
+`@tool(enabled=False)` hides a tool from model requests and prevents its execution.
+For conditions that change during a session, pass a synchronous predicate returning
+a bool. An unbound instance method is bound to the same mounted plugin as the tool:
+
+```python
+from dataclasses import dataclass
+
+from harnessed import Plugin, tool
+from harnessed.kernel import Inject
+
+
+@dataclass
+class PointerState:
+    has_snapshot: bool = False
+
+
+class PointerTools(Plugin, needs=(PointerState,)):
+    def can_click(self, *, state: Inject[PointerState]) -> bool:
+        return state.has_snapshot
+
+    @tool(enabled=can_click)
+    async def click_at(
+        self, x: float, y: float
+    ) -> str: ...  # Dispatch through the application's browser backend.
+```
+
+Provide `PointerState` with `Service(PointerState, state)`. A plain function can
+also serve as the predicate. Its parameters must use `Inject[T]`; required
+predicate services missing from the current scope disable only that tool, and
+optional services receive None. Injection resolves current services on every
+check and never adds predicate parameters to the model's tool schema. `needs`
+continues to control the whole plugin's lifetime independently.
+
+Conditions are evaluated when building model requests, before policy/approval,
+and again immediately before invoking the tool after approval and scheduling
+waits. A disabled call returns `ToolResult.unavailable(...)`, including when a
+model calls a tool omitted from its request. Disabling an overriding registration
+does not expose an older tool with the same name. Prepared calls retain their
+original binding and never follow replacement registrations.
+
+Keep predicates fast and free of side effects: they may run multiple times per
+step. They cannot depend on model arguments or per-call `ToolContext`, and async
+predicates are rejected. Non-boolean results and predicate exceptions fail closed:
+request construction raises, while an invocation returns a tool error. Refresh
+expensive external state before the request, for example in `PreStep`. Browser
+backends must still validate their own invariants if state changes during an
+asynchronous action.
+
+`ConfigureRequest` can separately filter model-facing tools; that alone does not
+prevent execution. `ToolPolicy` remains the authorization/approval mechanism.
+See the [offline conditional tools example](https://github.com/mathisarends/harnessed/blob/main/examples/30_conditional_tools.py).
+
 ## Per-call state
 
 ```python

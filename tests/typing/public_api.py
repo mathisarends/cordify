@@ -79,7 +79,16 @@ class EventObserver(Plugin, needs=(SessionLog,)):
 class CountingTools(Plugin, needs=(str,)):
     counts = PluginState[dict[str, int]](dict)
 
-    @tool(readonly=True, output_limit=None, description="Count a value for the selected service.")
+    def can_count(self, *, injected: Inject[str]) -> bool:
+        assert_type(injected, str)
+        return bool(injected)
+
+    @tool(
+        enabled=can_count,
+        readonly=True,
+        output_limit=None,
+        description="Count a value for the selected service.",
+    )
     async def count(self, value: int, *, injected: Inject[str]) -> int:
         assert_type(injected, str)
         assert_type(self.counts, dict[str, int])
@@ -96,6 +105,20 @@ async def consumer(agent: Session) -> None:
 
 def invalid_tool_description() -> None:
     tool(description=42)  # ty: ignore[invalid-argument-type]
+
+
+def tool_enabled_signatures() -> None:
+    def ready(*, service: Inject[str]) -> bool:
+        return bool(service)
+
+    async def async_ready() -> bool:
+        return True
+
+    tool(enabled=True)
+    tool(enabled=False)
+    tool(enabled=ready)
+    tool(enabled="yes")  # ty: ignore[invalid-argument-type]
+    tool(enabled=async_ready)  # ty: ignore[invalid-argument-type]
 
 
 class Triage(BaseModel):
