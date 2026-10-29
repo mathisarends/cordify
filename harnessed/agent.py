@@ -95,7 +95,6 @@ class Agent:
             kind for plugin in self.plugins for kind in getattr(plugin, "events", ())
         )
         self.sessions = SessionRepository(self.plugins, registry=self._events)
-        self._outputs = OutputTypes()
 
     @asynccontextmanager
     async def session(
@@ -107,9 +106,11 @@ class Agent:
         """Open or resume a conversation; omit its ID to create a new one."""
         async with PluginContext() as ctx:
             ctx.provide(EventRegistry, self._events.copy())
+            # Validators are per session, so dynamic output types never leak between them.
+            outputs = OutputTypes()
             for output in restore_outputs:
-                self._outputs.register(output)
-            ctx.provide(OutputTypes, self._outputs)
+                outputs.register(output)
+            ctx.provide(OutputTypes, outputs)
             await ctx.install(self.plugins, settle=True)
             branch = session_id if isinstance(session_id, SessionLog) else None
             if branch is not None:
@@ -146,7 +147,7 @@ class Agent:
                 schemas.append(start.output_schema)
             for schema in schemas:
                 if schema is not None:
-                    self._outputs.resolve(schema)
+                    outputs.resolve(schema)
             runtime = ctx[AgentFactory].create(ctx, log)
             try:
                 await ctx.install(

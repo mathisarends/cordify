@@ -148,6 +148,18 @@ async def test_queued_output_types_are_restored_explicitly_after_reopening_the_a
         assert restored.last(OutputValidated).data["owner"] == "restored"
 
 
+async def test_output_types_restored_for_one_session_do_not_leak_into_another():
+    store = MemorySessions()
+    async with Agent(model=ScriptedModel([]), plugins=[store]).session("queued") as session:
+        await session.pause()
+        await session.submit("Triage", output=Triage)
+    app = Agent(model=ScriptedModel([]), plugins=[store])
+    async with app.session("other", restore_outputs=[Triage]):
+        with pytest.raises(ConfigError, match="restore_outputs"):
+            async with app.session("queued"):
+                pass
+
+
 async def test_schema_ids_cannot_silently_change_and_no_python_imports_come_from_logs():
     outputs = OutputTypes()
     original = outputs.register(Triage).definition

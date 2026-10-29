@@ -133,19 +133,13 @@ lifecycle rule:
 repair, output restoration and runtime install. Move that into a core session
 opener, so the facade only composes.
 
-**C3. Output registry shared across sessions.** `Agent._outputs` is one
-`OutputTypes` instance provided to every session. `restore_outputs`,
-`resolve()` and `Session.submit(output=...)` all mutate it, so sessions affect each
-other and long-lived servers with dynamic output types grow it without bound.
-Copy it per session, the way `EventRegistry` already uses `.copy()`.
-
-**C4. Reflection where a contract is missing.** `getattr(plugin, "events", ())` in
+**C3. Reflection where a contract is missing.** `getattr(plugin, "events", ())` in
 both `Agent.__init__` and `Session.use` stands in for an `events` member on
 `PluginLike`. `Service` special-cases `Model` (slot and async context entry). There
 are 31 `getattr`/`cast` uses outside the kernel and bridge; AGENTS.md limits these
 to genuinely dynamic boundaries.
 
-**C5. Errors and invariants.** About 196 bare `ValueError`/`RuntimeError`/
+**C4. Errors and invariants.** About 196 bare `ValueError`/`RuntimeError`/
 `TypeError` raises exist outside the kernel. User-facing ones (invalid status
 transition, "pause before changing history", token-limit FAIL, `ScriptedModel ran
 out of responses`) should derive from `HarnessedError`, so `except HarnessedError`
