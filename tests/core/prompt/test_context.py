@@ -14,7 +14,7 @@ from harnessed import (
     tool,
 )
 from harnessed.core.hooks import PreStep
-from harnessed.core.messages import ImageDetail, ImagePart, Role, User, system, user
+from harnessed.core.messages import ImageDetail, ImagePart, Role, User, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
@@ -74,24 +74,23 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
         assert recorded == request and "changed after admission" not in recorded.messages[0].text
 
 
-async def test_system_injection_survives_prompt_updates_and_typed_user_steering():
+async def test_quiet_context_survives_prompt_updates_and_typed_user_steering():
     model = ScriptedModel(["first", "second"])
     async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "typed"
     ) as agent:
-        await agent.inject(system("External change"))
+        await agent.context.set("change", "External change")
+        await agent.control.join()
+        assert model.requests == []
         await agent.steer(user("Check auth"))
         await agent.control.join()
-        assert [(m.role, m.text) for m in model.requests[0].messages] == [
-            ("system", "External change"),
-            ("user", "Check auth"),
+        assert [m.text for m in model.requests[0].messages] == [
+            '<context name="change">External change</context>',
+            "Check auth",
         ]
         await agent.context.set("project", "Updated project facts")
         await agent.run("another turn")
-        assert any(
-            m.role == Role.SYSTEM and m.text == "External change"
-            for m in model.requests[-1].messages
-        )
+        assert any("External change" in m.text for m in model.requests[-1].messages)
 
 
 async def test_push_context_from_pre_step_is_in_the_current_request():
@@ -102,7 +101,7 @@ async def test_push_context_from_pre_step_is_in_the_current_request():
         async def recall(self, event, next_, agent: Inject[Session]):
             seen.append((event.is_turn_start, event.latest_user_text))
             if event.is_turn_start:
-                await agent.inject(system("Relevant memory: prefers Python"))
+                await agent.context.set("memory", "Relevant memory: prefers Python")
             return await next_()
 
     model = ScriptedModel(["done"])
@@ -112,7 +111,7 @@ async def test_push_context_from_pre_step_is_in_the_current_request():
         await agent.run("my task")
         assert seen == [(True, "my task")]
         assert len(model.requests) == 1
-        assert model.requests[0].messages[-1].text == "Relevant memory: prefers Python"
+        assert any("prefers Python" in m.text for m in model.requests[0].messages)
         assert not agent.inbox.pending
 
 

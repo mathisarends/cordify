@@ -43,7 +43,6 @@ import sys
 from pathlib import Path
 from harnessed import ApprovalAnswer, ToolCall, Plugin, PolicyDecision, tool
 from harnessed.core.model import ModelChunk
-from harnessed.core.messages import system
 
 from harnessed.testing import ScriptedModel
 root, phase = (Path(sys.argv[1]), sys.argv[2])
@@ -90,7 +89,7 @@ async def main():
         elif phase == 'approval':
             await agent.submit('awaiting approval')
             await started.wait()
-        await agent.inject(system('door opened'))
+        await agent.context.set('door', 'door opened')
         if phase != 'idle':
             await agent.steer('inspect interrupted work')
             await agent.submit('queued followup')
@@ -180,13 +179,13 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
                 assert not agent.log.approvals.grants
             await agent.control.join()
             if phase == "idle":
-                assert model.requests == [] and len(agent.inbox.pending) == 1
+                assert model.requests == [] and not agent.inbox.pending
                 await agent.run("wake up")
             else:
                 assert len(model.requests) == 1 and (not agent.inbox.pending)
                 assert any(m.text == "queued followup" for m in model.requests[0].messages)
                 assert any(m.text == "inspect interrupted work" for m in model.requests[0].messages)
-            assert any(m.text == "door opened" for m in model.requests[0].messages)
+            assert any("door opened" in m.text for m in model.requests[0].messages)
             before = await asyncio.to_thread(
                 lambda: (
                     (tmp_path / "effects.txt").read_text().splitlines()

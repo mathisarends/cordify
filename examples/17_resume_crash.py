@@ -82,7 +82,7 @@ async def resume(root: Path):
         assert any(
             "External state changed" in message.text for message in model.requests[0].messages
         )
-        print("Second process: queued followup and silent context restored.")
+        print("Second process: queued run and quiet context restored.")
         recovered = next(e for e in session.log.events if isinstance(e, LogTailRecovered))
         print(f"Archived {recovered.discarded_bytes} incomplete bytes: {recovered.archive}")
         await session.run("Run the same tool in a fresh task.")

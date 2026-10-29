@@ -176,7 +176,7 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
             await release.wait()
             return "saved summary"
 
-    model = ScriptedModel(["answer", "answer"])
+    model = ScriptedModel(["answer", "answer", "answer"])
     async with Application(
         model=model,
         plugins=[
@@ -187,14 +187,15 @@ async def test_inbox_arrival_during_summary_does_not_change_the_summary_identity
         await agent.run("x" * 2000)
         await agent.submit("current")
         await started.wait()
-        await agent.inject("NEXT STEP CONTEXT")
+        await agent.steer("NEXT STEP CONTEXT")
         release.set()
         await agent.control.join()
         event = next(e for e in agent.log.events if isinstance(e, CompactionApplied))
         summary = next(m for m in model.requests[-1].messages if m.id.startswith("compaction:"))
         assert summary.id == f"compaction:{event.id}"
         assert summary in agent.log.messages
-        assert len(agent.inbox.pending) == 1
+        assert any(m.text == "NEXT STEP CONTEXT" for m in model.requests[-1].messages)
+        assert not agent.inbox.pending
 
 
 async def test_preserved_turns_can_be_reconstructed_from_original_log_events():

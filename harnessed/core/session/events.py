@@ -27,7 +27,6 @@ from harnessed.kernel.events import Emit
 class InboxMode(StrEnum):
     FOLLOWUP = "followup"
     STEER = "steer"
-    INJECT = "inject"
 
 
 class InboxTarget(StrEnum):
@@ -99,10 +98,9 @@ class SpillExpirationReason(StrEnum):
 
 type Identifier = Annotated[str, Field(min_length=1)]
 type StepNumber = Annotated[int, Field(ge=1)]
-_INBOX_ROUTES: dict[InboxMode, tuple[InboxTarget, bool]] = {
-    InboxMode.FOLLOWUP: (InboxTarget.NEXT_TURN, True),
-    InboxMode.STEER: (InboxTarget.NEXT_STEP, True),
-    InboxMode.INJECT: (InboxTarget.NEXT_STEP, False),
+_INBOX_ROUTES: dict[InboxMode, InboxTarget] = {
+    InboxMode.FOLLOWUP: InboxTarget.NEXT_TURN,
+    InboxMode.STEER: InboxTarget.NEXT_STEP,
 }
 
 
@@ -261,7 +259,6 @@ class InboxAdded(SessionEvent):
     type: Literal[EventKind.INBOX_ADDED] = field(default=EventKind.INBOX_ADDED, kw_only=True)
     message: Message
     target: InboxTarget
-    wakeup: bool
     mode: InboxMode
     context: tuple[Message, ...] = ()
     settings: Mapping[str, Any] = field(default_factory=dict)
@@ -273,11 +270,10 @@ class InboxAdded(SessionEvent):
         object.__setattr__(self, "target", InboxTarget(self.target))
         if self.mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {self.mode!r}")
-        if type(self.wakeup) is not bool or (self.target, self.wakeup) != _INBOX_ROUTES[self.mode]:
+        if self.target != _INBOX_ROUTES[self.mode]:
             raise ValueError(f"Inbox routing does not match {self.mode!r}")
-        allowed = ("user", "system") if self.mode == InboxMode.INJECT else ("user",)
-        if self.message.role not in allowed:
-            raise ValueError(f"{self.mode} requires one of these roles: {allowed}")
+        if self.message.role != "user":
+            raise ValueError(f"{self.mode} requires a user message")
         if self.output_schema is not None and self.mode != InboxMode.FOLLOWUP:
             raise ValueError("Only a new turn can declare an output contract")
         object.__setattr__(self, "context", tuple(self.context))
@@ -295,11 +291,9 @@ class InboxAdded(SessionEvent):
     ) -> Self:
         if mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {mode!r}")
-        target, wakeup = _INBOX_ROUTES[mode]
         return cls(
             message,
-            target,
-            wakeup,
+            _INBOX_ROUTES[mode],
             mode,
             context,
             settings or {},

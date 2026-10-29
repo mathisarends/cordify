@@ -50,7 +50,6 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         assert not live.closed and (not live.steps[-1].closed)
         assert live.steps[-1].request is model.requests[0]
         await agent.steer("focus here")
-        await agent.inject("extra context")
         await agent.submit("second task")
         assert len(model.requests) == 1
         release.set()
@@ -68,7 +67,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         assert not any(isinstance(e, ToolCalled) for e in steps[1].events)
         first_users = [e.message.text for e in turns[0].events if isinstance(e, UserMessage)]
         second_users = [e.message.text for e in turns[1].events if isinstance(e, UserMessage)]
-        assert first_users == ["first task", "focus here", "extra context"]
+        assert first_users == ["first task", "focus here"]
         assert second_users == ["second task"]
         restored = tuple(decode_event(encode_event(event)) for event in agent.log.events)
         assert derive_turns(restored) == turns

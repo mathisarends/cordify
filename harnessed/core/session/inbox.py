@@ -47,11 +47,11 @@ class Inbox:
 
     @property
     def has_wakeup(self) -> bool:
-        return any(item.wakeup for item in self.pending)
+        return bool(self.pending)
 
     @property
     def has_step_wakeup(self) -> bool:
-        return any(item.wakeup for item in self.next_step)
+        return bool(self.next_step)
 
     def for_step(self, step: int) -> tuple[InboxAdded, ...]:
         if type(step) is not int or step < 1:

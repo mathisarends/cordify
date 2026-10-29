@@ -290,33 +290,8 @@ class Session:
         if event.log is self.log:
             self._publish(event.event)
 
-    async def _send(
-        self,
-        content: str | Message,
-        mode: InboxMode,
-        *,
-        attachments: Iterable[Attachment] = (),
-        context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
-    ) -> str:
-        def prepared(item: InboxAdded) -> None:
-            self._steps.prepare_input(item)
-
-        item = await self.inbox._send(
-            content,
-            mode,
-            attachments=attachments,
-            context=context,
-            settings=settings,
-            prepared=prepared,
-        )
-        return item.id
-
     async def steer(self, content: str | Message) -> InboxItem:
         return await self.inbox.steer(content)
-
-    async def inject(self, content: str | Message) -> str:
-        return await self._send(content, InboxMode.INJECT)
 
     async def pause(self) -> None:
         """Wait until the current model call and all its tools are committed."""

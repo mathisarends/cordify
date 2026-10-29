@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from harnessed.core.budget import ContextBudget
@@ -20,8 +19,6 @@ from harnessed.core.session.events import (
     AssistantMessage,
     ContextLifetime,
     ContextMessage,
-    InboxAdded,
-    InboxMode,
     InboxRemovalReason,
     InboxRemoved,
     ModelRequested,
@@ -66,16 +63,10 @@ class StepRunner:
         self.tools = tools
         self.responder = responder
         self.session = session
-        self._preparing: ContextVar[bool] = ContextVar("harnessed_preparing", default=False)
-        self._step_push: list[InboxAdded] = []
         self._observations: dict[str, Observation] = {}
 
     def observe(self, observation: Observation) -> None:
         self._observations[observation.source] = observation
-
-    def prepare_input(self, item: InboxAdded) -> None:
-        if item.mode is InboxMode.INJECT and self._preparing.get():
-            self._step_push.append(item)
 
     async def run(self, turn: str, step: int, settings: Mapping[str, Any]) -> bool:
         await self.control.checkpoint()
@@ -83,22 +74,16 @@ class StepRunner:
         inbox = self.log.inbox
         pending = inbox.for_step(step)
         incoming = tuple(item.message for item in pending)
-        self._step_push = []
-        token = self._preparing.set(True)
-        try:
-            decision = await self.ctx.dispatch(
-                PreStep(self.session, incoming, step),
-                default=lambda incoming=incoming: StepDecision(incoming),
-            )
-        finally:
-            self._preparing.reset(token)
+        decision = await self.ctx.dispatch(
+            PreStep(self.session, incoming, step),
+            default=lambda incoming=incoming: StepDecision(incoming),
+        )
         if not decision.accepted:
-            for item in (*pending, *self._step_push):
+            for item in pending:
                 await self.log.append(InboxRemoved(item.message.id, InboxRemovalReason.REJECTED))
             await self.log.append(TurnEnd(turn, TurnOutcome.REJECTED))
             return False
-        pending = (*pending, *self._step_push)
-        accepted = (*decision.messages, *(item.message for item in self._step_push))
+        accepted = decision.messages
         await self.log.append(StepStart(turn, step))
         prompt = await self.ctx[SystemPrompt].render()
         previous_event = self.log.last(SystemMessage)

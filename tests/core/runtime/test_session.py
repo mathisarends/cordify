@@ -68,27 +68,19 @@ class PausingModel(CallbackModel):
         yield ModelChunk(text=f"response {len(self.requests)}")
 
 
-async def test_inject_stays_idle_steering_enters_next_step_followup_gets_own_turn():
+async def test_steering_enters_next_step_while_another_run_gets_its_own_turn():
     model = PausingModel()
     async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "inbox"
     ) as agent:
-        await agent.inject("quiet")
-        await asyncio.sleep(0)
-        assert agent.status == "idle" and (not model.requests)
         await agent.submit("first")
         await model.started.wait()
         await agent.steer("steering")
-        await agent.inject("context")
         await agent.submit("second")
         model.release.set()
         await agent.control.join()
         users = [[m.content for m in r.messages if m.role == Role.USER] for r in model.requests]
-        assert users == [
-            ["first", "quiet"],
-            ["first", "quiet", "steering", "context"],
-            ["first", "quiet", "steering", "context", "second"],
-        ]
+        assert users == [["first"], ["first", "steering"], ["first", "steering", "second"]]
         assert sum(isinstance(e, TurnStart) for e in agent.log.events) == 2
         assert not agent.inbox.pending
 
@@ -130,7 +122,7 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
         assert stages == []
 
 
-async def test_approval_always_is_session_local_and_review_can_inject_nudges():
+async def test_approval_always_is_session_local_and_review_can_steer_nudges():
     asked, stages = ([], [])
 
     class FeaturesPlugin(Plugin):
@@ -147,7 +139,7 @@ async def test_approval_always_is_session_local_and_review_can_inject_nudges():
         @hook(ReviewToolResult)
         async def review(self, event, next_, agent: Inject[Session]):
             stages.append("review")
-            await agent.inject("consider this")
+            await agent.steer("consider this")
             return (await next_()).with_note("Reviewed")
 
     features = FeaturesPlugin(name="reviews")

@@ -111,11 +111,8 @@ class SessionLog:
                 )
         self._inbox: Inbox | None = Inbox(self._events)
         self._pending = {item.message.id: item for item in self._inbox.pending}
-        self._wakeups = {key for key, item in self._pending.items() if item.wakeup}
-        self._step_wakeups = {
-            key
-            for key, item in self._pending.items()
-            if item.wakeup and item.target == InboxTarget.NEXT_STEP
+        self._step_pending = {
+            key for key, item in self._pending.items() if item.target == InboxTarget.NEXT_STEP
         }
         self._approvals: ApprovalState | None = ApprovalState(self._events)
         self._approval_records = {record.request_id: record for record in self._approvals.records}
@@ -235,11 +232,11 @@ class SessionLog:
 
     @property
     def has_wakeup(self) -> bool:
-        return bool(self._wakeups)
+        return bool(self._pending)
 
     @property
     def has_step_wakeup(self) -> bool:
-        return bool(self._step_wakeups)
+        return bool(self._step_pending)
 
     @property
     def approvals(self) -> ApprovalState:
@@ -308,20 +305,16 @@ class SessionLog:
             self._history.apply(event, seq, self._events)
             if isinstance(event, InboxAdded):
                 self._pending[event.message.id] = event
-                if event.wakeup:
-                    self._wakeups.add(event.message.id)
-                    if event.target == InboxTarget.NEXT_STEP:
-                        self._step_wakeups.add(event.message.id)
+                if event.target == InboxTarget.NEXT_STEP:
+                    self._step_pending.add(event.message.id)
                 self._inbox = None
             elif isinstance(event, InboxRemoved):
                 del self._pending[event.message_id]
-                self._wakeups.discard(event.message_id)
-                self._step_wakeups.discard(event.message_id)
+                self._step_pending.discard(event.message_id)
                 self._inbox = None
             elif isinstance(event, UserMessage | ContextMessage):
                 if self._pending.pop(event.message.id, None) is not None:
-                    self._wakeups.discard(event.message.id)
-                    self._step_wakeups.discard(event.message.id)
+                    self._step_pending.discard(event.message.id)
                     self._inbox = None
             if approval is not None:
                 self._approval_records[approval.request_id] = approval

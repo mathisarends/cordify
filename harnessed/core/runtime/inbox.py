@@ -105,6 +105,5 @@ class SessionInbox:
                 if any(record is event for record in self.log.events[offset:]):
                     if prepared is not None:
                         prepared(event)
-                    if event.wakeup:
-                        self.control.wake()
+                    self.control.wake()
             return _item(event)

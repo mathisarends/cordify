@@ -63,13 +63,10 @@ for example the plugin scope to `PluginScope` or only `kernel.Context`.
   (`ApprovalRequest.agent: Session`). Use `session: Session` and `log: SessionLog`
   consistently.
 
-**U3. Too many input verbs with inconsistent returns.** `run`, `submit`, `stream`,
-`followup`, `steer`, `inject`, `observe` and `context.set` all feed the model.
-`submit` returns `RunHandle`, `followup` and `inject` return `str`, `steer` returns
-`InboxItem`, `observe` returns `None`. `followup` and `submit` both enqueue a
-`FOLLOWUP`, but only `submit` gives a handle; `steer` and `inject` take no
-attachments. Return one type (a handle or `InboxItem`) from every enqueue verb,
-align their parameters, and add a one-table "which verb when" to the sessions guide.
+**U3. Input verbs are not fully aligned.** `followup` and `inject` are gone
+(api-target.md 8.1), and the sessions guide now has a "which verb when" table.
+Left: `steer` takes no attachments while `run`/`submit` do, and `observe` (returns
+`None`) is outside the 8.1 verb table without its own guide entry.
 
 **U4. Abnormal turn endings look like success.** Hitting `max_steps` returns a
 normal `RunResult` whose `text` is whatever intermediate assistant text came last;

@@ -5,7 +5,7 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision
-from harnessed.core.messages import Role, system, user
+from harnessed.core.messages import system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -22,56 +22,49 @@ from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
-@pytest.mark.parametrize(
-    ("mode", "target", "wakeup"),
-    [("followup", "next-turn", True), ("steer", "next-step", True), ("inject", "next-step", False)],
-)
-def test_input_modes_define_one_consistent_durable_route(mode, target, wakeup):
+@pytest.mark.parametrize(("mode", "target"), [("followup", "next-turn"), ("steer", "next-step")])
+def test_input_modes_define_one_consistent_durable_route(mode, target):
     event = InboxAdded.create(user("input"), mode)
-    assert (event.target, event.wakeup) == (target, wakeup)
+    assert event.target == target
     assert decode_event(encode_event(event)) == event
 
 
 @pytest.mark.parametrize(
-    ("mode", "target", "wakeup"),
+    ("mode", "target"),
     [
-        ("followup", "next-step", True),
-        ("followup", "next-turn", False),
-        ("steer", "next-turn", True),
-        ("inject", "next-step", True),
-        ("steer", "next-step", 1),
-        ("unknown", "next-step", True),
+        ("followup", "next-step"),
+        ("steer", "next-turn"),
+        ("inject", "next-step"),
+        ("unknown", "next-step"),
     ],
 )
-def test_inconsistent_inbox_routes_cannot_enter_the_log(mode, target, wakeup):
+def test_inconsistent_inbox_routes_cannot_enter_the_log(mode, target):
     with pytest.raises(ValueError):
-        InboxAdded(user("input"), target, wakeup, mode)
+        InboxAdded(user("input"), target, mode)
 
 
 def test_inbox_plans_one_followup_per_turn_and_preserves_pending_input_order():
-    quiet = InboxAdded.create(system("door opened"), InboxMode.INJECT)
     first = InboxAdded.create(user("first task"), InboxMode.FOLLOWUP)
     correction = InboxAdded.create(user("focus"), InboxMode.STEER)
     second = InboxAdded.create(user("second task"), InboxMode.FOLLOWUP)
-    inbox = Inbox((quiet, first, correction, second))
+    inbox = Inbox((first, correction, second))
     assert inbox.has_wakeup and inbox.has_step_wakeup
-    assert inbox.for_step(1) == (first, quiet, correction)
-    assert inbox.for_step(2) == (quiet, correction)
+    assert inbox.for_step(1) == (first, correction)
+    assert inbox.for_step(2) == (correction,)
     assert inbox.next_turn == (first, second)
-    claimed = Inbox((quiet, first, correction, second, UserMessage(first.message)))
+    claimed = Inbox((first, correction, second, UserMessage(first.message)))
     assert claimed.next_turn == (second,)
-    canceled = Inbox((quiet, first, InboxRemoved(first.message.id, InboxRemovalReason.CANCELED)))
-    assert canceled.pending == (quiet,) and (not canceled.has_wakeup)
+    canceled = Inbox((first, InboxRemoved(first.message.id, InboxRemovalReason.CANCELED)))
+    assert canceled.pending == () and (not canceled.has_wakeup)
     assert not canceled.has_step_wakeup
     with pytest.raises(FrozenInstanceError):
         inbox.pending = ()
 
 
 @pytest.mark.parametrize("mode", ["followup", "steer"])
-def test_only_injection_accepts_system_messages(mode):
-    with pytest.raises(ValueError, match="requires"):
+def test_inbox_inputs_require_user_messages(mode):
+    with pytest.raises(ValueError, match="requires a user message"):
         InboxAdded.create(system("context"), mode)
-    assert InboxAdded.create(system("context"), InboxMode.INJECT).message.role == Role.SYSTEM
 
 
 class PausingModel(CallbackModel):
@@ -87,8 +80,7 @@ class PausingModel(CallbackModel):
         yield ModelChunk(text=f"answer {len(self.requests)}")
 
 
-@pytest.mark.parametrize("mode", ["inject", "steer"])
-async def test_steering_requests_another_step_while_injection_waits_for_one(mode):
+async def test_steering_enters_the_running_turn_before_its_next_step():
     model = PausingModel()
     async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
         "routing"
@@ -96,48 +88,23 @@ async def test_steering_requests_another_step_while_injection_waits_for_one(mode
         await agent.submit("task")
         await model.started.wait()
         first_snapshot = model.requests[0]
-        await getattr(agent, mode)(
-            system("external context") if mode == InboxMode.INJECT else user("focus")
-        )
+        await agent.steer(user("focus"))
         model.release.set()
         await agent.control.join()
         assert model.requests[0] == first_snapshot
-        assert not any(m.text in ("external context", "focus") for m in first_snapshot.messages)
-        if mode == InboxMode.INJECT:
-            assert len(model.requests) == 1 and len(agent.inbox.pending) == 1
-            assert agent.status == "idle" and (not agent.log.inbox.has_wakeup)
-            await agent.run("next task")
-            assert [len(turn.steps) for turn in agent.log.turns] == [1, 1]
-            assert any(m.text == "external context" for m in model.requests[-1].messages)
-        else:
-            assert len(model.requests) == 2
-            assert [len(turn.steps) for turn in agent.log.turns] == [2]
-            assert any(m.text == "focus" for m in model.requests[-1].messages)
+        assert not any(m.text == "focus" for m in first_snapshot.messages)
+        assert len(model.requests) == 2
+        assert [len(turn.steps) for turn in agent.log.turns] == [2]
+        assert any(m.text == "focus" for m in model.requests[-1].messages)
         assert agent.inbox.pending == ()
 
 
-async def test_idle_injection_stays_durable_until_another_input_wakes_the_agent():
-    model = ScriptedModel(["awake"])
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "quiet"
-    ) as agent:
-        await agent.inject(system("door opened"))
-        snapshot = agent.inbox.pending
-        await agent.control.join()
-        assert agent.status == "idle" and model.requests == [] and (agent.log.turns == ())
-        await agent.steer("check the door")
-        await agent.control.join()
-        assert snapshot and (not agent.inbox.pending)
-        assert [m.text for m in model.requests[0].messages] == ["door opened", "check the door"]
-        assert [len(turn.steps) for turn in agent.log.turns] == [1]
-
-
-@pytest.mark.parametrize("mode", ["followup", "steer", "inject"])
-async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mode):
+@pytest.mark.parametrize("mode", ["followup", "steer"])
+async def test_resume_reconstructs_pending_routing_from_the_log(tmp_path, mode):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
     session = SessionLog("pending", persistence=persistence)
-    event = InboxAdded.create(system("context") if mode == InboxMode.INJECT else user("task"), mode)
+    event = InboxAdded.create(user("task"), mode)
     await session.append(event)
     await persistence.aclose()
     model = ScriptedModel(["processed"])
@@ -145,9 +112,6 @@ async def test_resume_reconstructs_wakeup_and_routing_from_the_log(tmp_path, mod
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
     ).session("pending") as agent:
         await agent.control.join()
-        if mode == InboxMode.INJECT:
-            assert model.requests == [] and agent.log.inbox.pending == (event,)
-            await agent.run("wake up")
         assert len(model.requests) == 1 and (not agent.inbox.pending)
         assert any(message.id == event.message.id for message in model.requests[0].messages)
 

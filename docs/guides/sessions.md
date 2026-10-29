@@ -61,6 +61,16 @@ provides `id`, `done()` and an awaitable `result()`. Runs execute in queue order
 under the session's existing driver. No background task is created per handle.
 `run()` is the convenience form that submits and waits for the result.
 
+| Call | Goes to | While a turn runs | While idle | Returns |
+|---|---|---|---|---|
+| `run(text)` / `stream(text)` | a new turn | queued after earlier turns | starts at once | `RunResult` / this turn's events |
+| `submit(text)` | a new turn | queued after earlier turns | starts at once | `RunHandle[T]` |
+| `steer(text)` | the running turn | joins its next step | starts a new turn | `InboxItem` |
+| `context.set(name, value)` | named context | sent with the next step | sent with the next turn; starts nothing | `None` |
+
+A queued follow-up is just another `run()` or `submit()`. Facts that must not wake
+the agent belong in `context.set()`.
+
 `StepDecision.reject()` in a `PreStep` hook permanently consumes that step's
 pending inputs and ends the turn with `StopReason.REJECTED`. Later runs never
 retry rejected work. Use the session's pause/resume controls to hold work instead.
