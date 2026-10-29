@@ -14,6 +14,7 @@ uv run pre-commit run --all-files
 uv run mkdocs build --strict
 uv build --no-sources
 uv run python scripts/check_wheel.py
+uv run twine check --strict dist/*
 ```
 
 `uv.lock` pins development and optional provider dependencies. Install the commit
@@ -37,9 +38,11 @@ importlib mode so modules such as `core/test_compaction.py` and
 | Examples | Offline scripts executed by the test suite |
 | Distribution | Build and install the wheel outside the checkout |
 
-Actions and uv are pinned. Workflow token permissions are read-only; runs on the
-same ref replace obsolete runs. Provider tests use native SDK mocks, not credentials
-or live API calls. Optional integrations have isolated missing-extra tests.
+Actions and uv are pinned. CI workflow token permissions are read-only; CI runs on
+the same ref replace obsolete runs. The release workflow grants OIDC access only
+to its PyPI upload job and repository write access only to its release-asset job.
+Provider tests use native SDK mocks, not credentials or live API calls. Optional
+integrations have isolated missing-extra tests.
 
 ## Test layout
 
@@ -76,13 +79,60 @@ Use a clean `dist/` directory so the wheel smoke check selects exactly one versi
 Validate both artifacts and the rendered package description before uploading:
 
 ```bash
-uv tool run --from twine twine check dist/*
+uv run --locked --no-sync twine check --strict dist/*
 ```
 
-Merge the release preparation, run CI on the final commit, and build the artifacts
-from that commit. Update any draft GitHub release to target the final commit and
-replace its assets if the preparation changed. Use a matching `v<version>` tag.
-Replace the unreleased label with the publication date when the release is made.
-Publish the same verified wheel and source archive to PyPI with `uv publish`, then
-publish the GitHub release with those files and the release notes. Building and CI
-do not publish packages automatically.
+### Configure Trusted Publishing once
+
+The release workflow uses GitHub's OIDC identity with PyPI. No PyPI API token or
+GitHub secret is required. In the repository settings, the `pypi` environment must
+allow deployment only from tags matching `v*`.
+
+For the first release, add a pending GitHub publisher at
+[PyPI account publishing](https://pypi.org/manage/account/publishing/):
+
+| PyPI field | Value |
+| --- | --- |
+| PyPI project name | `harnessed` |
+| Owner | `mathisarends` |
+| Repository name | `harnessed` |
+| Workflow name | `release.yml` |
+| Environment name | `pypi` |
+
+The workflow field is the filename, without `.github/workflows/`. If the project
+already exists under your account, add the same publisher in the project's
+Publishing settings instead. A pending publisher creates the project on its
+first successful upload; see the
+[PyPI setup guide](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+
+### Validate and publish a release
+
+1. Merge the release preparation into `main`. Use a matching `v<version>` tag and
+   ensure its commit contains `.github/workflows/release.yml`. For a draft whose
+   tag does not exist yet, set its target to the final commit SHA. If a tag already
+   exists, verify it points at that final commit before publishing.
+2. In Actions, select **Release**, then **Run workflow** on `main` for a dry run.
+   It runs the full CI matrix, builds both distributions, checks the installed
+   wheel and validates metadata with Twine. Download `python-distributions` and
+   `distribution-hashes` to inspect the artifacts. Manual runs never upload to
+   PyPI or change a GitHub release.
+3. Confirm the PyPI publisher is registered. Replace the unreleased label with
+   the publication date, merge that change and target the release at that final
+   commit. Keep the release notes consistent with the version being published.
+4. Publish the GitHub release. This triggers the release workflow, which requires
+   the tagged commit to belong to `main` and its tag to match `pyproject.toml`.
+   It reruns the full CI matrix and builds and verifies the distributions before
+   uploading them through the `pypi` environment with Trusted Publishing and
+   attestations. A branch push or a tag push alone does not publish a package.
+5. Wait for the **Release** workflow to succeed. After PyPI accepts the upload,
+   the workflow attaches the same wheel, source archive and `SHA256SUMS` to the
+   GitHub release, replacing any provisional draft assets. Confirm the package
+   is available on [PyPI](https://pypi.org/project/harnessed/).
+
+If publication fails, inspect the failed job before retrying. An upload failure
+before PyPI accepts any files can be retried after fixing the publisher setup.
+PyPI files are immutable; do not rebuild or overwrite an already published
+version. For a partial upload, inspect which files PyPI accepted and recover using
+the original verified workflow artifacts. Duplicate uploads fail explicitly.
+If only attachment of GitHub assets failed after a successful PyPI upload, rerun
+failed jobs so the workflow reuses the verified artifacts without republishing.
