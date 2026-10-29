@@ -326,7 +326,7 @@ def test_rule_conditions_are_sync_and_must_return_booleans():
 async def test_rule_and_observation_policies_mount_with_narrow_services_without_a_driver():
     from harnessed.core.prompt.context import DynamicContext
     from harnessed.core.runtime.control import SessionControl
-    from harnessed.core.runtime.inbox import SessionInbox
+    from harnessed.core.runtime.inbox import InboxWriter, SessionInbox
     from harnessed.core.session.session import SessionLog
     from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
     from harnessed.kernel import Context
@@ -340,7 +340,7 @@ async def test_rule_and_observation_policies_mount_with_narrow_services_without_
         control = SessionControl(log, unused_driver, lambda: False)
         ctx.provide(SessionLog, log)
         ctx.provide(DynamicContext, DynamicContext(log))
-        ctx.provide(SessionInbox, SessionInbox(log, control))
+        ctx.provide(SessionInbox, SessionInbox(log, control, InboxWriter(log, control)))
         ctx.provide(TokenCounter, ApproximateTokenCounter())
         handles = await ctx.install(
             [Rules([when(tool="test").context("fact")]), LatestObservationOnly()], settle=True

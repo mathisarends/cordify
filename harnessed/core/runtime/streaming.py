@@ -7,7 +7,7 @@ from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import RequestApproval, SessionAppended
 from harnessed.core.messages import ApprovalAnswer, ToolCall
 from harnessed.core.model import OutputSchema
-from harnessed.core.runtime.approvals import _PendingApproval
+from harnessed.core.runtime.approvals import LiveApproval, LiveApprovals
 from harnessed.core.runtime.control import SessionStatus
 from harnessed.core.runtime.result import RunResults
 from harnessed.core.session.events import (
@@ -50,10 +50,11 @@ if TYPE_CHECKING:
 class StreamApprovals:
     """Only the stream owning this inbox item can answer its turn's approvals."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, live: LiveApprovals) -> None:
         self.session = session
+        self.live = live
         self.input_id: str | None = None
-        self.pending: dict[str, _PendingApproval] = {}
+        self.pending: dict[str, LiveApproval] = {}
 
     def prepared(self, item: InboxAdded) -> None:
         self.input_id = item.message.id
@@ -75,15 +76,15 @@ class StreamApprovals:
             or start.input_id != self.input_id
         ):
             return None
-        request = self.session.approvals._open(event.request)
+        request = self.live.open(event.request)
         self.pending[request.request_id] = request
         try:
             await self.session.log.publish(
                 ApprovalNeeded(request.request_id, request.call, request.reason)
             )
-            return await request._decision
+            return await request.decision()
         except BaseException:
-            self.session.approvals._finish(
+            self.live.close(
                 request.request_id,
                 ApprovalUnavailable("The approval wait ended before acknowledgement"),
             )
@@ -95,7 +96,7 @@ class StreamApprovals:
         record = event.event
         request = self.pending.pop(record.request_id, None)
         if request is not None:
-            self.session.approvals._finish(
+            self.live.close(
                 request.request_id,
                 None
                 if record.status == ApprovalStatus.ANSWERED
@@ -106,7 +107,7 @@ class StreamApprovals:
         await self._remove_answer()
         await self._remove_ack()
         for request in self.pending.values():
-            self.session.approvals._finish(
+            self.live.close(
                 request.request_id, ApprovalUnavailable("The approval stream was closed")
             )
         self.pending.clear()

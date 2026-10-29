@@ -36,13 +36,13 @@ def _item(event: InboxAdded) -> InboxItem:
     )
 
 
-class SessionInbox:
-    """Expose queued input snapshots and durable removal without owning a loop."""
+class InboxWriter:
+    """Serialize durable inbox appends; the session and its inbox share one writer."""
 
     def __init__(self, log: SessionLog, control: SessionControl) -> None:
         self.log = log
         self.control = control
-        self._send_lock = asyncio.Lock()
+        self._lock = asyncio.Lock()
         self._sender: asyncio.Task | None = None
 
     @asynccontextmanager
@@ -51,33 +51,14 @@ class SessionInbox:
         if self._sender is task:
             yield
             return
-        async with self._send_lock:
+        async with self._lock:
             self._sender = task
             try:
                 yield
             finally:
                 self._sender = None
 
-    @property
-    def pending(self) -> tuple[InboxItem, ...]:
-        return tuple(_item(event) for event in self.log.inbox.pending)
-
-    async def remove(self, item_id: str) -> None:
-        self.control.check_open()
-        if not any(item.id == item_id for item in self.pending):
-            raise KeyError(item_id)
-        try:
-            await self.log.append(InboxRemoved(item_id, InboxRemovalReason.DISCARDED))
-        except ValueError:
-            # A model step may have claimed the item while persistence was awaited.
-            if not any(item.id == item_id for item in self.pending):
-                raise KeyError(item_id) from None
-            raise
-
-    async def steer(self, content: str | Message) -> InboxItem:
-        return await self._send(content, InboxMode.STEER)
-
-    async def _send(
+    async def send(
         self,
         content: str | Message,
         mode: InboxMode,
@@ -107,3 +88,31 @@ class SessionInbox:
                         prepared(event)
                     self.control.wake()
             return _item(event)
+
+
+class SessionInbox:
+    """Expose queued input snapshots and durable removal without owning a loop."""
+
+    def __init__(self, log: SessionLog, control: SessionControl, writer: InboxWriter) -> None:
+        self.log = log
+        self.control = control
+        self._writer = writer
+
+    @property
+    def pending(self) -> tuple[InboxItem, ...]:
+        return tuple(_item(event) for event in self.log.inbox.pending)
+
+    async def remove(self, item_id: str) -> None:
+        self.control.check_open()
+        if not any(item.id == item_id for item in self.pending):
+            raise KeyError(item_id)
+        try:
+            await self.log.append(InboxRemoved(item_id, InboxRemovalReason.DISCARDED))
+        except ValueError:
+            # A model step may have claimed the item while persistence was awaited.
+            if not any(item.id == item_id for item in self.pending):
+                raise KeyError(item_id) from None
+            raise
+
+    async def steer(self, content: str | Message) -> InboxItem:
+        return await self._writer.send(content, InboxMode.STEER)

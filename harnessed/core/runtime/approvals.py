@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _PendingApproval:
+class LiveApproval:
     """A live approval handle; answer() waits for its decision's durable acknowledgement."""
 
     def __init__(self, request: ApprovalRequested) -> None:
@@ -57,11 +57,35 @@ class _PendingApproval:
         if failure is not None:
             raise failure
 
-    def _finish(self, failure: Exception | None = None) -> None:
+    async def decision(self) -> ApprovalAnswer | None:
+        """Wait for an answer; None means the approval closed without one."""
+        return await self._decision
+
+    def close(self, failure: Exception | None = None) -> None:
         if not self._decision.done():
             self._decision.set_result(None)
         if not self._ack.done():
             self._ack.set_result(failure)
+
+
+class LiveApprovals:
+    """Approvals a live stream can answer, shared by the session and its streams."""
+
+    def __init__(self) -> None:
+        self._items: dict[str, LiveApproval] = {}
+
+    def open(self, request: ApprovalRequested) -> LiveApproval:
+        approval = LiveApproval(request)
+        self._items[request.request_id] = approval
+        return approval
+
+    def get(self, request_id: str) -> LiveApproval | None:
+        return self._items.get(request_id)
+
+    def close(self, request_id: str, failure: Exception | None = None) -> None:
+        approval = self._items.pop(request_id, None)
+        if approval is not None:
+            approval.close(failure)
 
 
 class SessionApprovals:
@@ -74,13 +98,14 @@ class SessionApprovals:
         control: SessionControl,
         options: AgentOptions,
         session: Session,
+        live: LiveApprovals,
     ) -> None:
         self.ctx = ctx
         self.log = log
         self.control = control
         self.options = options
         self.session = session
-        self._live: dict[str, _PendingApproval] = {}
+        self._live = live
 
     @property
     def records(self) -> tuple[Approval, ...]:
@@ -115,16 +140,6 @@ class SessionApprovals:
                 raise ValueError("An approval cannot change its submitted decision")
             return
         raise ApprovalUnavailable("This approval is no longer pending")
-
-    def _open(self, request: ApprovalRequested) -> _PendingApproval:
-        pending = _PendingApproval(request)
-        self._live[request.request_id] = pending
-        return pending
-
-    def _finish(self, request_id: str, failure: Exception | None = None) -> None:
-        pending = self._live.pop(request_id, None)
-        if pending is not None:
-            pending._finish(failure)
 
     async def request(
         self,

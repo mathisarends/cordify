@@ -81,6 +81,7 @@ unhashable. See [values and record versions](../concepts/values.md).
 | ToolContext | Call, log, signal, cancelled, progress and emit |
 | ctx.register(install) / RegistrationState.active | Owned registration and lifecycle visibility |
 | ctx.effect(cleanup) | Owned idempotent sync/async cleanup |
+| await ctx.enter(manager) | Async context manager exited when the scope closes |
 | Service(T, implementation) | Structural dependency registration |
 
 A keyword-only ToolContext is implicit; ordinary dependencies use Inject.

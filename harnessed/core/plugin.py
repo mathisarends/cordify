@@ -71,10 +71,8 @@ class Service[T](Plugin):
         self.slot = "model" if key is Model else None
 
     async def setup(self, ctx: Context) -> None:
-        value = self.value
-        if self.key is Model and isinstance(value, AbstractAsyncContextManager):
-            await value.__aenter__()
-            ctx.effect(lambda: value.__aexit__(None, None, None))
+        if self.key is Model and isinstance(self.value, AbstractAsyncContextManager):
+            await ctx.enter(self.value)
         ctx.provide(self.key, self.value)
 
 

@@ -84,6 +84,7 @@ class SessionLog:
         persistence: SessionPersistence | None = None,
         files: SessionFiles | None = None,
         registry: EventRegistry | None = None,
+        source_files: SessionFiles | None = None,
     ) -> None:
         self.registry = registry or (
             ctx[EventRegistry] if ctx is not None and EventRegistry in ctx else EventRegistry()
@@ -97,7 +98,7 @@ class SessionLog:
         }
         self._persistence = persistence
         self._files = files
-        self._fork_files: SessionFiles | None = None
+        self._source_files = source_files
         self._usage: ModelUsage | None = None
         self._observers: dict[EventBuffer[SessionEvent | TransientEvent | None], bool] = {}
         self._subscriptions_closed = False
@@ -145,6 +146,11 @@ class SessionLog:
         if self._snapshot is None:
             self._snapshot = tuple(self._events)
         return self._snapshot
+
+    @property
+    def source_files(self) -> SessionFiles | None:
+        """The files a forked log copies its referenced artifacts from when opened."""
+        return self._source_files
 
     @property
     def closed_turn_count(self) -> int:
@@ -458,6 +464,9 @@ class SessionLog:
         )
         if not inherit_approvals:
             seed.extend(ApprovalRevoked(item.request_id, "fork") for item in approvals.grants)
-        branch = SessionLog(session_id, seed=seed, registry=self.registry.copy())
-        branch._fork_files = self._files if self._files is not None else self._fork_files
-        return branch
+        return SessionLog(
+            session_id,
+            seed=seed,
+            registry=self.registry.copy(),
+            source_files=self._files if self._files is not None else self._source_files,
+        )

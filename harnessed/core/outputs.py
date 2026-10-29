@@ -121,18 +121,25 @@ class OutputValues:
         self._values: dict[str, tuple[str, Any]] = {}
         self._active: Counter[str] = Counter()
 
-    @contextmanager
-    def expect(self, schema: OutputSchema | None) -> Generator[None]:
+    def hold(self, schema: OutputSchema | None) -> None:
+        """Keep values for this schema until the matching release()."""
         if schema is not None:
             self._active[schema.id] += 1
+
+    def release(self, schema: OutputSchema | None) -> None:
+        if schema is not None:
+            self._active[schema.id] -= 1
+            if not self._active[schema.id]:
+                del self._active[schema.id]
+        self._prune()
+
+    @contextmanager
+    def expect(self, schema: OutputSchema | None) -> Generator[None]:
+        self.hold(schema)
         try:
             yield
         finally:
-            if schema is not None:
-                self._active[schema.id] -= 1
-                if not self._active[schema.id]:
-                    del self._active[schema.id]
-            self._prune()
+            self.release(schema)
 
     def put(self, event_id: str, schema_id: str, value: Any) -> None:
         self._values[event_id] = (schema_id, value)

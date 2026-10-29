@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import pytest
@@ -313,3 +314,22 @@ async def test_registration_installation_rejects_closed_owners_and_tracks_early_
     with pytest.raises(ContextClosed):
         ctx.register(install)
     assert len(states) == 1
+
+
+async def test_entered_context_managers_exit_when_their_scope_closes():
+    events = []
+
+    @asynccontextmanager
+    async def resource():
+        events.append("enter")
+        try:
+            yield "value"
+        finally:
+            events.append("exit")
+
+    async with Context() as ctx:
+        assert await ctx.enter(resource()) == "value"
+        assert events == ["enter"]
+    assert events == ["enter", "exit"]
+    with pytest.raises(ContextClosed):
+        await ctx.enter(resource())

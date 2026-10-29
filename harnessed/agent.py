@@ -121,9 +121,7 @@ class Agent:
                 selected_id = session_id
             else:
                 raise ConfigError("session_id must be a string, forked log or None")
-            lease = ctx[SessionStore].open(selected_id)
-            persistence = await lease.__aenter__()
-            ctx.effect(lambda: lease.__aexit__(None, None, None))
+            persistence = await ctx.enter(ctx[SessionStore].open(selected_id))
             ctx.provide(SessionPersistence, persistence)
             seed = await persistence.load(selected_id)
             files = ctx[SessionStore].files(selected_id)
@@ -132,7 +130,7 @@ class Agent:
                 if seed or await files.entries():
                     raise ConfigError(f"Fork destination {selected_id!r} already contains a log")
                 seed = branch.events
-                missing = await copy_artifacts(seed, branch._fork_files, files)
+                missing = await copy_artifacts(seed, branch.source_files, files)
                 seed = (*seed, *missing)
                 for seq, event in enumerate(seed):
                     await persistence.append(selected_id, seq, event)

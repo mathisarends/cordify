@@ -104,8 +104,7 @@ class Compaction(Plugin, slot="compaction"):
         if selected is not None and not isinstance(selected, Summarizer):
             backend = selected if isinstance(selected, Model) else PydanticAIModel(selected)
             if isinstance(backend, AbstractAsyncContextManager):
-                await backend.__aenter__()
-                ctx.effect(lambda: backend.__aexit__(None, None, None))
+                await ctx.enter(backend)
             selected = ModelSummarizer(backend, focus=self.config.focus)
         ctx.provide(
             CompactionPolicy,

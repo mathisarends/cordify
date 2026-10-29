@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Iterable
-from contextlib import AsyncExitStack, contextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Self, cast, overload
@@ -130,6 +130,11 @@ class Context:
         dispose = effect(cleanup)
         self._stack.push_async_callback(dispose)
         return dispose
+
+    async def enter[T](self, manager: AbstractAsyncContextManager[T]) -> T:
+        """Enter an async context manager and exit it when this scope closes."""
+        self._check_open()
+        return await self._stack.enter_async_context(manager)
 
     def register(self, install: Callable[[RegistrationState], Callable[[], Any]]) -> Disposer:
         """Install synchronously while open, then own cleanup and visibility together.

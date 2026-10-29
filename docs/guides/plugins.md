@@ -32,7 +32,8 @@ the same slot raise `PluginConflict`. A custom plugin declares its slot with
 
 The configuration object is reusable. Initialize mutable runtime state in `setup`,
 which runs on a fresh shallow copy for each mount. Register cleanup with
-`ctx.effect(...)`, or implement `teardown`. Tools, listeners and services already
+`ctx.effect(...)`, enter an async context manager with `await ctx.enter(...)`,
+or implement `teardown`. Tools, listeners and services already
 register their own reversible effects.
 
 ```python

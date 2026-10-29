@@ -106,17 +106,9 @@ make the rest private.
 
 ### Code cleanliness and consistency of abstractions
 
-**C2. Higher layers reach into private state.** This breaks the AGENTS.md
-lifecycle rule:
-- `agent.py` reads `branch._fork_files` and calls `lease.__aenter__()` /
-  `__aexit__()` by hand.
-- `core/runtime/session.py` calls `self.inbox._send(...)` three times,
-  `handle._finish(...)`, and drives `expectation.__enter__()` /
-  `__exit__()` manually.
-
-`Agent.session()` alone is about 80 lines of store leasing, fork seeding, log
-repair, output restoration and runtime install. Move that into a core session
-opener, so the facade only composes.
+**C2. `Agent.session()` does the core's work.** It is about 60 lines of store
+leasing, fork seeding, log repair, output restoration and runtime install. Move
+that into a core session opener, so the facade only composes.
 
 **C3. Reflection where a contract is missing.** `getattr(plugin, "events", ())` in
 both `Agent.__init__` and `Session.use` stands in for an `events` member on

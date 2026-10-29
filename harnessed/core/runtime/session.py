@@ -31,11 +31,11 @@ from harnessed.core.outputs import OutputContract, OutputTypes, OutputValues
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.prompt.values import Section
-from harnessed.core.runtime.approvals import SessionApprovals
+from harnessed.core.runtime.approvals import LiveApprovals, SessionApprovals
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.executor import ToolExecutor
 from harnessed.core.runtime.handles import RunHandle, SubmittedRun
-from harnessed.core.runtime.inbox import InboxItem, SessionInbox
+from harnessed.core.runtime.inbox import InboxItem, InboxWriter, SessionInbox
 from harnessed.core.runtime.options import AgentOptions, RunOptions
 from harnessed.core.runtime.output import OutputHandler
 from harnessed.core.runtime.respond import ModelResponder
@@ -84,8 +84,12 @@ class Session:
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
         self._runtime_guidance: WeakKeyDictionary[PluginHandle, str] = WeakKeyDictionary()
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
-        self.approvals = SessionApprovals(ctx, session, self.control, options, self)
-        self.inbox = SessionInbox(session, self.control)
+        self._live_approvals = LiveApprovals()
+        self.approvals = SessionApprovals(
+            ctx, session, self.control, options, self, self._live_approvals
+        )
+        self._inbox_writer = InboxWriter(session, self.control)
+        self.inbox = SessionInbox(session, self.control, self._inbox_writer)
         ctx.provide(SessionControl, self.control)
         ctx.provide(SessionInbox, self.inbox)
         ctx.provide(ToolContexts, BoundToolContexts(session, self.inbox))
@@ -269,8 +273,8 @@ class Session:
             self._queued_submissions.pop(submitted.handle.id)
         if submitted.turn_id is not None:
             self._submitted_turns.pop(submitted.turn_id, None)
-        submitted.handle._finish(value)
-        submitted.expectation.__exit__(None, None, None)
+        submitted.finish(value)
+        self._output_values.release(submitted.schema)
 
     def _publish(self, event: AgentEvent | None) -> None:
         if event is None:
@@ -389,14 +393,13 @@ class Session:
         self.control.check_open()
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
-        expectation = self._output_values.expect(schema)
-        expectation.__enter__()
+        self._output_values.hold(schema)
         submitted = None
         offset = len(self.log.events)
 
         def prepared(item: InboxAdded) -> None:
             nonlocal submitted
-            submitted = SubmittedRun(RunHandle(item.message.id), item, schema, expectation)
+            submitted = SubmittedRun(item, schema)
             self._submissions[submitted.handle] = submitted
             self._queued_submissions[item.message.id] = submitted
             # An input observer can wake the driver before append() returns.
@@ -407,7 +410,7 @@ class Session:
                 self._submission_event(self.log.events[seq], seq)
 
         try:
-            await self.inbox._send(
+            await self._inbox_writer.send(
                 content,
                 InboxMode.FOLLOWUP,
                 attachments=attachments,
@@ -418,7 +421,7 @@ class Session:
             )
         except BaseException:
             if submitted is None:
-                expectation.__exit__(None, None, None)
+                self._output_values.release(schema)
             raise
         assert submitted is not None
         return submitted.handle
@@ -456,7 +459,7 @@ class Session:
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
         with self._output_values.expect(schema):
-            async with StreamApprovals(self) as approvals:
+            async with StreamApprovals(self, self._live_approvals) as approvals:
                 raw = self._stream_turn(
                     content,
                     attachments=attachments,
@@ -529,7 +532,7 @@ class Session:
         queue: EventBuffer[AgentEvent | None] = EventBuffer(buffer_size)
         self._subscribers.add(queue)
         try:
-            item = await self.inbox._send(
+            item = await self._inbox_writer.send(
                 content,
                 InboxMode.FOLLOWUP,
                 attachments=attachments,
