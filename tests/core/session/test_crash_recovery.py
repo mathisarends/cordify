@@ -14,7 +14,7 @@ from harnessed import ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate
 from harnessed.core.messages import user
 from harnessed.core.model import ModelChunk
-from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.codec import EventLogCodec, encode_event
 from harnessed.core.session.events import (
     ApprovalRequested,
     ApprovalResolved,
@@ -129,7 +129,8 @@ def test_actual_process_kill_preserves_approvals_inbox_and_unknown_tool_outcomes
             process.communicate(timeout=10)
     path = tmp_path / "crash.jsonl"
     prefix = path.read_bytes()
-    original = tuple(decode_event(json.loads(line)) for line in prefix.splitlines())
+    codec = EventLogCodec()
+    original = tuple(codec.decode(json.loads(line)) for line in prefix.splitlines())
     called = []
 
     def effect():

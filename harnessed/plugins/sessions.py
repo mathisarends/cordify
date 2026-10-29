@@ -9,12 +9,13 @@ from contextlib import asynccontextmanager
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
+from typing import BinaryIO, TextIO
 from uuid import uuid4
 
 from harnessed.core.errors import SessionLocked
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.plugin import Plugin, PluginConfig
-from harnessed.core.session.codec import CURRENT_VERSION, decode_event, encode_event
+from harnessed.core.session.codec import CURRENT_VERSION, EventLogCodec
 from harnessed.core.session.events import LogTailRecovered, SessionEvent
 from harnessed.core.session.files import (
     SessionFiles,
@@ -64,7 +65,7 @@ class JsonlPersistence:
         self._closed = False
         self._failure: Exception | None = None
         self.recover_tail = recover_tail
-        self._files: dict[str, tuple] = {}
+        self._files: dict[str, tuple[TextIO, BinaryIO, int, EventLogCodec]] = {}
 
     def _path(self, session_id: str) -> Path:
         session_id = validate_session_id(session_id)
@@ -99,6 +100,7 @@ class JsonlPersistence:
         lock = self._lock(path)
         try:
             events = []
+            codec = EventLogCodec(registry=self.registry)
             boundaries = {0}
             offset, tail = 0, None
             if path.exists():
@@ -112,12 +114,12 @@ class JsonlPersistence:
                         record = json.loads(line)
                         if (
                             type(record["version"]) is not int
-                            or record["version"] not in (1, 2, 3, CURRENT_VERSION)
+                            or record["version"] != CURRENT_VERSION
                             or type(record["seq"]) is not int
                             or record["seq"] != seq
                         ):
                             raise ValueError(f"Invalid session record at line {seq + 1}")
-                        events.append(decode_event(record, registry=self.registry))
+                        events.append(codec.decode(record))
                         offset += len(line)
                         boundaries.add(offset)
             if tail is not None:
@@ -129,7 +131,7 @@ class JsonlPersistence:
                     if self.durability is Durability.FSYNC:
                         os.fsync(stream.fileno())
             stream = path.open("a", encoding="utf-8", newline="\n")
-            self._files[session_id] = (stream, lock, len(events))
+            self._files[session_id] = (stream, lock, len(events), codec)
             if self.recover_tail:
                 recorded = {
                     (event.offset, event.sha256)
@@ -163,7 +165,7 @@ class JsonlPersistence:
                 lock.close()
             raise
 
-    def _lock(self, path: Path):
+    def _lock(self, path: Path) -> BinaryIO:
         location = path.with_suffix(".lock")
         if location.is_symlink() or location.is_junction():
             raise ValueError("Session lock path is outside its namespace")
@@ -239,17 +241,18 @@ class JsonlPersistence:
                 raise
 
     def _append(self, session_id: str, seq: int, event: SessionEvent) -> None:
-        stream, lock, expected = self._files[session_id]
+        stream, lock, expected, codec = self._files[session_id]
         if seq != expected:
             raise ValueError(f"Session sequence mismatch: expected {expected}, got {seq}")
-        record = {"seq": seq, **encode_event(event, registry=self.registry)}
+        record = {"seq": seq, **codec.encode(event)}
         # No await between writing and advancing the in-process append position.
         stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
         if self.durability != Durability.BUFFERED:
             stream.flush()
         if self.durability is Durability.FSYNC:
             os.fsync(stream.fileno())
-        self._files[session_id] = (stream, lock, seq + 1)
+        codec.accept(event)
+        self._files[session_id] = (stream, lock, seq + 1, codec)
 
     async def flush(self) -> None:
         """Wait until every preceding write has reached the durability boundary."""
@@ -262,7 +265,7 @@ class JsonlPersistence:
                 raise
 
     def _flush(self) -> None:
-        for stream, _, _ in self._files.values():
+        for stream, _, _, _ in self._files.values():
             stream.flush()
             if self.durability is Durability.FSYNC:
                 os.fsync(stream.fileno())
@@ -270,7 +273,7 @@ class JsonlPersistence:
     def _close_session(self, session_id: str) -> None:
         writer = self._files.pop(session_id, None)
         if writer is not None:
-            stream, lock, _ = writer
+            stream, lock, _, _ = writer
             try:
                 stream.close()
             finally:
@@ -291,7 +294,7 @@ class JsonlPersistence:
 
     def _close_files(self) -> None:
         try:
-            for stream, lock, _ in self._files.values():
+            for stream, lock, _, _ in self._files.values():
                 try:
                     stream.close()
                 finally:

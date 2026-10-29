@@ -13,9 +13,11 @@ from harnessed.core.messages import (
     freeze,
     to_dict,
 )
+from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
     LogEvent,
+    ModelRequested,
     SessionEvent,
 )
 
@@ -113,3 +115,65 @@ def decode_event(record: dict[str, Any], *, registry: EventRegistry | None = Non
     event = adapter.validate_json(json.dumps({**body, "type": tag}, allow_nan=False), strict=True)
     registry.validate(event) if registry is not None else _validate_event(event)
     return event
+
+
+class EventLogCodec:
+    """Encode repeated request prefixes relative to the preceding model request.
+
+    Standalone event exports remain self-contained. Ordered persistence uses
+    this codec to reconstruct the exact immutable requests, including edits.
+    Encoding is pure; accept advances the base only after a successful write.
+    """
+
+    def __init__(self, *, registry: EventRegistry | None = None) -> None:
+        self.registry = registry
+        self._previous: ModelRequest | None = None
+
+    def encode(self, event: SessionEvent) -> dict[str, Any]:
+        record = encode_event(event, registry=self.registry)
+        if isinstance(event, ModelRequested):
+            previous = self._previous
+            prefix = 0
+            if previous is not None:
+                for old, new in zip(previous.messages, event.request.messages, strict=False):
+                    if old != new:
+                        break
+                    prefix += 1
+            request = record["data"]["request"]
+            request["messages"] = {"prefix": prefix, "items": request["messages"][prefix:]}
+            if previous is not None and event.request.tools == previous.tools:
+                request["tools"] = None
+        return record
+
+    def accept(self, event: SessionEvent) -> None:
+        if isinstance(event, ModelRequested):
+            self._previous = event.request
+
+    def decode(self, record: dict[str, Any]) -> SessionEvent:
+        if not isinstance(record, dict):
+            raise ValueError("Invalid session record envelope")
+        freeze(record)
+        if record.get("type") == ModelRequested.type:
+            request = dict(record["data"]["request"])
+            delta = request["messages"]
+            previous = self._previous
+            if (
+                not isinstance(delta, dict)
+                or set(delta) != {"prefix", "items"}
+                or type(delta["prefix"]) is not int
+                or not 0 <= delta["prefix"] <= (len(previous.messages) if previous else 0)
+                or not isinstance(delta["items"], list)
+            ):
+                raise ValueError("Invalid model request prefix delta")
+            request["messages"] = [
+                *to_dict(previous.messages[: delta["prefix"]] if previous else ()),
+                *delta["items"],
+            ]
+            if "tools" in request and request["tools"] is None:
+                if previous is None:
+                    raise ValueError("Tool reuse requires a preceding model request")
+                request["tools"] = to_dict(previous.tools)
+            record = {**record, "data": {**record["data"], "request": request}}
+        event = decode_event(record, registry=self.registry)
+        self.accept(event)
+        return event

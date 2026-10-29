@@ -12,6 +12,12 @@ advanced integrations can inspect it through `session.log` or inject it as a ser
 ID. IDs contain 1–128 ASCII letters, digits, underscores or hyphens, beginning with
 a letter or digit. Omitting an ID generates a fresh one.
 
+JSONL records store unchanged model history prefixes and tool definitions relative
+to the preceding request. Ordered loading reconstructs every exact request;
+ordinary growing conversations no longer repeat their entire history on disk.
+Use `EventLogCodec` from `harnessed.core.session.codec` when reading raw JSONL
+records in order. `encode_event`/`decode_event` handle standalone event exports.
+
 ```python
 from harnessed import Agent
 from harnessed.plugins import JsonlSessions

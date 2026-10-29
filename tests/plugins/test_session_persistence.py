@@ -1,12 +1,16 @@
 import asyncio
+import json
 import threading
 
 import pytest
 
+from harnessed import Agent
 from harnessed.core.messages import User
 from harnessed.core.session.events import UserMessage
 from harnessed.core.session.session import SessionLog as Session
+from harnessed.plugins import JsonlSessions
 from harnessed.plugins.sessions import Durability, JsonlPersistence
+from harnessed.testing import ScriptedModel
 
 
 async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consistent(
@@ -73,3 +77,28 @@ async def test_write_failures_remain_visible_to_append_and_flush(tmp_path, monke
     with pytest.raises(OSError, match="disk unavailable"):
         await writer.append("failed", 0, UserMessage(User("retry")))
     await writer.aclose()
+
+
+async def test_persisted_request_history_grows_linearly_and_replays_after_reopening(tmp_path):
+    model = ScriptedModel(["answer " + "y" * 1000] * 20)
+    agent = Agent(model=model, plugins=[JsonlSessions(tmp_path)])
+    async with agent.session("growth") as session:
+        for index in range(10):
+            await session.run(f"{index}: " + "x" * 1000)
+        first_size = (tmp_path / "growth.jsonl").stat().st_size
+        prefix = session.events
+    async with agent.session("growth") as session:
+        assert session.events == prefix
+        for index in range(10, 20):
+            await session.run(f"{index}: " + "x" * 1000)
+        events = session.events
+        assert session.log.requests == tuple(model.requests)
+    path = tmp_path / "growth.jsonl"
+    assert path.stat().st_size < first_size * 2.3
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    requests = [
+        record["data"]["request"] for record in records if record["type"] == "model.requested"
+    ]
+    assert [request["messages"]["prefix"] for request in requests] == [0, *range(1, 38, 2)]
+    async with agent.session("growth") as session:
+        assert session.events == events and session.log.requests == tuple(model.requests)
