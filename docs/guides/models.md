@@ -106,10 +106,9 @@ Editing an assistant's content, reasoning or tool calls while retaining its orig
 `provider_state` raises `InvalidRequest` before sending. Clear `provider_state` when
 replacing history; this deliberately discards the original provider signatures.
 
-Provider-specific built-in tools, audio/video output, native file handles and
-resumable hosted operations are not currently exposed by the Harnessed request
-contract. Unknown response parts fail explicitly rather than being silently
-removed. [Structured answers](structured-output.md) use the native JSON-schema
+Audio/video output, native file handles and resumable hosted operations are not
+currently exposed by the Harnessed request contract. Unknown response parts fail
+explicitly rather than being silently removed. [Structured answers](structured-output.md) use the native JSON-schema
 channel or a final-answer tool according to the model profile.
 See [multimodal tool results](tools.md#multimodal-results) for text/image policies.
 

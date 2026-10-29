@@ -22,7 +22,7 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-29)
 
 Initial public release, with the following capabilities:
 
@@ -34,12 +34,14 @@ Initial public release, with the following capabilities:
 - Append-only session logs, JSONL persistence, crash recovery, forks, queued input
   and pause/resume/stop controls. In-memory session retention can be bounded or
   disabled for one-shot work.
+- Provider-native tools forwarded through PydanticAI, including provider-side web
+  search and code execution where supported.
 - Tool approvals, filesystem and shell tools, skills, context compaction, output
   limits and session-owned spill artifacts.
 - An offline testing toolkit, executable examples, typed public APIs and
   [session memory and replay benchmarks](benchmarks/sessions.md).
 
-Provider-specific built-in tools, audio/video output and hosted resumable
-operations are not exposed by the current model contract. Subagents, MCP and OTel
-integrations are deferred. Provider tests use native SDK mocks and mock HTTP
+Provider-native tools execute on the provider and bypass Harnessed tool policies
+and approvals. Audio/video output and hosted resumable operations are not exposed
+by the current model contract. Subagents, MCP and OTel integrations are deferred. Provider tests use native SDK mocks and mock HTTP
 responses; they do not validate live API availability.
