@@ -100,3 +100,10 @@ async def test_workspace(harnessed_session):
 The fixture also accepts an existing `Agent` as its first argument. Provider SDKs
 and credentials are unnecessary for these tests. Configure pytest-asyncio as you
 normally would for asynchronous tests; Harnessed does not change its settings.
+
+## Memory and replay benchmarks
+
+`uv run python -m scripts.benchmark_sessions` measures growing conversations,
+lossless JSONL encoding/replay and repeated one-shot runs without a provider.
+See [the workload, metrics and baseline](../benchmarks/sessions.md) before
+interpreting the results. These measurements have no machine-dependent CI thresholds.
