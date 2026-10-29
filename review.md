@@ -6,8 +6,219 @@ superseded provider designs have been removed; their details remain in Git histo
 Do not add more native provider clients, retry policies, or presets. PydanticAI is
 an optional Direct API integration; the Harnessed kernel, loop and log remain independent.
 
-There are no open findings in the current review scope. Implemented findings have
-been removed; the tests, topic guides and Git history record the resulting contracts.
+Implemented findings have been removed; the tests, topic guides and Git history
+record the resulting contracts.
+
+## Open findings: tool call previews (335e7a1)
+
+Scope: `feat: stream typed tool call previews and argument deltas`. Ruff and the
+full test suite pass (768 passed, 2 skipped). The core contract is sound: previews
+are transient, never become executable, and tool scheduling still waits for the
+completed `ModelResponse`. The `_tool_call` change that validates the raw payload
+instead of PydanticAI's convenience serializers is a correct hardening.
+
+### 1. High: native tool deltas crash the PydanticAI stream with `KeyError`
+
+`harnessed/models/pydantic_ai.py`, `_Stream._chunks`: the `PartStartEvent` branch
+records a preview only for `native.ToolCallPart`, but the `PartDeltaEvent` branch
+handles every `native.ToolCallPartDelta` and looks it up with `previews[event.index]`.
+In PydanticAI 2.63, `NativeToolCallPart` derives from `BaseToolCallPart`, not
+`ToolCallPart`, and its arguments also stream as `ToolCallPartDelta`. Anthropic
+server tools (web search, code execution, MCP) do exactly this in
+`models/anthropic/_streaming.py`: `handle_part(NativeToolCallPart)` followed by
+`handle_tool_call_delta(args=...)`.
+
+Repro: feed `_Stream` a `PartStartEvent(NativeToolCallPart("web_search", None, "srv_1"))`
+followed by `PartDeltaEvent(ToolCallPartDelta(args_delta='{"query":"x"}'))`; the
+iterator raises `KeyError: 0`. This is a regression: before this commit, tool call
+deltas were ignored, so these streams succeeded.
+
+Reachability: the bridge's `_parameters` never requests native tools, so this
+needs a provider that starts one on its own or a wrapped native model that adds
+them. Gemini's `media_processing` does both: `google.py` emits the native part and
+later a `handle_tool_call_delta(tool_call_id=...)` for it. Any new support for
+PydanticAI native tools (see M5 below) makes this path common.
+
+Fix: decide whether provider-executed native calls get previews at all. They are
+not application tools, so the simplest contract is to skip them: ignore deltas
+whose index has no preview (`previews.get(event.index)`), and drop a stale preview
+when a non-`ToolCallPart` `PartStartEvent` replaces an index. Add a bridge test with
+a native tool part plus a string delta.
+
+### 2. Low: preview volume can now overflow existing stream consumers
+
+Argument deltas go to every transient subscriber, including `session.stream()`
+consumers that never match the new events. Large tool arguments, such as file
+contents for a write tool, produce many deltas. With the default `buffer_size=256`,
+a consumer that was fast enough before can now hit `StreamOverflow` while only
+the tool's `Started`/`Finished` events used to reach it. Text deltas already carry
+a similar risk, so this is not a contract break, but consumers cannot opt out.
+Consider an opt-in (`tool_previews=False` by default on stream entry points) or
+coalescing adjacent `APPEND` deltas for the same `(message_id, index)` before
+buffering.
+
+Related: each object patch emits a `REPLACE` snapshot that re-serializes the full
+accumulated argument dict, so payload size grows quadratically with the number of
+patches. Fine for today's providers, which send few patches; note it in the bridge
+if a provider starts streaming many small patches.
+
+### 3. Low: `_tool_call` serializes dict arguments outside its `try`
+
+`raw = ... json.dumps(part.args or {})` runs before the `try`. If a provider SDK ever
+returns a dict containing a non-JSON value, the `TypeError` escapes and fails the
+whole response instead of producing `MalformedArguments`. Current providers return
+JSON-safe dicts, so this is defensive only. Moving the `json.dumps` into the `try`
+needs a fallback raw text (for example `repr(part.args)`) for the malformed case.
+
+## Open findings: SDK usability, abstractions and agent capabilities
+
+Scope: the public SDK as of 335e7a1 (root facade, `Agent`, `Session`, `AgentLoop`,
+tools, results, events, examples). Deferred scope (subagents, MCP, OTel, UI, RAG,
+evals) is not repeated here.
+
+What already works well: the three-input `Agent` is easy to start with; `@tool`
+keeps the decorated function's type; durable inbox, pause/resume, crash recovery,
+approvals with persisted grants, and structured output are unusually complete for
+an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
+
+### Usability and expectation conformity
+
+**U1. "Context" means five different things.** `harnessed.Context` is
+`PluginContext`, `harnessed.kernel.Context` is its kernel base, `session.context`
+is `DynamicContext` (named prompt values), `run(context=...)` is a per-turn mapping,
+and `plugins.ContextValue` / `plugins.ContextState` are further types. `ToolContext`
+adds a sixth. A user reading `context=` cannot tell which one applies. Pick one
+meaning for "context" (prompt context is the most natural) and rename the others,
+for example the plugin scope to `PluginScope` or only `kernel.Context`.
+
+**U2. One name, two types; one type, two names.**
+- `harnessed.ApprovalRequest` is the `ApprovalRequested` *event*;
+  `harnessed.hooks.ApprovalRequest` is a *hook* that wraps it.
+- After 96b2fa5, "session" is still ambiguous: `ToolContext.session` is a
+  `SessionLog`, while hooks call the runtime `Session` `agent`
+  (`ApprovalRequest.agent: Session`). Use `session: Session` and `log: SessionLog`
+  consistently.
+
+**U3. Too many input verbs with inconsistent returns.** `run`, `submit`, `stream`,
+`followup`, `steer`, `inject`, `observe` and `context.set` all feed the model.
+`submit` returns `RunHandle`, `followup` and `inject` return `str`, `steer` returns
+`InboxItem`, `observe` returns `None`. `followup` and `submit` both enqueue a
+`FOLLOWUP`, but only `submit` gives a handle; `steer` and `inject` take no
+attachments. Return one type (a handle or `InboxItem`) from every enqueue verb,
+align their parameters, and add a one-table "which verb when" to the sessions guide.
+
+**U4. Abnormal turn endings look like success.** Hitting `max_steps` returns a
+normal `RunResult` whose `text` is whatever intermediate assistant text came last;
+only `stop_reason == MAX_STEPS` reveals it. Other SDKs raise here or expose an
+explicit "completed" flag. `StopReason` also mixes model reasons (`TOOL_CALLS`,
+`CONTENT_FILTER`) with turn outcomes (`MAX_STEPS`, `STOPPED`, `DISCARDED`), and
+`TurnOutcome.INTERRUPTED` is reported as `ABORTED`. Suggest
+`RunResult.outcome: TurnOutcome` next to the model's `stop_reason`, a
+`result.completed` property, and a typed error for `on_max_tokens=FAIL`
+(currently a bare `RuntimeError` in `core/runtime/turns.py`).
+
+**U5. Loop limits hide in a slot plugin.** `max_steps`, `tool_timeout`,
+`max_parallel_tools` and `context_window` need `AgentLoop(...)` in `plugins`.
+Replacing the `loop` slot also removes `ToolRegistry`, `SystemPrompt`,
+`TokenCounter` and `ContextBudget`, which `AgentLoop.setup` provides, so a custom
+loop silently loses tools. `context_window` can be set on both `PydanticAIModel`
+and `AgentLoop`. There is no per-run override: `RunOptions` only has
+`attachments`, `context` and `settings`. Move the shared services out of the loop
+plugin and allow per-run limits (see M1).
+
+**U6. The facades are not enough for the examples.** 18 of 28 examples import
+`harnessed.core.*`, against the AGENTS.md rule that applications use the root SDK,
+`plugins`, `models`, `hooks` and `events`. Some of these are already public
+(`ToolStatus`, `Role`, `ModelChunk`, `plugins.ApprovalGate`, `plugins.Durability`,
+`events.tool.Returned`, `hooks.PreStep`); the examples should use those. Others
+have no public home:
+- message types (`User`, `Assistant`, `Message`), although `run()` accepts a `Message`;
+- provider errors (`ProviderError`, `RateLimited`, `AuthError`,
+  `ContextLengthExceeded`) that applications must catch;
+- `ContextBudgetExceeded`, `ApprovalUnavailable`, `OutputUnavailable`;
+- `SessionLog`, `ToolRegistry`, `SystemPrompt` for inspection.
+
+Export what applications need and add a test that examples import only public
+facades.
+
+**U7. `RunHandle` cannot cancel.** It has `done()` and `result()` only: no
+`cancel()`, no `turn_id`, no event access. Cancelling one queued run requires
+`session.abort()`, which also hits the active turn. A task-like handle
+(`cancel()`, `turn_id`, `events()`) matches what users expect from `asyncio`.
+
+**U8. Two ways to read everything.** `session.events`, `.messages`, `.usage`,
+`.turns` and `.last()` mirror `session.log.*`. `Session` also exposes `ctx`, `log`,
+`options`, `control`, `approvals` and `inbox` as public attributes. Examples mix
+both (`session.log.approvals.grant_for(...)`). Decide which surface is public and
+make the rest private.
+
+### Code cleanliness and consistency of abstractions
+
+**C1. Loop configuration exists three times.** `AgentLoopConfig`, the
+`AgentLoop.__init__` parameters and `AgentOptions` repeat the same fields and
+defaults (32, 4, 300.0, 2). `tool_timeout` lives on `ToolRegistry` instead of
+`AgentOptions`. `ReactLoopFactory` and `_Factory` each build a fallback
+`AgentOptions`. Derive one from the other so defaults cannot drift.
+
+**C2. Higher layers reach into private state.** This breaks the AGENTS.md
+lifecycle rule:
+- `agent.py` reads `branch._fork_files` and calls `lease.__aenter__()` /
+  `__aexit__()` by hand.
+- `core/runtime/session.py` calls `self.inbox._send(...)` three times,
+  `handle._finish(...)`, and drives `expectation.__enter__()` /
+  `__exit__()` manually.
+
+`Agent.session()` alone is about 80 lines of store leasing, fork seeding, log
+repair, output restoration and runtime install. Move that into a core session
+opener, so the facade only composes.
+
+**C3. Output registry shared across sessions.** `Agent._outputs` is one
+`OutputTypes` instance provided to every session. `restore_outputs`,
+`resolve()` and `Session.submit(output=...)` all mutate it, so sessions affect each
+other and long-lived servers with dynamic output types grow it without bound.
+Copy it per session, the way `EventRegistry` already uses `.copy()`.
+
+**C4. Reflection where a contract is missing.** `getattr(plugin, "events", ())` in
+both `Agent.__init__` and `Session.use` stands in for an `events` member on
+`PluginLike`. `Service` special-cases `Model` (slot and async context entry). There
+are 31 `getattr`/`cast` uses outside the kernel and bridge; AGENTS.md limits these
+to genuinely dynamic boundaries.
+
+**C5. Errors and invariants.** About 196 bare `ValueError`/`RuntimeError`/
+`TypeError` raises exist outside the kernel. User-facing ones (invalid status
+transition, "pause before changing history", token-limit FAIL, `ScriptedModel ran
+out of responses`) should derive from `HarnessedError`, so `except HarnessedError`
+works. Production `assert`s guard invariants in `agent.py`, `Session.submit` and
+`TurnRunner`; they vanish under `python -O`.
+
+### Missing capabilities agents need
+
+**M1. Run budgets.** Only a global `max_steps` exists. Agents need, per run:
+a step limit, a token or cost limit (`ModelUsage` is already summed per turn),
+and a wall-clock timeout that ends the turn cleanly instead of cancelling the
+caller's `await`.
+
+**M2. Provider failure story.** Retry policies are out of scope by design, so the
+SDK must at least: document which PydanticAI/provider-SDK retries apply and how to
+configure them; export the provider errors with `retry_after` (U6); and document
+and test the session state after a failed model call (is the turn ended, can the
+same input be resubmitted?).
+
+**M3. Asking the user from inside a tool.** `ToolContext` offers `progress`,
+`emit` and cancellation, but no way to ask a question or request approval
+mid-call. `Session.request_approval` exists but tools cannot reach it. A
+`ToolContext.ask(...)` / `approve(...)` on the existing approval machinery would
+cover clarifying questions, the most common human-in-the-loop need.
+
+**M4. Token counts drive compaction on a guess.** `ApproximateTokenCounter`
+(UTF-8 bytes / 4) decides compaction and context budget, while the provider reports
+real input tokens in every `ModelUsage`. Calibrate against the last reported input
+count, or compaction runs too early or too late for code and non-Latin text.
+
+**M5. No access to provider-native tools.** PydanticAI supports server-side tools
+(web search, code execution, URL context), but `_parameters` never forwards them,
+so agents cannot use them through the bridge. This fits the "PydanticAI is the
+integration" direction without adding native clients. Fix finding 1 first.
 
 ## Deferred scope
 
