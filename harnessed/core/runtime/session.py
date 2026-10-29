@@ -317,7 +317,7 @@ class Session:
         """Summarize completed history while idle or paused; return its log record."""
         async with self.control.maintenance():
             request = ModelRequest(
-                self._options.model,
+                self.ctx[Model].info.name,
                 self.log.messages,
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
                 self._options.max_tokens,

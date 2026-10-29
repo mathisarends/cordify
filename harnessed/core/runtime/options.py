@@ -5,7 +5,7 @@ from typing import Annotated, Any, Self, TypedDict
 from pydantic import Field
 
 from harnessed.core.attachments import Attachment
-from harnessed.core.model import ModelInfo, TokenLimitBehavior
+from harnessed.core.model import TokenLimitBehavior
 from harnessed.core.plugin import PluginConfig
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ErrorFormatter
@@ -36,9 +36,8 @@ class AgentLoopConfig(PluginConfig):
 
 @dataclass(frozen=True, slots=True)
 class AgentOptions:
-    """Loop settings resolved against one model for one session runtime."""
+    """Session loop settings; provider metadata is resolved for each request."""
 
-    model: str
     max_steps: int
     tool_timeout: float
     max_tokens: int | None
@@ -54,17 +53,15 @@ class AgentOptions:
     def resolve(
         cls,
         config: AgentLoopConfig,
-        model: ModelInfo,
         *,
         tool_output_limit: ToolOutputLimit,
         error_formatter: ErrorFormatter | None = None,
     ) -> Self:
         return cls(
-            model=model.name,
             max_steps=config.max_steps,
             tool_timeout=config.tool_timeout,
             max_tokens=config.max_tokens,
-            context_window=config.context_window or model.context_window,
+            context_window=config.context_window,
             tool_output_limit=tool_output_limit,
             max_parallel_tools=config.max_parallel_tools,
             approval_timeout=config.approval_timeout,

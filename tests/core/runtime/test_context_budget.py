@@ -10,7 +10,7 @@ from harnessed.core.budget import ContextBudget
 from harnessed.core.errors import ContextBudgetExceeded, ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
 from harnessed.core.messages import Assistant, Role, System, user
-from harnessed.core.model import ModelChunk
+from harnessed.core.model import Model, ModelChunk, ModelInfo
 from harnessed.core.plugin import Bundle, Service
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -354,6 +354,71 @@ async def test_context_overflow_retry_uses_the_effective_turn_step_limit(default
             assert result.completed and result.text == "recovered"
             assert len(summaries.sources) == 1
             assert len(model.requests) == 3
+
+
+@pytest.mark.parametrize("initial_window,replacement_window", [(8000, 64), (64, 8000)])
+async def test_model_replacement_refreshes_request_names_and_context_windows(
+    initial_window, replacement_window
+):
+    original = ScriptedModel(["first", "restored"], info=ModelInfo("original", initial_window))
+    replacement = ScriptedModel(["second"], info=ModelInfo("replacement", replacement_window))
+    windows = []
+    async with Application(
+        model=original,
+        plugins=[Compaction(trigger=lambda state: windows.append(state.context_window) or False)],
+    ).session() as session:
+        await session.run("hello")
+        assert windows[-1] == initial_window
+        handle = await session.use(Service(Model, replacement))
+        if replacement_window == 64:
+            with pytest.raises(ContextBudgetExceeded) as error:
+                await session.run("x" * 1000)
+            assert error.value.limit == replacement_window
+            assert not replacement.requests
+        else:
+            assert (await session.run("x" * 1000)).text == "second"
+            assert replacement.requests[-1].model == "replacement"
+        assert windows[-1] == replacement_window
+        await handle.aclose()
+        if initial_window == 64:
+            with pytest.raises(ContextBudgetExceeded) as error:
+                await session.run("again")
+            assert error.value.limit == initial_window
+        else:
+            assert (await session.run("again")).text == "restored"
+            assert original.requests[-1].model == "original"
+        assert windows[-1] == initial_window
+
+
+async def test_explicit_loop_window_still_wins_after_model_replacement():
+    original = ScriptedModel([], info=ModelInfo("original", context_window=64))
+    replacement = ScriptedModel(["done"], info=ModelInfo("replacement", context_window=64))
+    windows = []
+    async with Application(
+        model=original,
+        plugins=[
+            AgentLoop(context_window=2000),
+            Compaction(trigger=lambda state: windows.append(state.context_window) or False),
+        ],
+    ).session() as session:
+        await session.use(Service(Model, replacement))
+        result = await session.run("x" * 1000)
+        assert result.completed and replacement.requests[-1].model == "replacement"
+        assert windows == [2000]
+
+
+async def test_manual_compaction_uses_the_replacement_model_name():
+    original = ScriptedModel(["old answer " * 100], info=ModelInfo("original"))
+    replacement = ScriptedModel(["brief summary"], info=ModelInfo("replacement"))
+    async with Application(
+        model=original,
+        plugins=[Compaction(trigger=lambda state: False, keep_turns=0)],
+    ).session() as session:
+        await session.run("old question " * 100)
+        await session.use(Service(Model, replacement))
+        assert await session.compact() is not None
+        assert replacement.requests[0].model == "replacement"
+        assert len(original.requests) == 1
 
 
 @pytest.mark.parametrize(

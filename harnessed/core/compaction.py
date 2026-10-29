@@ -157,7 +157,7 @@ class CompactionManager:
         return ContextState(
             await count_request(self.ctx[TokenCounter], request),
             budget.output_reserve(request),
-            budget.window_limit(self.context_window),
+            budget.window_limit(self.context_window or self.ctx[Model].info.context_window),
             self.session_log.uncompacted_turn_count,
         )
 

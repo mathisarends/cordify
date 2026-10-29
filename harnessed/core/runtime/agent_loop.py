@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from harnessed.core.model import Model, TokenLimitBehavior
+from harnessed.core.model import TokenLimitBehavior
 from harnessed.core.plugin import Plugin
 from harnessed.core.runtime.options import AgentLoopConfig, AgentOptions
 from harnessed.core.runtime.session import Session
@@ -63,7 +63,6 @@ class ReactLoopFactory:
     def create(self, ctx: Context, session: SessionLog) -> Session:
         options = AgentOptions.resolve(
             self.config,
-            ctx[Model].info,
             tool_output_limit=ctx[ToolOutputLimit],
             error_formatter=self.error_formatter,
         )

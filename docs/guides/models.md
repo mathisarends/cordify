@@ -17,6 +17,11 @@ model profile. Unknown windows remain unknown; configure `AgentLoop(context_wind
 when a budget policy needs an explicit limit. The loop does not assume 128k.
 When both are set, the `AgentLoop` value wins for that agent.
 
+Replacing the `Model` service during a session updates the model name and inferred
+context window for subsequent requests and compaction. An explicit `AgentLoop`
+context window continues to take precedence; removing the replacement restores
+the previous model's metadata.
+
 ## Provider-native tools
 
 Some providers run tools on their own servers, such as web search or code

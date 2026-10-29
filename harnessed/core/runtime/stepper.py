@@ -110,8 +110,9 @@ class StepRunner:
         self._observations.clear()
         for observation in observations:
             await self.log.append(ObservationRecorded(observation, turn, step))
+        model = self.ctx[Model]
         request = ModelRequest(
-            self.options.model,
+            model.info.name,
             self.log.messages,
             self.ctx[ToolRegistry].visible_definitions(self.ctx),
             self.options.max_tokens,
@@ -126,12 +127,12 @@ class StepRunner:
             default=lambda request=request: request,
         )
         request = self.outputs.prepare(request, self.log.current_turn().start.output_schema)
-        request = resolve_request_settings(request, self.ctx[Model].info.default_settings)
+        request = resolve_request_settings(request, model.info.default_settings)
         request = await self.compaction.prepare(request)
         if ContextBudget in self.ctx:
             await self.ctx[ContextBudget].check(
                 request,
-                context_window=self.options.context_window,
+                context_window=self.options.context_window or model.info.context_window,
                 counter=self.ctx[TokenCounter],
             )
         await self.log.append(ModelRequested(request))
