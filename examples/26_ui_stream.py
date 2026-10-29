@@ -4,7 +4,7 @@ from contextlib import aclosing
 from pydantic import BaseModel
 
 from harnessed import Agent, ApprovalAnswer, Plugin, ToolCall, ToolContext, events, tool
-from harnessed.models import ModelChunk
+from harnessed.models import ModelChunk, ToolCallDelta, ToolCallStart
 from harnessed.testing import ScriptedModel
 
 
@@ -25,7 +25,12 @@ async def main():
         [
             [
                 ModelChunk(reasoning="A note needs permission."),
-                ModelChunk(tool_call=ToolCall("publish", {"text": "Review completed"})),
+                ModelChunk(tool_call_start=ToolCallStart(0, "publish", "note")),
+                ModelChunk(tool_call_delta=ToolCallDelta(0, '{"text":', "publish", "note")),
+                ModelChunk(
+                    tool_call_delta=ToolCallDelta(0, '"Review completed"}', "publish", "note")
+                ),
+                ModelChunk(tool_call=ToolCall("publish", {"text": "Review completed"}, "note")),
             ],
             [
                 ModelChunk(text="The note is ready."),
@@ -44,6 +49,10 @@ async def main():
                         print(text)
                     case events.reasoning.Delta(text=text):
                         print("Thinking:", text)
+                    case events.tool.CallStarted(call=preview):
+                        print("Generating call:", preview.name)
+                    case events.tool.ArgumentsDelta(delta=delta):
+                        print("Arguments:", delta.arguments)
                     case events.tool.Started(call=call):
                         print("Starting:", call.name)
                     case events.tool.Progress(text=text):

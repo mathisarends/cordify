@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, cast
 
 from harnessed.core.errors import (
     AuthError,
@@ -33,12 +34,16 @@ from harnessed.core.model import (
     ModelUsage,
     OutputMode,
     StopReason,
+    ToolArgumentsMode,
+    ToolCallDelta,
+    ToolCallStart,
     resolve_request_settings,
 )
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage as NativeMessage
     from pydantic_ai.messages import ModelResponse as NativeResponse
+    from pydantic_ai.messages import ToolCallPart as NativeToolCall
     from pydantic_ai.models import Model as NativeModel
     from pydantic_ai.models import ModelRequestParameters, StreamedResponse
     from pydantic_ai.settings import ModelSettings
@@ -286,15 +291,18 @@ def _parameters(request: ModelRequest, *, native_output: bool = False) -> ModelR
     return parameters
 
 
-def _tool_call(part) -> ToolCall:
+def _tool_call(part: NativeToolCall) -> ToolCall:
+    # Native convenience serializers may wrap invalid JSON in an ordinary
+    # object. Validate the original payload so it cannot become executable.
+    raw = part.args if isinstance(part.args, str) else json.dumps(part.args or {})
     try:
-        return ToolCall(part.tool_name, part.args_as_dict(), part.tool_call_id)
-    except (ValueError, AssertionError):
+        return ToolCall(part.tool_name, json.loads(raw or "{}"), part.tool_call_id)
+    except (ValueError, TypeError):
         return ToolCall(
             part.tool_name,
             {},
             part.tool_call_id,
-            malformed=MalformedArguments(part.args_as_json_str()),
+            malformed=MalformedArguments(raw),
         )
 
 
@@ -340,6 +348,13 @@ def _response(response: NativeResponse) -> ModelResponse:
     )
 
 
+@dataclass
+class _ToolPreview:
+    name: str
+    call_id: str | None
+    arguments: dict[str, Any] | None = None
+
+
 class _Stream:
     def __init__(self, stream: StreamedResponse) -> None:
         self._native = stream
@@ -360,12 +375,33 @@ class _Stream:
     async def _chunks(self) -> AsyncIterator[ModelChunk]:
         from pydantic_ai import messages as native
 
+        previews: dict[int, _ToolPreview] = {}
         async for event in self._native:
             if isinstance(event, native.PartStartEvent):
                 if isinstance(event.part, native.TextPart):
                     yield ModelChunk(text=event.part.content)
                 elif isinstance(event.part, native.ThinkingPart):
                     yield ModelChunk(reasoning=event.part.content)
+                elif isinstance(event.part, native.ToolCallPart):
+                    part = event.part
+                    preview = _ToolPreview(part.tool_name, part.tool_call_id)
+                    previews[event.index] = preview
+                    yield ModelChunk(
+                        tool_call_start=ToolCallStart(event.index, preview.name, preview.call_id)
+                    )
+                    if part.args is not None:
+                        if isinstance(part.args, dict):
+                            preview.arguments = dict(part.args)
+                            arguments = json.dumps(preview.arguments, ensure_ascii=False)
+                            mode = ToolArgumentsMode.REPLACE
+                        else:
+                            arguments = part.args
+                            mode = ToolArgumentsMode.APPEND
+                        yield ModelChunk(
+                            tool_call_delta=ToolCallDelta(
+                                event.index, arguments, preview.name, preview.call_id, mode
+                            )
+                        )
             elif isinstance(event, native.PartDeltaEvent):
                 if isinstance(event.delta, native.TextPartDelta):
                     yield ModelChunk(text=event.delta.content_delta)
@@ -373,6 +409,24 @@ class _Stream:
                     isinstance(event.delta, native.ThinkingPartDelta) and event.delta.content_delta
                 ):
                     yield ModelChunk(reasoning=event.delta.content_delta)
+                elif isinstance(event.delta, native.ToolCallPartDelta):
+                    delta = event.delta
+                    preview = previews[event.index]
+                    preview.name += delta.tool_name_delta or ""
+                    if delta.tool_call_id is not None:
+                        preview.call_id = delta.tool_call_id
+                    if isinstance(delta.args_delta, dict):
+                        preview.arguments = {**(preview.arguments or {}), **delta.args_delta}
+                        arguments = json.dumps(preview.arguments, ensure_ascii=False)
+                        mode = ToolArgumentsMode.REPLACE
+                    else:
+                        arguments = delta.args_delta or ""
+                        mode = ToolArgumentsMode.APPEND
+                    yield ModelChunk(
+                        tool_call_delta=ToolCallDelta(
+                            event.index, arguments, preview.name, preview.call_id, mode
+                        )
+                    )
         self._response = response = _response(self._native.get())
         for call in response.message.tool_calls:
             yield ModelChunk(tool_call=call)

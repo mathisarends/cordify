@@ -11,7 +11,7 @@ pytest.importorskip("pydantic_ai")
 from pydantic_ai import messages as native
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 
-from harnessed import Agent, Plugin
+from harnessed import Agent, Plugin, events
 from harnessed.core.budget import ContextBudgetExceeded
 from harnessed.core.errors import (
     AuthError,
@@ -21,7 +21,7 @@ from harnessed.core.errors import (
     RateLimited,
 )
 from harnessed.core.messages import ImagePart, TextPart
-from harnessed.core.model import ModelRequest
+from harnessed.core.model import ModelRequest, ToolArgumentsMode
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
@@ -98,6 +98,128 @@ async def test_direct_stream_preserves_thinking_signature_tools_and_replay_state
         )
         assert thinking.content == "plan" and thinking.signature == "opaque-signature"
         assert model.info.context_window == 12_000
+
+
+async def test_native_tool_argument_previews_arrive_while_the_provider_is_still_generating():
+    seen, release = asyncio.Event(), asyncio.Event()
+    effects = []
+
+    class Tools(Plugin):
+        @tool(readonly=True)
+        async def add(self, a: int, b: int) -> int:
+            effects.append((a, b))
+            return a + b
+
+    async def chunks(messages, info):
+        if any(isinstance(m, native.ModelResponse) for m in messages):
+            yield "done"
+            return
+        yield {0: DeltaToolCall("add", '{"a":', tool_call_id="call")}
+        await release.wait()
+        yield {0: DeltaToolCall(json_args='1,"b":2}')}
+
+    app = Agent(model=FunctionModel(stream_function=chunks), plugins=[Tools()])
+    async with app.session() as session:
+        notifications = []
+
+        async def consume():
+            async for event in session.stream("add"):
+                notifications.append(event)
+                if isinstance(event, events.tool.ArgumentsDelta):
+                    seen.set()
+
+        task = asyncio.create_task(consume())
+        try:
+            await asyncio.wait_for(seen.wait(), 3)
+            assert effects == [] and not task.done()
+            release.set()
+            await asyncio.wait_for(task, 3)
+        finally:
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)
+        start = next(e for e in notifications if isinstance(e, events.tool.CallStarted))
+        deltas = [e.delta for e in notifications if isinstance(e, events.tool.ArgumentsDelta)]
+        assert start.call.name == "add" and start.call.call_id == "call"
+        assert [delta.arguments for delta in deltas] == ['{"a":', '1,"b":2}']
+        assert effects == [(1, 2)]
+        assert notifications[-1].result.text == "done"
+
+
+async def test_interleaved_native_calls_keep_part_indices_names_and_updated_ids():
+    async def chunks(messages, info):
+        # Index 0 exists before it has a name; index 1 starts first.
+        yield {0: DeltaToolCall(json_args='{"a":', tool_call_id="first")}
+        yield {1: DeltaToolCall("ad", '{"a":2', tool_call_id="early")}
+        yield {0: DeltaToolCall("add", '1,"b":2}')}
+        yield {1: DeltaToolCall("d", ',"b":3}', tool_call_id="late")}
+
+    model = PydanticAIModel(FunctionModel(stream_function=chunks))
+    async with model.stream(ModelRequest("fixture", (User("add"),))) as stream:
+        chunks = [chunk async for chunk in stream]
+        response = stream.response()
+    assert [c.tool_call_start.index for c in chunks if c.tool_call_start] == [1, 0]
+    deltas = [c.tool_call_delta for c in chunks if c.tool_call_delta]
+    assert "".join(d.arguments for d in deltas if d.index == 0) == '{"a":1,"b":2}'
+    assert "".join(d.arguments for d in deltas if d.index == 1) == '{"a":2,"b":3}'
+    assert deltas[-1].name == "add" and deltas[-1].call_id == "late"
+    assert [call.id for call in response.message.tool_calls] == ["first", "late"]
+    assert [c.tool_call for c in chunks if c.tool_call] == list(response.message.tool_calls)
+
+
+async def test_native_object_argument_patches_and_part_replacements_emit_snapshots():
+    from harnessed.models.pydantic_ai import _Stream
+
+    native_events = [
+        native.PartStartEvent(index=0, part=native.ToolCallPart("work", {"a": 1}, "early")),
+        native.PartDeltaEvent(index=0, delta=native.ToolCallPartDelta(args_delta={"b": 2})),
+        native.PartStartEvent(index=0, part=native.ToolCallPart("work", {"a": 3}, "replacement")),
+        native.PartDeltaEvent(index=0, delta=native.ToolCallPartDelta(args_delta={"b": 4})),
+    ]
+
+    class NativeStream:
+        def __init__(self):
+            self.parts = []
+
+        async def __aiter__(self):
+            for event in native_events:
+                if isinstance(event, native.PartStartEvent):
+                    self.parts[:] = [event.part]
+                else:
+                    self.parts[event.index] = event.delta.apply(self.parts[event.index])
+                yield event
+
+        def get(self):
+            return native.ModelResponse(self.parts)
+
+    stream = _Stream(NativeStream())
+    chunks = [chunk async for chunk in stream]
+    deltas = [c.tool_call_delta for c in chunks if c.tool_call_delta]
+    assert [json.loads(d.arguments) for d in deltas] == [
+        {"a": 1},
+        {"a": 1, "b": 2},
+        {"a": 3},
+        {"a": 3, "b": 4},
+    ]
+    assert all(d.mode == ToolArgumentsMode.REPLACE for d in deltas)
+    starts = [c.tool_call_start for c in chunks if c.tool_call_start]
+    assert [start.call_id for start in starts] == ["early", "replacement"]
+    final = stream.response().message.tool_calls[0]
+    assert final.arguments == {"a": 3, "b": 4} and final.id == "replacement"
+
+
+@pytest.mark.parametrize("arguments", ['{"a":', "[1,2]", "null", '{"a":NaN}'])
+async def test_invalid_native_argument_preview_remains_a_malformed_completed_call(arguments):
+    async def chunks(messages, info):
+        yield {0: DeltaToolCall("add", arguments, tool_call_id="invalid")}
+
+    model = PydanticAIModel(FunctionModel(stream_function=chunks))
+    async with model.stream(ModelRequest("fixture", (User("add"),))) as stream:
+        chunks = [chunk async for chunk in stream]
+        response = stream.response()
+    assert any(c.tool_call_delta.arguments == arguments for c in chunks if c.tool_call_delta)
+    call = response.message.tool_calls[0]
+    assert call.malformed is not None and call.arguments == {}
+    assert call.malformed.text == arguments
 
 
 async def test_non_streaming_request_and_settings_are_delegated_to_pydantic_ai():

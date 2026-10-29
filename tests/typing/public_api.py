@@ -11,8 +11,10 @@ from harnessed.core.model import ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session
 from harnessed.events import EventStream
+from harnessed.events.tool import ArgumentsDelta, CallStarted
 from harnessed.events.turn import Finished as TurnFinished
 from harnessed.kernel import Context, Inject, PluginSpec, plugin
+from harnessed.models import ToolArgumentsMode, ToolCallDelta, ToolCallStart
 from harnessed.plugins import AgentLoop, JsonlSessions, MemorySessions, Spill
 
 
@@ -63,6 +65,11 @@ async def typed_stream(session: Session) -> None:
             assert_type(event, TurnFinished[Triage])
             assert_type(event.result, RunResult[Triage])
             assert_type(event.result.output.severity, int)
+        elif isinstance(event, CallStarted):
+            assert_type(event.call, ToolCallStart)
+        elif isinstance(event, ArgumentsDelta):
+            assert_type(event.delta, ToolCallDelta)
+            assert_type(event.delta.mode, ToolArgumentsMode)
 
 
 async def functional_scope(ctx: Context) -> None:

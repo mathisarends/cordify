@@ -7,7 +7,7 @@ from harnessed.core.messages import Assistant, ToolCall
 from harnessed.core.model import Model, ModelRequest
 from harnessed.core.session.events import AssistantMessage, ModelUsageRecorded
 from harnessed.core.session.session import SessionLog
-from harnessed.core.stream import ReasoningDelta, TextDelta
+from harnessed.core.stream import ReasoningDelta, TextDelta, ToolArgumentsDelta, ToolCallStarted
 from harnessed.core.tracing import span
 from harnessed.kernel import Context
 
@@ -50,6 +50,12 @@ class ModelResponder:
                             await self.log.publish(ReasoningDelta(message_id, chunk.reasoning))
                     if chunk.tool_call is not None:
                         calls.append(chunk.tool_call)
+                    if chunk.tool_call_start is not None:
+                        await self.log.publish(ToolCallStarted(message_id, chunk.tool_call_start))
+                    if chunk.tool_call_delta is not None:
+                        await self.log.publish(
+                            ToolArgumentsDelta(message_id, chunk.tool_call_delta)
+                        )
                 response = stream.response()
         except BaseException:
             if last_usage is not None:

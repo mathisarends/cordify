@@ -49,6 +49,23 @@ input, output, cache-read, cache-write and available reasoning counters separate
 A cache hit rate is cache-read tokens divided by input tokens; a cache write is not
 a cache miss. Missing optional counters remain unknown when usages are combined.
 
+## Streaming tool calls
+
+Custom models can emit `ModelChunk(tool_call_start=ToolCallStart(index, name, call_id))`
+and `ModelChunk(tool_call_delta=ToolCallDelta(index, arguments, name, call_id, mode))`.
+These types and `ToolArgumentsMode` are exported by `harnessed.models`. Starts
+reset a response-local part index; deltas carry current name/ID metadata and
+either appended JSON text or a replacement snapshot. The PydanticAI bridge
+translates native part events immediately, including interleaved calls and
+object argument patches.
+
+Preview chunks never add executable calls to a response. Supply completed
+`ModelChunk(tool_call=...)` values and the authoritative `ModelResponse` as before.
+The runtime waits for stream completion before scheduling tools. Invalid raw
+JSON remains `MalformedArguments`, including its original text, rather than
+being converted into executable placeholder arguments. See the
+[UI preview contract](streaming.md#preview-tool-arguments).
+
 ## Content and errors
 
 The bridge supports text, thinking, function calls, and user/tool-result image URLs or data URLs.

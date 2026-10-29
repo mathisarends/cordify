@@ -35,6 +35,8 @@ from harnessed.core.stream import (
     ReasoningDelta,
     StatusChanged,
     TextDelta,
+    ToolArgumentsDelta,
+    ToolCallStarted,
     ToolFinished,
     ToolStarted,
     TurnFinished,
@@ -141,7 +143,13 @@ async def project_stream_events(
                 case OutputValidated(call_id=call_id) | OutputValidationFailed(call_id=call_id):
                     if call_id is not None:
                         control_calls.add(call_id)
-                case TextDelta() | ReasoningDelta() | ApprovalNeeded():
+                case (
+                    TextDelta()
+                    | ReasoningDelta()
+                    | ApprovalNeeded()
+                    | ToolCallStarted()
+                    | ToolArgumentsDelta()
+                ):
                     yield event
                 case CompactionApplied() | SpillCreated() | SpillExpired():
                     yield event
