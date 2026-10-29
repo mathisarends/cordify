@@ -18,9 +18,11 @@ those bytes.
 
 The persistence codec has a separate versioned boundary. Records require version
 1 and explicit dotted tags, such as `turn.start` and `tool.returned`. This is the
-single canonical format for the unreleased package. Older experimental formats,
+single canonical format for the 0.1 release line. Older experimental formats,
 unknown fields, invalid discriminators, non-finite numbers and malformed nested
 values are rejected without rewriting the append-only log.
+See the [compatibility policy](../releases.md#compatibility-policy) before upgrading
+persisted workflows.
 
 [Application events](../guides/events.md) use a session-local catalog assembled
 before loading persistence. Frozen dataclasses remain the event values; Pydantic

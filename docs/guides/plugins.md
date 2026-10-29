@@ -86,7 +86,6 @@ class Database(Protocol):
 
 
 class Lookup(Plugin, needs=(Database,)):
-
     @tool(readonly=True)
     async def lookup(self, key: str, *, db: Inject[Database]) -> str:
         return await db.lookup(key)

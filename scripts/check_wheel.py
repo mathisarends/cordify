@@ -24,6 +24,12 @@ package = Path(harnessed.__file__).resolve()
 assert package.is_relative_to(Path(sys.prefix).resolve()), package
 installed = distribution('harnessed')
 assert installed.metadata['Name'] == 'harnessed'
+assert installed.metadata['License-Expression'] == 'MIT'
+assert installed.metadata.get_all('License-File') == ['LICENSE']
+licenses = [file for file in installed.files or ()
+            if str(file).endswith('.dist-info/licenses/LICENSE')]
+assert len(licenses) == 1
+assert installed.locate_file(licenses[0]).read_text(encoding='utf-8').startswith('MIT License\n')
 assert (installed.read_text('top_level.txt') or '').split() == ['harnessed']
 assert installed.locate_file('harnessed/__init__.py').resolve() == package
 assert (package.parent / 'py.typed').is_file()

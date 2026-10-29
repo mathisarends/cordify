@@ -64,3 +64,25 @@ to warnings so CI catches broken references. Building does not publish the site.
 MkDocs belongs to the development dependency group. The installed package does not
 depend on it or import it. The wheel smoke check verifies that documentation files
 and development tools stay outside the distribution and its runtime dependencies.
+
+## Prepare a release
+
+Set the package version in `pyproject.toml`, update the
+[release notes](../releases.md) and run the checks above with all provider extras.
+Keep the release notes marked unreleased until publication. The build produces
+`dist/harnessed-<version>.tar.gz` and `dist/harnessed-<version>-py3-none-any.whl`.
+Use a clean `dist/` directory so the wheel smoke check selects exactly one version.
+
+Validate both artifacts and the rendered package description before uploading:
+
+```bash
+uv tool run --from twine twine check dist/*
+```
+
+Merge the release preparation, run CI on the final commit, and build the artifacts
+from that commit. Update any draft GitHub release to target the final commit and
+replace its assets if the preparation changed. Use a matching `v<version>` tag.
+Replace the unreleased label with the publication date when the release is made.
+Publish the same verified wheel and source archive to PyPI with `uv publish`, then
+publish the GitHub release with those files and the release notes. Building and CI
+do not publish packages automatically.

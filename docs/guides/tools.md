@@ -145,11 +145,13 @@ Use decorated method references in policies and scripted model responses:
 from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel, call
 
-model = ScriptedModel([
-    call(Filesystem.read_file, path="large.log", offset=0, limit=40),
-    call(Filesystem.read_file, path="large.log", offset=40, limit=40),
-    "Read the requested ranges.",
-])
+model = ScriptedModel(
+    [
+        call(Filesystem.read_file, path="large.log", offset=0, limit=40),
+        call(Filesystem.read_file, path="large.log", offset=40, limit=40),
+        "Read the requested ranges.",
+    ]
+)
 policy = Approvals(require=[Filesystem.delete_file])
 ```
 

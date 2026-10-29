@@ -11,13 +11,18 @@ from harnessed.plugins import Skill, Skills
 
 agent = Agent(
     model="deepseek:deepseek-chat",
-    plugins=[Skills(
-        "./skills",
-        "~/.harnessed/skills",
-        Skill.from_dir("./vendor/pdf-forms"),
-        Skill(name="release-notes", description="Write a release changelog.",
-              instructions="Group changes by user-visible behavior."),
-    )],
+    plugins=[
+        Skills(
+            "./skills",
+            "~/.harnessed/skills",
+            Skill.from_dir("./vendor/pdf-forms"),
+            Skill(
+                name="release-notes",
+                description="Write a release changelog.",
+                instructions="Group changes by user-visible behavior.",
+            ),
+        )
+    ],
 )
 ```
 
@@ -68,6 +73,7 @@ selected directories and `shadows`:
 
 ```python
 from harnessed.plugins.skills import SkillCatalog
+
 
 async def inspect(agent: Agent):
     async with agent.session() as session:

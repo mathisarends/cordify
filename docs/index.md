@@ -4,6 +4,10 @@ Harnessed is a composable Python agent runtime. Start with the application SDK;
 use hooks when you need to change behavior, and the standalone kernel when you
 need service composition without an agent.
 
+Harnessed 0.1.x is alpha software. Read the
+[release notes and compatibility policy](releases.md) before depending on its
+public APIs or persisted session formats.
+
 | I want to... | Read |
 | --- | --- |
 | Understand the application API | [SDK reference](reference/sdk.md) |
