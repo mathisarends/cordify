@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Mapping
-from dataclasses import fields, is_dataclass
+from dataclasses import fields, is_dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
@@ -130,19 +130,26 @@ class EventLogCodec:
         self._previous: ModelRequest | None = None
 
     def encode(self, event: SessionEvent) -> dict[str, Any]:
-        record = encode_event(event, registry=self.registry)
-        if isinstance(event, ModelRequested):
-            previous = self._previous
-            prefix = 0
-            if previous is not None:
-                for old, new in zip(previous.messages, event.request.messages, strict=False):
-                    if old != new:
-                        break
-                    prefix += 1
-            request = record["data"]["request"]
-            request["messages"] = {"prefix": prefix, "items": request["messages"][prefix:]}
-            if previous is not None and event.request.tools == previous.tools:
-                request["tools"] = None
+        if not isinstance(event, ModelRequested):
+            return encode_event(event, registry=self.registry)
+        previous = self._previous
+        prefix = 0
+        if previous is not None:
+            for old, new in zip(previous.messages, event.request.messages, strict=False):
+                if old != new:
+                    break
+                prefix += 1
+        reuse_tools = previous is not None and event.request.tools == previous.tools
+        tail = replace(
+            event.request,
+            messages=event.request.messages[prefix:],
+            tools=() if reuse_tools else event.request.tools,
+        )
+        record = encode_event(replace(event, request=tail), registry=self.registry)
+        request = record["data"]["request"]
+        request["messages"] = {"prefix": prefix, "items": request["messages"]}
+        if reuse_tools:
+            request["tools"] = None
         return record
 
     def accept(self, event: SessionEvent) -> None:
@@ -153,10 +160,12 @@ class EventLogCodec:
         if not isinstance(record, dict):
             raise ValueError("Invalid session record envelope")
         freeze(record)
+        previous = self._previous
+        prefix = 0
+        reuse_tools = False
         if record.get("type") == ModelRequested.type:
             request = dict(record["data"]["request"])
             delta = request["messages"]
-            previous = self._previous
             if (
                 not isinstance(delta, dict)
                 or set(delta) != {"prefix", "items"}
@@ -165,15 +174,23 @@ class EventLogCodec:
                 or not isinstance(delta["items"], list)
             ):
                 raise ValueError("Invalid model request prefix delta")
-            request["messages"] = [
-                *to_dict(previous.messages[: delta["prefix"]] if previous else ()),
-                *delta["items"],
-            ]
+            prefix = delta["prefix"]
+            request["messages"] = delta["items"]
             if "tools" in request and request["tools"] is None:
                 if previous is None:
                     raise ValueError("Tool reuse requires a preceding model request")
-                request["tools"] = to_dict(previous.tools)
+                reuse_tools = True
+                request["tools"] = []
             record = {**record, "data": {**record["data"], "request": request}}
         event = decode_event(record, registry=self.registry)
+        if isinstance(event, ModelRequested) and previous is not None:
+            event = replace(
+                event,
+                request=replace(
+                    event.request,
+                    messages=(*previous.messages[:prefix], *event.request.messages),
+                    tools=previous.tools if reuse_tools else event.request.tools,
+                ),
+            )
         self.accept(event)
         return event
