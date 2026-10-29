@@ -45,14 +45,6 @@ keeps the decorated function's type; durable inbox, pause/resume, crash recovery
 approvals with persisted grants, and structured output are unusually complete for
 an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
 
-### Usability and expectation conformity
-
-**U8. Two ways to read everything.** `session.events`, `.messages`, `.usage`,
-`.turns` and `.last()` mirror `session.log.*`. `Session` also exposes `ctx`, `log`,
-`options`, `control`, `approvals` and `inbox` as public attributes. Examples mix
-both (`session.log.approvals.grant_for(...)`). Decide which surface is public and
-make the rest private.
-
 ### Missing capabilities agents need
 
 **M3. Asking the user from inside a tool.** `ToolContext` offers `progress`,

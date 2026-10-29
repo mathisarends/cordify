@@ -98,7 +98,7 @@ async def main():
             )
             print(
                 "Task context in durable log:",
-                any(isinstance(e, ContextMessage) for e in agent.log.events),
+                any(isinstance(e, ContextMessage) for e in agent.events),
             )
 
 

@@ -97,7 +97,7 @@ async def test_direct_sdk_approval_raises_typed_unavailable_and_leaves_no_pendin
         model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
     ).session("direct") as agent:
         with pytest.raises(ApprovalUnavailable, match="No approval responder"):
-            await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
+            await asyncio.wait_for(agent.approvals.request(ToolCall("work"), "permission"), 2)
         record = agent.log.approvals.records[-1]
         assert record.resolution.status == ApprovalStatus.UNAVAILABLE and record.decision is None
         assert not agent.log.approvals.pending
@@ -118,12 +118,12 @@ async def test_explicit_approver_then_service_take_precedence_over_request_liste
         agent.ctx.provide(Approver, Answer(ApprovalAnswer.DENY))
         agent.on(RequestApproval, lambda ev: pytest.fail("Explicit approver was bypassed"))
         assert (
-            await agent.request_approval(
+            await agent.approvals.request(
                 ToolCall("work"), "permission", approver=Answer(ApprovalAnswer.ALLOW)
             )
             is ApprovalAnswer.ALLOW
         )
-        assert await agent.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.DENY
+        assert await agent.approvals.request(ToolCall("work"), "permission") is ApprovalAnswer.DENY
 
 
 async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or_deny():
@@ -143,12 +143,12 @@ async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or
 
         remove_answer = agent.add_hook(RequestApproval, answer, priority=0)
         agent.on(RequestApproval, lambda ev: asked.append("abstain"), priority=-100)
-        assert await agent.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.DENY
+        assert await agent.approvals.request(ToolCall("work"), "permission") is ApprovalAnswer.DENY
         assert asked == ["abstain", "deny"]
         await remove_answer()
         asked.clear()
         with pytest.raises(ApprovalUnavailable):
-            await agent.request_approval(ToolCall("work"), "permission")
+            await agent.approvals.request(ToolCall("work"), "permission")
         assert asked == ["abstain", "late"]
 
 
@@ -180,7 +180,7 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
         elif transport == "service":
             agent.ctx.provide(Approver, WaitingApprover())
         with pytest.raises(ApprovalUnavailable, match="timed out after 0.02 seconds"):
-            await asyncio.wait_for(agent.request_approval(ToolCall("work"), "permission"), 2)
+            await asyncio.wait_for(agent.approvals.request(ToolCall("work"), "permission"), 2)
         assert stopped.is_set()
         assert not agent.log.approvals.pending
         assert agent.log.approvals.records[-1].resolution.status == ApprovalStatus.UNAVAILABLE
@@ -199,7 +199,7 @@ async def test_responder_abstention_invalid_answers_and_failures_are_unavailable
     ).session("bad-answer") as agent:
         agent.on(RequestApproval, respond)
         with pytest.raises(ApprovalUnavailable):
-            await agent.request_approval(ToolCall("work"), "permission")
+            await agent.approvals.request(ToolCall("work"), "permission")
         record = agent.log.approvals.records[-1]
         assert record.resolution.status == ApprovalStatus.UNAVAILABLE and record.resolution.reason
         assert not record.pending and (not record.is_grant)
@@ -248,7 +248,7 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
         plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)],
     ).session("resume") as agent:
         with pytest.raises(ApprovalUnavailable):
-            await agent.request_approval(ToolCall("work"), "permission")
+            await agent.approvals.request(ToolCall("work"), "permission")
         prefix = agent.log.events
     async with Application(
         model=ScriptedModel([]),
@@ -260,7 +260,7 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
     ).session("resume") as resumed:
         assert resumed.log.events == prefix and (not resumed.log.approvals.pending)
         assert (
-            await resumed.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
+            await resumed.approvals.request(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
         )
         assert len(resumed.log.approvals.records) == 2
         grant = resumed.log.approvals.grants[0]
@@ -269,7 +269,7 @@ async def test_resume_preserves_unavailable_without_reasking_and_can_accept_a_ne
         plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)],
     ).session("resume") as resumed:
         assert (
-            await resumed.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
+            await resumed.approvals.request(ToolCall("work"), "permission") is ApprovalAnswer.ALWAYS
         )
         assert resumed.log.approvals.records[-1].request.grant_id == grant.request_id
 

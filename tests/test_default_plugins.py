@@ -77,7 +77,6 @@ async def test_unknown_model_window_and_async_token_counting_do_not_assume_128k(
         plugins=[Service(TokenCounter, Counter()), Service(ContextBudget, ContextBudget(20))],
     )
     async with app.session() as session:
-        assert session.options.context_window is None
         await session.run("Go")
     assert len(counts) == 1
 

@@ -579,7 +579,13 @@ session.messages  # projected history (after compaction)
 session.events  # full append-only log, typed
 session.usage  # summed usage of the whole session
 session.last(ToolFinished)
+session.approvals.grants  # durable approval grants; answer()/revoke() change them
+```
 
+- **Eine Lesefläche.** Anwendungen lesen über `session.events`, `.messages`, `.turns`, `.usage`, `.last()`, `.approvals` und `.inbox`. `session.log` ist der fortgeschrittene `SessionLog`-Service (Event-Registry, Projektionen für Plugins); Beispiele und Guides greifen nicht darüber zu, wenn die Session dieselbe Ansicht hat.
+- **Fortgeschrittene Attribute:** `session.ctx` löst Services des Session-Scopes auf, `session.control` ist der `SessionControl`-Service für Plugins und UIs. Die aufgelösten Loop-Optionen sind privat. Approvals laufen nur über `session.approvals` (`request`, `answer`, `revoke`); die Session hat keine zweite Kopie dieser Verben.
+
+```python
 # fork: new session from a prefix of the log
 async with agent.session("support-4711") as session:
     branch = session.fork("support-4711-alt", at=session.turns[-2].end)

@@ -6,7 +6,6 @@ from contextvars import ContextVar
 from typing import Any, Unpack, overload
 from weakref import WeakKeyDictionary
 
-from harnessed.core.approvals import Approver
 from harnessed.core.attachments import Attachment
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.compaction import CompactionManager
@@ -15,10 +14,8 @@ from harnessed.core.hooks import (
     SessionAppended,
 )
 from harnessed.core.messages import (
-    ApprovalAnswer,
     Message,
     Observation,
-    ToolCall,
 )
 from harnessed.core.model import (
     Model,
@@ -80,7 +77,7 @@ class Session:
     def __init__(self, ctx: Context, session: SessionLog, options: AgentOptions) -> None:
         self.ctx = ctx
         self.log = session
-        self.options = options
+        self._options = options
         self.id = session.id
         self.context = DynamicContext(session)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
@@ -311,22 +308,6 @@ class Session:
         """Resume a paused conversation; safe to call repeatedly."""
         await self.control.resume()
 
-    async def request_approval(
-        self,
-        call: ToolCall,
-        reason: str,
-        *,
-        scope: str = "tool-policy",
-        approver: Approver | None = None,
-        timeout: float | None = None,
-    ) -> ApprovalAnswer:
-        return await self.approvals.request(
-            call, reason, scope=scope, approver=approver, timeout=timeout
-        )
-
-    async def revoke_approval(self, request_id: str, *, reason: str = "revoked") -> None:
-        await self.approvals.revoke(request_id, reason=reason)
-
     async def wait_until_idle(self) -> None:
         """Wait for the session to become idle with an empty inbox."""
         await self.control.wait_until_idle()
@@ -335,10 +316,10 @@ class Session:
         """Summarize completed history while idle or paused; return its log record."""
         async with self.control.maintenance():
             request = ModelRequest(
-                self.options.model,
+                self._options.model,
                 self.log.messages,
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
-                self.options.max_tokens,
+                self._options.max_tokens,
             )
             request = resolve_request_settings(request, self.ctx[Model].info.default_settings)
             applied, _ = await self._compaction.compact(request)

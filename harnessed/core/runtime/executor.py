@@ -123,7 +123,9 @@ class ToolExecutor:
             if not isinstance(decision, PolicyDecision):
                 raise TypeError("ToolPolicy hooks must return PolicyDecision")
             if decision is PolicyDecision.ASK:
-                answer = await self.session.request_approval(call, "Tool policy requested approval")
+                answer = await self.session.approvals.request(
+                    call, "Tool policy requested approval"
+                )
                 decision = (
                     PolicyDecision.DENY if answer is ApprovalAnswer.DENY else PolicyDecision.ALLOW
                 )

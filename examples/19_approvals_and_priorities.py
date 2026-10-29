@@ -34,7 +34,7 @@ async def without_ui():
         result = await session.run("Publish the artifact.")
         returned = next(event for event in result.events if isinstance(event, ToolReturned))
         assert returned.result.status == ToolStatus.UNAVAILABLE
-        assert not session.log.approvals.pending
+        assert not session.approvals.pending
         print(f"No UI: {returned.result.status}; action was not executed.")
 
 
@@ -103,10 +103,10 @@ async def response_timeout():
                 stopped.set()
 
         try:
-            await session.request_approval(ToolCall("publish"), "Publish the artifact?")
+            await session.approvals.request(ToolCall("publish"), "Publish the artifact?")
         except ApprovalUnavailable as error:
             print(f"SDK: {error}")
-        assert stopped.is_set() and (not session.log.approvals.pending)
+        assert stopped.is_set() and (not session.approvals.pending)
         resolution = session.approvals.records[-1].resolution
         assert resolution is not None and resolution.status is ApprovalStatus.UNAVAILABLE
 

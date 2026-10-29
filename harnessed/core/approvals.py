@@ -86,7 +86,7 @@ class ApprovalGate(Plugin):
     ) -> PolicyDecision:
         if not any(tools.matches(item, event.call.name) for item in self.risky):
             return await next_()
-        answer = await event.session.request_approval(
+        answer = await event.session.approvals.request(
             event.call,
             f"{event.call.name} is marked risky",
             scope=self.config.scope,
@@ -274,7 +274,7 @@ class Approvals(Plugin, slot="approvals"):
         if decision is not None and not isinstance(decision, PolicyDecision):
             raise TypeError("Approval policies must return PolicyDecision or None")
         if decision is PolicyDecision.ASK:
-            answer = await session.request_approval(
+            answer = await session.approvals.request(
                 event.call,
                 "Tool may have side effects",
                 approver=self.approver,

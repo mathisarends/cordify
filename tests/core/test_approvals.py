@@ -76,9 +76,9 @@ async def test_always_grants_and_cached_uses_survive_a_fresh_harness_and_can_be_
         cached = resumed.log.approvals.records[-1]
         assert cached.request.grant_id == grant.request_id and (not cached.is_grant)
         assert len(asked) == 1 and len(executed) == 2
-        await resumed.revoke_approval(grant.request_id)
+        await resumed.approvals.revoke(grant.request_id)
         after_revocation = resumed.log.events
-        await resumed.revoke_approval(grant.request_id)
+        await resumed.approvals.revoke(grant.request_id)
         assert resumed.log.events == after_revocation and (not resumed.log.approvals.grants)
     async with harness().session("same-session") as resumed:
         await resumed.run("third")

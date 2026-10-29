@@ -42,8 +42,14 @@ and SDK errors from `harnessed.errors`.
 | events / messages / turns / usage / last(Event) | Durable values and projected snapshots |
 | status | SessionStatus: IDLE, RUNNING, PAUSED, STOPPING, CLOSED |
 | emit(event) | Persist a declared durable event or publish a transient notification |
-| approvals.answer(id, decision) / revoke(id) | Acknowledged response / durable grant revocation |
-| log | Advanced append-only SessionLog service and event catalog |
+| approvals.request(call, reason) / answer(id, decision) / revoke(id) | Ask, answer, or revoke durable grants; `pending` / `grants` / `grant_for()` read them |
+| id / prompt | Session ID / effective system prompt |
+| ctx | Advanced: resolve services in this session's scope (`session.ctx[ToolRegistry]`) |
+| control | Advanced: the SessionControl service for plugins and external UIs |
+| log | Advanced: append-only SessionLog service and event catalog |
+
+Applications read through the session views above. `session.log` exposes the same
+data for plugins and integrations; prefer the session views when both exist.
 
 Await methods that perform durable writes. Closed handles raise SessionClosed.
 SDK failures derive from `HarnessedError`, importable from `harnessed.errors`: operations

@@ -37,7 +37,7 @@ async def main():
             if isinstance(event, TextDelta):
                 print(event.text, end="", flush=True)
         print()
-        log = session.log.events
+        log = session.events
     encoded = json.dumps([encode_event(event) for event in log])
     restored = tuple(decode_event(record) for record in json.loads(encoded))
     replay = SessionLog("replayed", seed=restored)
