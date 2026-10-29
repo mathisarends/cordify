@@ -20,7 +20,7 @@ still evolving before 1.0.
 Python 3.12, 3.13 and 3.14 are supported on Linux, Windows and macOS. Provider
 integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
-[MIT License](https://github.com/mathisarends/cordify/blob/main/LICENSE).
+[MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
 ## 0.1.0 (unreleased)
 

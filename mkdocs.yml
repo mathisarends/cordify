@@ -1,6 +1,6 @@
 site_name: Harnessed
 site_description: A composable Python agent SDK with reversible plugins and a durable session log.
-repo_url: https://github.com/mathisarends/cordify
+repo_url: https://github.com/mathisarends/harnessed
 edit_uri: blob/main/docs/
 docs_dir: docs
 site_dir: build/docs

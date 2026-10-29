@@ -23,10 +23,10 @@ classifiers = [
 dependencies = ["pydantic>=2.12,<3"]
 
 [project.urls]
-Documentation = "https://github.com/mathisarends/cordify/blob/main/docs/index.md"
-Repository = "https://github.com/mathisarends/cordify"
-Issues = "https://github.com/mathisarends/cordify/issues"
-Changelog = "https://github.com/mathisarends/cordify/blob/main/docs/releases.md"
+Documentation = "https://github.com/mathisarends/harnessed/blob/main/docs/index.md"
+Repository = "https://github.com/mathisarends/harnessed"
+Issues = "https://github.com/mathisarends/harnessed/issues"
+Changelog = "https://github.com/mathisarends/harnessed/blob/main/docs/releases.md"
 
 [project.optional-dependencies]
 openai = ["pydantic-ai-slim[openai]>=2.63,<3"]
