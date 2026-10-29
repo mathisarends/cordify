@@ -146,7 +146,7 @@ on the closed handle raise `SessionClosed`; their durable turn or queued input i
 retained. A crash during an active run
 repairs unfinished activity as aborted and leaves the reopened session idle.
 After closing, operations raise `SessionClosed`; the final status is `CLOSED`.
-See [the runnable control example](https://github.com/mathisarends/cordify/blob/main/examples/20_pause_resume_stop.py).
+See [the runnable control example](https://github.com/mathisarends/harnessed/blob/main/examples/20_pause_resume_stop.py).
 
 ## Inspect or remove queued input
 
