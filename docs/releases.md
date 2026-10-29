@@ -13,7 +13,7 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 - Patch releases within a minor line are intended for compatible fixes. Pin the
   exact package version for reproducible deployments and persisted workflows.
 - Session records have an explicit format version. Release 0.1.0 uses version 1;
-  releases 0.2.0 and 0.3.0 use version 2. Incompatible core record changes require
+  releases 0.2.0 through 0.4.0 use version 2. Incompatible core record changes require
   a new version. Unsupported versions fail explicitly, and no automatic format
   migrations are provided.
 - Back up persisted sessions before upgrading. Application-defined events and
@@ -26,50 +26,61 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## Unreleased
+## 0.4.0 (2026-10-29)
 
-### Explicit system prompt composition
+This minor release adds explicit system prompt composition, optional MCP server
+tools and conditional tool availability. It includes breaking prompt API changes
+from 0.3.0; the session record format remains version 2.
 
-- Replace `Agent(instructions=...)`, `Section` and plugin `guidance` with
-  `Agent(system_prompt=...)`, keyword-only `SystemSection` declarations and
-  synchronous, configuration-dependent `@system_section` providers.
-- Plain `Agent(system_prompt="...", plugins=[...])` stays simple: plugin sections
-  append automatically through `Unplaced.APPEND`, in configured plugin and
-  declaration order, independent of dependency setup order.
-- `SystemPrompt(sections=..., exclude=..., format=..., unplaced=...)` accepts
-  strings, individual references, nested documents and `PluginSections(plugin)`
-  groups. One `PluginSections()` rest slot per complete prompt is resolved after
-  all explicit placements and exclusions, even those appearing later or nested.
-- `Unplaced.ERROR` checks complete placement. Open groups and rest slots also
-  include future declarations; use individual references without open groups or
-  slots to detect newly added sections. There is no DROP policy; exclusions are
-  explicit. Duplicate, conflicting and foreign references fail before providers run.
-- Add PLAIN (default), XML and MARKDOWN rendering with consistent ordering,
-  optional titles, empty-section omission and XML escaping. Remove silent
-  content-based deduplication.
-- Files and async factories run once per session for configured system text.
-  Runtime mounts default to `SectionDelivery.ERROR`; explicit `CONTEXT` owns guidance
-  per activation and removes it on suspension or unmount. Provider/factory/setup
-  failures roll back mount resources. `IGNORE` skips all section evaluation.
-  Historical requests retain delivered guidance without restoring it on reopen.
-  The internal rendered-text service is now SystemPromptStore.
-- Built-in declarations are `filesystem.usage`, `shell.usage`, `spill.usage` and
-  `skills.catalog`. They append by default; place or exclude them through their
-  configured recipes. Inspection shows section order, provenance and exclusions.
-- Put advice specific to one tool in its description; sections describe shared
-  rules and workflows. Runtime delivery leaves system text stable, while new
-  tools still change the tool catalog; cache reuse is not guaranteed.
-- See the [context guide](guides/context.md) and offline example
-  `uv run python -m examples.32_system_prompts` for the new API.
+### Highlights
 
-Install `harnessed[mcp]` to expose MCP server tools through an optional plugin.
-`MCP.http()` and `MCP.stdio()` configure reusable server recipes with connections
-owned by each session or runtime mount. See [MCP tools](guides/mcp.md).
+- Compose fixed system text with `Agent(system_prompt=...)`, keyword-only
+  `SystemSection` declarations and synchronous `@system_section` providers.
+  Plain text automatically appends plugin sections in configured order.
+  `SystemPrompt` adds exact placement, nested documents, plugin groups, explicit
+  exclusions and PLAIN, XML or MARKDOWN rendering. Equal text is retained rather
+  than silently deduplicated. See the [context guide](guides/context.md).
+- Runtime `session.use(...)` mounts explicitly choose how to deliver declared
+  sections. `SectionDelivery.CONTEXT` owns guidance per activation and removes it
+  on suspension or unmount; `IGNORE` skips section evaluation. The default
+  `ERROR` rejects plugins with sections before mounting them. Configured system
+  text remains fixed for the session.
+- Install `harnessed[mcp]` and import `MCP` from `harnessed.plugins.mcp` to expose
+  tools from MCP servers through `MCP.http()` and `MCP.stdio()` recipes.
+  Connections and subprocesses belong to each session or runtime mount, with
+  tool selection, namespacing, schema validation, progress and existing
+  approval/output policies. See [MCP tools](guides/mcp.md).
+- Declare `@tool(enabled=...)` with a bool or a synchronous predicate using
+  `Inject` and mounted plugin state. Disabled tools are hidden from model
+  requests and cannot execute. Conditions are checked again after approval and
+  scheduling waits without following replaced tool registrations. See
+  [conditional tools](guides/tools.md#conditional-tools).
+- Run the offline examples for [conditional tools, MCP and system prompts](guides/examples.md).
 
-Tools can now declare `@tool(enabled=...)` with a bool or a synchronous predicate
-using `Inject` and mounted plugin state. Disabled tools are hidden from model
-requests and cannot execute; conditions are checked again after approval and
-scheduling waits. See [conditional tools](guides/tools.md#conditional-tools).
+### Upgrade from 0.3.0
+
+1. Rename `Agent(instructions=...)` to `Agent(system_prompt=...)`. Wrap instruction
+   lists in `SystemPrompt(sections=(...))`.
+2. Replace `Section` with `SystemSection`, using keyword arguments such as
+   `SystemSection(title="Role", text="...")`,
+   `SystemSection.from_file(path="AGENTS.md")` and
+   `SystemSection.from_factory(factory=callback, title="Catalog")`.
+3. Replace plugin `guidance` attributes and constructor overrides with named
+   section declarations or synchronous `@system_section` methods. Place or
+   exclude the configured built-in references `filesystem.usage`, `shell.usage`,
+   `spill.usage` and `skills.catalog` through `SystemPrompt`. To replace a section,
+   exclude the original and place its replacement; `guidance=None` and
+   name-based `override=True` are no longer prompt APIs.
+4. Pass `section_delivery=SectionDelivery.CONTEXT` or `SectionDelivery.IGNORE`
+   to runtime mounts of plugins that declare sections. Delivered runtime guidance
+   is not restored on reopening a session; historical requests retain it for
+   inspection.
+5. Keep existing version 2 session stores. Review rendered prompts and tests for
+   the new composition and removal of text deduplication. MCP and conditional
+   tools are opt-in; existing tools remain enabled by default.
+
+The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the detailed changes and a migrated composition example.
 
 ## 0.3.0 (2026-10-29)
 
