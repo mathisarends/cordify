@@ -3,29 +3,24 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Unpack, overload
-from uuid import uuid4
 
 from harnessed.core.approvals import Approvals
-from harnessed.core.errors import ConfigError, PluginConflict
+from harnessed.core.errors import PluginConflict
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
 from harnessed.core.outputs import OutputContract, OutputTypes
 from harnessed.core.plugin import Service
-from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.instructions import Instructions
 from harnessed.core.prompt.values import InstructionValues, PromptComposition, PromptContribution
-from harnessed.core.runtime.agent_loop import AgentFactory, AgentLoop
+from harnessed.core.runtime.agent_loop import AgentLoop
+from harnessed.core.runtime.opener import open_session
 from harnessed.core.runtime.options import RunOptions
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session
-from harnessed.core.session.artifacts import copy_artifacts
-from harnessed.core.session.events import TurnStart
-from harnessed.core.session.files import SessionFiles
 from harnessed.core.session.repository import SessionRepository
 from harnessed.core.session.session import SessionLog
-from harnessed.core.session.store import MemorySessions, SessionPersistence, SessionStore
+from harnessed.core.session.store import MemorySessions
 from harnessed.core.tools.output_limit import ToolOutputLimit
-from harnessed.core.tools.registry import ToolRegistry
 from harnessed.core.tracing import NoopTracer
 from harnessed.kernel import Context, PluginLike
 from harnessed.kernel.plugin import as_plugin_spec
@@ -112,57 +107,7 @@ class Agent:
                 outputs.register(output)
             ctx.provide(OutputTypes, outputs)
             await ctx.install(self.plugins, settle=True)
-            branch = session_id if isinstance(session_id, SessionLog) else None
-            if branch is not None:
-                selected_id = branch.id
-            elif session_id is None:
-                selected_id = uuid4().hex
-            elif isinstance(session_id, str):
-                selected_id = session_id
-            else:
-                raise ConfigError("session_id must be a string, forked log or None")
-            persistence = await ctx.enter(ctx[SessionStore].open(selected_id))
-            ctx.provide(SessionPersistence, persistence)
-            seed = await persistence.load(selected_id)
-            files = ctx[SessionStore].files(selected_id)
-            ctx.provide(SessionFiles, files)
-            if branch is not None:
-                if seed or await files.entries():
-                    raise ConfigError(f"Fork destination {selected_id!r} already contains a log")
-                seed = branch.events
-                missing = await copy_artifacts(seed, branch.source_files, files)
-                seed = (*seed, *missing)
-                for seq, event in enumerate(seed):
-                    await persistence.append(selected_id, seq, event)
-                await persistence.flush()
-            log = SessionLog(selected_id, ctx=ctx, seed=seed, persistence=persistence, files=files)
-            ctx.effect(log.finish_subscriptions)
-            await log.repair_interrupted()
-            schemas = [item.output_schema for item in log.inbox.pending]
-            if log.open_turn is not None:
-                start = log.open_turn.events[0]
-                assert isinstance(start, TurnStart)
-                schemas.append(start.output_schema)
-            for schema in schemas:
-                if schema is not None:
-                    outputs.resolve(schema)
-            runtime = ctx[AgentFactory].create(ctx, log)
-            try:
-                await ctx.install(
-                    [
-                        Service(SessionLog, log),
-                        Service(Session, runtime),
-                        Service(DynamicContext, runtime.context),
-                    ]
-                )
-            except BaseException:
-                await runtime.aclose()
-                raise
-            ctx.effect(runtime.aclose)
-            await ctx.settle()
-            ctx[ToolRegistry].validate_references()
-            runtime.start()
-            yield runtime
+            yield await open_session(ctx, session_id)
 
     @overload
     async def run[T](

@@ -106,10 +106,6 @@ make the rest private.
 
 ### Code cleanliness and consistency of abstractions
 
-**C2. `Agent.session()` does the core's work.** It is about 60 lines of store
-leasing, fork seeding, log repair, output restoration and runtime install. Move
-that into a core session opener, so the facade only composes.
-
 **C3. Reflection where a contract is missing.** `getattr(plugin, "events", ())` in
 both `Agent.__init__` and `Session.use` stands in for an `events` member on
 `PluginLike`. `Service` special-cases `Model` (slot and async context entry). There

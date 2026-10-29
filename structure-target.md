@@ -109,6 +109,7 @@ harnessed/
       output.py            # OutputHandler: structured-output preparation/validation
       streaming.py         # stream projection and approval responder
       session.py           # public Session facade
+      opener.py            # lease, seed and repair a log, then install its Session
       inbox.py             # run queue and steer
       control.py           # SessionStatus, pause/resume/stop/abort
       result.py            # RunResult, StopReason
