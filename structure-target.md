@@ -55,7 +55,7 @@ Internal modules import their owning layer rather than the root facade.
 
 ## Runtime and ownership invariants
 
-- `Agent` resolves `model`, `instructions` and `plugins`; `plugin_validation`
+- `Agent` resolves `model`, `system_prompt` and `plugins`; `plugin_validation`
   controls session startup readiness. Defaults are normal plugins replaced through
   slots. Startup validation runs after session services settle and before the
   runtime starts. The kernel exposes dependency diagnostics while retaining
@@ -76,7 +76,11 @@ Internal modules import their owning layer rather than the root facade.
 - Registration ownership uses public `Context.register()` and
   `RegistrationState.active`. Higher layers do not inspect private kernel state.
 - Prompt metadata is normalized into typed `PromptContribution` values at the agent
-  boundary and rendered by `PromptComposition`.
+  boundary and rendered by `PromptComposition`. SystemSection declarations bind
+  to recipe identities. SystemPrompt explicitly orders sections and exclusions;
+  its outer format governs nested groups. Session factories remain session-owned,
+  and SystemPromptStore holds the immutable rendered session snapshot. Runtime
+  mounts never relocate system sections into context.
 - Durable events use explicit versions and dotted discriminators. Replay restores
   state without rerunning tools. Output restoration matches registered Python
   validator identity and schema; equal schemas alone are insufficient.

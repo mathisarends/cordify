@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Explicit system prompt composition
+
+- Replace `Agent(instructions=...)`, `Section` and plugin `guidance` with
+  `Agent(system_prompt=...)`, keyword-only `SystemSection` declarations and
+  synchronous, configuration-dependent `@system_section` providers.
+- `SystemPrompt(sections=..., exclude=..., format=...)` controls exact order
+  across plugins and nested groups. References use Python attributes without
+  public keys. Every declared section must be placed or explicitly excluded.
+  Missing, duplicate, conflicting and foreign references fail before providers run.
+- Add PLAIN (default), XML and MARKDOWN rendering with consistent ordering,
+  optional titles, empty-section omission and XML escaping. Remove silent
+  content-based deduplication.
+- Files and async factories still run once per session. Runtime mounts declaring
+  system sections fail before setup; use ContextValue for runtime facts.
+  The internal rendered-text service is now SystemPromptStore.
+- Built-in declarations are `filesystem.usage`, `shell.usage`, `spill.usage` and
+  `skills.catalog`. Place or exclude them through their configured recipes.
+- See the [context guide](docs/guides/context.md) and offline example
+  `uv run python -m examples.32_system_prompts` for the new API.
+
 ### MCP client
 
 - Add `harnessed[mcp]` and the explicit `harnessed.plugins.mcp.MCP` plugin with

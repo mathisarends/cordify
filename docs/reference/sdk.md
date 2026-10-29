@@ -28,17 +28,17 @@ Each mount owns one connection and a fixed catalog of namespaced tools. See
 
 ## Agent
 
-`Agent(*, model=None, instructions=None, plugins=(),
+`Agent(*, model=None, system_prompt=None, plugins=(),
 plugin_validation=PluginValidation.ERROR)` resolves reusable configuration.
 
 | Member | Behavior |
 | --- | --- |
 | model | Harnessed Model, native PydanticAI model, or provider:model string |
-| instructions | Text or a sequence of text/Section values |
+| system_prompt | Plain text or an explicitly ordered SystemPrompt |
 | plugins | Explicit configured plugins, merged with default slots |
 | plugin_validation | ERROR rejects unresolved plugins at session startup; WARN emits PluginDependencyWarning and retains them for later activation |
 | agent.plugins | Tuple of resolved plugins |
-| agent.prompt | Inspectable PromptComposition of instructions and guidance |
+| agent.prompt | Inspectable PromptComposition with order, origins, format and exclusions |
 | agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types/contracts |
 | agent.run(prompt, **options) | One run in a fresh session |
 | agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
@@ -52,6 +52,29 @@ tuple contains immutable `PluginDependencyIssue` snapshots with `.plugin`
 `PluginValidation.WARN` emits one `PluginDependencyWarning` with the same `.issues`
 and permits later activation. Setup failures still propagate in either mode.
 See [startup validation](../guides/plugins.md#session-startup-validation).
+
+## System prompt composition
+
+`SystemPrompt(*, sections=(), format=PromptFormat.PLAIN, exclude=())` is an
+immutable document. Sections are keyword-only `SystemSection(text="", title=None,
+description="")` values, plugin-bound references, or nested SystemPrompt groups.
+The outermost format governs the flattened document: PLAIN joins text with blank
+lines, MARKDOWN adds optional level-two headings, and XML renders escaped section
+elements. Untitled and empty sections have defined behavior in every format; see
+the [context guide](../guides/context.md).
+
+Plugins declare sections as attributes or synchronous `@system_section(title=...)`
+methods returning `str | None`. Configuration providers run once at agent
+construction. `SystemSection.from_file(path=..., title=..., missing_ok=False)`
+and `SystemSection.from_factory(factory=..., title=..., description=...)` run once
+per opened session. Factories are async callbacks accepting the session Context.
+
+Every plugin section must be placed or excluded. Reference identity follows the
+configured recipe and declaration; there are no public keys or text-based
+deduplication. Missing, duplicate, foreign and conflicting references fail before
+configuration providers run. `await session.prompt.render()` returns the actual
+session text. Runtime mounts declaring system sections fail before mounting;
+use ContextValue for dynamic facts.
 
 ## Session
 

@@ -50,6 +50,7 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.29_tracing",
         "examples.30_conditional_tools",
         "examples.31_mcp",
+        "examples.32_system_prompts",
     ],
 )
 def test_offline_sdk_example_runs(module):
@@ -77,7 +78,7 @@ def test_offline_sdk_example_runs(module):
 
 # Names without a public facade yet. Shrink this, never grow it.
 _INTERNAL_EXAMPLE_IMPORTS = {
-    ("harnessed.core.prompt.system_prompt", "SystemPrompt"),
+    ("harnessed.core.prompt.system_prompt", "SystemPromptStore"),
     ("harnessed.core.session.codec", "decode_event"),
     ("harnessed.core.session.codec", "encode_event"),
     ("harnessed.core.session.session", "SessionLog"),

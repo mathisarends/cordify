@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from harnessed import Agent, Plugin
+from harnessed import Agent, Plugin, SystemPrompt
 from harnessed.core.errors import SessionLocked
 from harnessed.core.session.files import SessionFiles
 from harnessed.core.tools.decorator import tool
@@ -67,9 +67,11 @@ async def test_delete_removes_actual_spills_and_preserves_other_sessions(tmp_pat
         async def source(self) -> str:
             return "full output" * 1000
 
+    spill = Spill(threshold_tokens=10)
     app = Agent(
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
         model=ScriptedModel([call("source"), "done"]),
-        plugins=[Logs(), JsonlSessions(tmp_path), Spill(threshold_tokens=10)],
+        plugins=[Logs(), JsonlSessions(tmp_path), spill],
     )
     async with app.session("spilled") as session:
         ref = (await session.run("read")).tool_calls[0][1].spill

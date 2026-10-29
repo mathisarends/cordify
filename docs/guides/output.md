@@ -15,16 +15,16 @@ captured when the tool batch is planned. Review hooks receive the setting on the
 ## Keep large results retrievable
 
 ```python
-from harnessed import Agent
+from harnessed import Agent, SystemPrompt
 from harnessed.plugins import JsonlSessions, Spill, ToolOutputLimit
 
+spill = Spill(threshold_tokens=8_000, preview_tokens=256, max_files=128, max_bytes=32 * 1024 * 1024)
 agent = Agent(
     model="deepseek:deepseek-chat",
+    system_prompt=SystemPrompt(sections=(spill.usage,)),
     plugins=[
         JsonlSessions(".harnessed/sessions"),
-        Spill(
-            threshold_tokens=8_000, preview_tokens=256, max_files=128, max_bytes=32 * 1024 * 1024
-        ),
+        spill,
         ToolOutputLimit(max_chars=16_000),
     ],
 )

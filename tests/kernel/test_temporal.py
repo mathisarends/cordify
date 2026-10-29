@@ -5,7 +5,7 @@ import pytest
 
 from harnessed import Context, Inject, Plugin, ToolCall, plugin
 from harnessed.core.plugin import Bundle
-from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.runtime.services import RuntimeServices
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
@@ -184,8 +184,8 @@ async def test_scope_isolation_and_permanent_disposal_of_waiting_plugin():
 
 
 async def test_class_and_bundle_explicit_needs_remove_tools_and_prompt_sections():
-    class FeaturePlugin(Plugin, needs=(Backend, SystemPrompt)):
-        async def setup(self, ctx, prompt: Inject[SystemPrompt]):
+    class FeaturePlugin(Plugin, needs=(Backend, SystemPromptStore)):
+        async def setup(self, ctx, prompt: Inject[SystemPromptStore]):
             self.name = ctx[Backend].name
             self.calls = 0
             prompt.fixed(self.name)
@@ -203,13 +203,13 @@ async def test_class_and_bundle_explicit_needs_remove_tools_and_prompt_sections(
         await ctx.install([RuntimeServices(), FeaturePlugin(), bundle])
         remove = ctx.provide(Backend, Backend("first"))
         await ctx.settle()
-        assert await ctx[SystemPrompt].render() == "first"
+        assert await ctx[SystemPromptStore].render() == "first"
         assert (await ctx[ToolRegistry].execute(ToolCall("read"))).content == "first:1"
         await ctx.dispatch(Ping())
         await remove()
         await ctx.settle()
         assert ctx[ToolRegistry].definitions == ()
-        assert await ctx[SystemPrompt].render() == ""
+        assert await ctx[SystemPromptStore].render() == ""
         await ctx.dispatch(Ping())
         ctx.provide(Backend, Backend("second"))
         await ctx.settle()

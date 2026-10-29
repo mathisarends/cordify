@@ -4,12 +4,11 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Mapping
 from contextvars import ContextVar
 from typing import Any, Unpack, overload
-from weakref import WeakKeyDictionary
 
 from harnessed.core.attachments import Attachment
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.compaction import CompactionManager
-from harnessed.core.errors import SessionClosed, SessionStateError
+from harnessed.core.errors import ConfigError, SessionClosed, SessionStateError
 from harnessed.core.hooks import (
     SessionAppended,
 )
@@ -25,10 +24,9 @@ from harnessed.core.model import (
     resolve_request_settings,
 )
 from harnessed.core.outputs import OutputContract, OutputTypes, OutputValues
-from harnessed.core.plugin import plugin_events
+from harnessed.core.plugin import plugin_contribution, plugin_events
 from harnessed.core.prompt.context import DynamicContext
-from harnessed.core.prompt.system_prompt import SystemPrompt
-from harnessed.core.prompt.values import Section
+from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.runtime.approvals import LiveApprovals, SessionApprovals
 from harnessed.core.runtime.control import SessionControl, SessionStatus, StopAtBoundary
 from harnessed.core.runtime.executor import ToolExecutor
@@ -64,9 +62,8 @@ from harnessed.core.tools.context import BoundToolContexts, ToolContexts
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel.context import Context
 from harnessed.kernel.effects import Disposer
-from harnessed.kernel.events import PluginActivated
 from harnessed.kernel.hooks import HookFactory, ListenerFactory
-from harnessed.kernel.plugin import PluginHandle, PluginLike, PluginStatus
+from harnessed.kernel.plugin import PluginHandle, PluginLike
 
 type AgentEvent = SessionEvent | TransientEvent
 _driving: ContextVar[Session | None] = ContextVar("harnessed_driving", default=None)
@@ -82,7 +79,6 @@ class Session:
         self.id = session.id
         self.context = DynamicContext(session)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
-        self._runtime_guidance: WeakKeyDictionary[PluginHandle, str] = WeakKeyDictionary()
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
         self._live_approvals = LiveApprovals()
         self.approvals = SessionApprovals(
@@ -115,11 +111,10 @@ class Session:
         self._runner = TurnRunner(ctx, session, options, self.control, self._steps, self)
         ctx.on(SessionAppended, self._session_event)
         ctx.on(SessionPublished, self._stream_event)
-        ctx.on(PluginActivated, self._plugin_activated)
 
     @property
-    def prompt(self) -> SystemPrompt:
-        return self.ctx[SystemPrompt]
+    def prompt(self) -> SystemPromptStore:
+        return self.ctx[SystemPromptStore]
 
     @property
     def events(self) -> tuple[SessionEvent, ...]:
@@ -158,7 +153,13 @@ class Session:
             yield event
 
     async def use(self, plugin: PluginLike) -> PluginHandle:
-        """Mount a recipe at runtime; its guidance is context, never system text."""
+        """Mount a runtime capability. System sections require a new agent composition."""
+        contribution = plugin_contribution(plugin)
+        if contribution.sections:
+            raise ConfigError(
+                f"Cannot mount {contribution.name} at runtime: it declares system sections. "
+                "Compose them when constructing Agent, or use ContextValue for runtime context."
+            )
         self.log.registry.register(plugin_events(plugin))
         handle = await self.ctx.plugin(plugin)
         try:
@@ -167,21 +168,7 @@ class Session:
         except BaseException:
             await handle.aclose()
             raise
-        self._runtime_guidance[handle] = f"plugin:{handle.name}:{id(handle):x}"
-        if handle.status == PluginStatus.ACTIVE:
-            await self._plugin_activated(PluginActivated(handle))
         return handle
-
-    async def _plugin_activated(self, event: PluginActivated) -> None:
-
-        handle = event.handle
-        name = self._runtime_guidance.get(handle)
-        guidance = handle.spec.guidance
-        if name is None or guidance is None:
-            return
-        text = await guidance.render(handle.ctx) if isinstance(guidance, Section) else guidance
-        await self.context.set(name, text)
-        handle.ctx.effect(lambda: self.context.remove(name))
 
     @overload
     def on[H](

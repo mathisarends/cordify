@@ -15,7 +15,6 @@ class PluginSpec:
     args: tuple[Any, ...]
     kwargs: Mapping[str, Any]
     slot: str | None = None
-    guidance: Any = None
     provides: tuple[ServiceKey[Any], ...] = ()
 
     def __post_init__(self) -> None:

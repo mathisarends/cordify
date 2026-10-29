@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from harnessed import Agent, Section, ToolCall
+from harnessed import Agent, SystemPrompt, SystemSection, ToolCall
 from harnessed.core.errors import ConfigError
 from harnessed.core.messages import ToolStatus
 from harnessed.core.tools.registry import ToolRegistry
@@ -60,7 +60,14 @@ async def test_catalog_reads_only_frontmatter_once_per_session_and_loads_body_fr
     instructions = tmp_path / "instructions.md"
     instructions.write_text("Fixed project rules.", encoding="utf-8")
     app = Agent(
-        model=ScriptedModel([]), instructions=[Section.from_file(instructions)], plugins=[recipe]
+        model=ScriptedModel([]),
+        system_prompt=SystemPrompt(
+            sections=(
+                SystemSection.from_file(path=instructions),
+                recipe.catalog,
+            )
+        ),
+        plugins=[recipe],
     )
     assert phases == []
     async with app.session() as session:
@@ -86,7 +93,12 @@ async def test_earlier_sources_win_and_catalog_metadata_and_shadows_are_inspecta
     inline = Skill(
         name="pdf-forms", description="Inline winner.", instructions="Inline instructions."
     )
-    app = Agent(model=ScriptedModel([]), plugins=[Skills(inline, Skill.from_dir(root))])
+    skills = Skills(inline, Skill.from_dir(root))
+    app = Agent(
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills],
+    )
     async with app.session() as session:
         (entry,) = session.ctx[SkillCatalog].entries
         assert entry.inline is inline and entry.shadows == (str(root.resolve()),)
@@ -97,7 +109,12 @@ async def test_earlier_sources_win_and_catalog_metadata_and_shadows_are_inspecta
                 "instructions"
             ]
         )
-    async with Agent(model=ScriptedModel([]), plugins=[Skills(root.parent)]).session() as session:
+    skills_4 = Skills(root.parent)
+    async with Agent(
+        system_prompt=SystemPrompt(sections=(skills_4.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills_4],
+    ).session() as session:
         (entry,) = session.ctx[SkillCatalog].entries
         assert entry.info.metadata["license"] == "MIT"
         assert entry.info.metadata["metadata"]["author"] == "example"
@@ -121,7 +138,12 @@ async def test_inline_skills_work_without_yaml_and_directory_sources_name_the_ex
 
     monkeypatch.setattr(builtins, "__import__", missing)
     inline = Skill(name="notes", description="Write notes.", instructions="Keep notes concise.")
-    async with Agent(model=ScriptedModel([]), plugins=[Skills(inline)]).session() as session:
+    skills_5 = Skills(inline)
+    async with Agent(
+        system_prompt=SystemPrompt(sections=(skills_5.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills_5],
+    ).session() as session:
         result = await execute(session, "load_skill", name="notes")
         assert result.status == ToolStatus.OK and "Keep notes concise." in result.text
         assert (
@@ -137,8 +159,11 @@ async def test_inline_skills_work_without_yaml_and_directory_sources_name_the_ex
 async def test_resource_paths_cannot_escape_the_selected_skill(tmp_path, path):
     root = folder(tmp_path)
     (tmp_path / "secret.txt").write_text("private", encoding="utf-8")
+    skills = Skills(Skill.from_dir(root))
     async with Agent(
-        model=ScriptedModel([]), plugins=[Skills(Skill.from_dir(root))]
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills],
     ).session() as session:
         result = await execute(session, "read_skill_file", name="pdf-forms", path=path)
         assert result.status == ToolStatus.ERROR and "private" not in result.text
@@ -157,8 +182,11 @@ async def test_resource_symlinks_cannot_escape_and_scripts_are_only_read(tmp_pat
         (root / "outside.txt").symlink_to(outside)
     except OSError:
         pytest.skip("Creating file symlinks is unavailable on this host")
+    skills = Skills(Skill.from_dir(root))
     async with Agent(
-        model=ScriptedModel([]), plugins=[Skills(Skill.from_dir(root))]
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills],
     ).session() as session:
         result = await execute(session, "read_skill_file", name="pdf-forms", path="outside.txt")
         assert result.status == ToolStatus.ERROR and "private" not in result.text
@@ -191,14 +219,24 @@ async def test_invalid_frontmatter_fails_at_session_open_with_its_path(tmp_path,
     root = tmp_path / "pdf-forms"
     root.mkdir()
     (root / "SKILL.md").write_text(f"---\n{header}---\nInstructions.", encoding="utf-8")
-    app = Agent(model=ScriptedModel([]), plugins=[Skills(tmp_path)])
+    skills = Skills(tmp_path)
+    app = Agent(
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills],
+    )
     with pytest.raises(ConfigError, match="SKILL.md"):
         async with app.session():
             pass
 
 
 async def test_missing_sources_are_checked_at_session_open_not_at_construction(tmp_path):
-    app = Agent(model=ScriptedModel([]), plugins=[Skills(tmp_path / "missing")])
+    skills = Skills(tmp_path / "missing")
+    app = Agent(
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills],
+    )
     with pytest.raises(ConfigError, match="missing"):
         async with app.session():
             pass
@@ -210,12 +248,20 @@ async def test_missing_sources_are_checked_at_session_open_not_at_construction(t
 async def test_complete_skill_output_is_never_truncated_or_spilled_and_needs_no_approval():
     instructions = "Complete instructions.\n" * 2000
     model = ScriptedModel([call("load_skill", name="notes"), "loaded"])
+    skills = Skills(Skill(name="notes", description="Write notes.", instructions=instructions))
+    spill_9 = Spill(threshold_tokens=1)
     async with Agent(
+        system_prompt=SystemPrompt(
+            sections=(
+                skills.catalog,
+                spill_9.usage,
+            )
+        ),
         model=model,
         plugins=[
-            Skills(Skill(name="notes", description="Write notes.", instructions=instructions)),
+            skills,
             ToolOutputLimit(256),
-            Spill(threshold_tokens=1),
+            spill_9,
         ],
     ).session() as session:
         result = (await session.run("Load the notes skill")).tool_calls[0][1]
@@ -233,7 +279,9 @@ async def test_loaded_instructions_survive_compaction_and_restart_from_the_log(t
         Compaction(trigger=lambda state: False, keep_turns=0, summarizer=ExtractiveSummarizer()),
     ]
     app = Agent(
-        model=ScriptedModel([call("load_skill", name="testing"), "noise " * 1000]), plugins=policies
+        model=ScriptedModel([call("load_skill", name="testing"), "noise " * 1000]),
+        plugins=policies,
+        system_prompt=SystemPrompt(sections=(policies[0].catalog,)),
     )
     async with app.session("skills") as session:
         await session.run("Run tests")
@@ -242,27 +290,25 @@ async def test_loaded_instructions_survive_compaction_and_restart_from_the_log(t
     changed = Skill(
         name="testing", description="Changed description.", instructions="Changed source."
     )
+    skills_10 = Skills(changed)
     async with Agent(
-        model=ScriptedModel([]), plugins=[Skills(changed), JsonlSessions(tmp_path)]
+        system_prompt=SystemPrompt(sections=(skills_10.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills_10, JsonlSessions(tmp_path)],
     ).session("skills") as restored:
         assert restored.context.values["skill:testing"] == original
         assert any(original in message.text for message in restored.messages)
 
 
-async def test_runtime_mount_is_owned_and_its_guidance_is_dynamic_context():
-    async with Agent(model=ScriptedModel([]), instructions="Fixed rules.").session() as session:
-        handle = await session.use(
-            Skills(
-                Skill(name="notes", description="Write notes.", instructions="Keep notes concise.")
+async def test_runtime_mount_rejects_system_catalog_before_installing_tools():
+    async with Agent(model=ScriptedModel([]), system_prompt="Fixed rules.").session() as session:
+        with pytest.raises(ConfigError, match="system sections"):
+            await session.use(
+                Skills(Skill(name="notes", description="Write notes.", instructions="Be concise."))
             )
-        )
-        registry = session.ctx[ToolRegistry]
-        assert {tool.name for tool in registry.definitions} == {"load_skill", "read_skill_file"}
-        assert SkillCatalog in session.ctx
-        assert any("Write notes." in text for text in session.context.values.values())
+        assert session.ctx[ToolRegistry].definitions == ()
+        assert SkillCatalog not in session.ctx
         assert await session.prompt.render() == "Fixed rules."
-        await handle.aclose()
-        assert registry.definitions == () and SkillCatalog not in session.ctx
         assert not session.context.values
 
 
@@ -270,12 +316,25 @@ async def test_discovery_is_not_recursive_and_resource_output_is_complete(tmp_pa
     root = folder(tmp_path / "nested")
     text = "Full reference material.\n" * 2000
     (root / "reference.md").write_text(text, encoding="utf-8", newline="")
-    async with Agent(model=ScriptedModel([]), plugins=[Skills(tmp_path)]).session() as session:
+    skills = Skills(tmp_path)
+    async with Agent(
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills],
+    ).session() as session:
         assert session.ctx[SkillCatalog].entries == ()
     model = ScriptedModel([call("read_skill_file", name="pdf-forms", path="reference.md"), "read"])
+    skills_12 = Skills(Skill.from_dir(root))
+    spill_13 = Spill(threshold_tokens=1)
     async with Agent(
+        system_prompt=SystemPrompt(
+            sections=(
+                skills_12.catalog,
+                spill_13.usage,
+            )
+        ),
         model=model,
-        plugins=[Skills(Skill.from_dir(root)), ToolOutputLimit(256), Spill(threshold_tokens=1)],
+        plugins=[skills_12, ToolOutputLimit(256), spill_13],
     ).session() as session:
         result = (await session.run("Read the reference")).tool_calls[0][1]
         assert result.text == text and result.spill is None and result.truncation is None
@@ -286,10 +345,12 @@ async def test_reloading_after_compaction_updates_the_retained_body_even_with_re
 ):
     root = folder(tmp_path, body="Original instructions.")
     model = ScriptedModel([call("load_skill", name="pdf-forms"), "noise " * 1000])
+    skills = Skills(Skill.from_dir(root))
     async with Agent(
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
         model=model,
         plugins=[
-            Skills(Skill.from_dir(root)),
+            skills,
             Compaction(
                 trigger=lambda state: False, keep_turns=0, summarizer=ExtractiveSummarizer()
             ),
@@ -308,14 +369,22 @@ async def test_reloading_after_compaction_updates_the_retained_body_even_with_re
 async def test_yaml_python_tags_are_rejected_as_configuration_errors(tmp_path):
     root = folder(tmp_path, extra="metadata: !!python/tuple [one, two]\n")
     with pytest.raises(ConfigError, match="SKILL.md"):
-        async with Agent(model=ScriptedModel([]), plugins=[Skills(Skill.from_dir(root))]).session():
+        skills = Skills(Skill.from_dir(root))
+        async with Agent(
+            system_prompt=SystemPrompt(sections=(skills.catalog,)),
+            model=ScriptedModel([]),
+            plugins=[skills],
+        ).session():
             pass
 
 
 async def test_multiline_yaml_scalars_do_not_close_frontmatter_at_an_indented_separator(tmp_path):
     root = folder(tmp_path, description="|\n  Before\n  ---\n  After", body="Instructions.")
+    skills = Skills(Skill.from_dir(root))
     async with Agent(
-        model=ScriptedModel([]), plugins=[Skills(Skill.from_dir(root))]
+        system_prompt=SystemPrompt(sections=(skills.catalog,)),
+        model=ScriptedModel([]),
+        plugins=[skills],
     ).session() as session:
         assert session.ctx[SkillCatalog].entries[0].info.description == "Before\n---\nAfter\n"
         loaded = await execute(session, "load_skill", name="pdf-forms")

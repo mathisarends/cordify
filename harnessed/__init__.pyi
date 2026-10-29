@@ -17,7 +17,10 @@ from harnessed.core.model import StopReason as StopReason
 from harnessed.core.outputs import OutputContract as OutputContract
 from harnessed.core.plugin import Plugin as Plugin
 from harnessed.core.plugin import PluginConfig as PluginConfig
-from harnessed.core.prompt.values import Section as Section
+from harnessed.core.prompt.values import PromptFormat as PromptFormat
+from harnessed.core.prompt.values import SystemPrompt as SystemPrompt
+from harnessed.core.prompt.values import SystemSection as SystemSection
+from harnessed.core.prompt.values import system_section as system_section
 from harnessed.core.runtime.control import SessionStatus as SessionStatus
 from harnessed.core.runtime.handles import RunHandle as RunHandle
 from harnessed.core.runtime.result import RunResult as RunResult
@@ -52,7 +55,10 @@ __all__ = [
     "Role",
     "RunHandle",
     "RunResult",
-    "Section",
+    "PromptFormat",
+    "SystemPrompt",
+    "SystemSection",
+    "system_section",
     "Session",
     "SessionClosed",
     "SessionLog",

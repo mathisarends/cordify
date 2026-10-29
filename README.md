@@ -34,7 +34,7 @@ class Calculator(Plugin):
 
 agent = Agent(
     model="deepseek:deepseek-chat",  # DEEPSEEK_API_KEY
-    instructions="Keep answers concise.",
+    system_prompt="Keep answers concise.",
     plugins=[Calculator()],
 )
 
@@ -48,7 +48,7 @@ async def main():
 asyncio.run(main())
 ```
 
-`Agent` composes `model`, `instructions` and `plugins`; `plugin_validation`
+`Agent` composes `model`, `system_prompt` and `plugins`; `plugin_validation`
 controls how missing services are reported at startup. It is reusable; each
 session owns its runtime and plugin lifetimes.
 
@@ -57,7 +57,7 @@ session owns its runtime and plugin lifetimes.
 - **Ownership:** removing a plugin removes its registrations and effects.
   Explicit `needs=(...)` requirements suspend and rebuild mounts as services
   change. `Inject[T]` binds values; `provides=True` publishes the mounted plugin.
-- **Context:** instructions and plugin guidance are fixed per session; named
+- **Context:** explicitly ordered system sections are fixed per session; named
   context values and steering supply changes during a run.
 - **History:** immutable events are the source of truth. Persistence, replay,
   forks and control outcomes use the same append-only log.

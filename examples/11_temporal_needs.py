@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from harnessed import Plugin, ToolCall, tool
-from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context, Emit, Inject
 
@@ -22,12 +22,12 @@ class PageChanged(Emit):
 
 
 class BrowserTools(Plugin):
-    needs = (Browser, ToolRegistry, SystemPrompt)
+    needs = (Browser, ToolRegistry, SystemPromptStore)
 
     async def setup(self, ctx: Context, browser: Inject[Browser]):
         self.browser = browser
         print(f"Setup with {browser.name}")
-        ctx[SystemPrompt].fixed(f"Current browser: {browser.name}")
+        ctx[SystemPromptStore].fixed(f"Current browser: {browser.name}")
         ctx.on(PageChanged, lambda event: print(f"Listener with {browser.name}"))
         ctx.effect(lambda: print(f"Custom effect cleaned for {browser.name}"))
 
@@ -43,7 +43,7 @@ class BrowserTools(Plugin):
 async def main():
     async with Context() as ctx:
         ctx.provide(ToolRegistry, ToolRegistry(ctx))
-        ctx.provide(SystemPrompt, SystemPrompt(ctx))
+        ctx.provide(SystemPromptStore, SystemPromptStore(ctx))
         feature = await ctx.plugin(BrowserTools())
         print("Before browser:", feature.status)
 
@@ -51,21 +51,21 @@ async def main():
         await ctx.settle()
         print("Available:", feature.status)
         print((await ctx[ToolRegistry].execute(ToolCall("title"))).content)
-        print("Prompt:", await ctx[SystemPrompt].render())
+        print("Prompt:", await ctx[SystemPromptStore].render())
         await ctx.dispatch(PageChanged())
 
         await remove()
         await ctx.settle()
         print("After service removal:", feature.status)
         print("Visible tools:", [t.name for t in ctx[ToolRegistry].definitions])
-        print("Prompt after removal:", repr(await ctx[SystemPrompt].render()))
+        print("Prompt after removal:", repr(await ctx[SystemPromptStore].render()))
         await ctx.dispatch(PageChanged())
 
         ctx.provide(Browser, Browser("replacement browser"))
         await ctx.settle()
         print("Recomposed:", feature.status)
         print((await ctx[ToolRegistry].execute(ToolCall("title"))).content)
-        print("Fresh prompt:", await ctx[SystemPrompt].render())
+        print("Fresh prompt:", await ctx[SystemPromptStore].render())
         await ctx.dispatch(PageChanged())
 
         # Permanent removal: this recipe will no longer restart.

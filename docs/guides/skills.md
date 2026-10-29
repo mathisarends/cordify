@@ -6,23 +6,23 @@ when each session opens. Only names and descriptions enter the system prompt.
 The model loads complete instructions and UTF-8 resources when it needs them.
 
 ```python
-from harnessed import Agent
+from harnessed import Agent, SystemPrompt
 from harnessed.plugins import Skill, Skills
 
+skills = Skills(
+    "./skills",
+    "~/.harnessed/skills",
+    Skill.from_dir("./vendor/pdf-forms"),
+    Skill(
+        name="release-notes",
+        description="Write a release changelog.",
+        instructions="Group changes by user-visible behavior.",
+    ),
+)
 agent = Agent(
     model="deepseek:deepseek-chat",
-    plugins=[
-        Skills(
-            "./skills",
-            "~/.harnessed/skills",
-            Skill.from_dir("./vendor/pdf-forms"),
-            Skill(
-                name="release-notes",
-                description="Write a release changelog.",
-                instructions="Group changes by user-visible behavior.",
-            ),
-        )
-    ],
+    system_prompt=SystemPrompt(sections=(skills.catalog,)),
+    plugins=[skills],
 )
 ```
 

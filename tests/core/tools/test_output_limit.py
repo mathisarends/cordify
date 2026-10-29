@@ -4,7 +4,7 @@ import sys
 import pytest
 
 from harnessed import Agent as Application
-from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
+from harnessed import Plugin, PolicyDecision, SystemPrompt, ToolCall, ToolResult, tool
 from harnessed.core.hooks import ReviewToolResult
 from harnessed.core.messages import ToolStatus
 from harnessed.core.model import ModelChunk
@@ -143,14 +143,16 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
     features = FeaturesPlugin(name="spill")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
+    spill = Spill(threshold_tokens=100)
     async with Application(
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
         model=model,
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
             ToolOutputLimit(4096),
             features,
             JsonlSessions(tmp_path),
-            Spill(threshold_tokens=100),
+            spill,
         ],
     ).session("spill-budget") as agent:
         await agent.run("go")

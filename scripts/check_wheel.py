@@ -14,7 +14,7 @@ import re
 
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
-from harnessed import Agent, OutputContract, Plugin, tool
+from harnessed import Agent, OutputContract, Plugin, PromptFormat, SystemPrompt, SystemSection, tool
 from harnessed.events import TextDeltaEvent, TurnFinishedEvent
 from harnessed.plugins import Skill, Skills
 from harnessed.testing import ScriptedModel, call, reply, assert_tool_called
@@ -54,12 +54,14 @@ class Answer(BaseModel):
 
 async def main():
     agent = Agent(model=ScriptedModel([call(Calculator.add, a=19, b=23), reply('42')]),
-                  plugins=[Calculator()], instructions='Fixed instructions.')
+                  plugins=[Calculator()], system_prompt=SystemPrompt(
+                      format=PromptFormat.MARKDOWN,
+                      sections=(SystemSection(title='Role', text='Fixed instructions.'),)))
     async with agent.session('wheel') as session:
         result = await session.run('Add')
         assert result.text == '42'
         assert assert_tool_called(result, 'add', a=19, b=23)[1].content == '42'
-        assert await session.prompt.render() == 'Fixed instructions.'
+        assert await session.prompt.render() == '## Role\n\nFixed instructions.'
     typed = await Agent(model=ScriptedModel([call('final_answer', value=42)])).run(
         'Answer', output=OutputContract('answer.v1', Answer))
     assert isinstance(typed.output, Answer) and typed.output.value == 42
@@ -73,8 +75,10 @@ async def main():
         assert handle.done()
     assert TextDeltaEvent('message', 'hello').type == 'text.delta'
     inline = Skill(name='notes', description='Write notes.', instructions='Keep notes concise.')
+    skills = Skills(inline)
     async with Agent(model=ScriptedModel([call('load_skill', name='notes'), reply('Loaded')]),
-                     plugins=[Skills(inline)]).session() as session:
+                     plugins=[skills], system_prompt=SystemPrompt(
+                         sections=(skills.catalog,))).session() as session:
         result = await session.run('Load notes')
         assert 'Keep notes concise.' in result.tool_calls[0][1].text
     assert not any(name.startswith('pydantic_ai') for name in sys.modules)

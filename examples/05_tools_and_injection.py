@@ -3,7 +3,7 @@
 import asyncio
 
 from examples.features.workspace import FailureNudge, WorkspaceTools
-from harnessed import Agent, ApprovalAnswer, PolicyDecision
+from harnessed import Agent, ApprovalAnswer, PolicyDecision, SystemPrompt
 from harnessed.events import ToolCallFinishedEvent, ToolProgressEvent
 from harnessed.plugins import Approvals, Filesystem
 from harnessed.testing import ScriptedModel, call
@@ -22,10 +22,12 @@ async def main():
             "The file is missing. I will check the path first.",
         ]
     )
+    filesystem = Filesystem(root=".")
     agent = Agent(
+        system_prompt=SystemPrompt(sections=(filesystem.usage,)),
         model=model,
         plugins=[
-            Filesystem(root="."),
+            filesystem,
             WorkspaceTools(),
             FailureNudge(threshold=2),
             Approvals(

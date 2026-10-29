@@ -1,6 +1,6 @@
 import pytest
 
-from harnessed import Agent, Context, Inject, Plugin, Section, Session, plugin
+from harnessed import Agent, Context, Inject, Plugin, Session, SystemPrompt, SystemSection, plugin
 from harnessed.plugins import Filesystem, Shell
 from harnessed.testing import ScriptedModel
 
@@ -9,10 +9,18 @@ from harnessed.testing import ScriptedModel
 async def test_explicit_project_composition_adds_only_the_requested_tools(tmp_path, shell):
     (tmp_path / "AGENTS.md").write_text("Use focused changes.", encoding="utf-8")
     model = ScriptedModel(["ready"])
+    filesystem = Filesystem(tmp_path)
+    commands = [Shell(tmp_path)] if shell else []
     app = Agent(
         model=model,
-        instructions=[Section.from_file(tmp_path / "AGENTS.md")],
-        plugins=[Filesystem(tmp_path), *([Shell(tmp_path)] if shell else [])],
+        system_prompt=SystemPrompt(
+            sections=(
+                SystemSection.from_file(path=tmp_path / "AGENTS.md"),
+                filesystem.usage,
+                *(p.usage for p in commands),
+            )
+        ),
+        plugins=[filesystem, *commands],
     )
     async with app.session("coding") as session:
         await session.run("inspect")

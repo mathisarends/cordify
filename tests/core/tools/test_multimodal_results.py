@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from harnessed import Agent, Plugin
+from harnessed import Agent, Plugin, SystemPrompt
 from harnessed.core.messages import ImageDetail, ImagePart, Role, TextPart, ToolReply, ToolResult
 from harnessed.core.model import ModelInfo, ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
@@ -34,7 +34,13 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
         [call("screenshot"), "I can see it."],
         info=ModelInfo("vision", context_window=128_000, supports_images=True),
     )
-    async with Agent(model=model, plugins=plugins).session() as session:
+    async with Agent(
+        model=model,
+        plugins=plugins,
+        system_prompt=SystemPrompt(
+            sections=tuple(p.usage for p in plugins if isinstance(p, Spill))
+        ),
+    ).session() as session:
         result = await session.run("Look at the screenshot.")
         tool_result = result.tool_calls[0][1]
         assert tool_result.exit_code == 0 and tool_result.rule_matches

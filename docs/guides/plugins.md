@@ -1,7 +1,7 @@
 # Plugin composition and lifecycle
 
 An Agent is a resolved plugin list. `model=` supplies `Service(Model, model)`;
-`instructions=` supplies `Instructions`. The default runtime plugins are
+`system_prompt=` supplies `Instructions`. The default runtime plugins are
 `AgentLoop`, `MemorySessions`, `ToolOutputLimit`, `Approvals` and `NoopTracer`.
 Use their public imports from `harnessed.plugins`. The tool registry, system prompt,
 token counter and context budget come from an internal plugin without a slot that
@@ -11,16 +11,18 @@ replace a single service with `Service(TokenCounter, counter)`.
 ## Replace a default
 
 ```python
-from harnessed import Agent
+from harnessed import Agent, SystemPrompt
 from harnessed.plugins import AgentLoop, Filesystem, JsonlSessions, ToolOutputLimit
 from harnessed.testing import ScriptedModel
 
+filesystem = Filesystem(root=".")
 agent = Agent(
+    system_prompt=SystemPrompt(sections=(filesystem.usage,)),
     model=ScriptedModel(["done"]),
     plugins=[
         AgentLoop(max_steps=50, max_parallel_tools=4),
         ToolOutputLimit(max_chars=16_000),
-        Filesystem(root="."),
+        filesystem,
         JsonlSessions(".harnessed/sessions"),
     ],
 )
@@ -146,9 +148,11 @@ execution and do not belong in plugin `needs`. Named `Key[T]` values distinguish
 two implementations of the same contract. A narrow Protocol is the service
 contract; third-party implementations need no Harnessed base class.
 
-`await session.use(plugin)` mounts a capability at runtime. Its guidance becomes
-named context because the system instructions are fixed. Closing its handle
-removes the capability and guidance; temporal restarts refresh both.
+`await session.use(plugin)` mounts a capability at runtime. Plugins declaring
+system sections are rejected before setup, because system instructions are fixed.
+Compose those sections at agent construction. Runtime facts use `ContextValue`;
+closing its handle removes its value and temporal restarts refresh it.
+See [system prompt composition](context.md) for explicit ordering and rendering.
 
 ## Session startup validation
 

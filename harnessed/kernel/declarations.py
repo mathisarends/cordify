@@ -252,7 +252,6 @@ class PluginBase:
             (),
             {},
             self.slot,
-            getattr(self, "guidance", None),
             () if self._provides is None else (self._provides,),
         )
 

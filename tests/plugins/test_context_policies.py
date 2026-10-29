@@ -10,6 +10,7 @@ from harnessed import (
     Plugin,
     PolicyDecision,
     Session,
+    SystemPrompt,
     ToolCall,
     ToolResult,
     tool,
@@ -57,13 +58,15 @@ async def test_large_results_spill_to_session_files_and_keep_structured_metadata
     tools = ToolsPlugin(name="large")
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("large"))], "done"])
+    spill = Spill(threshold_tokens=100, preview_tokens=8)
     app = Application(
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
         model=model,
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
             tools,
             JsonlSessions(tmp_path),
-            Spill(threshold_tokens=100, preview_tokens=8),
+            spill,
         ],
     )
     async with app.session("spill") as agent:
@@ -86,14 +89,22 @@ async def test_large_results_spill_to_session_files_and_keep_structured_metadata
         assert SessionLog("replay", seed=events).messages == agent.log.messages
         assert any(isinstance(e, SpillCreatedEvent) for e in events)
         ref = result.spill
+    spill_2 = Spill()
     async with Application(
-        model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path), Spill()]
+        system_prompt=SystemPrompt(sections=(spill_2.usage,)),
+        model=ScriptedModel([]),
+        plugins=[JsonlSessions(tmp_path), spill_2],
     ).session("spill") as restored:
         assert await restored.ctx[SpillStore].read(ref.path, offset=7, limit=6) == "output"
 
 
 async def test_session_spill_reads_unicode_ranges_reject_escape_and_reuse_content(tmp_path):
-    async with Application(model=ScriptedModel([]), plugins=[Spill()]).session() as session:
+    spill = Spill()
+    async with Application(
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
+        model=ScriptedModel([]),
+        plugins=[spill],
+    ).session() as session:
         store = session.ctx[SpillStore]
         refs = await asyncio.gather(*(store.put("ä😀abc") for _ in range(20)))
         first = refs[0]
@@ -110,8 +121,11 @@ async def test_session_spill_does_not_hide_unrelated_write_failures(tmp_path, mo
     def denied(source, destination):
         raise PermissionError("write denied")
 
+    spill = Spill()
     async with Application(
-        model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path), Spill()]
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
+        model=ScriptedModel([]),
+        plugins=[JsonlSessions(tmp_path), spill],
     ).session() as session:
         monkeypatch.setattr("harnessed.plugins.sessions.os.replace", denied)
         with pytest.raises(PermissionError, match="write denied"):
@@ -121,7 +135,10 @@ async def test_session_spill_does_not_hide_unrelated_write_failures(tmp_path, mo
 
 async def test_read_spill_tool_returns_bounded_ranges_without_respilling():
     model = ScriptedModel([])
-    async with Application(model=model, plugins=[Spill(threshold_tokens=1)]).session() as agent:
+    spill_5 = Spill(threshold_tokens=1)
+    async with Application(
+        system_prompt=SystemPrompt(sections=(spill_5.usage,)), model=model, plugins=[spill_5]
+    ).session() as agent:
         ref = await agent.ctx[SpillStore].put("x" * 100)
         model.responses.extend(
             [

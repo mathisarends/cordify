@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from harnessed import Agent, Plugin, tool
+from harnessed import Agent, Plugin, SystemPrompt, tool
 from harnessed.core.errors import ConfigError
 from harnessed.core.messages import SpillRef
 from harnessed.core.session.events import (
@@ -29,7 +29,12 @@ async def test_fork_copies_only_prefix_artifacts_and_deleting_it_keeps_the_paren
 ):
     store = JsonlSessions(tmp_path) if persistent else MemorySessions()
     model = ScriptedModel([call("large", name="first"), "one", call("large", name="second"), "two"])
-    app = Agent(model=model, plugins=[store, Files(), Spill(threshold_tokens=1)])
+    spill = Spill(threshold_tokens=1)
+    app = Agent(
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
+        model=model,
+        plugins=[store, Files(), spill],
+    )
     async with app.session("source") as session:
         first = (await session.run("First")).tool_calls[0][1].spill
         offset = len(session.events)
@@ -46,9 +51,11 @@ async def test_fork_copies_only_prefix_artifacts_and_deleting_it_keeps_the_paren
 
 
 async def test_missing_source_artifact_is_recorded_on_the_branch_without_mutating_parent():
+    spill_2 = Spill(threshold_tokens=1)
     app = Agent(
+        system_prompt=SystemPrompt(sections=(spill_2.usage,)),
         model=ScriptedModel([call("large", name="lost"), "done"]),
-        plugins=[Files(), Spill(threshold_tokens=1)],
+        plugins=[Files(), spill_2],
     )
     async with app.session("source") as session:
         ref = (await session.run("First")).tool_calls[0][1].spill
@@ -67,9 +74,11 @@ async def test_missing_source_artifact_is_recorded_on_the_branch_without_mutatin
 
 
 async def test_integrity_failure_leaves_the_destination_retryable():
+    spill_3 = Spill(threshold_tokens=1)
     app = Agent(
+        system_prompt=SystemPrompt(sections=(spill_3.usage,)),
         model=ScriptedModel([call("large", name="verified"), "done"]),
-        plugins=[Files(), Spill(threshold_tokens=1)],
+        plugins=[Files(), spill_3],
     )
     async with app.session("source") as session:
         ref = (await session.run("First")).tool_calls[0][1].spill
@@ -86,9 +95,11 @@ async def test_integrity_failure_leaves_the_destination_retryable():
 
 async def test_cancelled_copy_removes_acknowledged_files_and_releases_the_writer(monkeypatch):
     store = MemorySessions()
+    spill_4 = Spill(threshold_tokens=1)
     app = Agent(
+        system_prompt=SystemPrompt(sections=(spill_4.usage,)),
         model=ScriptedModel([call("large", name="cancelled"), "done"]),
-        plugins=[store, Files(), Spill(threshold_tokens=1)],
+        plugins=[store, Files(), spill_4],
     )
     async with app.session("source") as session:
         ref = (await session.run("First")).tool_calls[0][1].spill
@@ -116,8 +127,11 @@ async def test_invalid_absolute_spill_paths_are_never_opened_by_a_fork(tmp_path)
     source = SessionLog(
         "source", seed=[SpillCreatedEvent("call", SpillRef(str(outside), "unused"), 1)]
     )
-    async with Agent(model=ScriptedModel([]), plugins=[Spill()]).session(
-        source.fork("branch")
-    ) as fork:
+    spill = Spill()
+    async with Agent(
+        system_prompt=SystemPrompt(sections=(spill.usage,)),
+        model=ScriptedModel([]),
+        plugins=[spill],
+    ).session(source.fork("branch")) as fork:
         assert not await fork.ctx[SessionFiles].entries()
     assert outside.read_text(encoding="utf-8") == "private"
