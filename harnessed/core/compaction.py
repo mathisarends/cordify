@@ -42,6 +42,14 @@ class Summary:
     usage: ModelUsage | None = None
 
 
+class SummaryError(ValueError):
+    """A completed summarizer response was invalid but still incurred usage."""
+
+    def __init__(self, message: str, usage: ModelUsage) -> None:
+        super().__init__(message)
+        self.usage = usage
+
+
 @runtime_checkable
 class Summarizer(Protocol):
     async def summarize(
@@ -83,10 +91,10 @@ class ModelSummarizer:
         )
         response = await self.model.request(request)
         if response.message.tool_calls:
-            raise ValueError("Summarizer returned a tool call")
+            raise SummaryError("Summarizer returned a tool call", response.usage)
         summary = response.message.text.strip()
         if not summary:
-            raise ValueError("Summarizer returned an empty summary")
+            raise SummaryError("Summarizer returned an empty summary", response.usage)
         return Summary(summary, response.usage)
 
 
@@ -188,9 +196,15 @@ class CompactionManager:
             # The input request stays a snapshot even if new inbox/context records arrive.
             events, previous = self.log.events, self.log.last(CompactionApplied)
             with span(self.ctx, "compaction", session_id=self.log.id, through=plan.through):
-                summary = await summarizer.summarize(
-                    plan.messages, max_tokens=settings.summary_tokens
-                )
+                try:
+                    summary = await summarizer.summarize(
+                        plan.messages, max_tokens=settings.summary_tokens
+                    )
+                except SummaryError as error:
+                    await self.log.append(
+                        ModelUsageRecorded(error.usage, purpose=UsagePurpose.COMPACTION)
+                    )
+                    raise
             if isinstance(summary, Summary):
                 if summary.usage is not None:
                     await self.log.append(

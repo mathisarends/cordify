@@ -59,6 +59,10 @@ stop a running thread. Long synchronous operations must poll `call.cancelled`
 or pass `call.signal` to an operation that cooperates. Abort waits for the worker
 to finish before releasing its resources or closing the session.
 
+Shell commands use their requested timeout or `Shell(timeout=...)` default, up to
+`max_timeout` (at most 600 seconds). The shell tool explicitly overrides the generic
+`AgentLoop(tool_timeout=...)` deadline so longer commands can complete.
+
 Tools run sequentially unless `parallel=True`. Declare shared resource keys for
 parallel tools that touch the same file or external object; overlapping keys
 serialize those calls. Results commit in the model's original call order even

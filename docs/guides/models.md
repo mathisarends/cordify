@@ -24,6 +24,11 @@ recorded with the inbox item and turn, then applied to every step of that turn.
 Only JSON-compatible settings can be persisted. Construct custom clients and
 provider objects outside the settings dictionary.
 
+Effective defaults are exposed in `ModelInfo.default_settings` and resolved before
+compaction, budget checks and request logging. For output limits, per-turn
+`settings["max_tokens"]` overrides `AgentLoop(max_tokens=...)`, which overrides
+adapter and native model defaults. The resolved value lives in `ModelRequest.max_tokens`.
+
 Strings resolved by Harnessed are owned by the integration. Session scopes enter
 and exit the native model's resource context; the SDK manages its client reuse.
 A supplied native model and its HTTP client remain caller-owned. A streamed request
@@ -49,6 +54,10 @@ a cache miss. Missing optional counters remain unknown when usages are combined.
 The bridge supports text, thinking, function calls, and user/tool-result image URLs or data URLs.
 Native assistant response state is preserved in the log, including reasoning
 signatures needed on later tool rounds and replay.
+
+Editing an assistant's content, reasoning or tool calls while retaining its original
+`provider_state` raises `InvalidRequest` before sending. Clear `provider_state` when
+replacing history; this deliberately discards the original provider signatures.
 
 Provider-specific built-in tools, audio/video output, native file handles and
 resumable hosted operations are not currently exposed by the Harnessed request

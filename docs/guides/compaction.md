@@ -60,9 +60,14 @@ summaries receive a dedicated request with no tools and the configured output
 budget. Owned provider resources are released with the plugin.
 
 A custom object can instead implement the structural `Summarizer` protocol from
-`harnessed.core.compaction`: `async summarize(messages, *, max_tokens) -> str`.
+`harnessed.core.compaction`: `async summarize(messages, *, max_tokens) -> str | Summary`.
 It receives the selected past messages; `focus` is a hint for model-based summaries.
 Summaries must be nonempty. Their text is bounded by `summary_tokens` before commit.
+
+`Summary(text, usage=...)` reports available `ModelUsage`. Model summarizers return
+this value automatically. Summary calls contribute to session and turn usage even
+when their result is invalid or does not reduce context. Their `ModelUsageRecorded`
+events carry `UsagePurpose.COMPACTION` from `harnessed.events.model`.
 
 ## Compact manually
 

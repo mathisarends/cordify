@@ -7,8 +7,8 @@ from harnessed import Agent, Plugin, SessionClosed, SessionStatus, hook
 from harnessed.core.compaction import ContextState
 from harnessed.core.errors import ConfigError, ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest
-from harnessed.core.messages import System, ToolCall
-from harnessed.core.model import ModelChunk, ModelInfo, ModelUsage, UsagePurpose
+from harnessed.core.messages import Assistant, System, ToolCall
+from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, ModelUsage, UsagePurpose
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionApplied,
@@ -82,6 +82,23 @@ async def test_compaction_usage_is_counted_and_replayed_even_when_no_summary_is_
         records = [decode_event(encode_event(event)) for event in session.events]
         assert SessionLog("replay", seed=records).usage == session.usage
         assert (session.last(CompactionApplied) is not None) == reduces_context
+
+
+@pytest.mark.parametrize("message", [Assistant("  "), Assistant(tool_calls=(ToolCall("work"),))])
+async def test_invalid_summarizer_responses_still_contribute_their_usage(message):
+    model = ScriptedModel(
+        [reply("first", usage=ModelUsage(28, 4)), ModelResponse(message, ModelUsage(123, 12))]
+    )
+    async with Agent(
+        model=model, plugins=[Compaction(trigger=every_turns(1), keep_turns=0)]
+    ).session() as session:
+        await session.run("x" * 4000)
+        with pytest.raises(ValueError, match="Summarizer returned"):
+            await session.run("current")
+        assert session.usage.input_tokens == 151 and session.usage.output_tokens == 16
+        assert session.last(ModelUsageRecorded).purpose is UsagePurpose.COMPACTION
+        records = [decode_event(encode_event(event)) for event in session.events]
+        assert SessionLog("replay", seed=records).usage == session.usage
 
 
 async def test_periodic_trigger_counts_new_closed_turns_and_reuses_the_previous_summary():
