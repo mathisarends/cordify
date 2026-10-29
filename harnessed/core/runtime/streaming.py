@@ -23,6 +23,10 @@ from harnessed.core.session.events import (
     SessionEvent,
     SpillCreatedEvent,
     SpillExpiredEvent,
+    SubagentApprovalRequestedEvent,
+    SubagentFinishedEvent,
+    SubagentLinkedEvent,
+    SubagentStartedEvent,
     ToolCallFinishedEvent,
     ToolCallRequestedEvent,
     ToolProgressEvent,
@@ -156,6 +160,13 @@ async def project_stream_events(
                 case CompactionAppliedEvent() | SpillCreatedEvent() | SpillExpiredEvent():
                     yield event
                 case DurableEvent() | CustomTransientEvent():
+                    yield event
+                case (
+                    SubagentLinkedEvent()
+                    | SubagentStartedEvent()
+                    | SubagentFinishedEvent()
+                    | SubagentApprovalRequestedEvent()
+                ):
                     yield event
                 case ToolCallRequestedEvent(call=call) if call.id not in control_calls:
                     calls.add(call.id)

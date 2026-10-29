@@ -64,3 +64,10 @@ credentials. See the [MCP guide](mcp.md) for HTTP, filters and ownership.
 to the console, with an outer backend span and model usage, without network
 access or credentials. See [the source](https://github.com/mathisarends/harnessed/blob/main/examples/29_tracing.py)
 and [the Phoenix/Langfuse setup guide](tracing.md).
+
+## Subagents
+
+`uv run python -m examples.32_subagents` delegates a review to an isolated child,
+prints its durable receipt and inspects tree usage with scripted models. See
+[the source](https://github.com/mathisarends/harnessed/blob/main/examples/32_subagents.py)
+and [the subagent guide](subagents.md).

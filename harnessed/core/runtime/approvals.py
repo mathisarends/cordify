@@ -10,6 +10,7 @@ from harnessed.core.approvals import (
     Approver,
     validate_approval_timeout,
 )
+from harnessed.core.children import ChildSessionRequest
 from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import RequestApproval
 from harnessed.core.messages import ApprovalAnswer, ToolCall
@@ -207,7 +208,9 @@ class SessionApprovals:
         try:
             async with asyncio.timeout(timeout):
                 selected = (
-                    approver
+                    self.ctx[ChildSessionRequest].approver
+                    if ChildSessionRequest in self.ctx
+                    else approver
                     if approver is not None
                     else (self.ctx[Approver] if Approver in self.ctx else None)
                 )

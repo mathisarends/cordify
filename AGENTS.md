@@ -36,8 +36,9 @@ YAML. Internal modules import their owning layer, not the root facade.
 
 Follow `docs/reference/sdk.md`, the topic guides and `structure-target.md`.
 Future scope belongs in `docs/contributing/roadmap.md`; those proposals are not
-implemented API contracts. Subagents remain deferred until requested. MCP and
-OTel are explicit optional integrations with their own dependency extras.
+implemented API contracts. Subagents use isolated, parent-owned child sessions
+through a core factory protocol. MCP and OTel are explicit optional integrations
+with their own dependency extras.
 Do not restore `seams`,
 `adapters`, `app`, `llms` or `presets`, or add native provider clients. Prefer
 canonical `core.messages` / `core.model` imports inside the library. Applications

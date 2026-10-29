@@ -17,6 +17,7 @@ from harnessed.core.messages import (
     ToolStatus,
 )
 from harnessed.core.model import ModelRequest, ModelUsage, sum_usage
+from harnessed.core.session.children import ChildProjection, ChildSession
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
     AgentControlChangedEvent,
@@ -40,6 +41,9 @@ from harnessed.core.session.events import (
     StepEndedEvent,
     StepOutcome,
     StepStartedEvent,
+    SubagentFinishedEvent,
+    SubagentLinkedEvent,
+    SubagentStatus,
     ToolCallFinishedEvent,
     ToolExecutionFinishedEvent,
     ToolExecutionStartedEvent,
@@ -172,6 +176,7 @@ class SessionLog:
                 self._open_executions.discard(event.call_id)
         self._request_snapshot: tuple[ModelRequest, ...] | None = None
         self._turns = TurnProjection(self._events)
+        self._children = ChildProjection(self._events)
         self._turn_boundaries = [
             (seq + 1, event.turn_id)
             for seq, event in enumerate(self._events)
@@ -207,6 +212,19 @@ class SessionLog:
     @property
     def usage(self) -> ModelUsage:
         return self._usage if self._usage is not None else ModelUsage(0)
+
+    @property
+    def children(self) -> tuple[ChildSession, ...]:
+        return self._children.snapshot()
+
+    @property
+    def parent(self) -> SubagentLinkedEvent | None:
+        return self._children.parent
+
+    @property
+    def tree_usage(self) -> ModelUsage:
+        """Local usage plus recorded child receipts, including their descendants."""
+        return sum_usage((self.usage, *(child.usage for child in self.children)))
 
     async def subscribe(
         self, *, transient: bool = False, buffer_size: int = 256
@@ -349,7 +367,8 @@ class SessionLog:
             ToolExecutionFinishedEvent
             | ToolCallFinishedEvent
             | AssistantMessageEvent
-            | ModelRequestFailedEvent,
+            | ModelRequestFailedEvent
+            | SubagentFinishedEvent,
         )
         if terminal:
             # An invocation/review already finished. Drain its checkpoint even if
@@ -382,6 +401,7 @@ class SessionLog:
                 raise ValueError(f"Removing unknown inbox message: {event.message_id}")
             approval = approval_transition(self._approval_records, event)
             self._turns.validate(event)
+            self._children.validate(event)
             seq = len(self._events)
             if isinstance(event, CompactionAppliedEvent):
                 _validate_compaction(self._events, event, seq)
@@ -406,6 +426,7 @@ class SessionLog:
             self._last[type(event)] = (seq, event)
             self._snapshot = None
             self._turns.apply(event)
+            self._children.apply(event)
             if isinstance(event, TurnStartedEvent):
                 self._known_turns.add(event.turn_id)
             elif isinstance(event, TurnEndedEvent):
@@ -483,6 +504,15 @@ class SessionLog:
 
     async def _repair_interrupted(self) -> None:
         control = self.control
+        for child in self.children:
+            if child.status is SubagentStatus.RUNNING:
+                await self.append(
+                    SubagentFinishedEvent(
+                        child.id,
+                        SubagentStatus.INTERRUPTED,
+                        "Delegation interrupted; inspect the child log before retrying",
+                    )
+                )
         for request_id in self._requests_by_id:
             if request_id not in self._finished_requests:
                 await self.append(

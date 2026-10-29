@@ -15,6 +15,10 @@ from harnessed.core.session.events import (
     DurableEvent,
     SpillCreatedEvent,
     SpillExpiredEvent,
+    SubagentApprovalRequestedEvent,
+    SubagentFinishedEvent,
+    SubagentLinkedEvent,
+    SubagentStartedEvent,
     ToolCallFinishedEvent,
     ToolCallRequestedEvent,
     ToolProgressEvent,
@@ -114,6 +118,10 @@ type StreamEvent[T] = Annotated[
         | CompactionAppliedEvent
         | SpillCreatedEvent
         | SpillExpiredEvent
+        | SubagentLinkedEvent
+        | SubagentStartedEvent
+        | SubagentFinishedEvent
+        | SubagentApprovalRequestedEvent
     ),
     Field(discriminator="type"),
 ]

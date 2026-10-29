@@ -28,6 +28,11 @@ library. Harnessed is distributed under the
 
 ## Unreleased
 
+Use `Subagents` from `harnessed.plugins` to delegate explicit tasks to configured
+specialists in isolated child sessions. Parent-owned lifetimes, routed approvals,
+durable relationships and recorded tree usage keep delegations inspectable through
+completion, cancellation and replay. See [subagents](guides/subagents.md).
+
 Install `harnessed[mcp]` to expose MCP server tools through an optional plugin.
 `MCP.http()` and `MCP.stdio()` configure reusable server recipes with connections
 owned by each session or runtime mount. See [MCP tools](guides/mcp.md).

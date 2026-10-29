@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from harnessed.core.children import ChildSessionRequest
 from harnessed.core.composition import PluginValidation, validate_plugins
 from harnessed.core.errors import ConfigError
 from harnessed.core.outputs import OutputTypes
@@ -49,6 +50,11 @@ async def open_session(
         await persistence.flush()
     log = SessionLog(session_id, ctx=ctx, seed=seed, persistence=persistence, files=files)
     ctx.effect(log.finish_subscriptions)
+    if ChildSessionRequest in ctx:
+        if seed or await files.entries():
+            raise ConfigError("A delegation cannot reopen an existing child session")
+        await log.append(ctx[ChildSessionRequest].link)
+        await log.flush()
     await log.repair_interrupted()
     _restore_output_schemas(ctx[OutputTypes], log)
     runtime = ctx[AgentFactory].create(ctx, log)
