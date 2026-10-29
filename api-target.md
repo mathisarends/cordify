@@ -605,6 +605,7 @@ result.text  # final assistant text of *this* turn
 result.output  # typed output (see below), else None
 result.usage  # Usage(input_tokens, output_tokens, cache_read_tokens, reasoning_tokens, cost)
 result.stop_reason  # StopReason (StrEnum): END, MAX_TOKENS, MAX_STEPS, STOPPED, ABORTED, DISCARDED
+result.completed  # True only for StopReason.END; False for limits, stop, abort and discard
 result.turn_id
 result.messages  # messages of this turn
 result.tool_calls  # (ToolCall, ToolResult) pairs of this turn

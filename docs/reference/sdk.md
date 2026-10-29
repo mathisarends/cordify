@@ -61,6 +61,8 @@ policy slots explicitly.
 
 A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,
 `turn_id`, typed `stop_reason` and `(ToolCall, ToolResult)` pairs in `tool_calls`.
+`completed` is true only for `StopReason.END`; check it before trusting `text`,
+because limits, stops and discards return a result instead of raising.
 Passing `output=T` or `output=OutputContract("answer.v1", T)` adds a validated
 `output` of type `T`; an unstructured result's
 output is None. See [structured answers](../guides/structured-output.md) for retry

@@ -74,6 +74,11 @@ class RunResult[T]:
     _output: T | _NoOutput = field(default=_NO_OUTPUT, repr=False, kw_only=True)
 
     @property
+    def completed(self) -> bool:
+        """Whether the turn ended with a final answer rather than a limit, stop or discard."""
+        return self.stop_reason is StopReason.END
+
+    @property
     def output(self) -> T:
         """Return the validated value; interrupted structured turns may have none."""
         if isinstance(self._output, _NoOutput):

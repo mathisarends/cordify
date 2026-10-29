@@ -107,6 +107,7 @@ async def test_public_max_token_policies_return_typed_stop_reasons_or_fail():
                 result = await session.run("task")
                 expected = StopReason.MAX_TOKENS if policy == "accept" else StopReason.END
                 assert result.stop_reason is expected
+                assert result.completed is (expected is StopReason.END)
                 assert result.text == ("partial" if policy == "accept" else "complete")
                 assert len(model.requests) == (1 if policy == "accept" else 2)
 
@@ -124,3 +125,4 @@ async def test_step_limit_takes_precedence_over_the_last_model_finish_reason():
         plugins=[AgentLoop(max_steps=1, on_max_tokens=TokenLimitBehavior.CONTINUE)],
     ).run("task")
     assert result.stop_reason is StopReason.MAX_STEPS
+    assert not result.completed

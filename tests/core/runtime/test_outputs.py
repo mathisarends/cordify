@@ -41,6 +41,7 @@ async def test_fallback_answer_is_validated_without_policies_or_application_tool
         )
         result = await session.run("Triage", output=Triage)
         assert result.output == Triage(severity=2, owner="sdk")
+        assert result.completed
         assert result.stop_reason is StopReason.END and result.tool_calls == ()
         assert policies == []
         request = model.requests[0]

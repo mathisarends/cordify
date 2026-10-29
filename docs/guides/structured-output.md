@@ -36,8 +36,8 @@ invalid fields without echoing their submitted values.
 Scalar and list outputs use an object envelope (`{"output": ...}`) on the wire.
 An unstructured run has `result.output is None`. Stopping, aborting, discarding or
 reaching a limit can leave a structured run without a validated answer; reading
-its `output` then raises `OutputUnavailable`. Inspect `stop_reason` first when the
-caller permits incomplete work.
+its `output` then raises `OutputUnavailable`. Check `result.completed` (or
+`stop_reason` for the cause) first when the caller permits incomplete work.
 
 ## Durable contracts
 

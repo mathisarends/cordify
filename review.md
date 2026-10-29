@@ -52,14 +52,6 @@ an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
 Left: `steer` takes no attachments while `run`/`submit` do, and `observe` (returns
 `None`) is outside the 8.1 verb table without its own guide entry.
 
-**U4. Abnormal turn endings need a convenience check (needs a decision).**
-api-target.md 6 and 8.2 set the contract on purpose: `run()` never raises for
-`MAX_STEPS`, `STOPPED`, `ABORTED` or `DISCARDED`, and one `StopReason` covers model
-and turn outcomes. So raising on `max_steps` or splitting the enum would contradict
-the target. `on_max_tokens=FAIL` now raises `OutputTokenLimit`. Open: an additive
-`RunResult.completed` (true only for `END`), because callers who only read `text`
-miss a max-steps ending. The target's field list would have to name it first.
-
 **U5. Loop limits hide in a slot plugin.** `max_steps`, `tool_timeout`,
 `max_parallel_tools` and `context_window` need `AgentLoop(...)` in `plugins`.
 Replacing the `loop` slot also removes `ToolRegistry`, `SystemPrompt`,
