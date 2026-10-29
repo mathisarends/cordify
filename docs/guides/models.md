@@ -54,10 +54,26 @@ compaction, budget checks and request logging. For output limits, per-turn
 `settings["max_tokens"]` overrides `AgentLoop(max_tokens=...)`, which overrides
 adapter and native model defaults. The resolved value lives in `ModelRequest.max_tokens`.
 
-Strings resolved by Harnessed are owned by the integration. Session scopes enter
-and exit the native model's resource context; the SDK manages its client reuse.
-A supplied native model and its HTTP client remain caller-owned. A streamed request
-always has an asynchronous context-manager boundary, including cancellation.
+Session scopes enter and exit the native model's resource context for both provider
+strings and supplied PydanticAI models. You can construct a model and pass it
+directly to an agent without an outer model context:
+
+```python
+from pydantic_ai.models.openai import OpenAIResponsesModel
+
+from harnessed import Agent
+
+agent = Agent(model=OpenAIResponsesModel("gpt-6.1-terra"))
+async with agent.session() as session:
+    result = await session.run("Explain this repository.")
+```
+
+PydanticAI keeps its own HTTP client open until the last active model context
+exits and recreates it when the model is reused. Overlapping sessions can share
+the same model. An optional outer `async with model:` keeps the client open across
+sessions. Explicitly supplied HTTP or provider SDK clients remain caller-owned;
+manage those clients yourself. Standalone adapter requests and streams also enter
+the model context and exit it on completion, failure or cancellation.
 
 Provider cache behavior comes from native settings, not generic message offsets:
 
