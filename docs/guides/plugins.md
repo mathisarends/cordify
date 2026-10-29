@@ -30,22 +30,44 @@ the same slot raise `PluginConflict`. A custom plugin declares its slot with
 
 ## Per-mount state and cleanup
 
-The configuration object is reusable. Initialize mutable runtime state in `setup`,
-which runs on a fresh shallow copy for each mount. Register cleanup with
-`ctx.effect(...)`, or implement `teardown`. Tools, listeners and services already
-register their own reversible effects.
+The configuration object is a reusable recipe. Declare mutable runtime state with
+`PluginState(factory)`: the synchronous, zero-argument factory runs once per mount,
+before `setup`, and again after a dependency restart. Each mount owns its value.
 
 ```python
-from harnessed import Plugin
-from harnessed.kernel import Context
+from harnessed import Plugin, PluginState, tool
 
 
-class Watcher(Plugin):
-    async def setup(self, ctx: Context) -> None:
-        self.seen = set()
-        self.watcher = await start_watching()
-        ctx.effect(self.watcher.aclose)
+class Counter(Plugin):
+    counts = PluginState[dict[str, int]](dict)
+
+    @tool(readonly=True)
+    async def count(self, name: str) -> int:
+        self.counts[name] = self.counts.get(name, 0) + 1
+        return self.counts[name]
 ```
+
+Instance access returns the typed value; assignment replaces that mount's value.
+Accessing state on a recipe or after disposal raises `RuntimeError`. Inherited
+fields work normally, and subclasses can override their factories. State stays
+available throughout `teardown` and owned cleanup, then its references are released.
+It is in-memory state, not persistence: restore durable state from the session log
+in `setup`, as the built-in `Rules` plugin does.
+
+Constructor attributes remain shared inputs by default, including caller-owned
+clients and locks. Ordinary mutable attributes created in a constructor are also
+shared: use `PluginState` or initialize them in `setup` for isolation. The default
+`create_instance() -> Self` makes a shallow copy. Override it to reconstruct custom
+instances, preserving recipe configuration and returning a fresh, unmounted object
+of the same class. Tools and hooks then bind to that instance; bound tool references
+on the original recipe remain valid.
+
+Allocate asynchronous resources in `setup` and register cleanup immediately with
+`ctx.effect(resource.aclose)`. Effects run even if setup fails. `teardown` runs only
+after successful setup. State factories should create plain values, not resources
+requiring cleanup. Tools, listeners and services already register their own
+reversible effects. `PluginState` is also available from `harnessed.kernel` for
+standalone kernel plugins.
 
 Async-generator function plugins run setup before `yield` and teardown after it.
 They compose services and hooks. Public tools use `Plugin` methods, as shown in
@@ -126,7 +148,8 @@ The Config alias selects validation; the annotation types `self.config`. The
 explicit constructor gives callers ordinary Python signatures and IDE completion.
 All built-in configuration models follow this module-level pattern. Small plugins
 can use a normal constructor without a separate configuration model. Allocate
-mutable per-mount state in setup; constructors describe reusable recipes.
+mutable per-mount state with `PluginState` or in setup; constructors describe
+reusable recipes.
 
 Closed loop and storage choices are enums, including
 `harnessed.models.TokenLimitBehavior` and `harnessed.plugins.Durability`:

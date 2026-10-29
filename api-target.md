@@ -262,7 +262,9 @@ class Deployer(Plugin):
 
 - Keyword-only Parameter mit `ToolContext` oder `Inject[...]` sind für das Modell unsichtbar.
 - `ToolContext` enthält `call`, `session`, `progress()` und `cancelled`, aber **nicht** den Agent (P1-9).
-- **Faustregel:** Was nur dieses Plugin braucht, entsteht in `setup()` und liegt auf `self` (2.2). Was mehrere Plugins teilen, ist ein Service und kommt über `Inject`.
+- **Faustregel:** Veränderlicher Zustand pro Mount entsteht über `PluginState(factory)` oder in `setup()` und liegt auf `self` (2.2). Was mehrere Plugins teilen, ist ein Service und kommt über `Inject`.
+
+`PluginState[T](factory)` erzeugt vor jedem Setup einen frischen Wert, auch bei Dependency-Neustarts. Der Wert ist bis zum Ende aller Cleanup-Effekte verfügbar, danach wird er freigegeben. Rezepte selbst haben keinen solchen Zustand; Zugriff dort schlägt mit `RuntimeError` fehl. Persistenter Zustand wird in `setup` aus dem Session-Log rekonstruiert. Konstruktorattribute bleiben standardmäßig geteilte Eingaben, etwa externe Clients. `create_instance() -> Self` kann die standardmäßige flache Kopie durch explizite Konstruktion einer frischen Instanz derselben Klasse ersetzen; gebundene Tool-Referenzen des Rezepts bleiben gültig.
 
 Ein Service ist ebenfalls ein Plugin. Für eine fertige Instanz reicht `Service`:
 

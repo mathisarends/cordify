@@ -10,6 +10,7 @@ from .effects import resolve
 from .events import Event
 from .keys import ServiceKey
 from .spec import PluginSpec
+from .state import PluginState
 
 if TYPE_CHECKING:
     from .context import Context
@@ -87,6 +88,7 @@ class PluginBase:
     needs: tuple[ServiceKey[Any], ...] = ()
     _recipe: Self
     slot: str | None = None
+    _mount_state: dict[PluginState[Any], Any] | None = None
 
     def __init_subclass__(
         cls, *, slot: str | None = None, needs: Iterable[ServiceKey[Any]] | None = None, **kwargs
@@ -116,6 +118,15 @@ class PluginBase:
     async def teardown(self, *args: Any, **kwargs: Any) -> None:
         pass
 
+    def create_instance(self) -> Self:
+        """Create an unmounted instance from this recipe.
+
+        Constructor attributes are shared inputs, including caller-owned clients.
+        PluginState fields are initialized separately on every mount. Override
+        this method to reconstruct custom instances; never return the recipe.
+        """
+        return copy.copy(self)
+
     def _registration_entries(self):
         return tuple(getattr(self, "registrations", ()))
 
@@ -124,6 +135,9 @@ class PluginBase:
         members = {}
         for base in reversed(type(self).__mro__):
             members.update(vars(base))
+        state_fields = tuple(
+            dict.fromkeys(member for member in members.values() if isinstance(member, PluginState))
+        )
         hooks = list(_hooks(getattr(self, "hooks", ())))
         registrations = list(self._registration_entries())
         for name, member in members.items():
@@ -145,8 +159,18 @@ class PluginBase:
         needs.extend(key for registration, _ in registrations for key in registration.needs)
 
         async def mount(ctx):
-            instance = copy.copy(self)
+            instance = self.create_instance()
+            if instance is self or type(instance) is not type(self):
+                raise TypeError("create_instance must return a fresh instance of the recipe class")
+            if instance._mount_state is not None:
+                raise TypeError("create_instance returned an already mounted instance")
             instance._recipe = self
+
+            def clear_state() -> None:
+                instance._mount_state = None
+
+            ctx.effect(clear_state)
+            instance._mount_state = {member: member.factory() for member in state_fields}
             bound = _lifecycle_arguments(instance.setup, ctx)
             await resolve(instance.setup(*bound.args, **bound.kwargs))
             try:
