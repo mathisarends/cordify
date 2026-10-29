@@ -10,7 +10,7 @@ _EXPORTS = {
     "Agent": ("harnessed.agent", "Agent"),
     "ApprovalAnswer": ("harnessed.core.messages", "ApprovalAnswer"),
     "ApprovalRequest": ("harnessed.core.session.events", "ApprovalRequested"),
-    "Context": ("harnessed.core.plugin", "PluginContext"),
+    "Context": ("harnessed.kernel", "Context"),
     "File": ("harnessed.core.attachments", "File"),
     "Image": ("harnessed.core.attachments", "Image"),
     "ImageDetail": ("harnessed.core.messages", "ImageDetail"),

@@ -10,7 +10,7 @@ from harnessed.core.errors import ConfigError, PluginConflict
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
 from harnessed.core.outputs import OutputContract, OutputTypes
-from harnessed.core.plugin import PluginContext, Service
+from harnessed.core.plugin import Service
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.instructions import Instructions
 from harnessed.core.prompt.values import InstructionValues, PromptComposition, PromptContribution
@@ -27,7 +27,7 @@ from harnessed.core.session.store import MemorySessions, SessionPersistence, Ses
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.core.tracing import NoopTracer
-from harnessed.kernel import PluginLike
+from harnessed.kernel import Context, PluginLike
 from harnessed.kernel.plugin import as_plugin_spec
 from harnessed.models.pydantic_ai import PydanticAIModel
 
@@ -104,7 +104,7 @@ class Agent:
         restore_outputs: Iterable[type[Any] | OutputContract[Any]] = (),
     ) -> AsyncGenerator[Session]:
         """Open or resume a conversation; omit its ID to create a new one."""
-        async with PluginContext() as ctx:
+        async with Context() as ctx:
             ctx.provide(EventRegistry, self._events.copy())
             # Validators are per session, so dynamic output types never leak between them.
             outputs = OutputTypes()

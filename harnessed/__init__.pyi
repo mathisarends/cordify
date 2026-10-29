@@ -16,7 +16,6 @@ from harnessed.core.model import StopReason as StopReason
 from harnessed.core.outputs import OutputContract as OutputContract
 from harnessed.core.plugin import Plugin as Plugin
 from harnessed.core.plugin import PluginConfig as PluginConfig
-from harnessed.core.plugin import PluginContext as Context
 from harnessed.core.prompt.values import Section as Section
 from harnessed.core.runtime.control import SessionStatus as SessionStatus
 from harnessed.core.runtime.handles import RunHandle as RunHandle
@@ -26,6 +25,7 @@ from harnessed.core.session.events import ApprovalRequested as ApprovalRequest
 from harnessed.core.tools.context import ToolContext as ToolContext
 from harnessed.core.tools.decorator import tool as tool
 from harnessed.core.tools.registry import ToolError as ToolError
+from harnessed.kernel import Context as Context
 from harnessed.kernel import Inject as Inject
 from harnessed.kernel import hook as hook
 from harnessed.kernel import plugin as plugin

@@ -24,10 +24,6 @@ class _DefaultGuidance:
 _DEFAULT_GUIDANCE = _DefaultGuidance()
 
 
-class PluginContext(Context):
-    """An agent plugin scope; tools are declared on Plugin methods."""
-
-
 class Bundle(KernelBundle):
     """A collection of kernel hooks and registration recipes."""
 

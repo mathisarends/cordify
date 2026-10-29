@@ -4,7 +4,6 @@ from typing import assert_type
 from pydantic import BaseModel
 
 from harnessed import Agent as AppAgent
-from harnessed import Context as PluginContext
 from harnessed import OutputContract, Plugin, RunHandle, ToolContext, tool
 from harnessed.core.messages import Assistant, ToolReply, User
 from harnessed.core.model import ModelResponse
@@ -77,7 +76,7 @@ async def functional_scope(ctx: Context) -> None:
     assert_type(ctx.extend(), Context)
 
 
-async def tool_scope(ctx: PluginContext) -> None:
+async def tool_scope(ctx: Context) -> None:
     class Echo(Plugin):
         @tool(readonly=True)
         async def echo(self, value: str, *, call: ToolContext) -> str:
@@ -85,7 +84,7 @@ async def tool_scope(ctx: PluginContext) -> None:
             return value
 
     assert_type(await Echo().echo("value", call=ToolContext.__new__(ToolContext)), str)
-    assert_type(ctx.extend(), PluginContext)
+    assert_type(ctx.extend(), Context)
 
 
 def invalid_message_shapes() -> None:
