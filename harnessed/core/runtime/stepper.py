@@ -27,6 +27,7 @@ from harnessed.core.session.events import (
     ModelRequestFailedEvent,
     ModelRequestOutcome,
     ObservationRecordedEvent,
+    ObservationsIncludedEvent,
     StepEndedEvent,
     StepOutcome,
     StepStartedEvent,
@@ -175,7 +176,9 @@ class StepRunner:
 
     async def _request(self, request: ModelRequest, *, request_id: str) -> Assistant:
         try:
+            included = self.log.included_observations(request)
             await self.log.append(ModelRequestedEvent(request, request_id=request_id))
+            await self.log.append(ObservationsIncludedEvent(request_id, included))
             return await self.responder.respond(request, request_id=request_id)
         except BaseException as error:
             if self.log.request(request_id) is not None and not self.log.request_finished(

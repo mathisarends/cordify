@@ -21,6 +21,7 @@ class EventKind(StrEnum):
     CONTEXT_MESSAGE = "context.message"
     CONTEXT_VALUE_CHANGED = "context.changed"
     OBSERVATION_RECORDED = "observation.recorded"
+    OBSERVATIONS_INCLUDED = "observations.included"
     MODEL_REQUESTED = "model.requested"
     MODEL_REQUEST_FAILED = "model.request.failed"
     MODEL_USAGE_RECORDED = "model.usage"

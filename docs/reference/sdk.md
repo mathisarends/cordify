@@ -54,6 +54,8 @@ data for plugins and integrations; prefer the session views when both exist.
 `SessionLog.request(request_id)` returns a submitted model request or `None`;
 `request_finished(request_id)` checks its durable completion, and
 `execution_pending(call_id)` checks whether a tool start still needs a receipt.
+`included_observations(request)` returns retained observation sources, refs and
+forms using message provenance rather than prompt text searches.
 
 Await methods that perform durable writes. Closed handles raise SessionClosed.
 SDK failures derive from `HarnessedError`, importable from `harnessed.errors`: operations

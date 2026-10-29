@@ -16,6 +16,9 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessageEvent,
     CompactionAppliedEvent,
+    ModelRequestedEvent,
+    ModelRequestFailedEvent,
+    ModelRequestOutcome,
     SystemMessageEvent,
     TurnEndedEvent,
     TurnOutcome,
@@ -356,6 +359,20 @@ async def test_context_overflow_retry_uses_the_effective_turn_step_limit(default
             assert result.completed and result.text == "recovered"
             assert len(summaries.sources) == 1
             assert len(model.requests) == 3
+        requests = [e for e in session.events if isinstance(e, ModelRequestedEvent)]
+        assert len({e.request_id for e in requests}) == len(model.requests)
+        failure = session.last(ModelRequestFailedEvent)
+        assert failure.request_id == requests[1].request_id
+        assert failure.outcome is ModelRequestOutcome.CONTEXT_EXCEEDED
+        for request in requests:
+            assert (
+                sum(
+                    isinstance(event, AssistantMessageEvent | ModelRequestFailedEvent)
+                    and event.request_id == request.request_id
+                    for event in session.events
+                )
+                == 1
+            )
 
 
 @pytest.mark.parametrize("initial_window,replacement_window", [(8000, 64), (64, 8000)])

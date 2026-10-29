@@ -31,6 +31,7 @@ from harnessed.core.session.events import (
     InboxRemovalReason,
     InboxRemovedEvent,
     InboxTarget,
+    IncludedObservation,
     ModelRequestedEvent,
     ModelRequestFailedEvent,
     ModelRequestOutcome,
@@ -270,6 +271,10 @@ class SessionLog:
     def request(self, request_id: str) -> ModelRequest | None:
         """Look up the final submitted request by its durable identity."""
         return self._requests_by_id.get(request_id)
+
+    def included_observations(self, request: ModelRequest) -> tuple[IncludedObservation, ...]:
+        """Return provenance of observation messages retained in this request."""
+        return self._history.included_observations(request.messages)
 
     def request_finished(self, request_id: str) -> bool:
         """Whether a reply or failure has durably closed this request."""

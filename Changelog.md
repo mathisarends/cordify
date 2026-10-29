@@ -16,7 +16,7 @@
   namespace modules (`message`, `tool`, `turn`, `step`, `text`, `reasoning`,
   `approval`, `compaction`, `context`, `inbox`, `model`, `output`, `rule`, `session`
   and `spill`) have been removed without compatibility aliases.
-- All 40 concrete built-in event classes now have canonical names ending in
+- Concrete built-in event classes now have canonical names ending in
   `Event`. Their definitions, imports, type annotations and schema definition
   names use the same names. Update imports and any consumers of JSON Schema
   definition names. Tool lifecycle discriminator changes are listed below.
@@ -24,6 +24,10 @@
   and annotate `ApprovalRequestedEvent` from `harnessed.events`.
 - Import event-related enums directly by their full names, such as `TurnOutcome`,
   `StepOutcome`, `InboxMode`, `ApprovalStatus` and `ToolArgumentsMode`.
+- Construct model request and assistant message events with an explicit
+  `request_id` keyword. Response usage carries that ID; compaction usage has
+  no response ID. Old version 2 JSONL records remain readable with deterministic
+  IDs derived during loading.
 
 Common replacements:
 
@@ -92,6 +96,13 @@ See the [event guide](docs/guides/events.md) for lifecycle phases and the
 
 ### Added
 
+- `Observation.refs` carries application IDs independently of prompt text.
+  `ObservationsIncludedEvent` follows each submitted request and lists only
+  retained observation messages, with their source, refs and `ObservationForm`
+  (`FULL` or `SUMMARY`). Removed, edited or compacted messages are excluded;
+  matching ordinary text never implies inclusion. Both metadata and inclusion
+  events survive JSONL replay. `SessionLog.included_observations(request)`
+  exposes the same provenance query.
 - Model request, assistant reply and response usage events carry `request_id`.
   Each submitted attempt receives a fresh ID, including context-limit retries.
   `SessionLog.request(id)` retrieves its submitted snapshot; `request_finished(id)`
@@ -104,7 +115,6 @@ See the [event guide](docs/guides/events.md) for lifecycle phases and the
   and timeout as well as success or error. `ToolStatus.CANCELLED` and
   `ToolStatus.TIMEOUT` identify those outcomes. Resume repair closes orphan model
   requests and tool executions before repairing the turn.
-
 - Export `SessionLog` from the root SDK for plugin injection and log access.
 - Class `name: Inject[T]` dependencies resolve before setup on each mount.
   Required dependencies infer `needs`; optional dependencies receive `None`
@@ -113,7 +123,6 @@ See the [event guide](docs/guides/events.md) for lifecycle phases and the
   declaring class, inherited unchanged by subclasses. `provides=SomeKey`
   chooses another service key; `provides=False` disables inherited publication.
   Strict installation checks closed declared cycles before running setup.
-
 - `@tool(description="...")` supplies an explicit model-facing description while
   leaving the method's docstring available for developer documentation. An
   explicit string wins over the docstring, including `""` to suppress it.

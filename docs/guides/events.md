@@ -70,6 +70,11 @@ completion. Existing version 2 JSONL records without request IDs acquire stable
 `session_id:index` identities when loaded. Recovery closes orphan requests as
 cancelled before repairing their turn.
 
+`ObservationsIncludedEvent(request_id, observations)` records the observation
+messages actually present after request transformation. It follows the request
+event even when the tuple is empty. Each `IncludedObservation` carries its source,
+refs and full/summary form; see [observation delivery](context.md).
+
 ## Tool lifecycle
 
 For an application asking whether a tool is finished, observe

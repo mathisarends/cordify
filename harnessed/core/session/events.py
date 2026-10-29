@@ -56,6 +56,11 @@ class ModelRequestOutcome(StrEnum):
     CONTEXT_EXCEEDED = "context_exceeded"
 
 
+class ObservationForm(StrEnum):
+    FULL = "full"
+    SUMMARY = "summary"
+
+
 class TurnOutcome(StrEnum):
     COMPLETED = "completed"
     INTERRUPTED = "interrupted"
@@ -447,6 +452,31 @@ class ModelRequestFailedEvent(SessionEvent):
 
 
 @dataclass(frozen=True)
+class IncludedObservation:
+    source: str
+    refs: tuple[str, ...]
+    form: ObservationForm
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "refs", tuple(self.refs))
+        object.__setattr__(self, "form", ObservationForm(self.form))
+
+
+@dataclass(frozen=True)
+class ObservationsIncludedEvent(SessionEvent):
+    __hash__ = None
+
+    type: Literal[EventKind.OBSERVATIONS_INCLUDED] = field(
+        default=EventKind.OBSERVATIONS_INCLUDED, kw_only=True
+    )
+    request_id: Identifier
+    observations: tuple[IncludedObservation, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "observations", tuple(self.observations))
+
+
+@dataclass(frozen=True)
 class ModelUsageRecordedEvent(SessionEvent):
     __hash__ = None
 
@@ -740,6 +770,7 @@ type LogEvent = Annotated[
         | ContextMessageEvent
         | ContextValueChangedEvent
         | ObservationRecordedEvent
+        | ObservationsIncludedEvent
         | ModelRequestedEvent
         | ModelRequestFailedEvent
         | ModelUsageRecordedEvent

@@ -67,6 +67,22 @@ Large knowledge bases fit tool retrieval: injected services perform the search,
 and the model requests the tool when needed. Retrieval avoids paying for unused
 knowledge on every step.
 
+Attach application identifiers with `Observation(..., refs=("hint-1", "hint-2"))`.
+These refs are durable metadata, separate from the rendered text. After all
+request hooks and compaction, `ObservationsIncludedEvent` follows
+`ModelRequestedEvent` with the same `request_id`. Each `IncludedObservation`
+contains `source`, `refs` and `form`, an `ObservationForm.FULL` or
+`ObservationForm.SUMMARY` value from `harnessed.events`.
+
+Use this event to acknowledge delivered hints: consume refs only for the relevant
+source and full form. Old summaries can still contain refs and are reported as
+summaries. An empty inclusion tuple means no observation message survived in that
+request. Message IDs encode the observation and its rendered form; transformations
+must retain the message's identity and content to retain its provenance. A hook
+that removes, redacts or rewrites an observation excludes that message from the
+event, as does compaction. Text matching an application ID elsewhere in the prompt
+never counts as inclusion.
+
 | Information | Mechanism |
 | --- | --- |
 | Role, rules, permanent guidance | Instructions / plugin guidance |

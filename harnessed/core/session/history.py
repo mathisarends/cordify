@@ -9,7 +9,9 @@ from harnessed.core.session.events import (
     ContextLifetime,
     ContextMessageEvent,
     ContextValueChangedEvent,
+    IncludedObservation,
     ModelRequestedEvent,
+    ObservationForm,
     ObservationPolicyAppliedEvent,
     ObservationRecordedEvent,
     SessionEvent,
@@ -23,6 +25,14 @@ from harnessed.core.session.events import (
 )
 
 type HistoryFold = Callable[[Iterable[SessionEvent]], tuple[tuple[int, Message], ...]]
+
+
+def _observation_message(event: ObservationRecordedEvent, form: ObservationForm) -> User:
+    observation = event.observation
+    return User(
+        observation.full if form is ObservationForm.FULL else observation.summary,
+        id=f"observation:{event.turn_id}:{event.step}:{observation.source}:{form}",
+    )
 
 
 class MessageProjection:
@@ -123,15 +133,10 @@ class MessageProjection:
             candidates = visible | selected
         for seq in candidates:
             event = self._observation_events[seq]
-            content = event.observation.full if seq in active else event.observation.summary
-            if content and self._eligible(seq) and (selected is None or seq in selected):
-                self._put(
-                    seq,
-                    User(
-                        content,
-                        id=f"observation:{event.turn_id}:{event.step}:{source}",
-                    ),
-                )
+            form = ObservationForm.FULL if seq in active else ObservationForm.SUMMARY
+            message = _observation_message(event, form)
+            if message.text and self._eligible(seq) and (selected is None or seq in selected):
+                self._put(seq, message)
                 visible.add(seq)
             else:
                 self._entries.pop(seq, None)
@@ -244,6 +249,28 @@ class MessageProjection:
     def origin(self, seq: int) -> str | None:
         return self._origins.get(seq)
 
+    def included_observations(
+        self, messages: tuple[Message, ...]
+    ) -> tuple[IncludedObservation, ...]:
+        """Match final message identities and values, without scanning prompt text."""
+        provenance: dict[str, tuple[User, IncludedObservation]] = {}
+        for event in self._observation_events.values():
+            for form in ObservationForm:
+                message = _observation_message(event, form)
+                if message.text:
+                    provenance[message.id] = (
+                        message,
+                        IncludedObservation(event.observation.source, event.observation.refs, form),
+                    )
+        included = []
+        seen: set[str] = set()
+        for message in messages:
+            original = provenance.get(message.id)
+            if original is not None and message == original[0] and message.id not in seen:
+                included.append(original[1])
+                seen.add(message.id)
+        return tuple(included)
+
 
 def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
     return tuple(event.request for event in events if isinstance(event, ModelRequestedEvent))
@@ -321,13 +348,12 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     observation.full if active_step == (turn_id, step) else observation.summary
                 )
                 if content and (active_step == (turn_id, step) or seq in visible_observations):
-                    add(
-                        seq,
-                        User(
-                            content,
-                            id=f"observation:{turn_id}:{step}:{observation.source}",
-                        ),
+                    form = (
+                        ObservationForm.FULL
+                        if active_step == (turn_id, step)
+                        else ObservationForm.SUMMARY
                     )
+                    add(seq, _observation_message(event, form))
             case ToolCallFinishedEvent(call_id=call_id, result=result):
                 add(
                     seq,
