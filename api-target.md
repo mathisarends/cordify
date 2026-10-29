@@ -605,7 +605,7 @@ result = await session.run("Summarize the open issues.")
 result.text  # final assistant text of *this* turn
 result.output  # typed output (see below), else None
 result.usage  # Usage(input_tokens, output_tokens, cache_read_tokens, reasoning_tokens, cost)
-result.stop_reason  # StopReason (StrEnum): END, MAX_TOKENS, MAX_STEPS, STOPPED, ABORTED, DISCARDED
+result.stop_reason  # StopReason (StrEnum): END, MAX_TOKENS, MAX_STEPS, TOKEN_BUDGET, STOPPED, ABORTED, DISCARDED
 result.completed  # True only for StopReason.END; False for limits, stop, abort and discard
 result.turn_id
 result.messages  # messages of this turn
@@ -630,6 +630,17 @@ result.output.severity  # typed as Triage
 ```python
 await session.run("What's in this picture?", attachments=[Image.from_path("bug.png")])
 ```
+
+**Limits pro Run:**
+
+```python
+result = await session.run("Fix the failing test.", max_steps=8, token_budget=50_000)
+```
+
+- `max_steps` ersetzt für diesen Turn das `AgentLoop(max_steps=...)`; `token_budget` begrenzt die Summe aus Input- und Output-Tokens aller Model-Calls des Turns (inklusive Compaction).
+- Das Budget wird vor jedem Step geprüft. Ist es erreicht, endet der Turn mit `StopReason.TOKEN_BUDGET`; ein laufender Step wird nicht abgebrochen.
+- Beide Limits stehen im `InboxAdded`- und `TurnStart`-Event und gelten nach einem Neustart weiter.
+- Ein Wall-Clock-Limit ist keine eigene Option: Ein Timer, der `session.stop()` aufruft, beendet den Turn sauber mit `StopReason.STOPPED` (8.2).
 
 **Ohne Session-Block** (ephemere In-Memory-Session):
 

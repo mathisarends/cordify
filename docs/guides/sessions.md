@@ -146,6 +146,23 @@ await session.wait_until_idle()  # Wait for all queued turns too.
 outstanding calls and returns `StopReason.ABORTED`. Both return to `SessionStatus.IDLE`.
 An abort overtakes a pending graceful stop. Repeated controls are safe.
 
+Limit a single turn with `run(..., max_steps=8, token_budget=50_000)`. The token
+budget counts input plus output tokens of every model call in the turn and is
+checked before each step, so the turn ends with `StopReason.TOKEN_BUDGET` instead
+of starting another one. For a wall-clock limit, stop the turn from a timer; the
+caller still receives a normal result:
+
+```python
+handle = await session.submit("Investigate the outage.")
+timer = asyncio.get_running_loop().call_later(
+    120, lambda: asyncio.ensure_future(session.stop())
+)
+try:
+    result = await handle.result()  # StopReason.STOPPED after two minutes
+finally:
+    timer.cancel()
+```
+
 Queued runs receive `StopReason.DISCARDED` unless `keep_inbox=True`. Retained
 inputs always start separate turns. Pause accepts queued runs but prevents them
 from starting until `resume()`. `wait_until_idle()` also waits through a pause;

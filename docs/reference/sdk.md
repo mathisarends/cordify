@@ -24,7 +24,7 @@ and SDK errors from `harnessed.errors`.
 
 | Member | Behavior |
 | --- | --- |
-| run(prompt, output=None, attachments=(), context=None, settings=None) | Queue and await this turn's RunResult[T] |
+| run(prompt, output=None, attachments=(), context=None, settings=None, max_steps=None, token_budget=None) | Queue and await this turn's RunResult[T] |
 | submit(prompt, output=None, ...) | Acknowledge queued input and return RunHandle[T] |
 | stream(prompt, output=None, ...) | Namespaced UI and custom events, ending with events.turn.Finished |
 | steer(content, attachments=()) | Send a next-step correction and return its InboxItem |
@@ -55,7 +55,9 @@ See [session boundaries and restart behavior](../guides/sessions.md).
 Configure loop options on `AgentLoop(...)` in `plugins=`: step/output budgets,
 parallel tool limits, timeouts and context-window overrides belong to the agent
 configuration. `session(id)` opens that configured runtime; it has no per-session
-loop overrides. `ToolOutputLimit(...)` and `Approvals(...)` replace their default
+loop overrides. A single run may narrow the step limit with `max_steps=` and cap
+the turn's billed input plus output tokens with `token_budget=`; both are stored
+with the turn and survive a restart. `ToolOutputLimit(...)` and `Approvals(...)` replace their default
 policy slots explicitly.
 
 ## RunResult and values
@@ -70,7 +72,7 @@ output is None. See [structured answers](../guides/structured-output.md) for ret
 limits, incomplete turns and restoration after a process restart.
 The [UI stream](../guides/streaming.md) carries text/reasoning deltas, tool lifecycle,
 approval requests, status and one terminal result; raw log subscriptions are separate.
-StopReason includes END, MAX_TOKENS, MAX_STEPS, STOPPED, ABORTED and DISCARDED.
+StopReason includes END, MAX_TOKENS, MAX_STEPS, TOKEN_BUDGET, STOPPED, ABORTED and DISCARDED.
 
 `ModelUsage` keeps input/output, cache-read/write, optional reasoning tokens and
 optional cost separate. Unknown optional counters remain unknown when combined.

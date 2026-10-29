@@ -15,7 +15,13 @@ def test_canonical_tags_roundtrip_with_discriminated_schema():
     assert encode_event(event) == {
         "version": 1,
         "type": "turn.start",
-        "data": {"turn_id": "one", "input_id": None, "settings": {}, "output_schema": None},
+        "data": {
+            "turn_id": "one",
+            "input_id": None,
+            "settings": {},
+            "output_schema": None,
+            "limits": {"max_steps": None, "token_budget": None},
+        },
     }
     assert decode_event(encode_event(event)) == event
 

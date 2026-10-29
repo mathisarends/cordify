@@ -17,6 +17,8 @@ class RunOptions(TypedDict, total=False):
     attachments: Iterable[Attachment]
     context: Mapping[str, Any] | None
     settings: Mapping[str, Any] | None
+    max_steps: int | None
+    token_budget: int | None
 
 
 class AgentLoopConfig(PluginConfig):

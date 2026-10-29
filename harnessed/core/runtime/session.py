@@ -52,6 +52,7 @@ from harnessed.core.session.events import (
     InboxRemoved,
     SessionEvent,
     TurnEnd,
+    TurnLimits,
     TurnStart,
 )
 from harnessed.core.session.session import SessionLog
@@ -364,10 +365,18 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
+        max_steps: int | None = None,
+        token_budget: int | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
     ) -> RunResult[Any]:
         handle = await self.submit(
-            content, attachments=attachments, context=context, settings=settings, output=output
+            content,
+            attachments=attachments,
+            context=context,
+            settings=settings,
+            max_steps=max_steps,
+            token_budget=token_budget,
+            output=output,
         )
         return await handle.result()
 
@@ -392,10 +401,13 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
+        max_steps: int | None = None,
+        token_budget: int | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
     ) -> RunHandle[Any]:
         """Durably enqueue a turn and return its session-owned completion handle."""
         self.control.check_open()
+        limits = TurnLimits(max_steps, token_budget)
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
         self._output_values.hold(schema)
@@ -422,6 +434,7 @@ class Session:
                 context=context,
                 settings=settings,
                 output_schema=schema,
+                limits=limits,
                 prepared=prepared,
             )
         except BaseException:
@@ -459,9 +472,12 @@ class Session:
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
+        max_steps: int | None = None,
+        token_budget: int | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
         buffer_size: int = 256,
     ) -> AsyncGenerator[EventStream[Any], None]:
+        limits = TurnLimits(max_steps, token_budget)
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
         with self._output_values.expect(schema):
@@ -472,6 +488,7 @@ class Session:
                     context=context,
                     settings=settings,
                     output_schema=schema,
+                    limits=limits,
                     prepared=approvals.prepared,
                     buffer_size=buffer_size,
                 )
@@ -532,6 +549,7 @@ class Session:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
+        limits: TurnLimits | None = None,
         prepared: Callable[[InboxAdded], None] | None = None,
         buffer_size: int = 256,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -545,6 +563,7 @@ class Session:
                 context=context,
                 settings=settings,
                 output_schema=output_schema,
+                limits=limits,
                 prepared=prepared,
             )
             input_id = item.id

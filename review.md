@@ -47,12 +47,6 @@ an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
 
 ### Usability and expectation conformity
 
-**U5. Loop limits are agent-wide only.** The shared services now come from an
-internal `RuntimeServices` plugin, so a replacement `loop` keeps its tools. Still
-open: `max_steps`, `tool_timeout` and `context_window` exist only on `AgentLoop(...)`,
-with no per-run override (`RunOptions` has `attachments`, `context` and `settings`),
-and `context_window` can be set on both `PydanticAIModel` and `AgentLoop` (see M1).
-
 **U8. Two ways to read everything.** `session.events`, `.messages`, `.usage`,
 `.turns` and `.last()` mirror `session.log.*`. `Session` also exposes `ctx`, `log`,
 `options`, `control`, `approvals` and `inbox` as public attributes. Examples mix
@@ -60,11 +54,6 @@ both (`session.log.approvals.grant_for(...)`). Decide which surface is public an
 make the rest private.
 
 ### Missing capabilities agents need
-
-**M1. Run budgets.** Only a global `max_steps` exists. Agents need, per run:
-a step limit, a token or cost limit (`ModelUsage` is already summed per turn),
-and a wall-clock timeout that ends the turn cleanly instead of cancelling the
-caller's `await`.
 
 **M3. Asking the user from inside a tool.** `ToolContext` offers `progress`,
 `emit` and cancellation, but no way to ask a question or request approval

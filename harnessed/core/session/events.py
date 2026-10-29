@@ -55,6 +55,7 @@ class TurnOutcome(StrEnum):
     INTERRUPTED = "interrupted"
     STOPPED = "stopped"
     MAX_STEPS = "max_steps"
+    TOKEN_BUDGET = "token_budget"
     REJECTED = "rejected"
     ABORTED = "aborted"
     DISCARDED = "discarded"
@@ -252,6 +253,23 @@ class LogTailRecovered(SessionEvent):
             raise ValueError("Invalid recovered log tail bounds")
 
 
+def _check_limit(name: str, value: int | None) -> None:
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+        raise ValueError(f"{name} must be a positive integer or None")
+
+
+@dataclass(frozen=True)
+class TurnLimits:
+    """Per-turn overrides; None keeps the agent's configured behavior."""
+
+    max_steps: Annotated[int, Field(ge=1)] | None = None
+    token_budget: Annotated[int, Field(ge=1)] | None = None
+
+    def __post_init__(self) -> None:
+        _check_limit("max_steps", self.max_steps)
+        _check_limit("token_budget", self.token_budget)
+
+
 @dataclass(frozen=True)
 class InboxAdded(SessionEvent):
     __hash__ = None
@@ -264,6 +282,7 @@ class InboxAdded(SessionEvent):
     settings: Mapping[str, Any] = field(default_factory=dict)
     created_at: Annotated[float, Field(ge=0)] = field(default=0.0, kw_only=True)
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
+    limits: TurnLimits = field(default_factory=TurnLimits, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mode", InboxMode(self.mode))
@@ -276,6 +295,8 @@ class InboxAdded(SessionEvent):
             raise ValueError(f"{self.mode} requires a user message")
         if self.output_schema is not None and self.mode != InboxMode.FOLLOWUP:
             raise ValueError("Only a new turn can declare an output contract")
+        if self.limits != TurnLimits() and self.mode != InboxMode.FOLLOWUP:
+            raise ValueError("Only a new turn can declare limits")
         object.__setattr__(self, "context", tuple(self.context))
         object.__setattr__(self, "settings", freeze(self.settings))
 
@@ -288,6 +309,7 @@ class InboxAdded(SessionEvent):
         context: tuple[Message, ...] = (),
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
+        limits: TurnLimits | None = None,
     ) -> Self:
         if mode not in _INBOX_ROUTES:
             raise ValueError(f"Unknown inbox mode: {mode!r}")
@@ -299,6 +321,7 @@ class InboxAdded(SessionEvent):
             settings or {},
             created_at=time(),
             output_schema=output_schema,
+            limits=limits or TurnLimits(),
         )
 
 
@@ -320,6 +343,7 @@ class TurnStart(SessionEvent):
     input_id: str | None = None
     settings: Mapping[str, Any] = field(default_factory=dict)
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
+    limits: TurnLimits = field(default_factory=TurnLimits, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "settings", freeze(self.settings))

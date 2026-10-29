@@ -1,13 +1,18 @@
 import asyncio
+import json
+
+import pytest
 
 from harnessed import Agent as Application
-from harnessed import PolicyDecision
+from harnessed import Plugin, PolicyDecision, StopReason, ToolCall, tool
 from harnessed.core.errors import OutputTokenLimit
+from harnessed.core.messages import user
 from harnessed.core.model import ModelChunk, ModelUsage, TokenLimitBehavior
-from harnessed.core.session.events import InboxAdded
+from harnessed.core.session.codec import decode_event, encode_event
+from harnessed.core.session.events import InboxAdded, InboxMode, TurnLimits
 from harnessed.core.stream import TextDelta, TurnFinished
 from harnessed.plugins import Approvals
-from harnessed.testing import CallbackModel
+from harnessed.testing import CallbackModel, ScriptedModel
 
 
 class TwoTurns(CallbackModel):
@@ -126,3 +131,48 @@ async def test_step_limit_takes_precedence_over_the_last_model_finish_reason():
     ).run("task")
     assert result.stop_reason is StopReason.MAX_STEPS
     assert not result.completed
+
+
+class Looping(Plugin):
+    @tool(readonly=True)
+    async def look(self) -> str:
+        return "seen"
+
+
+def _tool_steps(count: int) -> list[list[ModelChunk]]:
+    step = [ModelChunk(tool_call=ToolCall("look")), ModelChunk(usage=ModelUsage(10, 2))]
+    return [list(step) for _ in range(count)]
+
+
+async def test_per_run_step_limit_overrides_the_agent_default_for_one_turn():
+    model = ScriptedModel([*_tool_steps(2), *_tool_steps(1), "done"])
+    async with Application(model=model, plugins=[Looping()]).session("limits") as session:
+        limited = await session.run("task", max_steps=2)
+        assert limited.stop_reason is StopReason.MAX_STEPS
+        assert not limited.completed
+        assert len(model.requests) == 2
+        unlimited = await session.run("again")
+        assert unlimited.completed and unlimited.text == "done"
+
+
+async def test_token_budget_stops_before_the_step_that_would_exceed_it():
+    model = ScriptedModel([*_tool_steps(3), "done"])
+    async with Application(model=model, plugins=[Looping()]).session("budget") as session:
+        result = await session.run("task", token_budget=20)
+        assert result.stop_reason is StopReason.TOKEN_BUDGET
+        assert not result.completed
+        assert len(model.requests) == 2
+        start = session.log.turns[-1].start
+        assert start.limits == TurnLimits(token_budget=20)
+        restored = decode_event(json.loads(json.dumps(encode_event(start))))
+        assert restored == start
+
+
+async def test_invalid_limits_fail_before_queueing_and_only_new_turns_carry_limits():
+    async with Application(model=ScriptedModel([])).session("invalid") as session:
+        for limits in ({"max_steps": 0}, {"token_budget": True}):
+            with pytest.raises(ValueError):
+                await session.run("task", **limits)
+        assert not session.log.events
+    with pytest.raises(ValueError, match="limits"):
+        InboxAdded.create(user("look"), InboxMode.STEER, limits=TurnLimits(max_steps=1))

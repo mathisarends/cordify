@@ -9,7 +9,13 @@ from harnessed.core.attachments import Attachment, prepare_input
 from harnessed.core.messages import Message
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.control import SessionControl
-from harnessed.core.session.events import InboxAdded, InboxMode, InboxRemovalReason, InboxRemoved
+from harnessed.core.session.events import (
+    InboxAdded,
+    InboxMode,
+    InboxRemovalReason,
+    InboxRemoved,
+    TurnLimits,
+)
 from harnessed.core.session.session import SessionLog
 
 
@@ -67,6 +73,7 @@ class InboxWriter:
         context: Mapping[str, Any] | None = None,
         settings: Mapping[str, Any] | None = None,
         output_schema: OutputSchema | None = None,
+        limits: TurnLimits | None = None,
         prepared: Callable[[InboxAdded], None] | None = None,
     ) -> InboxItem:
         async with self._sending():
@@ -76,7 +83,12 @@ class InboxWriter:
             )
             self.control.check_open()
             event = InboxAdded.create(
-                message, mode, context=contributions, settings=settings, output_schema=output_schema
+                message,
+                mode,
+                context=contributions,
+                settings=settings,
+                output_schema=output_schema,
+                limits=limits,
             )
             offset = len(self.log.events)
             try:

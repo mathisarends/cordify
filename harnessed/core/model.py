@@ -24,6 +24,7 @@ class StopReason(StrEnum):
     CONTENT_FILTER = "content_filter"
     ERROR = "error"
     MAX_STEPS = "max_steps"
+    TOKEN_BUDGET = "token_budget"
     STOPPED = "stopped"
     ABORTED = "aborted"
     DISCARDED = "discarded"

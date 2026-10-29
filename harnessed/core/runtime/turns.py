@@ -5,16 +5,18 @@ from uuid import uuid4
 
 from harnessed.core.errors import OutputTokenLimit
 from harnessed.core.hooks import TurnStopping
-from harnessed.core.model import StopReason, TokenLimitBehavior
+from harnessed.core.model import StopReason, TokenLimitBehavior, sum_usage
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.runtime.stepper import StepRunner
 from harnessed.core.session.events import (
     AssistantMessage,
+    ModelUsageRecorded,
     OutputValidated,
     OutputValidationFailed,
     StepOutcome,
     TurnEnd,
+    TurnLimits,
     TurnOutcome,
     TurnStart,
 )
@@ -52,23 +54,29 @@ class TurnRunner:
         previous = self.log.open_turn
         turn = previous.id if previous is not None else uuid4().hex
         first_step = len(previous.steps) + 1 if previous is not None else 1
-        starter = previous.events[0] if previous is not None else None
-        settings = starter.settings if isinstance(starter, TurnStart) else {}
         if previous is None:
             candidates = self.log.inbox.next_turn or self.log.inbox.next_step
-            settings = candidates[0].settings if candidates else {}
-            await self.log.append(
-                TurnStart(
-                    turn,
-                    candidates[0].message.id if candidates else None,
-                    settings,
-                    output_schema=candidates[0].output_schema if candidates else None,
-                )
+            first = candidates[0] if candidates else None
+            start = TurnStart(
+                turn,
+                first.message.id if first is not None else None,
+                first.settings if first is not None else {},
+                output_schema=first.output_schema if first is not None else None,
+                limits=first.limits if first is not None else TurnLimits(),
             )
-        elif previous.steps and not await self.continue_from(previous.steps[-1]):
-            await self.log.append(TurnEnd(turn))
-            return True
-        for step in range(first_step, self.options.max_steps + 1):
+            await self.log.append(start)
+        else:
+            start = previous.start
+            if previous.steps and not await self.continue_from(previous.steps[-1]):
+                await self.log.append(TurnEnd(turn))
+                return True
+        settings = start.settings
+        max_steps = start.limits.max_steps or self.options.max_steps
+        budget = start.limits.token_budget
+        for step in range(first_step, max_steps + 1):
+            if budget is not None and self._spent_tokens() >= budget:
+                await self.log.append(TurnEnd(turn, TurnOutcome.TOKEN_BUDGET))
+                return True
             with span(self.ctx, "step", session_id=self.log.id, turn_id=turn, step=step):
                 if not await self.steps.run(turn, step, settings):
                     return True
@@ -79,6 +87,12 @@ class TurnRunner:
             return True
         await self.log.append(TurnEnd(turn, TurnOutcome.MAX_STEPS))
         return True
+
+    def _spent_tokens(self) -> int:
+        """Input and output tokens billed so far in the open turn, compaction included."""
+        events = self.log.current_turn().events
+        usage = sum_usage(e.usage for e in events if isinstance(e, ModelUsageRecorded))
+        return usage.total_tokens
 
     async def continue_from(self, step: Step) -> bool:
         if step.reason == StepOutcome.CONTEXT_LIMIT:
