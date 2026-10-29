@@ -114,11 +114,10 @@ a step limit, a token or cost limit (`ModelUsage` is already summed per turn),
 and a wall-clock timeout that ends the turn cleanly instead of cancelling the
 caller's `await`.
 
-**M2. Provider failure story.** Retry policies are out of scope by design, so the
-SDK must at least: document which PydanticAI/provider-SDK retries apply and how to
-configure them; export the provider errors with `retry_after` (U6); and document
-and test the session state after a failed model call (is the turn ended, can the
-same input be resubmitted?).
+**M2. Provider errors at the root.** The models guide now documents provider-SDK
+retries and the session state after a failed call, and a test pins it. What's left
+is the export question from U6: applications catch `RateLimited` and the other
+provider errors from `harnessed.core.errors`.
 
 **M3. Asking the user from inside a tool.** `ToolContext` offers `progress`,
 `emit` and cancellation, but no way to ask a question or request approval

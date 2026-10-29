@@ -85,5 +85,30 @@ See [multimodal tool results](tools.md#multimodal-results) for text/image polici
 
 Authentication, rate limiting, context overflow, invalid requests and provider
 unavailability map to provider-independent errors in `harnessed.core.errors`.
-The SDK owns provider retries and protocol parsing. Mock-HTTP DeepSeek and Anthropic
-round trips cover this boundary without credentials or live remote calls.
+Mock-HTTP DeepSeek and Anthropic round trips cover this boundary without
+credentials or live remote calls.
+
+## Provider failures and retries
+
+Harnessed has no retry policy of its own. Retries come from the provider SDK client
+that PydanticAI uses; the OpenAI and Anthropic clients retry connection errors,
+429 and 5xx responses twice by default. Supply your own client to change that:
+
+```python
+from anthropic import AsyncAnthropic
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+
+client = AsyncAnthropic(max_retries=5)
+model = AnthropicModel("claude-sonnet-4-5", provider=AnthropicProvider(anthropic_client=client))
+agent = Agent(model=model)  # the caller owns this client
+```
+
+`OpenAIProvider(openai_client=AsyncOpenAI(max_retries=...))` works the same way.
+
+When a request still fails, `run()` raises the mapped error, for example
+`RateLimited` with `retry_after` and `status_code`. Completed steps stay in the log,
+and the failed turn ends as `TurnOutcome.ABORTED`. The session returns to `IDLE`,
+so it remains usable. The failed user message stays in history and is not queued
+again. To retry, send a short follow-up such as `run("continue")` instead of
+repeating the original prompt, which would duplicate it in history.
