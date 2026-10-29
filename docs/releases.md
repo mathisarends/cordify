@@ -28,6 +28,11 @@ library. Harnessed is distributed under the
 
 ## Unreleased
 
+Tools can now declare `@tool(enabled=...)` with a bool or a synchronous predicate
+using `Inject` and mounted plugin state. Disabled tools are hidden from model
+requests and cannot execute; conditions are checked again after approval and
+scheduling waits. See [conditional tools](guides/tools.md#conditional-tools).
+
 Plugin composition now requires explicit `needs=(...)` declarations. `Inject`
 binds values without inferring lifetime requirements. Add required services to
 the plugin class, `@plugin(needs=(...))` or `Bundle(..., needs=(...))` so missing

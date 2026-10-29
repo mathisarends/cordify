@@ -119,6 +119,7 @@ unhashable. See [values and record versions](../concepts/values.md).
 | --- | --- |
 | Plugin / @tool | Class-based reusable capability |
 | @tool(description="...") | Explicit model-facing description; None falls back to the docstring |
+| @tool(enabled=True \| False \| predicate) | Per-tool visibility and execution condition; synchronous predicates use Inject and mounted instance state |
 | PluginConfig / Config = MyConfig | Module-level validated configuration model |
 | PluginState(factory) | Typed state freshly created before each mount's setup; available through cleanup |
 | name: Inject[T] | Per-mount dependency assigned before setup; optional T \| None receives None if absent |
