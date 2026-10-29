@@ -386,6 +386,7 @@ await session.run("...", settings=ModelSettings(temperature=0))
 - Provider-spezifische Optionen (Reasoning-Effort, Thinking, Prompt-Caching) sind die provider-spezifischen Keys der pydantic-ai-`ModelSettings`. Wir reichen sie unverändert durch.
 - **Retries** macht pydantic-ai über den HTTP-Transport des Providers (`pydantic_ai.retries`). Eine eigene `RetryPolicy` gibt es nicht.
 - **Fehler:** `PydanticAIModel` bildet die Fehler von pydantic-ai auf unsere typisierten Fehler ab (`AuthError`, `RateLimited`, `ContextLengthExceeded`, …, Abschnitt 16). Plugins wie `Compaction` reagieren nur auf unsere Typen.
+- **Provider-native Tools** (Websuche, Code-Ausführung, …) sind die `AbstractNativeTool`-Objekte von pydantic-ai: `PydanticAIModel(..., native_tools=[WebSearchTool()])`. Der Provider führt sie innerhalb einer Antwort aus; sie werden keine harnessed-Toolcalls, laufen also nicht durch Policy oder Approvals, und bleiben im `provider_state` für den Replay erhalten.
 - **Kontextfenster:** pydantic-ai kennt es nicht zuverlässig. `PydanticAIModel` bringt deshalb eine kleine Tabelle für bekannte Modelle mit und nimmt `context_window=` für alle anderen. Fehlt beides, warnt `Compaction(at_ratio(...))` beim Start.
 
 ### 3.4 Eigenes Model

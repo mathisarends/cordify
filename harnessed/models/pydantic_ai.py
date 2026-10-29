@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from pydantic_ai.messages import ToolCallPart as NativeToolCall
     from pydantic_ai.models import Model as NativeModel
     from pydantic_ai.models import ModelRequestParameters, StreamedResponse
+    from pydantic_ai.native_tools import AbstractNativeTool
     from pydantic_ai.settings import ModelSettings
 
 
@@ -66,6 +67,11 @@ class PydanticAIModel:
     Strings are resolved by PydanticAI. Passed native model instances and their
     clients stay owned by the caller. Provider response state is persisted with
     assistant messages so signatures and reasoning survive tool rounds/replay.
+
+    ``native_tools`` forwards PydanticAI's provider-executed tools, such as
+    ``WebSearchTool`` or ``CodeExecutionTool``, with every request. The provider
+    runs them inside one response; their calls and results stay in the provider
+    state for replay and never become harnessed tool calls.
     """
 
     def __init__(
@@ -74,9 +80,11 @@ class PydanticAIModel:
         *,
         settings: ModelSettings | None = None,
         context_window: int | None = None,
+        native_tools: Sequence[AbstractNativeTool] = (),
     ) -> None:
         try:
             from pydantic_ai.models import infer_model
+            from pydantic_ai.native_tools import AbstractNativeTool
         except ImportError as exc:
             raise ConfigError(
                 f"Install the provider extra: uv add 'harnessed[{_extra(model)}]'"
@@ -91,6 +99,11 @@ class PydanticAIModel:
             raise ConfigError(f"Unable to configure model: {exc}") from exc
         if context_window is not None and (type(context_window) is not int or context_window < 1):
             raise ConfigError("context_window must be a positive integer")
+        if isinstance(native_tools, AbstractNativeTool) or not all(
+            isinstance(item, AbstractNativeTool) for item in native_tools
+        ):
+            raise ConfigError("native_tools must be a sequence of PydanticAI native tools")
+        self.native_tools = tuple(native_tools)
         self._owned = isinstance(model, str)
         self.settings = dict(settings or {})
         profile = self._native.profile
@@ -123,6 +136,13 @@ class PydanticAIModel:
             settings["max_tokens"] = request.max_tokens
         return settings
 
+    def _parameters(self, request: ModelRequest) -> ModelRequestParameters:
+        return _parameters(
+            request,
+            native_output=self.info.supports_structured_output,
+            native_tools=self.native_tools,
+        )
+
     async def request(self, request: ModelRequest) -> ModelResponse:
         from pydantic_ai.direct import model_request
 
@@ -132,9 +152,7 @@ class PydanticAIModel:
                     self._native,
                     _history(request),
                     model_settings=self._settings(request),
-                    model_request_parameters=_parameters(
-                        request, native_output=self.info.supports_structured_output
-                    ),
+                    model_request_parameters=self._parameters(request),
                     instrument=False,
                 )
                 return _response(native)
@@ -155,9 +173,7 @@ class PydanticAIModel:
                     self._native,
                     _history(request),
                     model_settings=self._settings(request),
-                    model_request_parameters=_parameters(
-                        request, native_output=self.info.supports_structured_output
-                    ),
+                    model_request_parameters=self._parameters(request),
                     instrument=False,
                 ) as native,
             ):
@@ -247,7 +263,12 @@ def _content(content: str | tuple[ContentPart, ...]):
     ]
 
 
-def _parameters(request: ModelRequest, *, native_output: bool = False) -> ModelRequestParameters:
+def _parameters(
+    request: ModelRequest,
+    *,
+    native_output: bool = False,
+    native_tools: Sequence[AbstractNativeTool] = (),
+) -> ModelRequestParameters:
     from pydantic_ai.models import ModelRequestParameters
     from pydantic_ai.output import OutputObjectDefinition
     from pydantic_ai.tools import ToolDefinition
@@ -269,7 +290,8 @@ def _parameters(request: ModelRequest, *, native_output: bool = False) -> ModelR
             )
             for tool in request.tools
             if schema is None or tool.name != "final_answer"
-        ]
+        ],
+        native_tools=list(native_tools),
     )
     if schema is not None:
         parameters.output_mode = (
@@ -328,6 +350,9 @@ def _response(response: NativeResponse) -> ModelResponse:
             thinking.append(part.content)
         elif isinstance(part, native.ToolCallPart):
             calls.append(_tool_call(part))
+        elif isinstance(part, native.NativeToolCallPart | native.NativeToolReturnPart):
+            # The provider already executed these; provider_state keeps them for replay.
+            continue
         else:
             raise ProviderError(f"Unsupported response part: {type(part).__name__}")
     raw = native.ModelMessagesTypeAdapter.dump_python([response], mode="json")[0]
@@ -341,6 +366,9 @@ def _response(response: NativeResponse) -> ModelResponse:
     reason = _STOP_REASONS.get(
         response.finish_reason or "", StopReason.TOOL_CALLS if calls else StopReason.END
     )
+    if reason is StopReason.TOOL_CALLS and not calls:
+        # Native calls finish inside the response; nothing is left to execute.
+        reason = StopReason.END
     return ModelResponse(
         message,
         ModelUsage(

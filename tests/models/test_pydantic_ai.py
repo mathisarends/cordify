@@ -17,12 +17,11 @@ from harnessed.core.errors import (
     ConfigError,
     ContextBudgetExceeded,
     InvalidRequest,
-    ProviderError,
     ProviderUnavailable,
     RateLimited,
 )
 from harnessed.core.messages import ImagePart, TextPart
-from harnessed.core.model import ModelRequest, ToolArgumentsMode
+from harnessed.core.model import ModelRequest, StopReason, ToolArgumentsMode
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
@@ -208,7 +207,18 @@ async def test_native_object_argument_patches_and_part_replacements_emit_snapsho
     assert final.arguments == {"a": 3, "b": 4} and final.id == "replacement"
 
 
-async def test_provider_native_tool_deltas_are_not_previewed_and_fail_with_a_provider_error():
+def _web_search_response(text: str = "It is sunny.") -> native.ModelResponse:
+    return native.ModelResponse(
+        [
+            native.NativeToolCallPart("web_search", {"query": "weather"}, "srv"),
+            native.NativeToolReturnPart("web_search", [{"title": "Forecast"}], "srv"),
+            native.TextPart(text),
+        ],
+        finish_reason="tool_call",
+    )
+
+
+async def test_provider_native_tool_deltas_are_not_previewed_or_executed():
     from harnessed.models.pydantic_ai import _Stream
 
     search = native.NativeToolCallPart("web_search", None, "srv", provider_name="anthropic")
@@ -224,14 +234,49 @@ async def test_provider_native_tool_deltas_are_not_previewed_and_fail_with_a_pro
                 yield event
 
         def get(self):
-            return native.ModelResponse([replace(search, args='{"q":"x"}')])
+            return _web_search_response()
 
-    chunks = []
-    with pytest.raises(ProviderError, match="NativeToolCallPart"):
-        async for chunk in _Stream(NativeStream()):
-            chunks.append(chunk)
+    stream = _Stream(NativeStream())
+    chunks = [chunk async for chunk in stream]
     assert [c.tool_call_start.name for c in chunks if c.tool_call_start] == ["add"]
-    assert not [c for c in chunks if c.tool_call_delta]
+    assert not [c for c in chunks if c.tool_call_delta or c.tool_call]
+    response = stream.response()
+    assert response.message.text == "It is sunny." and response.message.tool_calls == ()
+    assert response.stop_reason == StopReason.END
+
+
+async def test_native_tools_are_forwarded_and_their_parts_replay_from_provider_state():
+    from pydantic_ai.native_tools import WebSearchTool
+
+    received = []
+
+    def respond(messages, info):
+        received.append((messages, info.model_request_parameters.native_tools))
+        return _web_search_response()
+
+    search = WebSearchTool(max_uses=2)
+    model = PydanticAIModel(FunctionModel(respond), native_tools=[search])
+    first = await model.request(ModelRequest("fixture", (User("weather?"),)))
+    assert first.message.text == "It is sunny." and first.message.tool_calls == ()
+    assert first.stop_reason == StopReason.END
+    await model.request(ModelRequest("fixture", (User("weather?"), first.message, User("more"))))
+    assert [tools for _, tools in received] == [[search], [search]]
+    replayed = received[-1][0][1].parts
+    assert [type(part) for part in replayed] == [
+        native.NativeToolCallPart,
+        native.NativeToolReturnPart,
+        native.TextPart,
+    ]
+
+
+@pytest.mark.parametrize("native_tools", [["web_search"], "web_search", [object()]])
+def test_native_tools_must_be_pydantic_ai_native_tool_instances(native_tools):
+    from pydantic_ai.native_tools import WebSearchTool
+
+    with pytest.raises(ConfigError, match="native_tools"):
+        PydanticAIModel(FunctionModel(lambda m, i: None), native_tools=native_tools)
+    with pytest.raises(ConfigError, match="native_tools"):
+        PydanticAIModel(FunctionModel(lambda m, i: None), native_tools=WebSearchTool())
 
 
 @pytest.mark.parametrize("arguments", ['{"a":', "[1,2]", "null", '{"a":NaN}'])

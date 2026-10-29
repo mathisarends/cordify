@@ -17,6 +17,25 @@ model profile. Unknown windows remain unknown; configure `AgentLoop(context_wind
 when a budget policy needs an explicit limit. The loop does not assume 128k.
 When both are set, the `AgentLoop` value wins for that agent.
 
+## Provider-native tools
+
+Some providers run tools on their own servers, such as web search or code
+execution. Pass PydanticAI's native tool objects to the adapter:
+
+```python
+from pydantic_ai.native_tools import WebSearchTool
+
+from harnessed.models import PydanticAIModel
+
+model = PydanticAIModel("anthropic:claude-sonnet-5-5", native_tools=[WebSearchTool()])
+```
+
+They are sent with every request. The provider executes them inside one model
+response, so they never become harnessed tool calls: no policy, approval or
+`tool.*` events apply. Their calls and results are stored in the assistant
+message's provider state and replayed unchanged in later requests. Which tools a
+provider supports is decided by PydanticAI and the provider.
+
 ## Settings and ownership
 
 Pass PydanticAI model settings through `PydanticAIModel(..., settings=...)`, or set
