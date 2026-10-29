@@ -13,7 +13,7 @@ from harnessed.core.stream import (
     ToolArgumentsDeltaEvent,
     ToolCallGenerationStartedEvent,
 )
-from harnessed.core.tracing import span
+from harnessed.core.tracing import Span, span
 from harnessed.kernel import Context
 
 
@@ -23,10 +23,15 @@ class ModelResponder:
         self.log = log
 
     async def respond(self, request: ModelRequest, *, request_id: str) -> Assistant:
-        with span(self.ctx, "model", session_id=self.log.id, model=request.model):
-            return await self._stream_response(request, request_id=request_id)
+        with span(
+            self.ctx, "model", session_id=self.log.id, model=request.model, request_id=request_id
+        ) as current:
+            current.set_attribute("request", request)
+            return await self._stream_response(request, request_id=request_id, trace=current)
 
-    async def _stream_response(self, request: ModelRequest, *, request_id: str) -> Assistant:
+    async def _stream_response(
+        self, request: ModelRequest, *, request_id: str, trace: Span
+    ) -> Assistant:
         message_id = uuid4().hex
         calls: list[ToolCall] = []
         text: list[str] = []
@@ -64,12 +69,17 @@ class ModelResponder:
                 response = stream.response()
         except BaseException:
             if stream is not None and (usage := stream.usage) is not None:
+                trace.set_attribute("usage", usage)
                 await self.log.append(ModelUsageRecordedEvent(usage, request_id=request_id))
             if text or reasoning:
+                trace.set_attribute("output", message())
                 await self.log.append(
                     AssistantMessageEvent(message(), request_id=request_id, interrupted=True)
                 )
             raise
+        trace.set_attribute("usage", response.usage)
+        trace.set_attribute("output", response.message)
+        trace.set_attribute("stop_reason", response.stop_reason)
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
         await self.log.append(ModelUsageRecordedEvent(response.usage, request_id=request_id))

@@ -22,6 +22,7 @@ public APIs or persisted session formats.
 | Pause, stop, resume or fork work | [Sessions](guides/sessions.md) |
 | Approve side effects without a UI | [Approvals](guides/approvals.md) |
 | Test without network calls | [Testing](guides/testing.md) |
+| Send traces to Phoenix or Langfuse | [Tracing](guides/tracing.md) |
 | Run a complete SDK example | [Examples](guides/examples.md) |
 | Contribute or run all checks | [Development](contributing/development.md) |
 

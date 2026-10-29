@@ -47,9 +47,12 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.26_ui_stream",
         "examples.27_skills",
         "examples.28_custom_events",
+        "examples.29_tracing",
     ],
 )
 def test_offline_sdk_example_runs(module):
+    if module == "examples.29_tracing":
+        pytest.importorskip("opentelemetry.sdk")
     try:
         result = subprocess.run(
             [sys.executable, "-c", _RUN_EXAMPLE, module],

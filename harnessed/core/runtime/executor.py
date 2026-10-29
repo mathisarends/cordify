@@ -153,8 +153,11 @@ class ToolExecutor:
     async def invoke(self, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
         with span(
             self.ctx, "tool", session_id=self.log.id, tool=plan.call.name, call_id=plan.call.id
-        ):
-            return await self.execute(plan)
+        ) as current:
+            current.set_attribute("input", plan.call)
+            result, reviewable = await self.execute(plan)
+            current.set_attribute("output", result)
+            return result, reviewable
 
     async def execute(self, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
         call = plan.call

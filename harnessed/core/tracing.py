@@ -6,6 +6,12 @@ from harnessed.kernel import Context
 
 
 class Span(Protocol):
+    """Runtime span attributes may include typed request, usage and result values.
+
+    Exporters decide whether to capture content; the default tracer discards it
+    without serialization. Scalar attributes describe IDs, outcomes and timing.
+    """
+
     def set_attribute(self, name: str, value: Any) -> None: ...
 
 

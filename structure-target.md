@@ -10,7 +10,7 @@ belong in [the roadmap](docs/contributing/roadmap.md).
 | --- | --- | --- |
 | `kernel` | Reversible plugin lifetimes, registration ownership, services, effects, hooks and per-mount state | Standard library only |
 | `core` | Default agent mechanisms and provider-independent domain contracts | Kernel and Pydantic |
-| `plugins`, `models` | Opt-in features and provider integrations | Core, kernel and each feature's own optional dependencies |
+| `plugins`, `models`, `integrations` | Opt-in features, provider integrations and telemetry | Core, kernel and each feature's own optional dependencies |
 | `agent.py` and public facades | Application SDK and explicit public exports | The lower layers |
 | `testing` | Scripted models, fakes, assertions and pytest support | Library layers; production code never imports testing |
 
@@ -35,6 +35,9 @@ protocol instead.
   with the shell's platform-specific implementation.
 - `models/pydantic_ai.py` is the only provider-SDK integration. It imports its
   optional dependency on use. Only `plugins/skills.py` imports YAML.
+- `integrations/opentelemetry.py` implements the optional `tracer` slot against
+  an application-owned OpenTelemetry provider. Import it explicitly with the
+  `otel` extra installed; SDK and feature facades never import OpenTelemetry.
 - `events/`, `hooks.py` and `errors.py` expose public names for core domain values,
   hooks and the error tree.
 - `agent.py` resolves the model/instructions/plugin recipe and opens owned sessions.

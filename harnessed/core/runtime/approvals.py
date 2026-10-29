@@ -184,8 +184,16 @@ class SessionApprovals:
         *,
         timeout: float | None = None,
     ) -> ApprovalAnswer:
-        with span(self.ctx, "approval_wait", session_id=self.log.id, tool=request.call.name):
-            return await self._wait(request, approver, timeout=timeout)
+        with span(
+            self.ctx,
+            "approval_wait",
+            session_id=self.log.id,
+            tool=request.call.name,
+            call_id=request.call.id,
+        ) as current:
+            decision = await self._wait(request, approver, timeout=timeout)
+            current.set_attribute("decision", decision)
+            return decision
 
     async def _wait(
         self,
