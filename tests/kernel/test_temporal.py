@@ -6,11 +6,11 @@ import pytest
 from harnessed import Context, Inject, Plugin, ToolCall, plugin
 from harnessed.core.plugin import Bundle
 from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.runtime.services import RuntimeServices
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Emit, MissingService
 from harnessed.kernel.plugin import PluginStatus
-from harnessed.plugins import AgentLoop
 
 
 @dataclass
@@ -202,7 +202,7 @@ async def test_class_and_bundle_explicit_needs_remove_tools_and_prompt_sections(
     bundle.on(Ping, lambda event: events.append("ping"))
 
     async with Context() as ctx:
-        await ctx.install([AgentLoop(), FeaturePlugin(), bundle])
+        await ctx.install([RuntimeServices(), FeaturePlugin(), bundle])
         remove = ctx.provide(Backend, Backend("first"))
         await ctx.settle()
         assert await ctx[SystemPrompt].render() == "first"

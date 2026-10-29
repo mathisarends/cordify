@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from harnessed.core.budget import ContextBudget
 from harnessed.core.model import Model, TokenLimitBehavior
 from harnessed.core.plugin import Plugin
-from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.runtime.options import AgentLoopConfig, AgentOptions
 from harnessed.core.runtime.session import Session
 from harnessed.core.session.session import SessionLog
-from harnessed.core.tokens import ApproximateTokenCounter, TokenCounter
 from harnessed.core.tools.output_limit import ToolOutputLimit
-from harnessed.core.tools.registry import ErrorFormatter, ToolRegistry
+from harnessed.core.tools.registry import ErrorFormatter
 from harnessed.kernel import Context
 
 
@@ -23,7 +20,7 @@ _DEFAULTS = AgentLoopConfig()
 
 
 class AgentLoop(Plugin, slot="loop"):
-    """Configure one ReAct loop and provide its prompt, tools and token counter."""
+    """Configure the ReAct loop: step, tool, approval and output limits."""
 
     Config = AgentLoopConfig
 
@@ -55,10 +52,6 @@ class AgentLoop(Plugin, slot="loop"):
         self.error_formatter = error_formatter
 
     async def setup(self, ctx: Context) -> None:
-        ctx.provide(ToolRegistry, ToolRegistry(ctx, default_timeout=self.config.tool_timeout))
-        ctx.provide(SystemPrompt, SystemPrompt(ctx))
-        ctx.provide(TokenCounter, ApproximateTokenCounter())
-        ctx.provide(ContextBudget, ContextBudget())
         ctx.provide(AgentFactory, ReactLoopFactory(self.config, self.error_formatter))
 
 

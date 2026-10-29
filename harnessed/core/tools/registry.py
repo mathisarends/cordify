@@ -108,9 +108,8 @@ class _Converter:
 
 
 class ToolRegistry:
-    def __init__(self, ctx: Context, *, default_timeout: float | None = None) -> None:
+    def __init__(self, ctx: Context) -> None:
         self._ctx = ctx
-        self._default_timeout = _TIMEOUT.validate_python(default_timeout)
         self._tools: dict[str, list[_Tool]] = {}
         self._converters: dict[type, list[_Converter]] = {}
         self._references: list[ToolReference] = []
@@ -346,7 +345,9 @@ class ToolRegistry:
         call_context: ToolContext | None = None,
         _expected: object = _UNSPECIFIED,
         error_formatter: ErrorFormatter | None = None,
+        default_timeout: float | None = None,
     ) -> ToolResult:
+        """Run one call; a tool's own timeout wins over the caller's default."""
         if call.malformed is not None:
             return ToolResult.error("Tool arguments must be a valid JSON object")
         tool = self._visible(self._tools.get(call.name, []))
@@ -369,7 +370,7 @@ class ToolRegistry:
             bound = tool.plan.bind(ctx, kwargs=arguments, extra=extra)
             with tool.owner.activate():
                 async with asyncio.timeout(
-                    tool.spec.timeout if tool.spec.timeout is not None else self._default_timeout
+                    tool.spec.timeout if tool.spec.timeout is not None else default_timeout
                 ):
                     if inspect.iscoroutinefunction(tool.callback):
                         value = await tool.callback(*bound.args, **bound.kwargs)

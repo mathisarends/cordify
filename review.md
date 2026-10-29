@@ -47,14 +47,11 @@ an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
 
 ### Usability and expectation conformity
 
-**U5. Loop limits hide in a slot plugin.** `max_steps`, `tool_timeout`,
-`max_parallel_tools` and `context_window` need `AgentLoop(...)` in `plugins`.
-Replacing the `loop` slot also removes `ToolRegistry`, `SystemPrompt`,
-`TokenCounter` and `ContextBudget`, which `AgentLoop.setup` provides, so a custom
-loop silently loses tools. `context_window` can be set on both `PydanticAIModel`
-and `AgentLoop`. There is no per-run override: `RunOptions` only has
-`attachments`, `context` and `settings`. Move the shared services out of the loop
-plugin and allow per-run limits (see M1).
+**U5. Loop limits are agent-wide only.** The shared services now come from an
+internal `RuntimeServices` plugin, so a replacement `loop` keeps its tools. Still
+open: `max_steps`, `tool_timeout` and `context_window` exist only on `AgentLoop(...)`,
+with no per-run override (`RunOptions` has `attachments`, `context` and `settings`),
+and `context_window` can be set on both `PydanticAIModel` and `AgentLoop` (see M1).
 
 **U8. Two ways to read everything.** `session.events`, `.messages`, `.usage`,
 `.turns` and `.last()` mirror `session.log.*`. `Session` also exposes `ctx`, `log`,

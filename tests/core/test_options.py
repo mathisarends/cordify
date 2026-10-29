@@ -48,9 +48,9 @@ def test_context_budget_options_are_strict(options):
 
 
 @pytest.mark.parametrize("timeout", [0, -1, True, "1", float("nan"), float("inf")])
-def test_tool_timeouts_reject_invalid_values_at_both_registration_boundaries(timeout):
+def test_tool_timeouts_reject_invalid_values_at_both_configuration_boundaries(timeout):
     with pytest.raises(ValidationError):
-        ToolRegistry(Context(), default_timeout=timeout)
+        AgentLoopConfig(tool_timeout=timeout)
     registry = ToolRegistry(Context())
     with pytest.raises(ValidationError):
         registry.register(lambda: None, timeout=timeout)

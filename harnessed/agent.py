@@ -16,6 +16,7 @@ from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.runtime.opener import open_session
 from harnessed.core.runtime.options import RunOptions
 from harnessed.core.runtime.result import RunResult
+from harnessed.core.runtime.services import RuntimeServices
 from harnessed.core.runtime.session import Session
 from harnessed.core.session.repository import SessionRepository
 from harnessed.core.session.session import SessionLog
@@ -85,7 +86,7 @@ class Agent:
                     continue
                 occupied[spec.slot] = len(defaults)
             defaults.append(value)
-        self.plugins = tuple(defaults)
+        self.plugins = (RuntimeServices(), *defaults)
         self._events = EventRegistry(
             kind for plugin in self.plugins for kind in plugin_events(plugin)
         )

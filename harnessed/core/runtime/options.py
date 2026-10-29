@@ -38,6 +38,7 @@ class AgentOptions:
 
     model: str
     max_steps: int
+    tool_timeout: float
     max_tokens: int | None
     context_window: int | None
     tool_output_limit: ToolOutputLimit
@@ -59,6 +60,7 @@ class AgentOptions:
         return cls(
             model=model.name,
             max_steps=config.max_steps,
+            tool_timeout=config.tool_timeout,
             max_tokens=config.max_tokens,
             context_window=config.context_window or model.context_window,
             tool_output_limit=tool_output_limit,

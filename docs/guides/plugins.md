@@ -3,7 +3,10 @@
 An Agent is a resolved plugin list. `model=` supplies `Service(Model, model)`;
 `instructions=` supplies `Instructions`. The default runtime plugins are
 `AgentLoop`, `MemorySessions`, `ToolOutputLimit`, `Approvals` and `NoopTracer`.
-Use their public imports from `harnessed.plugins`.
+Use their public imports from `harnessed.plugins`. The tool registry, system prompt,
+token counter and context budget come from an internal plugin without a slot that
+the Agent always installs first. A replacement `loop` therefore keeps the tools;
+replace a single service with `Service(TokenCounter, counter)`.
 
 ## Replace a default
 

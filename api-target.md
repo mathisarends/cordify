@@ -20,10 +20,11 @@ Harnessed bleibt beim Prinzip von Cordis und DSH: Ein Agent ist eine Liste von P
 4. **Defaults sind normale Plugins mit einem Slot.** Ein Plugin mit demselben Slot ersetzt den Default. Zwei Plugins mit demselben Slot in `plugins=` führen zu einem `PluginConflict`.
 5. **Built-ins haben keinen privilegierten Weg.** Sie nutzen nur öffentliche API (P1-6), also kann jeder sie nachbauen oder ersetzen.
 6. **`agent.plugins` zeigt die vollständige, aufgelöste Zusammensetzung.**
+7. **Gemeinsame Services gehören keinem Slot.** `RuntimeServices` (ohne Slot, immer zuerst) stellt `ToolRegistry`, `SystemPrompt`, `TokenCounter` und `ContextBudget` bereit. Wer den `loop`-Slot ersetzt, behält so Tools und Prompt; einzelne Services ersetzt `Service(Key, value)`.
 
 ```python
 >>> agent.plugins
-(AgentLoop(), MemorySessions(), ToolOutputLimit(max_chars=32000), Approvals(), NoopTracer(),
+(RuntimeServices(), AgentLoop(), MemorySessions(), ToolOutputLimit(max_chars=32000), Approvals(), NoopTracer(),
  Service(Model, PydanticAIModel('deepseek:deepseek-chat')), Instructions('Keep answers concise.'), Calculator())
 ```
 

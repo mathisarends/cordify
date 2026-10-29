@@ -7,6 +7,7 @@ from harnessed import Agent
 from harnessed.core.budget import ContextBudget
 from harnessed.core.errors import PluginConflict, SessionLocked
 from harnessed.core.model import ModelInfo
+from harnessed.core.runtime.services import RuntimeServices
 from harnessed.core.tokens import TokenCounter
 from harnessed.plugins import (
     AgentLoop,
@@ -25,6 +26,7 @@ from harnessed.testing import ScriptedModel
 def test_resolved_composition_contains_actual_configured_plugins():
     app = Agent(model=ScriptedModel([]), plugins=[AgentLoop(max_steps=9), ToolOutputLimit(512)])
     assert [type(value) for value in app.plugins] == [
+        RuntimeServices,
         AgentLoop,
         MemorySessions,
         ToolOutputLimit,
@@ -33,8 +35,8 @@ def test_resolved_composition_contains_actual_configured_plugins():
         Instructions,
         Service,
     ]
-    assert app.plugins[0].config.max_steps == 9
-    assert app.plugins[2].max_chars == 512
+    assert app.plugins[1].config.max_steps == 9
+    assert app.plugins[3].max_chars == 512
     with pytest.raises(PluginConflict, match="loop"):
         Agent(plugins=[AgentLoop(), AgentLoop()])
     with pytest.raises(ValidationError):
@@ -106,3 +108,25 @@ async def test_context_plugin_is_inspectable_reversible_and_does_not_wake_idle_s
         assert session.context.values == {"temporary": "value"}
         await mounted.aclose()
         assert session.context.values == {} and not model.requests
+
+
+async def test_replacing_the_loop_slot_keeps_shared_tools_and_prompt():
+    from harnessed import Plugin, tool
+    from harnessed.core.runtime.agent_loop import AgentFactory, ReactLoopFactory
+    from harnessed.core.runtime.options import AgentLoopConfig
+    from harnessed.kernel import Context
+    from harnessed.testing import call
+
+    class CustomLoop(Plugin, slot="loop"):
+        async def setup(self, ctx: Context) -> None:
+            ctx.provide(AgentFactory, ReactLoopFactory(AgentLoopConfig(max_steps=3), None))
+
+    class Math(Plugin):
+        @tool(readonly=True)
+        def add(self, a: int, b: int) -> int:
+            return a + b
+
+    model = ScriptedModel([call("add", a=1, b=2), "three"])
+    result = await Agent(model=model, plugins=[CustomLoop(), Math()]).run("add")
+    assert result.text == "three"
+    assert [(c.name, r.text) for c, r in result.tool_calls] == [("add", "3")]

@@ -103,6 +103,7 @@ harnessed/
       projections.py       # messages, turns, inbox, approvals, status (incremental)
     runtime/               # was core/loop.py (908 lines)
       agent_loop.py        # AgentLoop plugin (slot "loop")
+      services.py          # RuntimeServices: tools, prompt, tokens, budget (no slot)
       stepper.py           # StepRunner: one model step
       executor.py          # ToolExecutor: approvals, execution, result review
       turns.py             # TurnRunner: turn continuation
@@ -146,7 +147,7 @@ harnessed/
 **Was entfällt ersatzlos:**
 - `seams/`, `adapters/`, `app/`, `llms/`;
 - `presets.py` mit `Harness`, `minimal`, `coding` und `headless`. Es gibt keine Presets mehr, weil ein Agent seine Plugin-Liste ist. Wer eine feste Zusammenstellung braucht, schreibt eine eigene Funktion, die einen `Agent` zurückgibt;
-- `plugins/services.py` (`tools` und `system_prompt` stellt `AgentLoop` bereit, `llm` wird `Service(Model, x)`);
+- `plugins/services.py` (`tools` und `system_prompt` stellt `RuntimeServices` bereit, `llm` wird `Service(Model, x)`);
 - `plugins/_context/providers.py`;
 - `plugins/_context/instructions.py` (`persona` und `agents_md` werden `Instructions` bzw. `Section.from_file`);
 - der eigene DeepSeek-Adapter samt `sse.py` und `RetryPolicy`.

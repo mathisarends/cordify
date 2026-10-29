@@ -7,7 +7,6 @@ from harnessed import Plugin, ToolCall, tool
 from harnessed.core.prompt.system_prompt import SystemPrompt
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context, Emit, Inject
-from harnessed.plugins import AgentLoop
 
 
 @dataclass
@@ -43,7 +42,8 @@ class BrowserTools(Plugin):
 
 async def main():
     async with Context() as ctx:
-        await ctx.install([AgentLoop()])
+        ctx.provide(ToolRegistry, ToolRegistry(ctx))
+        ctx.provide(SystemPrompt, SystemPrompt(ctx))
         feature = await ctx.plugin(BrowserTools())
         print("Before browser:", feature.status)
 

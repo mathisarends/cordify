@@ -8,10 +8,11 @@ from pydantic import PydanticSchemaGenerationError
 from harnessed import Agent as Application
 from harnessed import Context, Plugin, PolicyDecision, Session, ToolCall, hook, plugin, tool
 from harnessed.core.prompt.system_prompt import SystemPrompt
+from harnessed.core.runtime.services import RuntimeServices
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import ContextClosed, Emit, Inject
 from harnessed.kernel.plugin import PluginStatus
-from harnessed.plugins import AgentLoop, Approvals
+from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
 
@@ -56,7 +57,7 @@ async def test_direct_registration_disposers_are_idempotent_and_restore_override
         yield
 
     async with Context() as ctx:
-        await ctx.install([AgentLoop()])
+        await ctx.install([RuntimeServices()])
         ctx.provide(str, "base")
         ctx.add_listener(Ping, lambda event: seen.append("base"))
         ctx[ToolRegistry].register(base, name="read")
@@ -103,7 +104,7 @@ async def test_registrations_are_hidden_during_setup_and_before_async_teardown_f
         await release.wait()
 
     async with Context() as ctx:
-        await ctx.install([AgentLoop()])
+        await ctx.install([RuntimeServices()])
         ctx[ToolRegistry].register(base, name="read")
         ctx[SystemPrompt].fixed("base")
         mounting = asyncio.create_task(ctx.plugin(feature()))
@@ -171,7 +172,7 @@ async def test_transitive_needs_rebuild_all_registrations_without_duplicates():
             lifecycle.append(("feature", self.backend))
 
     async with Context() as ctx:
-        _, bridge_handle, feature = await ctx.install([AgentLoop(), bridge(), Feature()])
+        _, bridge_handle, feature = await ctx.install([RuntimeServices(), bridge(), Feature()])
         for name in ("one", "two", "three"):
             source = await ctx.plugin(provider(name))
             await ctx.settle()
@@ -222,7 +223,7 @@ async def test_registration_failure_after_class_setup_runs_teardown_and_rolls_ba
             cleaned.append("closed")
 
     async with Context() as ctx:
-        await ctx.install([AgentLoop()])
+        await ctx.install([RuntimeServices()])
         with pytest.raises(PydanticSchemaGenerationError, match="Ready"):
             await ctx.plugin(Broken())
         assert cleaned == ["closed"]
@@ -250,7 +251,7 @@ async def test_teardown_errors_remove_all_effects_and_allow_fresh_activation():
             raise ValueError("teardown failed")
 
     async with Context() as ctx:
-        await ctx.install([AgentLoop()])
+        await ctx.install([RuntimeServices()])
         remove = ctx.provide(Backend, Backend("broken"))
         handle = await ctx.plugin(feature())
         await remove()
