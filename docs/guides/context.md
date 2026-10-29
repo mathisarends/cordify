@@ -3,6 +3,13 @@
 Use fixed instructions for rules, named context for changing facts, steering for
 course corrections, and tools for knowledge the model should retrieve on demand.
 
+In this guide, "context" means named values sent to the model outside the fixed
+system prompt. `session.context` holds values for the whole session;
+`run(context=...)` adds values for one turn. Both render as separate context
+blocks. Two other names are unrelated to this: `ToolContext` is a tool call's
+runtime handle (progress, events, cancellation), and `harnessed.Context` is the
+plugin scope from the kernel.
+
 ## Fixed instructions
 
 ```python

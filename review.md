@@ -47,13 +47,6 @@ an SDK at this stage; the offline `ScriptedModel` makes the examples runnable.
 
 ### Usability and expectation conformity
 
-**U1. "Context" still has several meanings (needs a decision).** The plugin scope
-is now one class: `harnessed.Context` is `harnessed.kernel.Context`. The remaining
-meanings are all names api-target.md uses: `session.context` (`DynamicContext`,
-named prompt values), `run(context=...)` (per-turn mapping), `ContextValue` /
-`ContextState` and `ToolContext`. Renaming any of them means changing the target
-first; the strongest candidate is `run(context=)` versus `session.context`.
-
 **U3. Input verbs are not fully aligned.** `followup` and `inject` are gone
 (api-target.md 8.1), and the sessions guide now has a "which verb when" table.
 Left: `steer` takes no attachments while `run`/`submit` do, and `observe` (returns
