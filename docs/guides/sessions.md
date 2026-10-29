@@ -154,9 +154,7 @@ caller still receives a normal result:
 
 ```python
 handle = await session.submit("Investigate the outage.")
-timer = asyncio.get_running_loop().call_later(
-    120, lambda: asyncio.ensure_future(session.stop())
-)
+timer = asyncio.get_running_loop().call_later(120, lambda: asyncio.ensure_future(session.stop()))
 try:
     result = await handle.result()  # StopReason.STOPPED after two minutes
 finally:
