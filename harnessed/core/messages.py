@@ -53,6 +53,8 @@ class ToolStatus(StrEnum):
     ERROR = "error"
     DENIED = "denied"
     UNAVAILABLE = "unavailable"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
 
 
 class DenialSource(StrEnum):
@@ -356,10 +358,15 @@ class Observation:
     source: str
     full: str
     summary: str
+    refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.source:
             raise ValueError("Observations require a source")
+        refs = tuple(self.refs)
+        if any(not isinstance(ref, str) for ref in refs):
+            raise TypeError("Observation refs must be strings")
+        object.__setattr__(self, "refs", refs)
 
 
 def result_content(value: Any) -> str:

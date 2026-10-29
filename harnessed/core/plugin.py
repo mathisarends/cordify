@@ -40,6 +40,9 @@ class Plugin(KernelPlugin):
     """A recipe with shared constructor inputs and explicit per-mount PluginState.
 
     Allocate resources in setup and own their cleanup through Context effects.
+    Class annotations name: Inject[T] resolve before setup; Inject[T | None]
+    receives None if absent. provides=True publishes this mount as a service.
+    Ordinary assignments in setup are per-mount; constructor inputs are shared.
     create_instance may customize construction without changing registration.
     """
 

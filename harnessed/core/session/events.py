@@ -50,6 +50,17 @@ class StepOutcome(StrEnum):
     CONTEXT_LIMIT = "context_limit"
 
 
+class ModelRequestOutcome(StrEnum):
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    CONTEXT_EXCEEDED = "context_exceeded"
+
+
+class ObservationForm(StrEnum):
+    FULL = "full"
+    SUMMARY = "summary"
+
+
 class TurnOutcome(StrEnum):
     COMPLETED = "completed"
     INTERRUPTED = "interrupted"
@@ -422,6 +433,47 @@ class ModelRequestedEvent(SessionEvent):
         default=EventKind.MODEL_REQUESTED, kw_only=True
     )
     request: ModelRequest
+    request_id: Identifier = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class ModelRequestFailedEvent(SessionEvent):
+    __hash__ = None
+
+    type: Literal[EventKind.MODEL_REQUEST_FAILED] = field(
+        default=EventKind.MODEL_REQUEST_FAILED, kw_only=True
+    )
+    request_id: Identifier
+    outcome: ModelRequestOutcome
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "outcome", ModelRequestOutcome(self.outcome))
+
+
+@dataclass(frozen=True)
+class IncludedObservation:
+    source: str
+    refs: tuple[str, ...]
+    form: ObservationForm
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "refs", tuple(self.refs))
+        object.__setattr__(self, "form", ObservationForm(self.form))
+
+
+@dataclass(frozen=True)
+class ObservationsIncludedEvent(SessionEvent):
+    __hash__ = None
+
+    type: Literal[EventKind.OBSERVATIONS_INCLUDED] = field(
+        default=EventKind.OBSERVATIONS_INCLUDED, kw_only=True
+    )
+    request_id: Identifier
+    observations: tuple[IncludedObservation, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "observations", tuple(self.observations))
 
 
 @dataclass(frozen=True)
@@ -433,6 +485,7 @@ class ModelUsageRecordedEvent(SessionEvent):
     )
     usage: ModelUsage
     purpose: UsagePurpose = UsagePurpose.RESPONSE
+    request_id: Identifier | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "purpose", UsagePurpose(self.purpose))
@@ -557,6 +610,7 @@ class AssistantMessageEvent(SessionEvent):
         default=EventKind.ASSISTANT_MESSAGE, kw_only=True
     )
     message: Assistant
+    request_id: Identifier = field(kw_only=True)
     interrupted: bool = False
     stop_reason: StopReason | None = None
 
@@ -716,7 +770,9 @@ type LogEvent = Annotated[
         | ContextMessageEvent
         | ContextValueChangedEvent
         | ObservationRecordedEvent
+        | ObservationsIncludedEvent
         | ModelRequestedEvent
+        | ModelRequestFailedEvent
         | ModelUsageRecordedEvent
         | CacheMetricsEvent
         | CompactionAppliedEvent

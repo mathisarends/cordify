@@ -135,7 +135,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     for event in (
         TurnStartedEvent("turn-1"),
         StepStartedEvent("turn-1", 1),
-        AssistantMessageEvent(Assistant(tool_calls=(call,))),
+        AssistantMessageEvent(Assistant(tool_calls=(call,)), request_id="request"),
         ToolCallRequestedEvent(call),
     ):
         await session.append(event)
@@ -198,13 +198,14 @@ async def test_fork_copies_closed_prefix_and_is_independent():
 def test_event_json_roundtrip_includes_requests_and_frozen_tool_data():
     call = ToolCall("nested", {"items": [{"a": 1}]}, id="call")
     events = (
-        AssistantMessageEvent(Assistant(tool_calls=(call,))),
+        AssistantMessageEvent(Assistant(tool_calls=(call,)), request_id="request"),
         ModelRequestedEvent(
             ModelRequest(
                 "test",
                 (User("hello"),),
                 (ToolDefinition("nested", "description", {"type": "object", "properties": {}}),),
-            )
+            ),
+            request_id="request",
         ),
         ToolCallFinishedEvent(call, ToolResult("ok")),
     )

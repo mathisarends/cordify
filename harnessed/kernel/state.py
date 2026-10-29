@@ -11,6 +11,7 @@ class PluginState[T]:
     """Declare a fresh value for every mount, including dependency restarts.
 
     The recipe has no runtime state. A synchronous factory runs before setup.
+    Keep dependencies in Inject attributes; use state for mutable runtime data.
     State remains available through teardown and owned cleanup, then is released.
     These values are not persisted: restore durable state from a session log in
     setup. Resources needing acquisition or cleanup belong in Context effects.

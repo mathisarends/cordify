@@ -77,7 +77,38 @@ Async-generator function plugins run setup before `yield` and teardown after it.
 They compose services and hooks. Public tools use `Plugin` methods, as shown in
 the [tool guide](tools.md).
 
-## Explicit needs and per-call injection
+## Dependencies and provided services
+
+Declare dependencies directly on a plugin when its methods share them:
+
+```python
+from harnessed import Inject, Plugin, SessionLog
+
+
+class Activity(Plugin, provides=True):
+    log: Inject[SessionLog]
+    label: Inject[str | None]
+
+    async def setup(self) -> None:
+        self.session_id = self.log.id
+```
+
+Class `Inject[T]` attributes resolve on the mount before `setup`. Required
+attributes automatically declare temporal `needs`; optional attributes receive
+`None` when the service is absent and do not suspend the mount. Their values are
+captured for that mount. Access on a recipe or after disposal raises `RuntimeError`.
+Forward references resolve when the recipe is first compiled for mounting.
+
+`provides=True` registers the mounted instance under the declaring class before
+setup. Subclasses inherit that key: a subclass of Activity still provides Activity.
+Use `provides=SomeKey` for a different class, Protocol or named service key, or
+`provides=False` to disable inherited publication. Removal and failed setup remove
+the service automatically. Strict composition detects closed declared dependency
+cycles before mounting; manual providers retain the runtime dependency check.
+
+Use ordinary `self.x = ...` assignments in setup for values computed once per
+mount, and `PluginState` for mutable runtime state. Keep constructor attributes as
+shared recipe inputs; mutable containers belong in state or setup.
 
 ```python
 from typing import Protocol
@@ -89,18 +120,18 @@ class Database(Protocol):
     async def lookup(self, key: str) -> str: ...
 
 
-class Lookup(Plugin, needs=(Database,)):
+class Lookup(Plugin):
     @tool(readonly=True)
     async def lookup(self, key: str, *, db: Inject[Database]) -> str:
         return await db.lookup(key)
 ```
 
-`Service(Database, implementation)` provides the structural dependency. `needs`
-expresses the plugin's lifetime. Missing services leave it waiting; removing a
+`Service(Database, implementation)` provides the structural dependency. Required
+class, setup, hook and tool injections declare the plugin's lifetime. Missing services leave it waiting; removing a
 service tears it down, and restoring one restarts it. `Inject[T]` resolves the
 argument from the current scope for every invocation. Setup and hook injection
-also declare required needs. Tool argument injection controls tool visibility;
-use explicit plugin `needs` when the whole capability should decompose.
+also declare required needs. Use explicit `needs=(Database,)` for dependencies
+read dynamically through `ctx[Database]` rather than declared through injection.
 
 `Inject[T | None]` is optional and returns None while the service is absent.
 Optional dependencies do not suspend a plugin. Named `Key[T]` values distinguish

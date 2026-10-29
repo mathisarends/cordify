@@ -4,14 +4,19 @@ from typing import assert_type
 from pydantic import BaseModel
 
 from harnessed import Agent as AppAgent
-from harnessed import OutputContract, Plugin, PluginState, RunHandle, ToolContext, tool
+from harnessed import OutputContract, Plugin, PluginState, RunHandle, SessionLog, ToolContext, tool
 from harnessed.core.messages import Assistant, ToolReply, User
-from harnessed.core.model import ModelResponse
+from harnessed.core.model import ModelRequest, ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session
 from harnessed.events import (
     AssistantMessageEvent,
     EventStream,
+    IncludedObservation,
+    ModelRequestFailedEvent,
+    ModelRequestOutcome,
+    ObservationForm,
+    ObservationsIncludedEvent,
     ToolArgumentsDeltaEvent,
     ToolCallGenerationStartedEvent,
     ToolExecutionFinishedEvent,
@@ -33,10 +38,24 @@ assert_type(configured("workspace", enabled=False), PluginSpec)
 
 
 class EventObserver(Plugin):
+    log: Inject[SessionLog]
+
     @hook(AssistantMessageEvent)
     async def on_assistant(self, event: AssistantMessageEvent) -> None:
         assert_type(event.message, Assistant)
         assert_type(event.interrupted, bool)
+        assert_type(event.request_id, str)
+        assert_type(self.log.request(event.request_id), ModelRequest | None)
+
+    @hook(ModelRequestFailedEvent)
+    async def on_model_failure(self, event: ModelRequestFailedEvent) -> None:
+        assert_type(event.outcome, ModelRequestOutcome)
+
+    @hook(ObservationsIncludedEvent)
+    async def on_included(self, event: ObservationsIncludedEvent) -> None:
+        assert_type(event.observations, tuple[IncludedObservation, ...])
+        assert_type(event.observations[0].form, ObservationForm)
+        assert_type(event.observations[0].refs, tuple[str, ...])
 
     @hook(ToolExecutionFinishedEvent)
     async def on_tool_finished(self, event: ToolExecutionFinishedEvent) -> None:

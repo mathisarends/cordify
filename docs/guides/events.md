@@ -50,6 +50,31 @@ assembled `RunResult[T]`. Likewise, `ToolExecutionFinishedEvent` records executi
 before result review, while `ToolCallFinishedEvent` commits the final result to
 history and the UI stream. These remain separate events.
 
+## Model request lifecycle
+
+`ModelRequestedEvent(request, request_id=...)` records the final submitted
+snapshot. Harnessed assigns a fresh UUID to every attempt, including retries
+after a context limit. `AssistantMessageEvent` and response
+`ModelUsageRecordedEvent` carry that same `request_id`. Compaction usage has
+`purpose=UsagePurpose.COMPACTION` and no response request ID.
+
+Every request closes exactly once with an assistant message, including an
+`interrupted=True` partial response, or `ModelRequestFailedEvent`. Its
+`ModelRequestOutcome` is `FAILED`, `CANCELLED` or `CONTEXT_EXCEEDED`. A request
+observer that fails after the start was committed also produces a failure.
+Completion writes drain cancellation before runtime cleanup proceeds.
+
+Plugins can inject `SessionLog` from `harnessed` and call `log.request(id)` to
+retrieve the submitted snapshot, or `log.request_finished(id)` to inspect its
+completion. Existing version 2 JSONL records without request IDs acquire stable
+`session_id:index` identities when loaded. Recovery closes orphan requests as
+cancelled before repairing their turn.
+
+`ObservationsIncludedEvent(request_id, observations)` records the observation
+messages actually present after request transformation. It follows the request
+event even when the tuple is empty. Each `IncludedObservation` carries its source,
+refs and full/summary form; see [observation delivery](context.md).
+
 ## Tool lifecycle
 
 For an application asking whether a tool is finished, observe
@@ -72,6 +97,12 @@ output control calls remain hidden from the application tool UI.
 Successful calls proceed from request through execution to completion. Denied
 calls skip execution. Recovery never publishes an unreviewed execution receipt as
 a final result or repeats a tool to recover its output.
+
+Each execution start has exactly one `ToolExecutionFinishedEvent`, including
+timeouts and cancellation. Its result uses `ToolStatus.TIMEOUT` or
+`ToolStatus.CANCELLED` for those outcomes. Recovery writes a cancelled receipt
+for an unfinished execution, including an execution whose call was never saved.
+`log.execution_pending(call_id)` reports a start awaiting its receipt.
 
 ## Declare application events
 

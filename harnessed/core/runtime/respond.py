@@ -22,11 +22,11 @@ class ModelResponder:
         self.ctx = ctx
         self.log = log
 
-    async def respond(self, request: ModelRequest) -> Assistant:
+    async def respond(self, request: ModelRequest, *, request_id: str) -> Assistant:
         with span(self.ctx, "model", session_id=self.log.id, model=request.model):
-            return await self._stream_response(request)
+            return await self._stream_response(request, request_id=request_id)
 
-    async def _stream_response(self, request: ModelRequest) -> Assistant:
+    async def _stream_response(self, request: ModelRequest, *, request_id: str) -> Assistant:
         message_id = uuid4().hex
         calls: list[ToolCall] = []
         text: list[str] = []
@@ -64,13 +64,17 @@ class ModelResponder:
                 response = stream.response()
         except BaseException:
             if stream is not None and (usage := stream.usage) is not None:
-                await self.log.append(ModelUsageRecordedEvent(usage))
+                await self.log.append(ModelUsageRecordedEvent(usage, request_id=request_id))
             if text or reasoning:
-                await self.log.append(AssistantMessageEvent(message(), interrupted=True))
+                await self.log.append(
+                    AssistantMessageEvent(message(), request_id=request_id, interrupted=True)
+                )
             raise
         if len({call.id for call in calls}) != len(calls):
             raise ValueError("The model returned duplicate tool call ids")
-        await self.log.append(ModelUsageRecordedEvent(response.usage))
+        await self.log.append(ModelUsageRecordedEvent(response.usage, request_id=request_id))
         final = replace(response.message, id=message_id)
-        await self.log.append(AssistantMessageEvent(final, stop_reason=response.stop_reason))
+        await self.log.append(
+            AssistantMessageEvent(final, request_id=request_id, stop_reason=response.stop_reason)
+        )
         return final

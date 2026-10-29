@@ -17,8 +17,10 @@ from harnessed.core.messages import (
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
     SESSION_EVENT_TYPES,
+    AssistantMessageEvent,
     LogEvent,
     ModelRequestedEvent,
+    ModelUsageRecordedEvent,
     SessionEvent,
 )
 
@@ -131,9 +133,14 @@ class EventLogCodec:
     Encoding is pure; accept advances the base only after a successful write.
     """
 
-    def __init__(self, *, registry: EventRegistry | None = None) -> None:
+    def __init__(
+        self, *, registry: EventRegistry | None = None, session_id: str = "session"
+    ) -> None:
         self.registry = registry
         self._previous: ModelRequest | None = None
+        self._session_id = session_id
+        self._request_count = 0
+        self._request_id: str | None = None
 
     def encode(self, event: SessionEvent) -> dict[str, Any]:
         if not isinstance(event, ModelRequestedEvent):
@@ -161,11 +168,27 @@ class EventLogCodec:
     def accept(self, event: SessionEvent) -> None:
         if isinstance(event, ModelRequestedEvent):
             self._previous = event.request
+            self._request_id = event.request_id
+            self._request_count += 1
 
     def decode(self, record: dict[str, Any]) -> SessionEvent:
         if not isinstance(record, dict):
             raise SessionFormatError("Invalid session record envelope")
         freeze(record)
+        tag = record.get("type")
+        body: Any = record.get("data")
+        if isinstance(body, dict) and "request_id" not in body:
+            # Pre-ID records retain stable identities across replay and reopen.
+            request_id = None
+            if tag == ModelRequestedEvent.type:
+                request_id = f"{self._session_id}:{self._request_count}"
+            elif tag in (AssistantMessageEvent.type, ModelUsageRecordedEvent.type) and (
+                tag != ModelUsageRecordedEvent.type or body.get("purpose", "response") == "response"
+            ):
+                request_id = self._request_id or f"{self._session_id}:0"
+            if request_id is not None:
+                restored: dict[str, Any] = {**record, "data": {**body, "request_id": request_id}}
+                record = restored
         previous = self._previous
         prefix = 0
         reuse_tools = False
