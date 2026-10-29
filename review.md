@@ -59,15 +59,13 @@ first; the strongest candidate is `run(context=)` versus `session.context`.
 Left: `steer` takes no attachments while `run`/`submit` do, and `observe` (returns
 `None`) is outside the 8.1 verb table without its own guide entry.
 
-**U4. Abnormal turn endings look like success.** Hitting `max_steps` returns a
-normal `RunResult` whose `text` is whatever intermediate assistant text came last;
-only `stop_reason == MAX_STEPS` reveals it. Other SDKs raise here or expose an
-explicit "completed" flag. `StopReason` also mixes model reasons (`TOOL_CALLS`,
-`CONTENT_FILTER`) with turn outcomes (`MAX_STEPS`, `STOPPED`, `DISCARDED`), and
-`TurnOutcome.INTERRUPTED` is reported as `ABORTED`. Suggest
-`RunResult.outcome: TurnOutcome` next to the model's `stop_reason`, a
-`result.completed` property, and a typed error for `on_max_tokens=FAIL`
-(currently a bare `RuntimeError` in `core/runtime/turns.py`).
+**U4. Abnormal turn endings need a convenience check (needs a decision).**
+api-target.md 6 and 8.2 set the contract on purpose: `run()` never raises for
+`MAX_STEPS`, `STOPPED`, `ABORTED` or `DISCARDED`, and one `StopReason` covers model
+and turn outcomes. So raising on `max_steps` or splitting the enum would contradict
+the target. `on_max_tokens=FAIL` now raises `OutputTokenLimit`. Open: an additive
+`RunResult.completed` (true only for `END`), because callers who only read `text`
+miss a max-steps ending. The target's field list would have to name it first.
 
 **U5. Loop limits hide in a slot plugin.** `max_steps`, `tool_timeout`,
 `max_parallel_tools` and `context_window` need `AgentLoop(...)` in `plugins`.
@@ -92,11 +90,6 @@ because api-target.md keeps the root at about 20 names and lists no errors facad
   which may legitimately stay level 3.
 
 An `harnessed.errors` facade would cover the largest group.
-
-**U7. `RunHandle` cannot cancel.** It has `done()` and `result()` only: no
-`cancel()`, no `turn_id`, no event access. Cancelling one queued run requires
-`session.abort()`, which also hits the active turn. A task-like handle
-(`cancel()`, `turn_id`, `events()`) matches what users expect from `asyncio`.
 
 **U8. Two ways to read everything.** `session.events`, `.messages`, `.usage`,
 `.turns` and `.last()` mirror `session.log.*`. `Session` also exposes `ctx`, `log`,
