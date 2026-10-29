@@ -13,8 +13,8 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 - Patch releases within a minor line are intended for compatible fixes. Pin the
   exact package version for reproducible deployments and persisted workflows.
 - Session records have an explicit format version. Release 0.1.0 uses version 1;
-  release 0.2.0 uses version 2. Incompatible core record changes require a new
-  version. Unsupported versions fail explicitly, and no automatic format
+  releases 0.2.0 and 0.3.0 use version 2. Incompatible core record changes require
+  a new version. Unsupported versions fail explicitly, and no automatic format
   migrations are provided.
 - Back up persisted sessions before upgrading. Application-defined events and
   versioned output contracts have their own validation requirements; see
@@ -26,27 +26,56 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## Unreleased
+## 0.3.0 (2026-10-29)
 
-Plugin composition now requires explicit `needs=(...)` declarations. `Inject`
-binds values without inferring lifetime requirements. Add required services to
-the plugin class, `@plugin(needs=(...))` or `Bundle(..., needs=(...))` so missing
-providers suspend the plugin and provider changes restart it. See the
-[plugin guide](guides/plugins.md) for examples and optional injection behavior.
+This minor release adds optional OpenTelemetry tracing, explicit plugin lifetime
+requirements and session startup validation. It includes breaking composition
+changes from 0.2.0; the session record format remains version 2.
 
-Agent sessions validate their plugin composition after session services have been
-published and setup has settled, before starting the runtime or resuming queued
-work. Missing required services now raise `PluginDependencyError` with structured
-`.issues` listing all waiting plugins and missing service keys. This also applies
-to `Agent.run()`.
+### Highlights
 
-This changes the behavior of incomplete compositions. Provide their required
-services, or explicitly select `Agent(..., plugin_validation=PluginValidation.WARN)`
-to retain deliberately waiting plugins and emit `PluginDependencyWarning` with
-the same diagnostic data. Import the policy from `harnessed` and the error/warning
-from `harnessed.errors`. Complete compositions need no changes. Standalone kernel
-installation and later service changes keep their deferred lifecycle behavior.
-See [plugin startup validation](guides/plugins.md#session-startup-validation).
+- Install `harnessed[otel]` and use `OpenTelemetryTracer` from
+  `harnessed.integrations.opentelemetry` to send runtime spans to Phoenix,
+  Langfuse or another OTLP collector. The application configures exporters,
+  sampling and provider shutdown. Core SDK imports remain independent of
+  OpenTelemetry.
+- Trace turns, steps, model requests, tool execution, approval waits and
+  compaction with correlation IDs, usage, reported costs and outcomes. Content
+  capture is disabled by default and bounded when explicitly enabled. See the
+  [tracing guide](guides/tracing.md) and [offline example](guides/examples.md#tracing).
+- Plugin composition now requires explicit `needs=(...)` declarations. `Inject`
+  binds values without inferring lifetime requirements from attributes or
+  parameters.
+- Sessions validate plugin dependencies before runtime startup or queued work
+  resumes. `PluginDependencyError` reports waiting plugins and missing service
+  keys through structured `.issues`; `Context.plugin_diagnostics()` exposes
+  dependency snapshots in the standalone kernel.
+
+### Upgrade from 0.2.0
+
+1. Audit plugins that inject services or access them through `ctx[key]`. Add
+   lifetime requirements to the plugin class, `@plugin(needs=(...))` or
+   `Bundle(..., needs=(...))` so missing providers suspend the plugin and provider
+   changes restart it. Without `needs`, a missing required injection fails
+   resolution and provider changes do not cause a remount. Optional injection
+   remains optional unless its service is explicitly listed. See the
+   [plugin guide](guides/plugins.md).
+2. Provide all required services before opening a session, including through
+   `Agent.run()`. For deliberately deferred compositions, explicitly select
+   `Agent(..., plugin_validation=PluginValidation.WARN)` to emit
+   `PluginDependencyWarning` and retain waiting plugins. Import the policy from
+   `harnessed` and the error/warning from `harnessed.errors`. Complete compositions
+   need no changes. Standalone kernel installation and later service changes keep
+   their deferred lifecycle behavior. See
+   [plugin startup validation](guides/plugins.md#session-startup-validation).
+3. Keep existing version 2 session stores; this release introduces no session
+   format change from 0.2.0.
+4. To enable tracing, install the `otel` extra alongside any model provider
+   extras and add `OpenTelemetryTracer` to the agent's plugins. Shut down an
+   application-owned telemetry provider after active sessions have closed.
+
+The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the detailed changes and a plugin migration example.
 
 ## 0.2.0 (2026-10-29)
 

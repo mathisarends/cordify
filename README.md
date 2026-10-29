@@ -48,8 +48,9 @@ async def main():
 asyncio.run(main())
 ```
 
-`Agent` has three configuration inputs: `model`, `instructions`, and `plugins`.
-It is reusable; each session owns its runtime and plugin lifetimes.
+`Agent` composes `model`, `instructions` and `plugins`; `plugin_validation`
+controls how missing services are reported at startup. It is reusable; each
+session owns its runtime and plugin lifetimes.
 
 - **Composition:** tools, policies and capabilities are plugins. Slots replace
   defaults, and `agent.plugins` shows the resolved composition.
@@ -87,6 +88,7 @@ Start with the [documentation index](https://github.com/mathisarends/harnessed/b
 - [Typed events and custom extensions](https://github.com/mathisarends/harnessed/blob/main/docs/guides/events.md)
 - [Approvals and headless operation](https://github.com/mathisarends/harnessed/blob/main/docs/guides/approvals.md)
 - [Offline testing](https://github.com/mathisarends/harnessed/blob/main/docs/guides/testing.md)
+- [OpenTelemetry tracing with Phoenix and Langfuse](https://github.com/mathisarends/harnessed/blob/main/docs/guides/tracing.md)
 - [Executable examples](https://github.com/mathisarends/harnessed/blob/main/docs/guides/examples.md)
 - [Development and CI](https://github.com/mathisarends/harnessed/blob/main/docs/contributing/development.md)
 - [Changelog and breaking changes](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)

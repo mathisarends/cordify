@@ -8,8 +8,8 @@ approvals, skills, compaction, spill, tracing hooks and offline testing.
 An optional [OpenTelemetry integration](../guides/tracing.md) now exports runtime
 spans to Phoenix, Langfuse and other OTLP collectors.
 
-The following additions remain outside the 0.1 release scope. They are candidates
-for discussion, not committed APIs or release dates.
+The following additions remain outside the current release scope. They are
+candidates for discussion, not committed APIs or release dates.
 
 ## Integration candidates
 
