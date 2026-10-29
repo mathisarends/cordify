@@ -7,7 +7,7 @@ from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, T
 from harnessed.core.approvals import ApprovalUnavailable
 from harnessed.events.approval import Status as ApprovalStatus
 from harnessed.events.tool import Returned as ToolReturned
-from harnessed.hooks import ApprovalRequest, ToolPolicy
+from harnessed.hooks import RequestApproval, ToolPolicy
 from harnessed.kernel import hook
 from harnessed.models import ModelChunk
 from harnessed.plugins import AgentLoop, ApprovalGate, Approvals
@@ -61,7 +61,7 @@ async def listener_and_priorities():
             await asyncio.sleep(0.005)
             return await next_()
 
-        @hook(ApprovalRequest)
+        @hook(RequestApproval)
         async def answer(self, event):
             order.append("approval")
             start = perf_counter()
@@ -95,7 +95,7 @@ async def response_timeout():
         ],
     ).session("timeout") as session:
 
-        @session.on(ApprovalRequest)
+        @session.on(RequestApproval)
         async def disconnected(event):
             try:
                 await asyncio.Event().wait()

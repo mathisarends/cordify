@@ -55,14 +55,6 @@ adds a sixth. A user reading `context=` cannot tell which one applies. Pick one
 meaning for "context" (prompt context is the most natural) and rename the others,
 for example the plugin scope to `PluginScope` or only `kernel.Context`.
 
-**U2. One name, two types; one type, two names.**
-- `harnessed.ApprovalRequest` is the `ApprovalRequested` *event*;
-  `harnessed.hooks.ApprovalRequest` is a *hook* that wraps it.
-- After 96b2fa5, "session" is still ambiguous: `ToolContext.session` is a
-  `SessionLog`, while hooks call the runtime `Session` `agent`
-  (`ApprovalRequest.agent: Session`). Use `session: Session` and `log: SessionLog`
-  consistently.
-
 **U3. Input verbs are not fully aligned.** `followup` and `inject` are gone
 (api-target.md 8.1), and the sessions guide now has a "which verb when" table.
 Left: `steer` takes no attachments while `run`/`submit` do, and `observe` (returns

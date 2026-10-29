@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, Self
 
 from harnessed.core.errors import ApprovalUnavailable
-from harnessed.core.hooks import ApprovalRequest, SessionAppended
+from harnessed.core.hooks import RequestApproval, SessionAppended
 from harnessed.core.messages import ApprovalAnswer, ToolCall
 from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.approvals import _PendingApproval
@@ -60,16 +60,16 @@ class StreamApprovals:
 
     async def __aenter__(self) -> Self:
         self._remove_answer = self.session.ctx.on(
-            ApprovalRequest, self._answer, priority=Priority.OBSERVE
+            RequestApproval, self._answer, priority=Priority.OBSERVE
         )
         self._remove_ack = self.session.ctx.on(SessionAppended, self._ack)
         return self
 
-    async def _answer(self, event: ApprovalRequest) -> ApprovalAnswer | None:
+    async def _answer(self, event: RequestApproval) -> ApprovalAnswer | None:
         turn = self.session.log.open_turn
         start = turn.events[0] if turn is not None else None
         if (
-            event.agent is not self.session
+            event.session is not self.session
             or not isinstance(start, TurnStart)
             or self.input_id is None
             or start.input_id != self.input_id

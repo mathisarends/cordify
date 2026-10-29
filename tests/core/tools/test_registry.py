@@ -175,7 +175,7 @@ async def test_tool_context_exposes_log_inbox_and_progress_without_the_driver():
         @tool(readonly=True)
         async def inspect(self, call: Inject[ToolContext], context: Inject[DynamicContext]) -> str:
             assert not hasattr(call, "agent")
-            assert call.session.id == "tool-context"
+            assert call.log.id == "tool-context"
             await call.progress("working")
             assert not call.cancelled
             await context.set("workspace", "The workspace changed.")
@@ -227,7 +227,7 @@ async def test_keyword_only_tool_context_is_implicit_and_never_exposed_in_the_sc
     async with Agent(model=model, plugins=[Tools()]).session() as session:
         await session.run("inspect")
         assert list(model.requests[0].tools[0].parameters["properties"]) == ["value"]
-        assert len(seen) == 1 and seen[0].session.id == session.id
+        assert len(seen) == 1 and seen[0].log.id == session.id
         assert not seen[0].cancelled
 
 

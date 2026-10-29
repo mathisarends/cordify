@@ -35,7 +35,7 @@ class StepDecision:
 
 @dataclass(frozen=True)
 class PreStep(Waterfall[StepDecision]):
-    agent: Session
+    session: Session
     messages: tuple[Message, ...]
     step: int
 
@@ -48,51 +48,51 @@ class PreStep(Waterfall[StepDecision]):
         for message in reversed(self.messages):
             if message.role == Role.USER:
                 return message.text
-        event = self.agent.log.last(UserMessage)
+        event = self.session.log.last(UserMessage)
         return event.message.text if event is not None else ""
 
 
 @dataclass(frozen=True)
 class ExecuteTool(Waterfall[ToolResult]):
     call: ToolCall
-    agent: Session
+    session: Session
 
 
 @dataclass(frozen=True)
 class ToolPolicy(Waterfall[PolicyDecision]):
     call: ToolCall
-    agent: Session
+    session: Session
 
 
 @dataclass(frozen=True)
 class ReviewToolResult(Waterfall[ToolResult]):
     call: ToolCall
     result: ToolResult
-    agent: Session
+    session: Session
     output_limit: OutputLimitSetting = field(default=OutputLimit.INHERIT, kw_only=True)
 
 
 @dataclass(frozen=True)
 class PrepareRequest(Waterfall[ModelRequest]):
-    agent: Session
+    session: Session
     request: ModelRequest
 
 
 @dataclass(frozen=True)
 class ConfigureRequest(Waterfall[ModelRequest]):
-    agent: Session
+    session: Session
     request: ModelRequest
 
 
 @dataclass(frozen=True)
 class TurnStopping(Bail[bool]):
-    agent: Session
+    session: Session
 
 
 @dataclass(frozen=True)
-class ApprovalRequest(Bail[ApprovalAnswer]):
+class RequestApproval(Bail[ApprovalAnswer]):
     request: ApprovalRequested
-    agent: Session
+    session: Session
 
     @property
     def call(self) -> ToolCall:

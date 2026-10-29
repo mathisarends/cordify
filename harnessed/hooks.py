@@ -1,10 +1,10 @@
 from harnessed.core.hooks import (
-    ApprovalRequest,
     ConfigureRequest,
     ExecuteTool,
     Next,
     PrepareRequest,
     PreStep,
+    RequestApproval,
     ReviewToolResult,
     StepDecision,
     ToolPolicy,
@@ -13,7 +13,7 @@ from harnessed.core.hooks import (
 from harnessed.kernel import Priority
 
 __all__ = [
-    "ApprovalRequest",
+    "RequestApproval",
     "ConfigureRequest",
     "ExecuteTool",
     "Next",

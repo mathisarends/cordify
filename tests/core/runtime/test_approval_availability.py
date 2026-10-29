@@ -5,7 +5,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Plugin, ToolCall, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalUnavailable, Approver, CallbackApprover
-from harnessed.core.hooks import ApprovalRequest, ToolPolicy
+from harnessed.core.hooks import RequestApproval, ToolPolicy
 from harnessed.core.messages import PolicyDecision, ToolStatus
 from harnessed.core.model import ModelChunk
 from harnessed.core.runtime.options import AgentOptions
@@ -115,7 +115,7 @@ async def test_explicit_approver_then_service_take_precedence_over_request_liste
         model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
     ).session("precedence") as agent:
         agent.ctx.provide(Approver, Answer(ApprovalAnswer.DENY))
-        agent.on(ApprovalRequest, lambda ev: pytest.fail("Explicit approver was bypassed"))
+        agent.on(RequestApproval, lambda ev: pytest.fail("Explicit approver was bypassed"))
         assert (
             await agent.request_approval(
                 ToolCall("work"), "permission", approver=Answer(ApprovalAnswer.ALLOW)
@@ -130,18 +130,18 @@ async def test_approval_listeners_bail_by_priority_and_can_explicitly_abstain_or
     async with Application(
         model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
     ).session("listeners") as agent:
-        agent.on(ApprovalRequest, lambda ev: asked.append("late"), priority=100)
+        agent.on(RequestApproval, lambda ev: asked.append("late"), priority=100)
 
         def answer(event):
             assert event.call.name == "work" and event.reason == "permission"
             assert event.request.request_id in {
-                item.request_id for item in event.agent.log.approvals.pending
+                item.request_id for item in event.session.log.approvals.pending
             }
             asked.append("deny")
             return ApprovalAnswer.DENY
 
-        remove_answer = agent.add_hook(ApprovalRequest, answer, priority=0)
-        agent.on(ApprovalRequest, lambda ev: asked.append("abstain"), priority=-100)
+        remove_answer = agent.add_hook(RequestApproval, answer, priority=0)
+        agent.on(RequestApproval, lambda ev: asked.append("abstain"), priority=-100)
         assert await agent.request_approval(ToolCall("work"), "permission") is ApprovalAnswer.DENY
         assert asked == ["abstain", "deny"]
         await remove_answer()
@@ -175,7 +175,7 @@ async def test_unresponsive_approval_uses_the_session_timeout_and_cancels_the_re
     )
     async with harness.session("timeout") as agent:
         if transport == "listener":
-            agent.on(ApprovalRequest, wait)
+            agent.on(RequestApproval, wait)
         elif transport == "service":
             agent.ctx.provide(Approver, WaitingApprover())
         with pytest.raises(ApprovalUnavailable, match="timed out after 0.02 seconds"):
@@ -196,7 +196,7 @@ async def test_responder_abstention_invalid_answers_and_failures_are_unavailable
     async with Application(
         model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
     ).session("bad-answer") as agent:
-        agent.on(ApprovalRequest, respond)
+        agent.on(RequestApproval, respond)
         with pytest.raises(ApprovalUnavailable):
             await agent.request_approval(ToolCall("work"), "permission")
         record = agent.log.approvals.records[-1]

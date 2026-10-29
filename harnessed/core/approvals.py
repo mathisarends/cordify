@@ -86,7 +86,7 @@ class ApprovalGate(Plugin):
     ) -> PolicyDecision:
         if not any(tools.matches(item, event.call.name) for item in self.risky):
             return await next_()
-        answer = await event.agent.request_approval(
+        answer = await event.session.request_approval(
             event.call,
             f"{event.call.name} is marked risky",
             scope=self.config.scope,
@@ -251,7 +251,7 @@ class Approvals(Plugin, slot="approvals"):
     async def authorize(
         self, event: ToolPolicy, next_: Next[PolicyDecision], tools: Inject[ToolRegistry]
     ) -> PolicyDecision:
-        agent = event.agent
+        session = event.session
         if any(tools.matches(item, event.call.name) for item in self.deny):
             return PolicyDecision.DENY
         required = any(tools.matches(item, event.call.name) for item in self.require)
@@ -273,7 +273,7 @@ class Approvals(Plugin, slot="approvals"):
             selected = self.approver
             if selected is not None and callable(selected):
                 selected = CallbackApprover(cast(ApprovalCallback, selected))
-            answer = await agent.request_approval(
+            answer = await session.request_approval(
                 event.call,
                 "Tool may have side effects",
                 approver=selected,

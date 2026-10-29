@@ -18,7 +18,7 @@ class ToolContext:
     """Per-call services without access to the runtime driver."""
 
     call: ToolCall
-    session: SessionLog
+    log: SessionLog
     inbox: SessionInbox
     signal: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -27,10 +27,10 @@ class ToolContext:
         return self.signal.is_set()
 
     async def progress(self, text: str) -> None:
-        await self.session.append(ToolProgress(self.call.id, text))
+        await self.log.append(ToolProgress(self.call.id, text))
 
     async def emit(self, event: SessionEvent | TransientEvent) -> None:
-        await self.session.emit(event)
+        await self.log.emit(event)
 
 
 class ToolContexts(Protocol):
@@ -39,8 +39,8 @@ class ToolContexts(Protocol):
 
 @dataclass(frozen=True)
 class BoundToolContexts:
-    session: SessionLog
+    log: SessionLog
     inbox: SessionInbox
 
     def create(self, call: ToolCall) -> ToolContext:
-        return ToolContext(call, self.session, self.inbox)
+        return ToolContext(call, self.log, self.inbox)

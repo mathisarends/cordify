@@ -11,7 +11,7 @@ from harnessed.core.approvals import (
     Approver,
     validate_approval_timeout,
 )
-from harnessed.core.hooks import ApprovalRequest
+from harnessed.core.hooks import RequestApproval
 from harnessed.core.messages import ApprovalAnswer, ToolCall
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.options import AgentOptions
@@ -191,7 +191,7 @@ class SessionApprovals:
                 if selected is not None:
                     decision = await selected.ask(request)
                 else:
-                    decision = await self.ctx.dispatch(ApprovalRequest(request, self.session))
+                    decision = await self.ctx.dispatch(RequestApproval(request, self.session))
             if decision is None:
                 raise ApprovalUnavailable("No approval responder answered the request")
             if not isinstance(decision, ApprovalAnswer):
