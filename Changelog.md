@@ -76,6 +76,179 @@ contracts from 0.4.0; the session record format remains version **2**.
    `output=T` runs, check `completed` before accessing `.output`; a reserved
    summary is an incomplete text result, not a validated `T`.
 
+### Client integration examples
+
+Pin `harnessed==0.5.0` together with the provider extras your application uses.
+The examples below use only public application imports. Existing clients can
+keep their current defaults; enable each new behavior explicitly.
+
+#### Tool metadata, captured hooks and a context boundary
+
+Mount `Workspace()` in `Agent(plugins=[...])`. The state belongs to the mounted
+plugin. A workspace switch still requires the application's ordinary approval
+decision; after execution starts, it stops unstarted calls from the same response:
+
+```python
+from dataclasses import dataclass
+
+from harnessed import Plugin, PluginState, ToolChain, ToolResult, tool
+from harnessed.hooks import Next, ReviewToolResult
+from harnessed.kernel import hook
+
+
+@dataclass(frozen=True)
+class AuditTag:
+    category: str
+
+
+class Workspace(Plugin):
+    active = PluginState[str](lambda: "default")
+
+    @tool(metadata=(AuditTag("workspace"),), chain=ToolChain.STOP_AFTER)
+    async def switch(self, name: str) -> str:
+        self.active = name
+        return f"Active workspace: {name}"
+
+    @tool(readonly=True, metadata=(AuditTag("workspace"),))
+    async def inspect(self) -> str:
+        return self.active
+
+    @hook(ReviewToolResult)
+    async def review(self, event: ReviewToolResult, next_: Next[ToolResult]) -> ToolResult:
+        result = await next_()
+        tag = event.tool.metadata.get(AuditTag) if event.tool is not None else None
+        return result.with_note(f"Audit category: {tag.category}") if tag else result
+```
+
+`metadata` allows one immutable value per exact Python type. Its values stay
+process-local; write an application event if they must survive reopening. The
+same `event.tool` snapshot is available in `ToolPolicy` and `ExecuteTool`; it
+retains the originally scheduled registration even if a name is rebound.
+
+`STOP_AFTER` cannot be combined with `parallel=True`. A denial or disabled tool
+does not break the chain; an attempted boundary tool does, including on error or
+timeout. For a dynamic boundary return `ToolResult("State changed", break_chain=True)`
+or set the flag in result review. Already-started parallel calls complete normally.
+Handle `ToolStatus.SKIPPED` as an explicit unexecuted result; it has no execution
+receipt and requests no approval. Neither a chain break nor a skipped call ends
+the whole turn: the next model step may continue within its existing limits.
+
+#### Reserve a final summary without treating it as validated output
+
+Pass your configured model to this function. A normal structured run exposes a
+validated `Answer`; a reserved final summary is read only through `.text`:
+
+```python
+from pydantic import BaseModel
+
+from harnessed import Agent
+from harnessed.models import Model
+from harnessed.plugins import AgentLoop, FinalStepPolicy
+
+
+class Answer(BaseModel):
+    summary: str
+
+
+async def report(model: Model) -> str:
+    agent = Agent(
+        model=model,
+        plugins=[AgentLoop(max_steps=4, final_step=FinalStepPolicy.SUMMARIZE)],
+    )
+    result = await agent.run("Summarize the findings.", output=Answer)
+    if result.completed:
+        return result.output.summary
+    return result.text
+```
+
+The four-step limit includes the summary: at most three ordinary steps remain.
+With `max_steps=1`, the only request is a summary. Per-run `max_steps=` overrides
+also determine the reserved step. A summary has no tools or output schema;
+unexpected returned tool calls are skipped by the runtime. It ends with
+`StopReason.MAX_STEPS` and `completed=False`, never a validated `Answer`.
+Provider exceptions still propagate, and a token budget can stop before a summary.
+
+Hook clients import `PreStep` from `harnessed.hooks`. Read `event.max_steps` and
+`event.remaining_steps` instead of recipe defaults; the remaining allowance
+includes the current step. `is_last_step` can describe an ordinary final step,
+while `is_final_step` identifies the reserved summary. Manually constructed
+events must now provide `PreStep(session, messages, step, max_steps=effective_limit)`.
+
+#### Extend the live stream consumer
+
+This consumer logs activity, handles skipped calls and explicitly denies approval
+requests. Replace that denial with your application's decision path when needed:
+
+```python
+from contextlib import aclosing
+
+from harnessed import ApprovalAnswer, Session, ToolStatus, events
+
+
+async def show(session: Session) -> None:
+    async with aclosing(session.stream("Review the workspace.")) as stream:
+        async for event in stream:
+            match event:
+                case events.TextDeltaEvent(text=text):
+                    print(text, end="", flush=True)
+                case events.CompactionStartedEvent(compaction_id=key):
+                    print("Compaction started:", key)
+                case events.CompactionFinishedEvent(compaction_id=key, outcome=outcome):
+                    print("Compaction finished:", key, outcome)
+                case events.ModelRequestedEvent(request_id=key):
+                    print("Request submitted:", key)
+                case events.ModelRequestFailedEvent(request_id=key, outcome=outcome):
+                    print("Request closed:", key, outcome)
+                case events.ModelRetryScheduledEvent() as retry:
+                    print("Retry planned:", retry.retry_kind, retry.retry_group_id,
+                          retry.attempt, retry.reason, retry.delay_seconds)
+                case events.ModelAttemptStartedEvent() as attempt:
+                    print("Attempt started:", attempt.retry_kind, attempt.request_id,
+                          attempt.retry_group_id, attempt.attempt)
+                case events.ModelAttemptFinishedEvent() as attempt:
+                    print("Attempt closed:", attempt.retry_kind, attempt.request_id,
+                          attempt.outcome, attempt.attempt, attempt.partial)
+                case events.ToolCallFinishedEvent(call=call, result=result):
+                    if result.status is ToolStatus.SKIPPED:
+                        print("Not executed:", call.id, call.name)
+                case events.ApprovalNeededEvent(request_id=key):
+                    await session.approvals.answer(key, ApprovalAnswer.DENY)
+                case events.TurnFinishedEvent(result=result):
+                    print("Turn finished:", result.stop_reason, result.completed)
+```
+
+Ignore event variants the client does not display. For a UI, clear outstanding
+activity in a `finally` block on stream failure, cancellation or disconnect;
+`TurnFinishedEvent` is emitted on normal stream exhaustion and is not guaranteed
+on an error. Request/attempt/compaction completion alone must not mark the turn
+complete. `RunResult.completed` describes successful task completion separately
+from the end of the stream.
+
+| Wire tag | Client correlation and persistence |
+| --- | --- |
+| `compaction.started`, `compaction.finished` | Live-only pair keyed by `compaction_id`; finish outcome is `applied`, `discarded`, `failed` or `cancelled` |
+| `compaction.applied` | Durable history change; its `id` matches the live pair, and an applied record precedes the successful finish |
+| `model.requested`, `model.request.failed` | Durable records keyed by `request_id`; one invocation closes with an assistant message or request failure |
+| `model.attempt.started`, `model.retry.scheduled`, `model.attempt.finished` | Live-only diagnostics; separate groups by `retry_kind` and `retry_group_id`, then by `attempt` when known |
+
+`RetryKind`, `RetryReason`, `ModelAttemptOutcome` and `CompactionOutcome` are
+available from `harnessed.events`. Provider attempts share one Harnessed
+`request_id`; context recovery and output correction create new request IDs in
+their respective retry groups. Do not add counters across kinds. `attempt` is
+one-based, `retry_count=attempt-1`, and `max_retries` excludes the initial attempt.
+Unknown provider counters remain `None`. A finish may lack an observed start;
+a scheduled retry may never start if cancellation occurs during backoff.
+
+Reopening restores durable request correlation and applied history, without
+replaying transient activity. Session-wide observers can use
+`session.subscribe(transient=True)`. Model adapters report only observed SDK
+facts through `ModelChunk(diagnostic=...)` or awaited
+`harnessed.models.report_model_diagnostic(...)`; the PydanticAI bridge does not
+automatically instrument hidden SDK retries. See the
+[model adapter contract](docs/guides/models.md#report-observed-sdk-attempts) and
+[streaming guide](docs/guides/streaming.md#model-and-retry-activity) for retry scopes,
+partial responses and cancellation.
+
 ## 0.4.0 (2026-10-29)
 
 This release adds explicit system prompt composition, optional MCP server tools

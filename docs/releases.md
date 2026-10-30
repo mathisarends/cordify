@@ -76,7 +76,8 @@ contracts from 0.4.0; the session record format remains version 2.
    use `.text` because `.output` raises `OutputUnavailable`.
 
 The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
-contains the detailed changes and upgrade instructions.
+contains the detailed changes, upgrade instructions and client integration
+examples for tool metadata, final summaries and stream consumers.
 
 ## 0.4.0 (2026-10-29)
 
