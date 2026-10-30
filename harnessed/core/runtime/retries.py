@@ -29,6 +29,7 @@ class RequestRetries:
             if previous is not None and previous.reason == StepOutcome.CONTEXT_LIMIT
             else RetryKind.OUTPUT_CORRECTION
             if previous is not None
+            and request.output_schema is not None
             and any(isinstance(e, OutputValidationFailedEvent) for e in previous.events)
             else None
         )

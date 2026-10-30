@@ -9,6 +9,7 @@ from pydantic import Field
 
 from harnessed.core.diagnostics import RetryKind
 from harnessed.core.event_kinds import EventKind
+from harnessed.core.limits import FinalStepPolicy
 from harnessed.core.messages import (
     ApprovalAnswer,
     Assistant,
@@ -272,7 +273,7 @@ def _check_limit(name: str, value: int | None) -> None:
 
 @dataclass(frozen=True)
 class TurnLimits:
-    """Per-turn overrides; None keeps the agent's configured behavior."""
+    """Queued overrides; turn-start records store the resolved step limit."""
 
     max_steps: Annotated[int, Field(ge=1)] | None = None
     token_budget: Annotated[int, Field(ge=1)] | None = None
@@ -356,9 +357,11 @@ class TurnStartedEvent(SessionEvent):
     settings: Mapping[str, Any] = field(default_factory=dict)
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
     limits: TurnLimits = field(default_factory=TurnLimits, kw_only=True)
+    final_step: FinalStepPolicy = field(default=FinalStepPolicy.NONE, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "settings", freeze(self.settings))
+        object.__setattr__(self, "final_step", FinalStepPolicy(self.final_step))
 
 
 @dataclass(frozen=True)

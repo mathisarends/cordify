@@ -55,6 +55,7 @@ class ToolStatus(StrEnum):
     UNAVAILABLE = "unavailable"
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
+    SKIPPED = "skipped"
 
 
 class DenialSource(StrEnum):
@@ -143,8 +144,11 @@ class ToolResult:
     truncation: OutputTruncation | None = None
     denied_by: DenialSource | None = None
     rule_matches: tuple[tuple[str, bool], ...] = ()
+    break_chain: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.break_chain) is not bool:
+            raise TypeError("break_chain must be a bool")
         object.__setattr__(self, "status", ToolStatus(self.status))
         if self.denied_by is not None:
             object.__setattr__(self, "denied_by", DenialSource(self.denied_by))

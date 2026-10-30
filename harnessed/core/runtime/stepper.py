@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -10,7 +11,8 @@ from harnessed.core.compaction import CompactionManager, CompactionPolicy
 from harnessed.core.diagnostics import ModelAttemptOutcome, RetryKind
 from harnessed.core.errors import ContextLengthExceeded, OutputValidationError
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
-from harnessed.core.messages import Assistant, Observation, Role, User
+from harnessed.core.limits import FinalStepPolicy
+from harnessed.core.messages import Assistant, Observation, Role, System, User
 from harnessed.core.model import Model, ModelRequest, resolve_request_settings
 from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.runtime.control import SessionControl
@@ -49,6 +51,13 @@ if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session
 
 
+_FINAL_STEP_INSTRUCTION = (
+    "This is the final available step. End this turn with a text summary of the results, "
+    "uncertainties and unfinished work based on the information already available. "
+    "Do not call tools or claim unfinished work is complete."
+)
+
+
 class StepRunner:
     def __init__(
         self,
@@ -77,14 +86,22 @@ class StepRunner:
     def observe(self, observation: Observation) -> None:
         self._observations[observation.source] = observation
 
-    async def run(self, turn: str, step: int, settings: Mapping[str, Any]) -> bool:
+    async def run(
+        self,
+        turn: str,
+        step: int,
+        settings: Mapping[str, Any],
+        *,
+        max_steps: int,
+        final: bool = False,
+    ) -> bool:
         await self.control.checkpoint()
         await self.ctx.settle()
         inbox = self.log.inbox
         pending = inbox.for_step(step)
         incoming = tuple(item.message for item in pending)
         decision = await self.ctx.dispatch(
-            PreStep(self.session, incoming, step),
+            PreStep(self.session, incoming, step, max_steps=max_steps, is_final_step=final),
             default=lambda incoming=incoming: StepDecision(incoming),
         )
         if not decision.accepted:
@@ -142,9 +159,19 @@ class StepRunner:
             ConfigureRequest(self.session, request),
             default=lambda request=request: request,
         )
-        request = self.outputs.prepare(request, self.log.current_turn().start.output_schema)
+        if final:
+            request = replace(
+                request,
+                tools=(),
+                output_schema=None,
+                messages=(*request.messages, System(_FINAL_STEP_INSTRUCTION)),
+            )
+        else:
+            request = self.outputs.prepare(request, self.log.current_turn().start.output_schema)
         request = resolve_request_settings(request, model.info.default_settings)
         request = await self.compaction.prepare(request)
+        if final:
+            request = replace(request, tools=(), output_schema=None)
         if ContextBudget in self.ctx:
             await self.ctx[ContextBudget].check(
                 request,
@@ -159,7 +186,7 @@ class StepRunner:
             current = self.log.current_turn()
             if (
                 CompactionPolicy not in self.ctx
-                or step >= (current.start.limits.max_steps or self.options.max_steps)
+                or step >= max_steps
                 or any(item.reason == StepOutcome.CONTEXT_LIMIT for item in current.steps)
                 or any(
                     isinstance(event, AssistantMessageEvent) for event in current.steps[-1].events
@@ -197,7 +224,7 @@ class StepRunner:
             raise
         try:
             results, failure = await self.outputs.validate(response, request.output_schema)
-            await self.tools.run(response.tool_calls, results=results)
+            await self.tools.run(response.tool_calls, results=results, allow_execution=not final)
         except BaseException as error:
             await self.retries.finished(
                 record,
@@ -212,10 +239,15 @@ class StepRunner:
             for event in self.log.current_turn().steps[-1].events
         )
         limits = self.log.current_turn().start.limits
+        next_is_final = (
+            step + 1 == max_steps
+            and self.log.current_turn().start.final_step is FinalStepPolicy.SUMMARIZE
+        )
         can_retry = (
             invalid
             and failure is None
-            and step < (limits.max_steps or self.options.max_steps)
+            and step < max_steps
+            and not next_is_final
             and (
                 limits.token_budget is None
                 or sum(

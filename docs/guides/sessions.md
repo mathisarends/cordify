@@ -178,6 +178,45 @@ repairs unfinished activity as aborted and leaves the reopened session idle.
 After closing, operations raise `SessionClosed`; the final status is `CLOSED`.
 See [the runnable control example](https://github.com/mathisarends/harnessed/blob/main/examples/20_pause_resume_stop.py).
 
+## Step progress and a reserved summary
+
+`PreStep` exposes the effective `max_steps`, `remaining_steps` (including the step
+about to start), and `is_last_step`. `is_final_step` identifies a reserved summary
+step; the last ordinary step has `is_last_step=True` and `is_final_step=False`.
+Effective step limits and the final-step policy are recorded at turn start and
+survive pause/reopen even if the agent's loop configuration changes. Remaining
+steps are an allowance, not a guarantee: token budgets or controls can stop earlier.
+
+```python
+from harnessed import Agent
+from harnessed.plugins import AgentLoop, FinalStepPolicy
+
+agent = Agent(
+    model=model,
+    plugins=[AgentLoop(max_steps=12, final_step=FinalStepPolicy.SUMMARIZE)],
+)
+result = await agent.run("Investigate the issue.")
+print(result.text)
+```
+
+`FinalStepPolicy.NONE` is the default. `SUMMARIZE` reserves the last available
+step for a text summary of results, uncertainty and unfinished work. With a
+12-step limit, at most 11 steps perform ordinary work. With `max_steps=1`, the
+only step is a summary. Earlier normal completion needs no additional request.
+Per-run `max_steps=` overrides also determine where the summary is reserved.
+
+The summary request has no tools or output schema. Runtime execution also blocks
+any calls the model returns anyway, recording them as skipped without policy,
+approval or execution hooks. The summary ends with `StopReason.MAX_STEPS` and
+`completed=False`; continuation hooks cannot start another step. It creates no
+extra step after the limit and never starts after the token budget is exhausted.
+A provider or context failure may still prevent a usable summary.
+
+This policy currently returns only `result.text`. If the run declares `output=T`,
+earlier normal completion still validates `T`; a reserved summary does not create
+a validated value, and accessing its `.output` raises `OutputUnavailable`.
+The summary is streamed through the ordinary text and turn-finished events.
+
 ## Inspect or remove queued input
 
 ```python

@@ -13,6 +13,7 @@ from harnessed.core.messages import (
 )
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import ApprovalRequestedEvent, SessionEvent, UserMessageEvent
+from harnessed.core.tools.info import ToolInfo
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.kernel.events import Bail, Emit, Waterfall
 from harnessed.kernel.hooks import Next as Next
@@ -38,6 +39,17 @@ class PreStep(Waterfall[StepDecision]):
     session: Session
     messages: tuple[Message, ...]
     step: int
+    max_steps: int = field(kw_only=True)
+    is_final_step: bool = field(default=False, kw_only=True)
+
+    @property
+    def remaining_steps(self) -> int:
+        """Remaining step allowance, including the step about to start."""
+        return max(0, self.max_steps - self.step + 1)
+
+    @property
+    def is_last_step(self) -> bool:
+        return self.remaining_steps == 1
 
     @property
     def is_turn_start(self) -> bool:
@@ -56,12 +68,14 @@ class PreStep(Waterfall[StepDecision]):
 class ExecuteTool(Waterfall[ToolResult]):
     call: ToolCall
     session: Session
+    tool: ToolInfo | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)
 class ToolPolicy(Waterfall[PolicyDecision]):
     call: ToolCall
     session: Session
+    tool: ToolInfo | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -70,6 +84,7 @@ class ReviewToolResult(Waterfall[ToolResult]):
     result: ToolResult
     session: Session
     output_limit: OutputLimitSetting = field(default=OutputLimit.INHERIT, kw_only=True)
+    tool: ToolInfo | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add typed, process-local tool metadata and captured tool descriptions in policy,
+  execution and result-review hooks, including schema-defined external tools.
+- Add fixed and dynamic action-chain boundaries, durable break signals and explicit
+  skipped results while preserving already-started parallel work.
+- Expose effective step progress and persist resolved limits across reopen. Add
+  opt-in final-step text summaries within the limit, with runtime action blocking
+  and an explicit incomplete outcome, including for structured-output runs.
 - Add transient compaction start/finish events with correlated outcomes, while
   retaining the durable applied projection and estimated token savings.
 - Add typed model retry diagnostics through chunks and task-scoped adapter

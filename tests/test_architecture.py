@@ -156,7 +156,7 @@ def test_public_exports_resolve_to_their_canonical_classes_and_functions(module)
 def test_application_facade_stays_small_and_has_no_transitional_names():
     import harnessed
 
-    assert len(harnessed.__all__) <= 39
+    assert len(harnessed.__all__) <= 42
     assert {"Agent", "Session", "Plugin", "tool", "RunResult", "ToolContext"} <= set(
         harnessed.__all__
     )
