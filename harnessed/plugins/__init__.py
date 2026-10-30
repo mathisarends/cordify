@@ -19,6 +19,7 @@ from harnessed.plugins.observations import LatestObservationOnly as LatestObserv
 from harnessed.plugins.rules import Rules as Rules
 from harnessed.plugins.rules import when as when
 from harnessed.plugins.sessions import JsonlSessions as JsonlSessions
+from harnessed.plugins.shell import BackgroundShell as BackgroundShell
 from harnessed.plugins.shell import Shell as Shell
 from harnessed.plugins.shell import ShellTools as ShellTools
 from harnessed.plugins.skills import Skill as Skill
@@ -32,6 +33,7 @@ __all__ = [
     "ApprovalAnswer",
     "ApprovalGate",
     "Approvals",
+    "BackgroundShell",
     "Compaction",
     "ContextState",
     "ContextValue",

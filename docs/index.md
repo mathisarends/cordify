@@ -13,6 +13,7 @@ public APIs or persisted session formats.
 | Understand the application API | [SDK reference](reference/sdk.md) |
 | Connect DeepSeek or another provider | [Models](guides/models.md) |
 | Register tools and validate arguments | [Tools](guides/tools.md) |
+| Run, inspect and cancel background commands | [Background shell](guides/background-shell.md) |
 | Receive typed answers | [Structured output](guides/structured-output.md) |
 | Build a live consumer with approvals | [Streaming](guides/streaming.md) |
 | Replace defaults or share services | [Plugins](guides/plugins.md) |

@@ -167,6 +167,11 @@ Shell commands use their requested timeout or `Shell(timeout=...)` default, up t
 `AgentLoop(tool_timeout=...)` deadline so longer commands can complete.
 Its argument schema and runtime validation both advertise the configured `max_timeout`.
 
+Background execution is a separate opt-in capability. Add `BackgroundShell(...)`
+alongside a shell backend to expose start, live inspection, stdin and termination
+tools with session-inbox completion notifications. See the
+[background shell guide](background-shell.md) for registration and a runnable example.
+
 For configuration-dependent constraints, `@tool(parameter_fields=fields)` accepts
 an unbound method `fields(self) -> Mapping[str, FieldInfo]`. It runs once per mount
 after `setup` and adds Pydantic `Field` metadata to the named model parameters.
@@ -287,6 +292,11 @@ fixtures include expected failures and reject unused suppressions, so weakening
 a signature breaks those checks too. Equal priorities retain registration order;
 lower priorities run first. Use `Priority.GUARD` for approval/policy gates and
 `Priority.OBSERVE` for measurements around actual execution.
+
+`harnessed.hooks.SessionClosing` lets an opt-in plugin release live resources when
+`session.aclose()` shuts down the driver, before plugin disposal. It receives the
+closing session and runs once per explicit close. Also register cleanup with
+`ctx.effect(...)` to cover startup rollback, unmounting and context teardown.
 
 ## Multimodal results
 

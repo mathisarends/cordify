@@ -18,6 +18,13 @@
   without automatic migration or legacy request-ID synthesis. Preserve old stores
   separately and start new stores when adopting this API.
 
+### Background shell commands
+
+- Add the explicit `BackgroundShell` plugin with start, live output inspection,
+  stdin/EOF, process-tree termination and session-inbox completion notifications.
+  Existing `Shell`/`ShellTools` tools remain unchanged. See the
+  [developer guide](docs/guides/background-shell.md) and offline example 35.
+
 ## 0.6.0 (2026-10-30)
 
 This release adds explicit Docker and Bubblewrap sandboxes and hardens MCP

@@ -36,6 +36,7 @@ nav:
       - Streaming: guides/streaming.md
       - Events and extensions: guides/events.md
       - Tools and hooks: guides/tools.md
+      - Background shell commands: guides/background-shell.md
       - Plugins: guides/plugins.md
       - MCP tools: guides/mcp.md
       - Context: guides/context.md
