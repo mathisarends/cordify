@@ -7,6 +7,7 @@ from harnessed.core.model import ModelInfo, ModelRequest, ModelUsage
 from harnessed.core.runtime.options import AgentLoopConfig
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import Context
+from harnessed.models import GenerationSettings
 
 
 @pytest.mark.parametrize(
@@ -58,14 +59,16 @@ def test_tool_timeouts_reject_invalid_values_at_both_configuration_boundaries(ti
 
 def test_neutral_model_metadata_and_request_constraints_are_schema_visible():
     assert (
-        TypeAdapter(ModelRequest).json_schema()["properties"]["max_tokens"]["anyOf"][0]["minimum"]
+        TypeAdapter(GenerationSettings).json_schema()["properties"]["max_tokens"]["anyOf"][0][
+            "minimum"
+        ]
         == 1
     )
     for construct in (
         lambda: ModelInfo(""),
         lambda: ModelInfo("model", context_window=0),
         lambda: ModelInfo("model", supports_images="yes"),
-        lambda: ModelRequest("model", (), max_tokens=True),
+        lambda: ModelRequest((), settings=GenerationSettings(max_tokens=True)),
         lambda: ModelUsage(-1),
         lambda: ModelUsage(1, cost=float("nan")),
     ):

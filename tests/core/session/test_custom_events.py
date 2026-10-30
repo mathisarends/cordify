@@ -102,9 +102,9 @@ def test_custom_event_schema_is_strict_and_registry_rejects_collisions_atomicall
     with pytest.raises(ValidationError):
         registry.encode(ProjectIndexed("five"))
     with pytest.raises(SessionFormatError):
-        registry.decode({"version": 2, "type": "project.indexed", "data": {"files": True}})
+        registry.decode({"version": 3, "type": "project.indexed", "data": {"files": True}})
     with pytest.raises(SessionFormatError):
-        registry.decode({"version": 2, "type": "project.indexed", "data": {"files": 1, "extra": 2}})
+        registry.decode({"version": 3, "type": "project.indexed", "data": {"files": 1, "extra": 2}})
 
     @dataclass(frozen=True)
     class Collision(events.DurableEvent):

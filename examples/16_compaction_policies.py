@@ -6,18 +6,21 @@ from harnessed import Agent, Role
 from harnessed.core.session.session import SessionLog
 from harnessed.errors import ContextBudgetExceeded
 from harnessed.events import CompactionAppliedEvent
+from harnessed.models import GenerationSettings
 from harnessed.plugins import AgentLoop, Compaction, at_ratio, every_turns
 from harnessed.testing import ScriptedModel
 
 
 async def compare(name, trigger):
-    model = ScriptedModel([f"answer {index}" for index in range(6)])
+    model = ScriptedModel(
+        [f"answer {index}" for index in range(6)], settings=GenerationSettings(max_tokens=256)
+    )
     summaries = ScriptedModel(["Preserve the public API and finish the open work."] * 6)
     app = Agent(
         model=model,
         system_prompt="Keep the goal and recent work accurate.",
         plugins=[
-            AgentLoop(context_window=2500, max_tokens=256),
+            AgentLoop(context_window=2500),
             Compaction(
                 trigger=trigger,
                 summarizer=summaries,

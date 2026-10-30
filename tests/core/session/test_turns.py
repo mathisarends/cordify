@@ -22,6 +22,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.turns import derive_turns
+from harnessed.models import ModelInfo
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
 
@@ -130,8 +131,8 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
         (
             TurnStartedEvent("a"),
             StepStartedEvent("a", 1),
-            ModelRequestedEvent(ModelRequest("test", ()), request_id="request"),
-            ModelRequestedEvent(ModelRequest("test", ()), request_id="request"),
+            ModelRequestedEvent(ModelRequest(()), request_id="request", model=ModelInfo("test")),
+            ModelRequestedEvent(ModelRequest(()), request_id="request", model=ModelInfo("test")),
         ),
     ],
 )

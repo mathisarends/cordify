@@ -7,7 +7,7 @@ from typing import Any
 
 from harnessed.core.attachments import Attachment, prepare_input
 from harnessed.core.messages import Message
-from harnessed.core.model import OutputSchema
+from harnessed.core.model import GenerationSettings, OutputSchema
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.session.events import (
     InboxAddedEvent,
@@ -71,7 +71,7 @@ class InboxWriter:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
+        settings: GenerationSettings | None = None,
         output_schema: OutputSchema | None = None,
         limits: TurnLimits | None = None,
         prepared: Callable[[InboxAddedEvent], None] | None = None,

@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from harnessed.core.budget import ContextBudget, truncate
 from harnessed.core.messages import Message, System, User, to_dict
 from harnessed.core.model import (
+    GenerationSettings,
     Model,
     ModelRequest,
     ModelUsage,
@@ -67,9 +68,8 @@ class Summarizer(Protocol):
 class ModelSummarizer:
     """Summarize through the neutral model contract, without exposing tools."""
 
-    def __init__(self, model: Model, *, model_name: str | None = None, focus: str = "") -> None:
+    def __init__(self, model: Model, *, focus: str = "") -> None:
         self.model = model
-        self.model_name = model_name or model.info.name
         self.focus = focus
 
     async def summarize(self, messages: tuple[Message, ...], *, max_tokens: int) -> Summary:
@@ -90,11 +90,10 @@ class ModelSummarizer:
             instructions += f"\nFocus: {self.focus}"
         request = resolve_request_settings(
             ModelRequest(
-                self.model_name,
                 (System(instructions), User(transcript)),
-                max_tokens=max_tokens,
+                settings=GenerationSettings(max_tokens=max_tokens),
             ),
-            self.model.info.default_settings,
+            self.model.settings,
         )
         response = await self.model.request(request)
         if response.message.tool_calls:
@@ -241,9 +240,7 @@ class CompactionManager:
         counter = self.ctx[TokenCounter]
         summarizer = policy.summarizer if policy is not None else None
         if summarizer is None:
-            summarizer = ModelSummarizer(
-                self.ctx[Model], model_name=request.model, focus=settings.focus
-            )
+            summarizer = ModelSummarizer(self.ctx[Model], focus=settings.focus)
         # The input request stays a snapshot even if new inbox/context records arrive.
         events = self.session_log.events
         previous = self.session_log.last(CompactionAppliedEvent)

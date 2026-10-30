@@ -7,7 +7,7 @@ from uuid import uuid4
 from harnessed.core.errors import OutputTokenLimit
 from harnessed.core.hooks import TurnStopping
 from harnessed.core.limits import FinalStepPolicy
-from harnessed.core.model import StopReason, TokenLimitBehavior, sum_usage
+from harnessed.core.model import GenerationSettings, StopReason, TokenLimitBehavior, sum_usage
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.runtime.stepper import StepRunner
@@ -68,7 +68,7 @@ class TurnRunner:
             start = TurnStartedEvent(
                 turn,
                 first.message.id if first is not None else None,
-                first.settings if first is not None else {},
+                first.settings if first is not None else GenerationSettings(),
                 output_schema=first.output_schema if first is not None else None,
                 limits=replace(limits, max_steps=limits.max_steps or self.options.max_steps),
                 final_step=self.options.final_step,

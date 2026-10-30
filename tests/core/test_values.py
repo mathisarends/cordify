@@ -13,10 +13,10 @@ from harnessed.core.session.events import ModelRequestedEvent, TurnStartedEvent
         ToolCall("read", {"path": "file"}),
         User("hello"),
         ToolDefinition("read", "Read", {"type": "object"}),
-        ModelRequest("test", ()),
+        ModelRequest(()),
         ModelResponse(Assistant("done")),
         TurnStartedEvent("one"),
-        ModelRequestedEvent(ModelRequest("test", ()), request_id="request"),
+        ModelRequestedEvent(ModelRequest(()), request_id="request", model=ModelInfo("test")),
     ],
 )
 def test_mapping_values_and_log_records_are_explicitly_unhashable(value):

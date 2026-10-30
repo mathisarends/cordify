@@ -6,8 +6,9 @@ native HTTP client, retry base class or SSE parser to configure.
 
 ## Choose a model
 
-`Agent(model=...)` accepts a provider string, an existing PydanticAI model or an
-object implementing the structural `harnessed.models.Model` contract. Optional
+`Agent(model=...)` accepts a provider string or an object implementing the structural
+`harnessed.models.Model` contract. Strings select the PydanticAI adapter. Wrap an
+existing native model explicitly with `PydanticAIModel(native_model)`. Optional
 extras are `harnessed[openai]`, `harnessed[anthropic]` and `harnessed[google]`.
 DeepSeek uses the OpenAI-compatible integration and the `openai` extra.
 
@@ -20,7 +21,9 @@ When both are set, the `AgentLoop` value wins for that agent.
 Replacing the `Model` service during a session updates the model name and inferred
 context window for subsequent requests and compaction. An explicit `AgentLoop`
 context window continues to take precedence; removing the replacement restores
-the previous model's metadata.
+the previous model's metadata. Model selection belongs to this configured object,
+not to `ModelRequest`. Each `ModelRequestedEvent.model` records the selected
+`ModelInfo` snapshot; changing a request cannot change the configured model.
 
 ## Provider-native tools
 
@@ -43,28 +46,55 @@ provider supports is decided by PydanticAI and the provider.
 
 ## Settings and ownership
 
-Pass PydanticAI model settings through `PydanticAIModel(..., settings=...)`, or set
-per-turn overrides with `session.run(..., settings=...)`. Per-turn settings are
-recorded with the inbox item and turn, then applied to every step of that turn.
-Only JSON-compatible settings can be persisted. Construct custom clients and
-provider objects outside the settings dictionary.
+Configure immutable defaults on the model with `GenerationSettings`:
 
-Effective defaults are exposed in `ModelInfo.default_settings` and resolved before
-compaction, budget checks and request logging. For output limits, per-turn
-`settings["max_tokens"]` overrides `AgentLoop(max_tokens=...)`, which overrides
-adapter and native model defaults. The resolved value lives in `ModelRequest.max_tokens`.
+```python
+from harnessed import Agent
+from harnessed.models import GenerationSettings, PydanticAIModel
+
+model = PydanticAIModel(
+    "anthropic:claude-sonnet-5-5",
+    settings=GenerationSettings(max_tokens=4096, temperature=0.2),
+)
+agent = Agent(model=model)
+
+async with agent.session() as session:
+    result = await session.run(
+        "Explain this repository.",
+        settings=GenerationSettings(max_tokens=512),
+    )
+```
+
+`model.settings` exposes the defaults. Per-turn settings override concrete values;
+`None` inherits the configured value, and `temperature=0` is a real override.
+Overrides do not mutate a shared model. They are stored with the inbox item and
+turn, survive reopening, and apply to every step of that turn. Model-service
+replacement uses the new model's defaults for subsequent requests.
+
+The adapter snapshots native model defaults at construction, applies its own
+`GenerationSettings`, then applies per-turn settings. The runtime resolves this
+configuration before compaction, budget checks and request logging. The effective
+limit lives only in `ModelRequest.settings.max_tokens`; `AgentLoop` configures
+execution limits such as `max_steps`, not generation defaults.
+
+Provider-specific options use `GenerationSettings(provider_options={...})`. This
+mapping must contain JSON values, is frozen recursively, and merges by key.
+`max_tokens` and `temperature` must use their typed fields and cannot be repeated
+inside `provider_options`. Support for individual settings depends on the model;
+providers validate their own supported options. Construct clients and provider
+objects outside the settings configuration.
 
 Session scopes enter and exit the native model's resource context for both provider
-strings and supplied PydanticAI models. You can construct a model and pass it
-directly to an agent without an outer model context:
+strings and explicitly wrapped PydanticAI models:
 
 ```python
 from pydantic_ai.models.openai import OpenAIResponsesModel
 
 from harnessed import Agent
+from harnessed.models import PydanticAIModel
 
-agent = Agent(model=OpenAIResponsesModel("gpt-6.1-terra"))
-async with agent.session() as session:
+model = PydanticAIModel(OpenAIResponsesModel("gpt-6.1-terra"))
+async with Agent(model=model).session() as session:
     result = await session.run("Explain this repository.")
 ```
 
@@ -79,16 +109,22 @@ Provider cache behavior comes from native settings, not generic message offsets:
 
 ```python
 # Inside an async session using an Anthropic model:
-# await session.run("Review", settings={
+# await session.run("Review", settings=GenerationSettings(provider_options={
 #     "anthropic_cache_instructions": True,
 #     "anthropic_cache_tool_definitions": True,
-# })
+# }))
 ```
 
 These controls are covered by offline native-provider request tests. Usage keeps
 input, output, cache-read, cache-write and available reasoning counters separate.
 A cache hit rate is cache-read tokens divided by input tokens; a cache write is not
 a cache miss. Missing optional counters remain unknown when usages are combined.
+
+Custom `Model` implementations expose `info: ModelInfo`, immutable
+`settings: GenerationSettings`, `request(ModelRequest) -> ModelResponse`, and
+`stream(ModelRequest)` as an asynchronous context manager. The configured object
+selects the model; the request carries messages, tools, resolved settings and an
+optional output schema. See the [offline model example](https://github.com/mathisarends/harnessed/blob/main/examples/13_models.py).
 
 Custom `ModelStream` implementations expose a `usage` property containing the
 cumulative `ModelUsage` snapshot, or `None` while usage is unknown. Keep this
@@ -116,7 +152,13 @@ being converted into executable placeholder arguments. See the
 
 The bridge supports text, thinking, function calls, and user/tool-result image URLs or data URLs.
 Native assistant response state is preserved in the log, including reasoning
-signatures needed on later tool rounds and replay.
+signatures needed on later tool rounds and replay. `Assistant.provider_state` is
+`ProviderState | None`, with `format`, `version`, `provider`, `model` and frozen
+`data`. The adapter writes format `pydantic-ai.response`, version 1. An incompatible
+format, version, provider or configured model is rejected before sending. To
+discard that state deliberately, use `replace(message, provider_state=None)`;
+unsigned reasoning is not replayed. This is a model-switch decision, not automatic
+conversion of signed history.
 
 Editing an assistant's content, reasoning or tool calls while retaining its original
 `provider_state` raises `InvalidRequest` before sending. Clear `provider_state` when
@@ -146,7 +188,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 client = AsyncAnthropic(max_retries=5)
 model = AnthropicModel("claude-sonnet-4-5", provider=AnthropicProvider(anthropic_client=client))
-agent = Agent(model=model)  # the caller owns this client
+agent = Agent(model=PydanticAIModel(model))  # the caller owns this client
 ```
 
 `OpenAIProvider(openai_client=AsyncOpenAI(max_retries=...))` works the same way.

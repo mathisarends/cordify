@@ -44,7 +44,7 @@ async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_ins
         await session.run("current")
         summary_request = model.requests[1]
         assert not summary_request.tools and "Keep paths." in summary_request.messages[0].text
-        assert summary_request.max_tokens == 2048
+        assert summary_request.settings.max_tokens == 2048
         assert [message.text for message in model.requests[2].messages] == [
             "Fixed instructions.",
             "Conversation summary:\nsummary",

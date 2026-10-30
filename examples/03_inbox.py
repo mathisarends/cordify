@@ -48,7 +48,7 @@ async def main():
             print(f"Turn {number}: {len(turn.steps)} steps, reason: {turn.reason}")
             for step in turn.steps:
                 assert step.request is not None
-                print(f"  Step {step.number}: model {step.request.model}, closed: {step.closed}")
+                print(f"  Step {step.number}: closed: {step.closed}")
 
 
 if __name__ == "__main__":

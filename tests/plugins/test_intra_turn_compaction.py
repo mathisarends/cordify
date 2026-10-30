@@ -31,6 +31,7 @@ from harnessed.core.session.events import (
     UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog, derive_messages
+from harnessed.models import ModelInfo, ProviderState
 from harnessed.plugins import AgentLoop, Compaction, JsonlSessions
 from harnessed.testing import CallbackModel, ScriptedModel
 
@@ -59,10 +60,23 @@ def assert_pairs(messages: tuple[Message, ...]) -> None:
 async def append_step(log: SessionLog, turn: str, number: int) -> None:
     call = ToolCall("work", id=f"{turn}-{number}")
     await log.append(StepStartedEvent(turn, number))
-    await log.append(ModelRequestedEvent(ModelRequest("test", log.messages), request_id="request"))
+    await log.append(
+        ModelRequestedEvent(
+            ModelRequest(log.messages), request_id="request", model=ModelInfo("test")
+        )
+    )
     await log.append(
         AssistantMessageEvent(
-            Assistant(tool_calls=(call,), provider_state={"signature": call.id}),
+            Assistant(
+                tool_calls=(call,),
+                provider_state=ProviderState(
+                    format="test.response",
+                    version=1,
+                    provider="test",
+                    model="test",
+                    data={"signature": call.id},
+                ),
+            ),
             request_id="request",
         )
     )
@@ -116,7 +130,7 @@ async def test_repeated_compaction_retains_inputs_and_signatures_but_releases_re
     assert persistent_context in log.messages
     assert not any(c.id == "active-1" for m in log.messages for c in m.tool_calls)
     retained = next(m for m in log.messages if m.tool_calls and m.tool_calls[0].id == "active-2")
-    assert retained.provider_state == {"signature": "active-2"}
+    assert retained.provider_state.data == {"signature": "active-2"}
     await append_step(log, "active", 3)
     second = await apply_plan(log)
     assert second.through > first.through
@@ -156,7 +170,9 @@ async def test_a_completed_step_cannot_hide_an_unanswered_tool_call():
     log = SessionLog("invalid-boundary")
     await log.append(TurnStartedEvent("t"))
     await log.append(StepStartedEvent("t", 1))
-    await log.append(ModelRequestedEvent(ModelRequest("test", ()), request_id="request"))
+    await log.append(
+        ModelRequestedEvent(ModelRequest(()), request_id="request", model=ModelInfo("test"))
+    )
     await log.append(
         AssistantMessageEvent(Assistant(tool_calls=(ToolCall("work"),)), request_id="request")
     )
@@ -187,7 +203,13 @@ async def test_first_turn_compacts_automatically_without_changing_retained_provi
         ModelResponse(
             Assistant(
                 tool_calls=(ToolCall("work", {"number": n}, id=f"call-{n}"),),
-                provider_state={"signature": str(n)},
+                provider_state=ProviderState(
+                    format="test.response",
+                    version=1,
+                    provider="test",
+                    model="test",
+                    data={"signature": str(n)},
+                ),
             )
         )
         for n in range(5)
@@ -211,7 +233,7 @@ async def test_first_turn_compacts_automatically_without_changing_retained_provi
             for message in request.messages:
                 if isinstance(message, Assistant) and message.tool_calls:
                     number = message.tool_calls[0].arguments["number"]
-                    assert message.provider_state == {"signature": str(number)}
+                    assert message.provider_state.data == {"signature": str(number)}
         assert [c.id for m in model.requests[-1].messages for c in m.tool_calls] == [
             "call-3",
             "call-4",

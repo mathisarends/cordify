@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from harnessed.core.errors import HarnessedError
 from harnessed.core.messages import Assistant, ToolCall
 from harnessed.core.model import (
+    GenerationSettings,
     ModelChunk,
     ModelInfo,
     ModelRequest,
@@ -28,8 +29,10 @@ class ScriptedModel:
         responses: Iterable[str | ModelResponse | Iterable[ModelChunk]],
         *,
         info: ModelInfo | None = None,
+        settings: GenerationSettings | None = None,
     ) -> None:
         self.info = info or ModelInfo("scripted", context_window=128_000)
+        self.settings = settings or GenerationSettings()
         self.responses = deque(responses)
         self.requests: list[ModelRequest] = []
 
@@ -61,9 +64,11 @@ class CallbackModel:
         callback: Callable[[ModelRequest], AsyncIterator[ModelChunk]],
         *,
         info: ModelInfo | None = None,
+        settings: GenerationSettings | None = None,
     ) -> None:
         self.callback = callback
         self.info = info or ModelInfo("callback", context_window=128_000)
+        self.settings = settings or GenerationSettings()
         self.requests: list[ModelRequest] = []
 
     @asynccontextmanager

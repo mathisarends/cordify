@@ -100,7 +100,7 @@ class JsonlPersistence:
         lock = self._lock(path)
         try:
             events = []
-            codec = EventLogCodec(registry=self.registry, session_id=session_id)
+            codec = EventLogCodec(registry=self.registry)
             boundaries = {0}
             offset, tail = 0, None
             if path.exists():

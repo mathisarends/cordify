@@ -17,6 +17,7 @@ from harnessed.core.messages import (
     Observation,
 )
 from harnessed.core.model import (
+    GenerationSettings,
     Model,
     ModelRequest,
     ModelUsage,
@@ -309,12 +310,10 @@ class Session:
         """Summarize completed history while idle or paused; return its log record."""
         async with self.control.maintenance():
             request = ModelRequest(
-                self.ctx[Model].info.name,
                 (*self.log.messages, *self.context.owned_messages),
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
-                self._options.max_tokens,
             )
-            request = resolve_request_settings(request, self.ctx[Model].info.default_settings)
+            request = resolve_request_settings(request, self.ctx[Model].settings)
             applied, _ = await self._compaction.compact(request)
             return applied
 
@@ -338,7 +337,7 @@ class Session:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
+        settings: GenerationSettings | None = None,
         max_steps: int | None = None,
         token_budget: int | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
@@ -374,7 +373,7 @@ class Session:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
+        settings: GenerationSettings | None = None,
         max_steps: int | None = None,
         token_budget: int | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
@@ -445,7 +444,7 @@ class Session:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
+        settings: GenerationSettings | None = None,
         max_steps: int | None = None,
         token_budget: int | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
@@ -527,7 +526,7 @@ class Session:
         *,
         attachments: Iterable[Attachment] = (),
         context: Mapping[str, Any] | None = None,
-        settings: Mapping[str, Any] | None = None,
+        settings: GenerationSettings | None = None,
         output_schema: OutputSchema | None = None,
         limits: TurnLimits | None = None,
         prepared: Callable[[InboxAddedEvent], None] | None = None,

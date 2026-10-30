@@ -7,6 +7,7 @@ from harnessed.events import (
     ToolExecutionFinishedEvent,
     ToolExecutionStartedEvent,
 )
+from harnessed.models import ModelInfo
 
 
 async def test_recovery_closes_open_requests_and_execution_starts_without_replies():
@@ -14,7 +15,7 @@ async def test_recovery_closes_open_requests_and_execution_starts_without_replie
     log = SessionLog(
         "crash",
         seed=(
-            ModelRequestedEvent(ModelRequest("test", ()), request_id="request"),
+            ModelRequestedEvent(ModelRequest(()), request_id="request", model=ModelInfo("test")),
             ToolExecutionStartedEvent(call.id),
         ),
     )

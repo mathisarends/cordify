@@ -21,11 +21,11 @@ async def test_callback_model_aggregates_the_same_response_for_request_and_strea
             yield ModelChunk(text="notes", tool_call=call)
             yield ModelChunk(usage=usage, stop_reason=StopReason.TOOL_CALLS)
         finally:
-            closed.append(request.model)
+            closed.append(model.info.name)
 
     model = CallbackModel(chunks)
     assert isinstance(model, Model) and isinstance(ScriptedModel([]), Model)
-    request = ModelRequest(model.info.name, ())
+    request = ModelRequest(())
     response = await model.request(request)
     async with model.stream(request) as stream:
         with pytest.raises(RuntimeError, match="Finish the stream"):
@@ -54,7 +54,7 @@ async def test_callback_model_closes_a_partially_read_stream_without_a_completed
         finally:
             closed.set()
 
-    async with CallbackModel(chunks).stream(ModelRequest("test", ())) as stream:
+    async with CallbackModel(chunks).stream(ModelRequest(())) as stream:
         assert (await anext(stream)).text == "partial"
     assert closed.is_set()
     with pytest.raises(RuntimeError, match="Finish the stream"):
@@ -74,7 +74,7 @@ async def test_callback_model_cancellation_waits_for_generator_cleanup():
         finally:
             closed.set()
 
-    task = asyncio.create_task(CallbackModel(chunks).request(ModelRequest("test", ())))
+    task = asyncio.create_task(CallbackModel(chunks).request(ModelRequest(())))
     await asyncio.wait_for(started.wait(), 3)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -93,13 +93,13 @@ async def test_callback_model_preserves_source_failures_and_closes_the_generator
             closed.append(True)
 
     with pytest.raises(ValueError, match="broken source"):
-        await CallbackModel(chunks).request(ModelRequest("test", ()))
+        await CallbackModel(chunks).request(ModelRequest(()))
     assert closed == [True]
 
 
 async def test_scripted_model_reports_an_exhausted_script_as_a_harnessed_error():
     model = ScriptedModel([])
     with pytest.raises(ScriptExhausted, match="ran out of responses") as raised:
-        async with model.stream(ModelRequest("test", ())):
+        async with model.stream(ModelRequest(())):
             pytest.fail("an empty script has no response to stream")
     assert isinstance(raised.value, HarnessedError)

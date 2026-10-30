@@ -51,7 +51,7 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
         assert any(isinstance(e, ToolCallFinishedEvent) and e.result.content == "3" for e in events)
         recorded = [e.request for e in agent.log.events if isinstance(e, ModelRequestedEvent)]
         assert recorded == model.requests
-        assert model.requests[0].model == "test-model"
+        assert agent.last(ModelRequestedEvent).model == model.info
         assert [m.role for m in model.requests[1].messages] == ["user", "assistant", "tool"]
         assert agent.status == "idle"
     assert agent.status == "closed"

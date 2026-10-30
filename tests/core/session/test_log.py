@@ -23,6 +23,7 @@ from harnessed.core.session.events import (
     UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog, derive_messages
+from harnessed.models import ModelInfo
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
@@ -74,7 +75,7 @@ async def test_jsonl_resume_preserves_history_and_acquires_new_writer(tmp_path):
         ]
     records = [json.loads(line) for line in (tmp_path / "resume.jsonl").read_text().splitlines()]
     assert [record["seq"] for record in records] == list(range(len(records)))
-    assert all(record["version"] == 2 for record in records)
+    assert all(record["version"] == 3 for record in records)
 
 
 async def test_jsonl_excludes_other_writers_and_releases_lock(tmp_path):
@@ -201,11 +202,11 @@ def test_event_json_roundtrip_includes_requests_and_frozen_tool_data():
         AssistantMessageEvent(Assistant(tool_calls=(call,)), request_id="request"),
         ModelRequestedEvent(
             ModelRequest(
-                "test",
                 (User("hello"),),
                 (ToolDefinition("nested", "description", {"type": "object", "properties": {}}),),
             ),
             request_id="request",
+            model=ModelInfo("test"),
         ),
         ToolCallFinishedEvent(call, ToolResult("ok")),
     )

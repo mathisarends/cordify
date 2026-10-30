@@ -34,7 +34,7 @@ class ContextBudget:
         return min(context_window, self.limit) if self.limit is not None else context_window
 
     def output_reserve(self, request: ModelRequest) -> int:
-        return max(request.max_tokens or 0, self.reserve_tokens)
+        return max(request.settings.max_tokens or 0, self.reserve_tokens)
 
     async def check(
         self, request: ModelRequest, *, context_window: int | None, counter: TokenCounter

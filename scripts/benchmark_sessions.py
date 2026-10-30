@@ -20,7 +20,14 @@ from time import perf_counter
 
 from harnessed import Agent
 from harnessed.core.messages import Assistant
-from harnessed.core.model import ModelChunk, ModelInfo, ModelRequest, ModelResponse, ModelUsage
+from harnessed.core.model import (
+    GenerationSettings,
+    ModelChunk,
+    ModelInfo,
+    ModelRequest,
+    ModelResponse,
+    ModelUsage,
+)
 from harnessed.core.session.codec import EventLogCodec
 from harnessed.core.session.session import SessionLog
 from harnessed.plugins import MemorySessions
@@ -54,6 +61,7 @@ class EchoModel:
     """Keep no requests or responses outside the active call."""
 
     info = ModelInfo("benchmark")
+    settings = GenerationSettings()
 
     def __init__(self, text: str) -> None:
         self.text = text
