@@ -71,6 +71,12 @@ to the console, with an outer backend span and model usage, without network
 access or credentials. See [the source](https://github.com/mathisarends/harnessed/blob/main/examples/29_tracing.py)
 and [the Phoenix/Langfuse setup guide](tracing.md).
 
+Add `--otlp` to use `otlp_provider()` with batched HTTP export instead. Configure
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and any authentication headers for your
+destination first; the model remains scripted and requires no provider credentials.
+The helper wraps all sessions and shuts down its provider on exit. The default
+console mode remains offline.
+
 ## System prompt composition
 
 `uv run python -m examples.32_system_prompts` declares literal and
