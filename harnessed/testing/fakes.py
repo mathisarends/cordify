@@ -6,7 +6,7 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from harnessed.core.session.events import SessionEvent
 from harnessed.core.session.store import MemoryPersistence
 from harnessed.core.tools.registry import ToolError
-from harnessed.plugins.filesystem import FileStat, Filesystem
+from harnessed.plugins.filesystem import FileStat, Filesystem, SearchResult, search_files
 from harnessed.plugins.shell import ProcResult, Shell
 
 
@@ -88,6 +88,9 @@ class _MemoryFiles:
             for path in sorted(self._entries())
             if path and _matches(PurePosixPath(path).parts, PurePosixPath(normalized).parts)
         )[:limit]
+
+    async def grep(self, query: str, *, pattern: str = "**/*", limit: int = 100) -> SearchResult:
+        return await search_files(self, query, pattern=pattern, limit=limit)
 
     async def stat(self, path: PurePath):
         key = _path(path)

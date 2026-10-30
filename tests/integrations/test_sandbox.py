@@ -23,7 +23,7 @@ from harnessed.integrations.sandbox.worker import Operation, Request, match_path
 from harnessed.integrations.sandbox.workspace import seed_archive
 from harnessed.kernel import MissingService
 from harnessed.plugins import Approvals, FilesystemTools, ShellTools
-from harnessed.plugins.filesystem import FileStat, FileSystemBackend
+from harnessed.plugins.filesystem import FileStat, FileSystemBackend, search_files
 from harnessed.plugins.shell import ProcResult, ShellBackend
 from harnessed.testing import ScriptedModel
 
@@ -81,6 +81,9 @@ class MemoryServices:
 
     async def glob(self, pattern, *, limit=1000):
         return [Path(name) for name in self.backend.files if Path(name).match(pattern)][:limit]
+
+    async def grep(self, query, *, pattern="**/*", limit=100):
+        return await search_files(self, query, pattern=pattern, limit=limit)
 
     async def delete(self, path):
         del self.backend.files[self.key(path)]
@@ -225,6 +228,32 @@ async def test_cancelled_startup_drains_and_cleans_partial_resources(tmp_path):
     opening.cancel()
     with pytest.raises(asyncio.CancelledError):
         await opening
+    assert backend.closed
+
+
+@pytest.mark.parametrize("cleanup_failure", [False, True])
+async def test_startup_timeout_preserves_timeout_error_and_drains_start(tmp_path, cleanup_failure):
+    drained = asyncio.Event()
+
+    class StartingBackend(MemoryBackend):
+        async def start(self, config):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                drained.set()
+                if cleanup_failure:
+                    raise RuntimeError("startup cleanup failed")
+
+    backend = StartingBackend()
+    sandbox = Sandbox(
+        backend=lambda: backend,
+        workspace=Workspace.copy_from(tmp_path),
+        startup_timeout=0.02,
+    )
+    with pytest.raises(TimeoutError):
+        async with app(sandbox).session():
+            pytest.fail("Startup exceeded its deadline")
+    assert drained.is_set()
     assert backend.closed
 
 

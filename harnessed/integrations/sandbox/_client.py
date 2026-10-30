@@ -8,7 +8,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
 
-from harnessed.plugins.filesystem import FileStat
+from harnessed.plugins.filesystem import FileStat, SearchResult
 from harnessed.plugins.shell import ProcResult
 
 from .process import finish
@@ -69,7 +69,7 @@ class WorkerClient:
         )
         try:
             output = await self.transport._request(
-                payload, timeout=request.timeout + 5, max_output_bytes=limit
+                payload, timeout=request.timeout, max_output_bytes=limit
             )
             if output.returncode:
                 detail = output.stderr.decode("utf-8", errors="replace")[:2000]
@@ -87,7 +87,7 @@ class WorkerClient:
                 "PermissionError": PermissionError,
                 "IsADirectoryError": IsADirectoryError,
                 "NotADirectoryError": NotADirectoryError,
-                "UnicodeDecodeError": ValueError,
+                "UnicodeDecodeError": UnicodeError,
                 "ValueError": ValueError,
             }
             raise errors.get(reply.error_type or "", SandboxError)(reply.error)
@@ -158,6 +158,14 @@ class WorkerClient:
         request = self.file_request(Operation.GLOB, Path(pattern), limit=limit)
         result = await self.request(request, TypeAdapter(list[str]))
         return tuple(Path(path) for path in result)
+
+    async def grep(self, query: str, *, pattern: str = "**/*", limit: int = 100) -> SearchResult:
+        if not query or not 1 <= limit <= 500:
+            raise ValueError("Search requires a non-empty query and a limit in [1, 500]")
+        if len(query.encode("utf-8")) > self.config.limits.max_transfer_bytes:
+            raise ValueError("Search query exceeds max_transfer_bytes")
+        request = self.file_request(Operation.GREP, Path(pattern), text=query, limit=limit)
+        return await self.request(request, TypeAdapter(SearchResult))
 
     async def stat(self, path: PurePath) -> FileStat:
         return await self.request(self.file_request(Operation.STAT, path), TypeAdapter(FileStat))

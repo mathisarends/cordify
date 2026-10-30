@@ -24,6 +24,7 @@ class Operation(StrEnum):
     WRITE = "write"
     LIST = "list"
     GLOB = "glob"
+    GREP = "grep"
     STAT = "stat"
     EXISTS = "exists"
     DELETE = "delete"
@@ -124,10 +125,9 @@ def read(request: Request) -> str:
             if not chunk:
                 return ""
             remaining -= len(chunk)
-        limit = (
-            min(request.limit, request.max_transfer_bytes) if request.limit is not None else None
-        )
-        value = stream.read(request.max_transfer_bytes + 1 if limit is None else limit)
+        maximum = request.max_transfer_bytes + 1
+        limit = maximum if request.limit is None else min(request.limit, maximum)
+        value = stream.read(limit)
         if len(value.encode("utf-8")) > request.max_transfer_bytes:
             raise ValueError("File response exceeds max_transfer_bytes; use a smaller range")
         return value
@@ -196,6 +196,53 @@ def matches(pattern: str, limit: int) -> list[str]:
                     if len(result) == limit:
                         return result
     return result
+
+
+def grep(request: Request) -> dict[str, list[str] | int]:
+    """Search inside the runtime, with the FilesystemTools preview and result limits."""
+    limit = request.limit if request.limit is not None else 100
+    if not request.text or not 1 <= limit <= 500:
+        raise ValueError("Search requires a non-empty query and a limit in [1, 500]")
+    hits: list[str] = []
+    notes: list[str] = []
+    scanned = 0
+
+    def result() -> dict[str, list[str] | int]:
+        value: dict[str, list[str] | int] = {
+            "matches": hits,
+            "scanned_files": scanned,
+            "notes": notes,
+        }
+        if len(json.dumps(value, ensure_ascii=False).encode("utf-8")) > request.max_transfer_bytes:
+            raise ValueError(
+                "Search response exceeds max_transfer_bytes; lower limit or narrow query/pattern"
+            )
+        return value
+
+    paths = matches(request.path, 1001)
+    if len(paths) > 1000:
+        notes.append("Path limit reached; narrow the glob pattern to search further.")
+    for path in paths[:1000]:
+        if metadata(path)["is_dir"]:
+            continue
+        try:
+            # Previews stay in the runtime. Only the bounded result is transferred.
+            text = read(
+                Request(Operation.READ, path=path, limit=200_001, max_transfer_bytes=4 * 200_001)
+            )
+        except UnicodeError:
+            continue
+        scanned += 1
+        if len(text) > 200_000:
+            notes.append(f"{path}: only the first 200000 characters were searched.")
+        for number, line in enumerate(text[:200_000].splitlines(), 1):
+            if request.text in line:
+                preview = line[:1000] + (" [line truncated]" if len(line) > 1000 else "")
+                hits.append(f"{path}:{number}: {preview}")
+                if len(hits) == limit:
+                    notes.append("Match limit reached; narrow the query or pattern.")
+                    return result()
+    return result()
 
 
 def command(request: Request) -> CommandResult:
@@ -305,6 +352,8 @@ def dispatch(request: Request) -> object:
             return [metadata(str(PurePosixPath(request.path, name))) for name in sorted(names)]
         case Operation.GLOB:
             return matches(request.path, request.limit if request.limit is not None else 1000)
+        case Operation.GREP:
+            return grep(request)
         case Operation.READ_BYTES:
             if request.limit is not None and request.limit < 0:
                 raise ValueError("File ranges must be non-negative")

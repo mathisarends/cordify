@@ -28,7 +28,13 @@ class ProcResult:
 
 
 class ShellBackend(Protocol):
-    """Run commands with cwd interpreted relative to the backend's filesystem."""
+    """Run commands with cwd interpreted relative to the backend's filesystem.
+
+    The timeout includes queueing, launch and execution. Expiry raises
+    TimeoutError; cancellation propagates CancelledError after owned cleanup.
+    A failed or interrupted command must never be replayed automatically.
+    Environment and capture limits are configured on the backend itself.
+    """
 
     async def run(self, argv: list[str], *, cwd: Path, timeout: float) -> ProcResult: ...
 
@@ -106,10 +112,10 @@ class LocalShell:
             )
         )
         try:
-            process, _ = await asyncio.shield(spawning)
-            if job is not None:
-                job.attach_and_resume(process.get_pid())
             async with asyncio.timeout(command.timeout):
+                process, _ = await asyncio.shield(spawning)
+                if job is not None:
+                    job.attach_and_resume(process.get_pid())
                 await protocol.exited.wait()
                 terminate()
                 await protocol.closed.wait()
@@ -185,9 +191,10 @@ def proc_result(value: ProcResult) -> ToolResult:
     )
 
 
-class ShellToolsConfig(_Options):
+class ShellToolsConfig(PluginConfig):
     cwd: Path = Path(".")
     timeout: Annotated[float, Field(gt=0, le=600)] = 30.0
+    max_timeout: Annotated[float, Field(gt=0, le=600)] = 600.0
 
     @model_validator(mode="after")
     def validate_timeout(self) -> Self:
@@ -209,15 +216,11 @@ class ShellTools(Plugin, needs=(ShellBackend, ToolRegistry)):
         *,
         timeout: float = 30.0,
         max_timeout: float = 600.0,
-        max_output_bytes: int = 1_048_576,
-        env: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             cwd=Path(cwd),
             timeout=timeout,
             max_timeout=max_timeout,
-            max_output_bytes=max_output_bytes,
-            env=env,
         )
 
     async def setup(self, ctx: Context) -> None:
@@ -242,10 +245,16 @@ class ShellTools(Plugin, needs=(ShellBackend, ToolRegistry)):
         return await shell.run(argv, cwd=self.cwd, timeout=limit)
 
 
+class ShellConfig(ShellToolsConfig):
+    max_output_bytes: Annotated[int, Field(ge=256)] = 1_048_576
+    env: dict[str, str] | None = None
+
+
 class Shell(ShellTools, slot="shell"):
     """Expose argv-based commands with safe approval defaults and bounded output."""
 
     needs = (ToolRegistry,)
+    Config = ShellConfig
     usage = SystemSection(
         text=(
             "Run executables with argv. Filter large output and check exit codes before continuing."
@@ -259,14 +268,17 @@ class Shell(ShellTools, slot="shell"):
         implementation: ShellBackend | None = None,
         timeout: float = 30.0,
         max_timeout: float = 600.0,
-        max_output_bytes: int = 1_048_576,
+        max_output_bytes: int | None = None,
         env: dict[str, str] | None = None,
     ) -> None:
-        super().__init__(
-            cwd=cwd,
+        if implementation is not None and (max_output_bytes is not None or env is not None):
+            raise ValueError("Configure env and max_output_bytes on the supplied ShellBackend")
+        Plugin.__init__(
+            self,
+            cwd=Path(cwd),
             timeout=timeout,
             max_timeout=max_timeout,
-            max_output_bytes=max_output_bytes,
+            max_output_bytes=max_output_bytes if max_output_bytes is not None else 1_048_576,
             env=env,
         )
         self.implementation = implementation
@@ -275,5 +287,10 @@ class Shell(ShellTools, slot="shell"):
         await super().setup(ctx)
         backend = self.implementation
         if backend is None:
-            backend = LocalShell(**self.config.model_dump(exclude={"cwd", "timeout"}))
+            config = ShellConfig.model_validate(self.config)
+            backend = LocalShell(
+                max_timeout=config.max_timeout,
+                max_output_bytes=config.max_output_bytes,
+                env=config.env,
+            )
         ctx.provide(ShellBackend, backend)

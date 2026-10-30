@@ -140,18 +140,17 @@ class WorkerProcess:
         return self.stderr.decode("utf-8", errors="replace")
 
     async def request(self, payload: bytes, *, timeout: float, maximum: int) -> ProcessOutput:
-        async with self._lock:
+        async with asyncio.timeout(timeout), self._lock:
             process = self.process
             if process is None or process.returncode is not None:
                 raise SandboxError("Sandbox worker is closed: " + self.diagnostics())
             assert process.stdin is not None and process.stdout is not None
-            async with asyncio.timeout(timeout):
-                process.stdin.write(payload + b"\n")
-                await process.stdin.drain()
-                try:
-                    reply = await process.stdout.readline()
-                except ValueError as error:
-                    raise SandboxError("Sandbox response exceeds its transport limit") from error
+            process.stdin.write(payload + b"\n")
+            await process.stdin.drain()
+            try:
+                reply = await process.stdout.readline()
+            except ValueError as error:
+                raise SandboxError("Sandbox response exceeds its transport limit") from error
             if not reply or len(reply) > maximum:
                 raise SandboxError("Sandbox worker returned an empty or oversized response")
             return ProcessOutput(0, reply, b"")

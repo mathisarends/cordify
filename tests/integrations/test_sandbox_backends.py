@@ -349,6 +349,55 @@ async def test_live_docker_shell_and_filesystem_share_isolation(tmp_path):
 
 
 @pytest.mark.skipif(
+    os.environ.get("HARNESSED_TEST_DOCKER") != "1",
+    reason="Requires a running Docker daemon and a pre-pulled image",
+)
+async def test_live_docker_batched_search_and_transfer_failures(tmp_path, monkeypatch):
+    sandbox = docker.DockerSandbox(
+        image=os.environ.get("HARNESSED_SANDBOX_IMAGE", "python:3.12-slim"),
+        workspace=Workspace.copy_from(tmp_path),
+        limits=SandboxLimits(max_transfer_bytes=16_384),
+    )
+    agent = Agent(model=ScriptedModel([]), plugins=[sandbox])
+    async with agent.session() as session:
+        services = sandbox.services(session)
+        created = await services.shell.run(
+            [
+                "python3",
+                "-c",
+                "from pathlib import Path\n"
+                "Path('many').mkdir()\n"
+                "for number in range(1000):\n"
+                "    Path(f'many/{number:04}.txt').write_text('no matches')\n"
+                "Path('large.txt').write_text('x' * 20000)\n"
+                "Path('binary.bin').write_bytes(b'\\xff')\n",
+            ],
+            cwd=Path("."),
+            timeout=10,
+        )
+        assert created.returncode == 0
+        original_run = docker.run_process
+        calls = []
+
+        async def counted(argv, **kwargs):
+            calls.append(argv)
+            return await original_run(argv, **kwargs)
+
+        monkeypatch.setattr(docker, "run_process", counted)
+        files = services.file_system
+        result = await files.grep("needle", pattern="many/*.txt")
+        assert result.matches == () and result.scanned_files == 1000 and result.notes == ()
+        assert len(calls) == 1 and calls[0][1] == "exec"
+        with pytest.raises(ValueError, match="max_transfer_bytes"):
+            await files.read(Path("large.txt"), limit=20000)
+        assert await files.read(Path("large.txt"), limit=1000) == "x" * 1000
+        with pytest.raises(UnicodeError):
+            await files.read(Path("binary.bin"))
+        # A large text preview stays in the runtime even with a smaller transfer cap.
+        assert (await files.grep("needle", pattern="*")).scanned_files == 1
+
+
+@pytest.mark.skipif(
     not os.environ.get("HARNESSED_BWRAP_ROOTFS"),
     reason="Set HARNESSED_BWRAP_ROOTFS to a prepared Linux rootfs",
 )
@@ -385,6 +434,11 @@ async def exercise_live_sandbox(sandbox, tmp_path):
         await sandbox.export(session, source="output.bin", destination=tmp_path / "export.bin")
         assert (tmp_path / "export.bin").read_bytes() == b"\x00\xff"
         assert await files.read_bytes(Path("output.bin"), limit=1) == b"\x00"
+        with pytest.raises(UnicodeError):
+            await files.read(Path("output.bin"))
+        search = await files.grep("source", pattern="*")
+        assert search.matches == ("input.txt:1: source",)
+        assert search.scanned_files == 1  # Skip the directory and invalid UTF-8 binary.
         assert not (tmp_path / "output.bin").exists()
         with pytest.raises(ValueError):
             await files.read(Path("../outside"))

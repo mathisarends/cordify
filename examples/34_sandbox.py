@@ -39,6 +39,7 @@ async def exercise(sandbox: Sandbox, directory: Path) -> None:
         version = await shell.run(["python3", "--version"], cwd=Path("."), timeout=5)
         print(version.stdout.strip())
         print(await file_system.read(Path("result.txt")))
+        print(await file_system.grep("Created", pattern="*.txt"))
         print(result.text)
         print((directory / "exported.txt").read_text(encoding="utf-8"))
 

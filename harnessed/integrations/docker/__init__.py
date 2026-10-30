@@ -64,6 +64,7 @@ class DockerBackend(WorkerRuntime):
         self.name = f"harnessed-{uuid4().hex}"
         self._attempted = False
         self._removed = False
+        self._script: str | None = None
 
     async def command(self, argv: list[str], *, timeout: float = 30.0) -> ProcessOutput:
         return await run_process([self.executable, *argv], timeout=timeout)
@@ -71,6 +72,7 @@ class DockerBackend(WorkerRuntime):
     async def start(self, config: SandboxConfig) -> None:
         client = self._begin_start(config)
         self.config = config
+        self._script = await run_sync(partial(Path(worker.__file__).read_text, encoding="utf-8"))
         limits = config.limits
         root = await run_sync(partial(source_root, config.workspace))
         info = await self.command(
@@ -178,10 +180,10 @@ class DockerBackend(WorkerRuntime):
     ) -> ProcessOutput:
         if self._state not in (RuntimeState.STARTING, RuntimeState.READY):
             raise SandboxError(f"Docker sandbox is not available: {self._state}")
+        assert self._script is not None
         try:
-            script = await run_sync(partial(Path(worker.__file__).read_text, encoding="utf-8"))
             output = await run_process(
-                [self.executable, "exec", "-i", self.name, self.python, "-I", "-c", script],
+                [self.executable, "exec", "-i", self.name, self.python, "-I", "-c", self._script],
                 input=payload,
                 timeout=timeout,
                 max_output_bytes=max_output_bytes,

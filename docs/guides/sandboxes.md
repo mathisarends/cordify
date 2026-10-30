@@ -37,6 +37,7 @@ async with agent.session() as session:
 
     result = await shell.run(["python3", "--version"], cwd=Path("."), timeout=30)
     report = await file_system.read(Path("reports/result.md"))
+    matches = await file_system.grep("TODO", pattern="**/*.py", limit=20)
     await sandbox.export(
         session,
         source="reports/result.md",
@@ -47,9 +48,9 @@ async with agent.session() as session:
 `sandbox.services(session)` returns immutable, typed `SandboxServices` with
 `shell` and `file_system` fields for that recipe's live session mount. Resolve
 them once and call `shell.run(...)`, `file_system.read(...)`,
-`file_system.write(...)` or `file_system.read_bytes(...)` directly. The services
-are also available through the existing kernel injection contracts. These direct
-Python calls are application operations; model tool calls still pass through the
+`file_system.write(...)`, `file_system.read_bytes(...)` or `file_system.grep(...)`
+directly. The services are also available through the existing kernel injection
+contracts. These direct Python calls are application operations; model tool calls still pass through the
 tool registry and approval policy.
 
 Each mount creates a fresh container, a read-only root filesystem and bounded
@@ -61,6 +62,13 @@ inside the container; the SDK never opens a container-generated path on the host
 Docker daemon credentials belong to the host launcher, outside the workload.
 Images declaring automatic volumes are rejected, image health checks are disabled,
 and the engine must report Linux CPU, memory, swap and PID limit support.
+
+The container starts eagerly when the session opens. Each operation uses a new
+`docker exec` and Python helper; the helper source is read once per backend.
+`grep` runs discovery, metadata checks and preview reads inside a single helper
+request, so searching 1000 files needs one `docker exec`, rather than one per
+metadata lookup and read. This reduces process launches; it does not remove
+container startup costs or introduce a persistent Docker worker.
 
 `runtime="runsc"` selects an application-installed OCI runtime such as gVisor.
 Harnessed forwards the selection to Docker and fails if it is unavailable; it
@@ -137,7 +145,19 @@ trees should be stable and application-controlled during copying. Copies are
 limited to 10,000 entries; the entire uncompressed tar archive, including metadata,
 must fit `max_transfer_bytes` and `workspace_mb`. The default transfer cap is
 16 MiB. Per-file reads, edits, writes and exports are bounded by the transfer cap.
-Reads use Unicode character offsets, as with the local filesystem.
+Reads use Unicode character offsets and limits, as with the local filesystem.
+The byte cap applies to the UTF-8 encoding of the returned range, not its character
+count. A read returns the requested range up to EOF or raises `ValueError` if that
+range exceeds the cap; it never silently shortens a range. `read_bytes()` uses
+byte limits. Invalid UTF-8 raises `UnicodeError` on both local and sandbox backends
+(the local implementation raises its `UnicodeDecodeError` subclass).
+
+`file_system.grep(query, pattern="**/*", limit=100)` returns a `SearchResult` with
+`matches`, `scanned_files` and `notes`. It skips invalid UTF-8, scans at most 1000
+paths and the first 200000 characters of each text file, and reports path, preview,
+line and match truncation in the result. Sandbox previews stay inside the runtime,
+so only the result must fit the transfer cap. An oversized result raises
+`ValueError` with guidance to narrow the search; it is never silently incomplete.
 
 `Workspace.mount("./project", readonly=True)` exposes the selected directory
 directly. Mounts do not apply copy exclusions. A writable mount immediately changes
@@ -168,6 +188,12 @@ connection loss is handled by the service operation that encounters it. There is
 no additional daemon probe before every call and no automatic replay of a
 possibly executed command. Closed or failed built-in runtimes reject previously
 obtained service handles.
+
+`startup_timeout` expiry raises `TimeoutError` after the start task is cancelled
+and drained; caller cancellation remains `CancelledError`. A shell request's
+timeout includes queueing, launcher startup and execution. The Bubblewrap channel
+uses one deadline across its lock wait and I/O; the time spent waiting is not
+reset when it acquires the lock. Owned cleanup may take additional time.
 
 ## Approvals and cancellation
 
@@ -237,6 +263,17 @@ transport. This is an implementation detail; a backend using a vendor SDK can
 provide its own `ShellBackend` and `FileSystemBackend` directly. Keep vendor SDK
 dependencies in the owning integration's optional extra and import that
 integration explicitly; the base SDK does not need them.
+
+Filesystem implementations provide `grep()` alongside reads, writes and metadata.
+Implement it in the remote runtime to batch discovery and reads. An implementation
+that only needs a Python fallback can delegate to
+`harnessed.plugins.filesystem.search_files(self, query, pattern=pattern, limit=limit)`.
+The fallback preserves search notes and skips `UnicodeError`; other read errors,
+including a preview that exceeds a backend's byte cap, propagate explicitly.
+`ShellTools(cwd=".", timeout=30, max_timeout=600)` only configures tool arguments
+and schema limits. Configure workload `env` and `max_output_bytes` on the sandbox
+or supplied shell backend. `Shell` accepts those options only for its own local
+backend; combining them with `implementation=` is rejected.
 
 ## Verification
 

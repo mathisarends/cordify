@@ -12,6 +12,11 @@
 - Expose ready `shell` and `file_system` services through the sandbox lifecycle
   contract and `sandbox.services(session)`. Keep worker transport internal and add
   bounded binary reads to filesystem backends for explicit exports.
+- Preserve sandbox startup timeout errors, include queueing in request deadlines,
+  use a common UnicodeError decoding contract and reject oversized file ranges
+  rather than silently shortening them. Execute sandbox grep in one worker request
+  and cache Docker helper source per backend. ShellTools only configures tool
+  arguments; backend environment and capture limits belong to the backend.
 
 - Close unusable MCP connections and hide their tools after protocol errors,
   invalid tool responses, terminated HTTP sessions and stdio disconnects.

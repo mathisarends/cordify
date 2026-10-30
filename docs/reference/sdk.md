@@ -42,7 +42,14 @@ for an application-configured OCI runtime.
 binary file while that recipe's session mount is live. `sandbox.services(session)`
 returns typed `SandboxServices`: assign `shell = services.shell` and
 `file_system = services.file_system` for direct `shell.run(...)`,
-`file_system.read(...)` and `file_system.read_bytes(...)` calls.
+`file_system.read(...)`, `file_system.read_bytes(...)` and
+`file_system.grep(query, pattern="**/*", limit=100)` calls. Grep returns
+`SearchResult(matches, scanned_files, notes)` and executes in one built-in worker
+request. Text ranges count Unicode characters; a range that exceeds the transfer
+byte budget raises `ValueError`. Invalid UTF-8 raises `UnicodeError`.
+`ShellTools` accepts only `cwd`, `timeout` and `max_timeout`; configure `env` and
+`max_output_bytes` on the sandbox/backend. Shell deadlines include queueing and
+launcher startup, and expired sandbox startup raises `TimeoutError`.
 `Sandbox(backend=MyBackend, workspace=...)` accepts a zero-argument constructor or
 factory returning `SandboxBackend`. Its asynchronous `start()` guarantees readiness,
 its `shell` and `file_system` properties expose the existing typed backend contracts,

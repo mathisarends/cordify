@@ -5,7 +5,7 @@ from harnessed import Session
 from harnessed.integrations.bubblewrap import BubblewrapBackend, BubblewrapSandbox
 from harnessed.integrations.docker import DockerBackend, DockerSandbox
 from harnessed.integrations.sandbox import Sandbox, SandboxBackend, SandboxServices, Workspace
-from harnessed.plugins.filesystem import FileSystemBackend
+from harnessed.plugins.filesystem import FileSystemBackend, SearchResult
 from harnessed.plugins.shell import ShellBackend
 
 
@@ -38,3 +38,4 @@ async def use_services(sandbox: Sandbox, session: Session) -> None:
     await shell.run(["python3", "--version"], cwd=Path("."), timeout=30)
     assert_type(await file_system.read(Path("file.txt")), str)
     assert_type(await file_system.read_bytes(Path("result.bin"), limit=1024), bytes)
+    assert_type(await file_system.grep("TODO", pattern="**/*.py", limit=20), SearchResult)
