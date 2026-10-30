@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.0 (Unreleased)
+
+This release adds explicit Docker and Bubblewrap sandboxes and hardens MCP
+transport failures and cleanup. It includes breaking shell/filesystem backend
+changes from 0.5.0; the session record format remains version **2**.
+
+### Sandbox integrations and backend contracts
+
 - Add explicit Docker and Bubblewrap sandbox integrations, shared shell/filesystem
   backends, session-owned cleanup, bounded copy workspaces and binary exports.
   Bubblewrap verifies cgroup-v2 limits; both fail rather than falling back to local
@@ -17,6 +25,12 @@
   rather than silently shortening them. Execute sandbox grep in one worker request
   and cache Docker helper source per backend. ShellTools only configures tool
   arguments; backend environment and capture limits belong to the backend.
+- Add the [sandbox guide](docs/guides/sandboxes.md), typed backend extension
+  contracts and the offline `uv run python -m examples.34_sandbox` example.
+  CI exercises the native Docker integration on Linux/Python 3.12; Bubblewrap
+  runtime tests require an explicitly configured Linux host and rootfs.
+
+### MCP transport reliability
 
 - Close unusable MCP connections and hide their tools after protocol errors,
   invalid tool responses, terminated HTTP sessions and stdio disconnects.
@@ -32,6 +46,44 @@
   malformed output, minimal environment inheritance and literal arguments.
 - Document MCP deployment trust boundaries, server isolation and resource limits
   in the [MCP guide](docs/guides/mcp.md#deployment-boundary).
+
+### Upgrade from 0.5.0
+
+1. Move `env` and `max_output_bytes` from `ShellTools(...)` to the supplied
+   `LocalShell(...)` or sandbox integration. `ShellTools` now accepts only `cwd`,
+   `timeout` and `max_timeout`. When using `Shell(implementation=...)`, configure
+   environment and capture limits directly on that backend; supplying these
+   options to `Shell` as well raises `ValueError`. `Shell` still accepts them
+   when it owns its default local backend.
+2. Interpret `ShellTools(cwd=...)` relative to the selected backend's filesystem.
+   It is no longer resolved to an absolute host path during mount. Sandboxes
+   require workspace-relative paths. Custom `ShellBackend` implementations must
+   include queueing and launcher startup in timeouts, propagate `TimeoutError`
+   on expiry and avoid automatically replaying failed commands.
+3. Extend custom `FileSystemBackend` implementations with bounded
+   `read_bytes(path, *, limit=None)` and
+   `grep(query, *, pattern="**/*", limit=100) -> SearchResult` methods. Import
+   `SearchResult` and the optional `search_files` fallback from
+   `harnessed.plugins.filesystem`. Invalid UTF-8 raises `UnicodeError`; requested
+   ranges that exceed a backend's byte budget must raise `ValueError` rather
+   than silently truncate. Implement remote grep in the backend to batch work.
+4. Review tool allowlists and prompt composition when mounting `FilesystemTools`:
+   it now declares `usage` guidance and exposes discovery, editing and deletion
+   as well as reading and writing. Runtime mounts must explicitly select
+   `section_delivery`, as for other plugins with system sections. Ordinary
+   mutating tool calls still use the existing approval policy.
+5. Keep existing version **2** session stores; no migration is required from
+   0.5.0. Sandbox files are not persisted with the conversation or snapshotted
+   by forks. Export copied results before session close; reopening creates a
+   fresh runtime. Failed MCP connections now hide their tools and reject later
+   calls; create a fresh connection instead of retrying on the closed mount.
+
+Sandbox integrations are opt-in and need no new Python extra. Install and
+configure the native runtime and its image/rootfs explicitly, then compose the
+sandbox with `ShellTools()` and `FilesystemTools()`. Existing `Shell` and
+`Filesystem` plugins continue to own their local backends. See the
+[sandbox guide](docs/guides/sandboxes.md) for resource controls, direct typed
+services, exports and deployment boundaries.
 
 ## 0.5.0 (2026-10-30)
 
