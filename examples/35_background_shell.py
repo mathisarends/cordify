@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from harnessed import Agent, ApprovalAnswer, ToolCall
-from harnessed.models import ModelChunk, ModelRequest, ToolReply
+from harnessed.models import ModelChunk, ModelRequest, ToolMessage
 from harnessed.plugins import Approvals, BackgroundShell, Shell
 from harnessed.testing import CallbackModel
 
@@ -20,7 +20,9 @@ async def main() -> None:
         step += 1
         if step in (2, 6):
             reply = next(
-                message for message in reversed(request.messages) if isinstance(message, ToolReply)
+                message
+                for message in reversed(request.messages)
+                if isinstance(message, ToolMessage)
             )
             command_id = json.loads(reply.text)["command_id"]
         if step == 1:

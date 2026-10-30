@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from harnessed.core.errors import SessionFormatError
-from harnessed.core.messages import ToolCall, User
+from harnessed.core.messages import ToolCall, UserMessage
 from harnessed.core.model import ModelRequest, ToolDefinition
 from harnessed.core.session.codec import EventLogCodec, decode_event, encode_event, event_schema
 from harnessed.core.session.events import (
@@ -36,6 +36,19 @@ async def test_current_jsonl_fixture_loads_with_stable_request_links(tmp_path):
     ]
     assert len(correlated) == 3
     assert {e.request_id for e in correlated} == {"request"}
+
+
+async def test_previous_log_format_fails_without_rewriting_the_file(tmp_path):
+    old_record = b'{"version":2,"seq":0,"type":"turn.start","data":{"turn_id":"old"}}\n'
+    path = tmp_path / "before.jsonl"
+    path.write_bytes(old_record)
+    persistence = JsonlPersistence(tmp_path)
+    try:
+        with pytest.raises(ValueError, match="Invalid session record"):
+            await persistence.load("before")
+    finally:
+        await persistence.aclose()
+    assert path.read_bytes() == old_record
 
 
 def test_canonical_tags_roundtrip_with_discriminated_schema():
@@ -86,7 +99,7 @@ def test_nested_values_reject_non_json_keys_and_obsolete_fields():
         decode_event(record)
     record = encode_event(
         ModelRequestedEvent(
-            ModelRequest((User("hello"),)), request_id="request", model=ModelInfo("test")
+            ModelRequest((UserMessage("hello"),)), request_id="request", model=ModelInfo("test")
         )
     )
     record["data"]["request"]["cache_breakpoints"] = [1]
@@ -109,8 +122,8 @@ def test_messages_reject_fields_from_other_variants(role):
 
 
 def test_log_deltas_preserve_exact_requests_across_edits_reordering_and_tool_changes():
-    first = User("first")
-    second = User("second")
+    first = UserMessage("first")
+    second = UserMessage("second")
     tool = ToolDefinition("lookup", "description", {"type": "object"})
     requests = [
         ModelRequest((first,), (tool,)),
@@ -141,7 +154,7 @@ def test_log_deltas_preserve_exact_requests_across_edits_reordering_and_tool_cha
 @pytest.mark.parametrize("prefix", [-1, True, 1, "0"])
 def test_log_codec_rejects_invalid_or_missing_prefix_bases(prefix):
     event = ModelRequestedEvent(
-        ModelRequest((User("hello"),)), request_id="request", model=ModelInfo("test")
+        ModelRequest((UserMessage("hello"),)), request_id="request", model=ModelInfo("test")
     )
     record = EventLogCodec().encode(event)
     record["data"]["request"]["messages"]["prefix"] = prefix

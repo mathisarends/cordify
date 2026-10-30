@@ -17,7 +17,7 @@ from harnessed import (
 )
 from harnessed.core.compaction import ModelSummarizer
 from harnessed.core.hooks import PreStep
-from harnessed.core.messages import Assistant, ToolStatus, User
+from harnessed.core.messages import AssistantMessage, ToolStatus, UserMessage
 from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.codec import EventLogCodec, decode_event, encode_event
 from harnessed.core.session.events import (
@@ -207,7 +207,7 @@ async def test_compaction_preserves_base_prompt_recent_turns_and_replaces_previo
     await session.append(SystemMessageEvent("permanent rules"))
     for name in ("one", "two"):
         await session.append(TurnStartedEvent(name))
-        await session.append(UserMessageEvent(User(name)))
+        await session.append(UserMessageEvent(UserMessage(name)))
         await session.append(TurnEndedEvent(name))
     await session.append(CompactionAppliedEvent(4, "first summary"))
     assert [m.text for m in session.messages] == [
@@ -326,14 +326,14 @@ async def test_compaction_does_not_commit_a_summary_that_expands_the_request():
 
 
 async def test_empty_or_non_advancing_compaction_is_rejected_on_replay():
-    seed = (TurnStartedEvent("t"), UserMessageEvent(User("one")), TurnEndedEvent("t"))
+    seed = (TurnStartedEvent("t"), UserMessageEvent(UserMessage("one")), TurnEndedEvent("t"))
     with pytest.raises(ValueError, match="non-empty"):
         SessionLog("invalid", seed=(*seed, CompactionAppliedEvent(3, "")))
     with pytest.raises(ValueError, match="existing event prefix"):
         SessionLog("invalid", seed=(*seed, CompactionAppliedEvent(99, "summary")))
 
 
-async def test_latest_observation_policy_limits_old_summaries_per_source_and_unwinds():
+async def test_latest_observation_policy_keeps_one_unchanged_snapshot_and_unwinds():
 
     class Observer(Plugin, needs=(Session,)):
         def __init__(self):
@@ -342,7 +342,7 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
         @hook(PreStep)
         async def observe(self, event, next_, agent: Inject[Session]):
             self.index += 1
-            agent.observe(Observation("browser", f"full {self.index}", f"brief {self.index}"))
+            agent.observe(Observation("browser", f"full {self.index}"))
             return await next_()
 
     model = ScriptedModel(["one", "two", "three"])
@@ -351,17 +351,16 @@ async def test_latest_observation_policy_limits_old_summaries_per_source_and_unw
         plugins=[
             Approvals(default=PolicyDecision.ALLOW),
             Observer(),
-            LatestObservationOnly(max_summaries=1),
+            LatestObservationOnly(),
         ],
     ).session("observations") as agent:
         for text in ("one", "two", "three"):
             await agent.run(text)
         texts = [m.text for m in model.requests[-1].messages]
-        assert "brief 1" not in texts and "brief 2" in texts and ("full 3" in texts)
-        assert "full 1" not in texts
+        assert "full 1" not in texts and "full 2" not in texts and "full 3" in texts
         assert SessionLog("replay", seed=agent.log.events).messages == agent.log.messages
     assert isinstance(agent.log.events[-1], ObservationPolicyAppliedEvent)
-    assert agent.log.events[-1].max_summaries is None
+    assert agent.log.events[-1].max_observations is None
 
 
 async def test_cache_usage_is_preserved_as_provider_reported_usage():
@@ -378,14 +377,14 @@ async def test_cache_usage_is_preserved_as_provider_reported_usage():
 
 async def test_model_summarizer_uses_explicit_model_without_tools_and_closes_stream():
     llm = ScriptedModel(["summary"])
-    summary = await ModelSummarizer(llm).summarize((User("history"),), max_tokens=32)
+    summary = await ModelSummarizer(llm).summarize((UserMessage("history"),), max_tokens=32)
     assert summary.text == "summary"
     assert not llm.requests[0].tools and llm.requests[0].settings.max_tokens == 32
 
 
 async def test_model_summarizer_keeps_tool_names_and_arguments_in_summary_input():
     llm = ScriptedModel(["summary"])
-    messages = (Assistant(tool_calls=(ToolCall("bash", {"command": "pytest tests/auth"}),)),)
+    messages = (AssistantMessage(tool_calls=(ToolCall("bash", {"command": "pytest tests/auth"}),)),)
     await ModelSummarizer(llm).summarize(messages, max_tokens=32)
     transcript = llm.requests[0].messages[-1].text
     assert "bash" in transcript and "pytest tests/auth" in transcript
@@ -398,7 +397,7 @@ async def test_model_summarizer_keeps_tool_names_and_arguments_in_summary_input(
         lambda: Compaction(trigger=at_ratio(1.1), summarizer=ExtractiveSummarizer()),
         lambda: Compaction(trigger=at_ratio(0.8), summarizer=ExtractiveSummarizer(), keep_turns=-1),
         lambda: Spill(threshold_tokens=0),
-        lambda: LatestObservationOnly(max_summaries=-1),
+        lambda: ObservationPolicyAppliedEvent(0),
         lambda: ModelUsage(-1),
     ],
 )

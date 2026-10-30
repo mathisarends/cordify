@@ -11,14 +11,14 @@ from harnessed.core.event_kinds import EventKind
 from harnessed.core.limits import FinalStepPolicy
 from harnessed.core.messages import (
     ApprovalAnswer,
-    Assistant,
+    AssistantMessage,
     Message,
     Observation,
     PolicyDecision,
     SpillRef,
     ToolCall,
     ToolResult,
-    User,
+    UserMessage,
     freeze,
 )
 from harnessed.core.model import (
@@ -63,11 +63,6 @@ class ModelRequestOutcome(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     CONTEXT_EXCEEDED = "context_exceeded"
-
-
-class ObservationForm(StrEnum):
-    FULL = "full"
-    SUMMARY = "summary"
 
 
 class TurnOutcome(StrEnum):
@@ -395,10 +390,10 @@ class UserMessageEvent(SessionEvent):
     __hash__ = None
 
     type: Literal[EventKind.USER_MESSAGE] = field(default=EventKind.USER_MESSAGE, kw_only=True)
-    message: User
+    message: UserMessage
 
     def __post_init__(self) -> None:
-        if not isinstance(self.message, User):
+        if not isinstance(self.message, UserMessage):
             raise TypeError("UserMessageEvent requires a user message value")
 
 
@@ -484,13 +479,16 @@ class ModelRequestFailedEvent(SessionEvent):
 
 @dataclass(frozen=True)
 class IncludedObservation:
+    """One unchanged observation in the final model request, including its images."""
+
     source: str
     refs: tuple[str, ...]
-    form: ObservationForm
+    turn_id: Identifier = field(kw_only=True)
+    step: StepNumber = field(kw_only=True)
+    message_id: Identifier = field(kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "refs", tuple(self.refs))
-        object.__setattr__(self, "form", ObservationForm(self.form))
 
 
 @dataclass(frozen=True)
@@ -594,13 +592,13 @@ class ObservationPolicyAppliedEvent(SessionEvent):
     type: Literal[EventKind.OBSERVATION_POLICY_APPLIED] = field(
         default=EventKind.OBSERVATION_POLICY_APPLIED, kw_only=True
     )
-    max_summaries: int | None = None
+    max_observations: int | None = None
 
     def __post_init__(self) -> None:
-        if self.max_summaries is not None and (
-            type(self.max_summaries) is not int or self.max_summaries < 0
+        if self.max_observations is not None and (
+            type(self.max_observations) is not int or self.max_observations < 1
         ):
-            raise ValueError("max_summaries must be a non-negative integer or None")
+            raise ValueError("max_observations must be a positive integer or None")
 
 
 @dataclass(frozen=True)
@@ -648,13 +646,13 @@ class AssistantMessageEvent(SessionEvent):
     type: Literal[EventKind.ASSISTANT_MESSAGE] = field(
         default=EventKind.ASSISTANT_MESSAGE, kw_only=True
     )
-    message: Assistant
+    message: AssistantMessage
     request_id: Identifier = field(kw_only=True)
     interrupted: bool = False
     stop_reason: StopReason | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.message, Assistant):
+        if not isinstance(self.message, AssistantMessage):
             raise TypeError("AssistantMessageEvent requires an assistant message value")
         if self.stop_reason is not None:
             object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))

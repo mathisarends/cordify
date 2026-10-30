@@ -27,7 +27,7 @@ must be read before closing. Caller-held results/logs still consume memory.
 Retention limits conversation count, not bytes or the length of an active session.
 
 JSONL records store unchanged model history prefixes and tool definitions relative
-to the preceding request. Ordered loading reconstructs every exact request;
+to the preceding request. Ordered loading reconstructs every recorded request;
 ordinary growing conversations no longer repeat their entire history on disk.
 Use `EventLogCodec` from `harnessed.core.session.codec` when reading raw JSONL
 records in order. `encode_event`/`decode_event` handle standalone event exports.
@@ -46,6 +46,77 @@ agent = Agent(model="deepseek:deepseek-chat", plugins=[JsonlSessions()])
 Each `run` queues its own turn. Concurrent calls receive separate results and do
 not wait for later turns to finish. The session's full log and accumulated usage
 remain available independently of any one result.
+
+## Image assets and memory
+
+An open JSONL session keeps its event history in RAM, but its stored image bytes
+live in `<root>/<session-id>.assets/<sha256>`. Inline `ImagePart` data URLs in
+standard message, observation and tool-result events are converted to
+`ImageReference` values before admission. Each reference carries an `AssetRef`
+with SHA-256, media type and byte size; image detail remains on `ImageReference`.
+The binary file is committed before the referencing event. Request records and
+streamed durable events contain these references, not expanded Base64 strings.
+
+Local `Image(path)` attachments go directly into storage. Applications that
+already have screenshot bytes can avoid encoding and decoding Base64:
+
+```python
+from harnessed import Observation
+from harnessed.models import ImageReference, TextPart
+
+# Inside an async PreStep hook:
+asset = await event.session.assets.put(screenshot_bytes, media_type="image/png")
+event.session.observe(
+    Observation("browser", (TextPart(browser_text), ImageReference(asset)), refs=(snapshot_id,))
+)
+```
+
+After request hooks, compaction and budget checks, the runtime resolves only
+selected images for the model transport. A per-live-session LRU retains at most
+16 MiB of encoded image payload and 256 entries. Reused cached images require no
+file read or Base64 encoding. Larger images bypass the cache; repeated references
+within one request still share their resolved payload. File I/O, hashing for the
+JSONL backend and Base64 conversion run in worker threads. Closing the session
+clears its encoded-image cache.
+
+The cache limit is not a total process memory limit. The active provider request,
+SDK serialization, event metadata and caller-held values also consume memory.
+The log still grows with history. `MemorySessions` intentionally keeps its binary
+assets in RAM; choose `JsonlSessions` to keep historical image bytes on disk.
+No provider latency or token-cost improvement is implied by the storage format.
+
+Reopening reads references without opening image files. On a cache miss, the
+store checks byte size and SHA-256 before returning an image. Missing or corrupt
+images fail explicitly before the model call. HTTP(S) URLs remain external:
+Harnessed does not download them or promise that their contents stay unchanged.
+Use stored bytes for reproducible screenshots.
+
+`await session.assets.read(image_reference.asset)` returns the original bytes.
+For manual replay, `await session.log.resolve_request(recorded_request)` produces
+a provider-ready copy; it does not replace the recorded request. Custom token
+counters and summarizers receive reference-bearing requests/messages and must
+resolve images explicitly if they need to send them to another provider. The
+default token estimate counts references as images; the default summarizer reads
+text only.
+
+Custom session backends implement `SessionStore.assets(session_id) -> AssetStore`
+with async `put(bytes, *, media_type) -> AssetRef` and `read(ref) -> bytes`.
+The store owns durability, isolation and integrity checks; the runtime owns
+request selection and the bounded encoded cache. Custom durable event payloads
+are not automatically rewritten: applications should store their binary data
+through `session.assets` and record explicit references themselves. Automatic
+fork copying covers the standard multimodal fields; custom event payloads must
+manage any additional asset references themselves. When constructing a low-level
+`SessionLog` with persistence directly, an explicit matching `assets` store is
+required, so binary references cannot silently point to a temporary memory store.
+
+Back up the JSONL log together with its `.assets` and `.files` directories.
+Compaction removes images from model context, not from the audit history or disk.
+Session deletion removes both namespaces. Opening a fork copies every image
+referenced by its event prefix, including historical requests, before writing
+its log; a missing image fails the fork. Copies are independent of parent deletion.
+Failed admissions can leave unreferenced asset files; these are reclaimed on
+session deletion, not by an automatic garbage collector.
 
 ## Submit without waiting for completion
 

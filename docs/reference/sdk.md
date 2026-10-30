@@ -158,7 +158,7 @@ Use ContextValue for dynamic facts. All prompt policies are exported by `harness
 | submit(prompt, output=None, ...) | Acknowledge queued input and return RunHandle[T] |
 | stream(prompt, output=None, ...) | Typed UI and custom events, ending with TurnFinishedEvent |
 | steer(content, attachments=()) | Send a next-step correction and return its InboxItem |
-| observe(observation) | Buffer the latest state per source for the next step; starts nothing |
+| observe(observation) | Buffer the latest text/image snapshot per source for the next step; recorded snapshots stay unchanged until compaction or an explicit retention policy |
 | context.set(name, value) / remove(name) | Await a durable changed fact/removal |
 | inbox.pending / remove(id) | Frozen queued input snapshot / durable removal |
 | pause() / resume() | Pause at a committed step boundary / continue |
@@ -184,8 +184,17 @@ data for plugins and integrations; prefer the session views when both exist.
 `SessionLog.request(request_id)` returns a submitted model request or `None`;
 `request_finished(request_id)` checks its durable completion, and
 `execution_pending(call_id)` checks whether a tool start still needs a receipt.
-`included_observations(request)` returns retained observation sources, refs and
-forms using message provenance rather than prompt text searches.
+`included_observations(request)` returns retained observation sources, refs,
+turn IDs, step numbers and message IDs using exact message provenance rather
+than prompt text searches. See [automatic observations](../guides/context.md#steering-observations-and-retrieval).
+
+`Observation(source, content, refs=())` accepts text or a tuple of `TextPart` and
+`ImagePart` values. The existing `PreStep` hook supplies snapshots automatically
+through `session.observe()`; no model tool call is required. Text and images
+share one recorded message and lifecycle. `LatestObservationOnly()` explicitly
+keeps only the latest snapshot per source; otherwise snapshots remain unchanged
+until compaction. `Compaction(keep_steps=5, ...)` retains five completed steps in
+the active turn, including their full observations, plus the current step.
 
 Await methods that perform durable writes. Closed handles raise SessionClosed.
 SDK failures derive from `HarnessedError`, importable from `harnessed.errors`: operations
@@ -209,6 +218,12 @@ step for an action-free text summary. Import `FinalStepPolicy` from
 when the run requested structured output. See [reserved summaries](../guides/sessions.md#step-progress-and-a-reserved-summary).
 
 ## RunResult and values
+
+`harnessed.models` exports `SystemMessage`, `UserMessage`, `AssistantMessage` and
+`ToolMessage`, the four frozen variants of `Message`. User and tool messages can
+contain text and image parts. Role names describe provider messages, not which
+person or plugin authored them. `ToolResult` is a tool's return value; a
+`ToolMessage` is its corresponding message in model history.
 
 A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,
 `turn_id`, typed `stop_reason` and `(ToolCall, ToolResult)` pairs in `tool_calls`.
@@ -266,6 +281,12 @@ Skipped calls have `ToolStatus.SKIPPED` and retain their model-history pairing.
 current step, `is_last_step` indicates one remaining step, and `is_final_step`
 identifies an action-free reserved summary.
 
+`PreStep` runs in the harness before the model call. Its `StepDecision` accepts
+or filters queued input messages; `StepDecision.reject()` ends the turn without
+calling the model. This is a plugin decision, not an LLM response. Supply automatic
+environment snapshots through `session.observe()` so compaction can treat them
+as step history rather than protected user instructions.
+
 ## Event classes and data
 
 `harnessed.events` exposes `TextDeltaEvent`, `ReasoningDeltaEvent`, `ToolCallRequestedEvent`,
@@ -283,3 +304,36 @@ and whether it is part of the UI stream or only the durable audit log.
 application extension bases. Declare frozen dataclasses extending `DurableEvent`
 or `TransientEvent` and list them on `Plugin.events`. EventRegistry supplies
 session-local validation, durable schemas and encode/decode operations.
+
+### Stored images
+
+`harnessed.models` exports `AssetRef` and `ImageReference` alongside `ImagePart`.
+`ImageReference(asset, detail=ImageDetail.AUTO)` is a content part usable in user
+messages, tool results and observations. `session.assets.put(data, media_type=...)`
+stores bytes and returns an `AssetRef`; `session.assets.read(ref)` returns verified
+bytes. Inline image data URLs are stored automatically on standard event admission.
+Use `await session.log.resolve_request(request)` when replaying a recorded request
+directly through a model; the agent loop resolves images automatically.
+See [session image storage](../guides/sessions.md#image-assets-and-memory) for
+cache bounds, external backend contracts and backup requirements.
+
+The image API has three explicit boundaries:
+
+| Audience | Public contract |
+| --- | --- |
+| Applications and plugins | `AssetRef`, `ImageReference`, `session.assets.put(...)`, `session.assets.read(...)` |
+| Manual replay and inspection | `session.log.assets`, `await session.log.resolve_request(request)` |
+| Custom storage backends | `SessionStore.assets(session_id) -> AssetStore`, `AssetStore.put/read`, `AssetRef.verify(data)` |
+
+`session.assets` and `log.assets` are read-only references to the same backend;
+applications can store/read content but cannot replace session storage in place.
+`AssetRef.verify(data)` raises `ValueError` on a size or digest mismatch and helps
+custom backends implement the integrity contract. Import `AssetStore` from
+`harnessed.core.assets` and `SessionStore` from `harnessed.core.session.store` when
+implementing a backend.
+
+Cache controls, admission/normalization helpers, concrete built-in asset stores
+and fork-copy helpers are internal. They are not injectable extension services.
+`File` and `Image` are attachment descriptors supplied to `run`/`steer`; their
+conversion methods are internal too. Use the public operations above rather than
+reaching into those implementations.

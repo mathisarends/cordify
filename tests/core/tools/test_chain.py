@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 
 from harnessed import Agent, Plugin, ToolCall, ToolChain, ToolResult, ToolStatus, tool
-from harnessed.core.messages import Assistant, PolicyDecision
+from harnessed.core.messages import AssistantMessage, PolicyDecision
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
@@ -179,7 +179,9 @@ async def test_recovery_keeps_unstarted_calls_skipped_after_a_durable_break_rece
         seed=[
             TurnStartedEvent("turn"),
             StepStartedEvent("turn", 1),
-            AssistantMessageEvent(Assistant(tool_calls=(boundary, later)), request_id="request"),
+            AssistantMessageEvent(
+                AssistantMessage(tool_calls=(boundary, later)), request_id="request"
+            ),
             ToolExecutionStartedEvent(boundary.id),
             ToolExecutionFinishedEvent(boundary.id, ToolResult("changed", break_chain=True)),
         ],

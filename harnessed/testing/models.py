@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
 
 from harnessed.core.errors import HarnessedError
-from harnessed.core.messages import Assistant, ToolCall
+from harnessed.core.messages import AssistantMessage, ToolCall
 from harnessed.core.model import (
     GenerationSettings,
     ModelChunk,
@@ -123,7 +123,7 @@ class _Stream:
             )
         except (StopIteration, StopAsyncIteration):
             self._response = self._provided or ModelResponse(
-                Assistant(
+                AssistantMessage(
                     "".join(self._text),
                     tuple(self._calls),
                     reasoning="".join(self._reasoning),
@@ -163,7 +163,7 @@ class _Stream:
 
 def reply(text: str, *, reasoning: str = "", usage: ModelUsage | None = None) -> ModelResponse:
     """Script a completed assistant response."""
-    return ModelResponse(Assistant(text, reasoning=reasoning), usage or ModelUsage(0))
+    return ModelResponse(AssistantMessage(text, reasoning=reasoning), usage or ModelUsage(0))
 
 
 def call(name: ToolSelector, /, **arguments) -> ModelResponse:
@@ -173,6 +173,6 @@ def call(name: ToolSelector, /, **arguments) -> ModelResponse:
         arguments = call_arguments(reference, arguments)
         name = reference.name
     return ModelResponse(
-        Assistant(tool_calls=(ToolCall(name, arguments),)),
+        AssistantMessage(tool_calls=(ToolCall(name, arguments),)),
         stop_reason=StopReason.TOOL_CALLS,
     )

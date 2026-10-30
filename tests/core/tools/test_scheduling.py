@@ -6,7 +6,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import Inject, Plugin, ToolCall, ToolContext, plugin, tool
 from harnessed.core.hooks import ReviewToolResult
-from harnessed.core.messages import Assistant, PolicyDecision, Role
+from harnessed.core.messages import AssistantMessage, PolicyDecision, Role
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -329,7 +329,7 @@ async def test_resume_keeps_committed_results_without_reexecuting_or_duplicating
     for event in (
         TurnStartedEvent("turn"),
         StepStartedEvent("turn", 1),
-        AssistantMessageEvent(Assistant(tool_calls=calls), request_id="request"),
+        AssistantMessageEvent(AssistantMessage(tool_calls=calls), request_id="request"),
         ToolExecutionStartedEvent("first"),
         ToolExecutionStartedEvent("second"),
         ToolCallFinishedEvent(ToolCall("first", id="first"), ToolResult("first result")),

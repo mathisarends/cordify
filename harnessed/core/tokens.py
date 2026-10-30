@@ -4,7 +4,14 @@ import math
 from collections.abc import Awaitable, Iterable
 from typing import Protocol
 
-from harnessed.core.messages import ContentPart, ImagePart, Message, content_text, to_dict
+from harnessed.core.messages import (
+    ContentPart,
+    ImagePart,
+    ImageReference,
+    Message,
+    content_text,
+    to_dict,
+)
 from harnessed.core.model import ModelRequest, OutputMode
 
 
@@ -23,7 +30,11 @@ async def count_request(counter: TokenCounter, request: ModelRequest) -> int:
 
 def count_content(counter: TokenCounter, content: str | tuple[ContentPart, ...]) -> int:
     """Estimate mixed content with the default allowance of 1024 tokens per image."""
-    images = 0 if isinstance(content, str) else sum(isinstance(p, ImagePart) for p in content)
+    images = (
+        0
+        if isinstance(content, str)
+        else sum(isinstance(p, ImagePart | ImageReference) for p in content)
+    )
     return counter.count_text(content_text(content)) + 1024 * images
 
 

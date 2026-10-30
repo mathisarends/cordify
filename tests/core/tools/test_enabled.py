@@ -18,7 +18,7 @@ from harnessed import (
 from harnessed.core.tools.registry import ToolRegistry, ToolSpec
 from harnessed.events import ApprovalRequestedEvent, ToolCallFinishedEvent
 from harnessed.kernel import Context, Inject, InjectMarker, Key
-from harnessed.models import Assistant, ModelResponse
+from harnessed.models import AssistantMessage, ModelResponse
 from harnessed.plugins import AgentLoop, Approvals, Service
 from harnessed.testing import ScriptedModel, call, reply
 
@@ -119,7 +119,7 @@ async def test_condition_is_rechecked_after_an_earlier_tool_and_resource_wait(pa
             pytest.fail("A queued tool used an invalidated snapshot")
 
     calls = (ToolCall("invalidate"), ToolCall("click"))
-    model = ScriptedModel([ModelResponse(Assistant(tool_calls=calls)), "done"])
+    model = ScriptedModel([ModelResponse(AssistantMessage(tool_calls=calls)), "done"])
     async with Agent(
         model=model,
         plugins=[

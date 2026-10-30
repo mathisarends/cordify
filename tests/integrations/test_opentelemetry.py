@@ -20,7 +20,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from harnessed import Agent, ApprovalAnswer, Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.hooks import SessionAppended
-from harnessed.core.messages import Assistant, ToolResult, ToolStatus
+from harnessed.core.messages import AssistantMessage, ToolResult, ToolStatus
 from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.events import AgentControlChangedEvent, ControlState
 from harnessed.core.tracing import Tracer
@@ -73,7 +73,7 @@ async def test_runtime_tree_usage_and_backend_attributes(telemetry):
 
 async def test_content_is_explicit_bounded_and_excludes_opaque_state(telemetry):
     provider, exporter = telemetry
-    native = Assistant(
+    native = AssistantMessage(
         "answer",
         reasoning="private reasoning",
         provider_state=ProviderState(

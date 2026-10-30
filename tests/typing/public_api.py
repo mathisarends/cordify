@@ -14,7 +14,7 @@ from harnessed import (
     ToolContext,
     tool,
 )
-from harnessed.core.messages import Assistant, ToolReply, User
+from harnessed.core.messages import AssistantMessage, ToolMessage, UserMessage
 from harnessed.core.model import ModelRequest, ModelResponse
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.session import Session
@@ -30,7 +30,6 @@ from harnessed.events import (
     ModelAttemptStartedEvent,
     ModelRequestFailedEvent,
     ModelRequestOutcome,
-    ObservationForm,
     ObservationsIncludedEvent,
     RetryKind,
     ToolArgumentsDeltaEvent,
@@ -58,7 +57,7 @@ class EventObserver(Plugin, needs=(SessionLog,)):
 
     @hook(AssistantMessageEvent)
     async def on_assistant(self, event: AssistantMessageEvent) -> None:
-        assert_type(event.message, Assistant)
+        assert_type(event.message, AssistantMessage)
         assert_type(event.interrupted, bool)
         assert_type(event.request_id, str)
         assert_type(self.log.request(event.request_id), ModelRequest | None)
@@ -70,7 +69,9 @@ class EventObserver(Plugin, needs=(SessionLog,)):
     @hook(ObservationsIncludedEvent)
     async def on_included(self, event: ObservationsIncludedEvent) -> None:
         assert_type(event.observations, tuple[IncludedObservation, ...])
-        assert_type(event.observations[0].form, ObservationForm)
+        assert_type(event.observations[0].turn_id, str)
+        assert_type(event.observations[0].step, int)
+        assert_type(event.observations[0].message_id, str)
         assert_type(event.observations[0].refs, tuple[str, ...])
 
     @hook(ToolExecutionFinishedEvent)
@@ -187,10 +188,10 @@ async def tool_scope(ctx: Context) -> None:
 
 
 def invalid_message_shapes() -> None:
-    User("hello", tool_calls=())  # ty: ignore[unknown-argument]
-    Assistant("answer", tool_call_id="wrong role")  # ty: ignore[unknown-argument]
-    ToolReply("missing call ID")  # ty: ignore[missing-argument]
-    ModelResponse(User("wrong model response role"))  # ty: ignore[invalid-argument-type]
+    UserMessage("hello", tool_calls=())  # ty: ignore[unknown-argument]
+    AssistantMessage("answer", tool_call_id="wrong role")  # ty: ignore[unknown-argument]
+    ToolMessage("missing call ID")  # ty: ignore[missing-argument]
+    ModelResponse(UserMessage("wrong model response role"))  # ty: ignore[invalid-argument-type]
 
 
 def plugin_configuration_signatures() -> None:

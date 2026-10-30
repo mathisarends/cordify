@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, M
 from contextvars import ContextVar
 from typing import Any, Unpack, overload
 
+from harnessed.core.assets import AssetStore
 from harnessed.core.attachments import Attachment
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.compaction import CompactionManager
@@ -211,6 +212,11 @@ class Session:
         return owner.add_listener(event, callback, prepend=prepend, priority=priority)
 
     @property
+    def assets(self) -> AssetStore:
+        """Read and write assets owned by this session's configured backend."""
+        return self.log.assets
+
+    @property
     def status(self) -> SessionStatus:
         return self.control.status
 
@@ -292,7 +298,12 @@ class Session:
         return await self.inbox.steer(content, attachments=attachments)
 
     def observe(self, observation: Observation) -> None:
-        """Buffer the latest state per source; the next step records it."""
+        """Buffer a text/image snapshot per source for the next step.
+
+        A newer pending snapshot replaces the same source before recording.
+        Recorded snapshots remain unchanged until compaction or an explicit
+        observation retention policy removes them from model history.
+        """
         self.control.check_open()
         self._steps.observe(observation)
 

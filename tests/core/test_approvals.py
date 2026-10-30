@@ -7,6 +7,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import ApprovalAnswer, Inject, Plugin, Session, ToolCall, plugin, tool
 from harnessed.core.approvals import ApprovalGate, ApprovalState, Approver, CallbackApprover
+from harnessed.core.assets import _MemoryAssets
 from harnessed.core.hooks import ToolPolicy
 from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
@@ -244,6 +245,9 @@ async def test_uncommitted_approval_answer_cannot_start_execution():
             @asynccontextmanager
             async def open(self, session_id):
                 yield FailingPersistence()
+
+            def assets(self, session_id):
+                return _MemoryAssets()
 
             def files(self, session_id):
                 return MemoryFiles()

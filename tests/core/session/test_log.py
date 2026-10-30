@@ -5,7 +5,8 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision, StreamOverflow, ToolCall, ToolResult
-from harnessed.core.messages import Assistant, User
+from harnessed.core.assets import _MemoryAssets
+from harnessed.core.messages import AssistantMessage, UserMessage
 from harnessed.core.model import ModelRequest, ToolDefinition
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
@@ -38,7 +39,7 @@ async def test_slow_subscription_disconnects_without_affecting_other_consumers_o
     await asyncio.sleep(0)
     try:
         for index in range(4):
-            event = UserMessageEvent(User(str(index)))
+            event = UserMessageEvent(UserMessage(str(index)))
             await session.append(event)
             assert await fast_next == event
             if index == 0:
@@ -102,10 +103,10 @@ async def test_jsonl_rejects_unsafe_session_ids(tmp_path, session_id):
 @pytest.mark.parametrize(
     "content",
     [
-        '{"version":2,',
+        '{"version":3,',
         '{"version":3,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}\n',
-        '{"version":2,"seq":5,"type":"turn/start","data":{"turn_id":"x"}}\n',
-        '{"version":2,"seq":0,"type":"unknown","data":{}}\n',
+        '{"version":3,"seq":5,"type":"turn/start","data":{"turn_id":"x"}}\n',
+        '{"version":3,"seq":0,"type":"unknown","data":{}}\n',
     ],
 )
 async def test_jsonl_refuses_corruption_and_unknown_records(tmp_path, content):
@@ -119,7 +120,7 @@ async def test_jsonl_refuses_corruption_and_unknown_records(tmp_path, content):
 
 
 async def test_jsonl_rejects_valid_json_without_final_record_delimiter(tmp_path):
-    content = '{"version":2,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}'
+    content = '{"version":3,"seq":0,"type":"turn/start","data":{"turn_id":"x"}}'
     path = tmp_path / "truncated.jsonl"
     path.write_text(content)
     persistence = JsonlPersistence(tmp_path)
@@ -131,12 +132,12 @@ async def test_jsonl_rejects_valid_json_without_final_record_delimiter(tmp_path)
 async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("interrupted")
-    session = SessionLog("interrupted", persistence=persistence)
+    session = SessionLog("interrupted", persistence=persistence, assets=_MemoryAssets())
     call = ToolCall("missing", id="call-1")
     for event in (
         TurnStartedEvent("turn-1"),
         StepStartedEvent("turn-1", 1),
-        AssistantMessageEvent(Assistant(tool_calls=(call,)), request_id="request"),
+        AssistantMessageEvent(AssistantMessage(tool_calls=(call,)), request_id="request"),
         ToolCallRequestedEvent(call),
     ):
         await session.append(event)
@@ -156,8 +157,10 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
 async def test_resume_wakes_durable_pending_followup(tmp_path):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
-    session = SessionLog("pending", persistence=persistence)
-    await session.append(InboxAddedEvent(User("queued"), InboxTarget.NEXT_TURN, InboxMode.FOLLOWUP))
+    session = SessionLog("pending", persistence=persistence, assets=_MemoryAssets())
+    await session.append(
+        InboxAddedEvent(UserMessage("queued"), InboxTarget.NEXT_TURN, InboxMode.FOLLOWUP)
+    )
     await persistence.aclose()
     model = ScriptedModel(["processed"])
     harness = Application(
@@ -171,7 +174,7 @@ async def test_resume_wakes_durable_pending_followup(tmp_path):
 
 async def test_user_message_atomically_claims_its_inbox_identity():
     session = SessionLog("atomic-input")
-    message = User("input")
+    message = UserMessage("input")
     await session.append(InboxAddedEvent(message, InboxTarget.NEXT_TURN, InboxMode.FOLLOWUP))
     await session.append(UserMessageEvent(message))
     assert not session.inbox.pending
@@ -183,12 +186,12 @@ async def test_user_message_atomically_claims_its_inbox_identity():
 async def test_fork_copies_closed_prefix_and_is_independent():
     session = SessionLog("parent")
     await session.append(TurnStartedEvent("first"))
-    await session.append(UserMessageEvent(User("one")))
+    await session.append(UserMessageEvent(UserMessage("one")))
     with pytest.raises(ValueError, match="closed turn"):
         session.fork("invalid")
     await session.append(TurnEndedEvent("first"))
     child = session.fork("child")
-    await child.append(UserMessageEvent(User("two")))
+    await child.append(UserMessageEvent(UserMessage("two")))
     assert [m.content for m in child.messages] == ["one", "two"]
     assert [m.content for m in session.messages] == ["one"]
     assert session.fork("empty", at=0).events == ()
@@ -199,10 +202,10 @@ async def test_fork_copies_closed_prefix_and_is_independent():
 def test_event_json_roundtrip_includes_requests_and_frozen_tool_data():
     call = ToolCall("nested", {"items": [{"a": 1}]}, id="call")
     events = (
-        AssistantMessageEvent(Assistant(tool_calls=(call,)), request_id="request"),
+        AssistantMessageEvent(AssistantMessage(tool_calls=(call,)), request_id="request"),
         ModelRequestedEvent(
             ModelRequest(
-                (User("hello"),),
+                (UserMessage("hello"),),
                 (ToolDefinition("nested", "description", {"type": "object", "properties": {}}),),
             ),
             request_id="request",

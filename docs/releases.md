@@ -26,11 +26,28 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## 0.7.0 (unreleased)
+## 0.7.0 (2026-10-30)
 
-This minor release adds typed model generation settings, versioned provider replay
-state and opt-in background shell commands. It includes breaking model API changes
-from 0.6.0 and advances the session record format to **3**.
+This minor release adds typed model settings, immutable multimodal observations,
+session-owned image assets and opt-in background shell commands. It includes
+breaking model, message and observation API changes from 0.6.0 and advances the
+session record format from **2** to **3**.
+
+Observations become immutable text/image snapshots delivered automatically through
+the existing `PreStep` and `session.observe()` APIs. They stay unchanged between
+model calls and are removed with their steps at compaction boundaries. An explicit
+`LatestObservationOnly()` policy can instead retain one snapshot per source.
+
+Message classes are named `SystemMessage`, `UserMessage`, `AssistantMessage` and
+`ToolMessage`. Replace `Observation(full=..., summary=...)` with
+`Observation(content=...)`, remove `max_summaries` from `LatestObservationOnly`,
+and use inclusion `refs`, `turn_id`, `step` and `message_id` instead of
+`ObservationForm`. See [automatic observations](guides/context.md#steering-observations-and-retrieval).
+
+The model and observation APIs share session format **3**.
+Back up older stores and start a new one; versions 1 and 2 are rejected without
+automatic migration. The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the upgrade steps and storage limits.
 
 ### Model configuration and stored state
 
@@ -44,9 +61,6 @@ from 0.6.0 and advances the session record format to **3**.
 - Replace raw assistant provider dictionaries with `ProviderState`, including
   format/version and provider/model identity. Clear state with `None` when
   deliberately discarding signed replay data; incompatible bindings fail explicitly.
-- Advance the session record format to **3**. Versions 1 and 2 are rejected,
-  without automatic migration or legacy request-ID synthesis. Preserve old stores
-  separately and start new stores when adopting this API.
 
 ### Background shell commands and cleanup
 
@@ -58,6 +72,17 @@ from 0.6.0 and advances the session record format to **3**.
 - Concurrent `session.aclose()` calls wait for one shared driver/resource cleanup.
   Cancelling a caller does not interrupt cleanup for other callers. `SessionClosing`
   releases live resources once, including background shell processes.
+
+### Image assets and session storage
+
+- Store inline images once per session as typed `ImageReference(AssetRef(...))`
+  values. JSONL histories keep references; binary data lives under `<id>.assets/`.
+  Only selected images are resolved for the provider after compaction and budget checks.
+- Use `session.assets` to read and write image bytes. Reopening histories leaves
+  images on disk until needed; reads verify size and SHA-256, forks copy referenced
+  assets and session deletion removes its asset namespace. Compaction retains audit assets.
+- Custom `SessionStore` implementations now provide `assets(session_id)`.
+  See [image assets](guides/sessions.md#image-assets-and-memory).
 
 ### Upgrade from 0.6.0
 
@@ -72,10 +97,18 @@ from 0.6.0 and advances the session record format to **3**.
    steps. Configure `ModelSummarizer` with the desired model directly.
 3. Replace raw assistant replay dictionaries with `ProviderState`, or clear them
    explicitly with `None` when discarding signed replay data.
-4. Back up existing session stores and start fresh stores. This release rejects
+4. Import `SystemMessage`, `UserMessage`, `AssistantMessage` and `ToolMessage`
+   in place of the old short names. Pass one immutable text/image `content` value
+   to `Observation`, remove `ObservationForm` and `max_summaries`, and use final
+   inclusion refs and explicit turn/step/message identities.
+5. Add `SessionStore.assets(session_id)` to custom storage plugins. Recorded image
+   content can now contain `ImageReference`; resolve bytes through `session.assets`
+   or use `await session.log.resolve_request(request)` for manual provider replay.
+6. Back up existing session stores, including their `.assets` and `.files`
+   directories, and start fresh stores. This release rejects
    record versions **1** and **2**, without automatic migration. Update event
    consumers for the selected model identity and typed generation settings.
-5. Opt in to background tools explicitly and keep their session context open
+7. Opt in to background tools explicitly and keep their session context open
    while jobs are needed. `agent.run(...)` closes its temporary session on return.
 
 The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)

@@ -8,7 +8,7 @@ from harnessed import Agent, Plugin, SessionClosed, SessionStatus, hook
 from harnessed.core.compaction import ContextState
 from harnessed.core.errors import ConfigError, ContextLengthExceeded, SessionStateError
 from harnessed.core.hooks import ConfigureRequest
-from harnessed.core.messages import Assistant, System, ToolCall
+from harnessed.core.messages import AssistantMessage, SystemMessage, ToolCall
 from harnessed.core.model import (
     Model,
     ModelChunk,
@@ -189,7 +189,9 @@ async def test_compaction_usage_is_counted_and_replayed_even_when_no_summary_is_
         assert (session.last(CompactionAppliedEvent) is not None) == reduces_context
 
 
-@pytest.mark.parametrize("message", [Assistant("  "), Assistant(tool_calls=(ToolCall("work"),))])
+@pytest.mark.parametrize(
+    "message", [AssistantMessage("  "), AssistantMessage(tool_calls=(ToolCall("work"),))]
+)
 async def test_invalid_summarizer_responses_still_contribute_their_usage(message):
     model = ScriptedModel(
         [reply("first", usage=ModelUsage(28, 4)), ModelResponse(message, ModelUsage(123, 12))]
@@ -230,7 +232,7 @@ async def test_compaction_runs_after_request_hooks_and_preserves_their_extra_con
         @hook(ConfigureRequest)
         async def add(self, event, next_):
             request = await next_()
-            return replace(request, messages=(*request.messages, System("HOOK CONTEXT")))
+            return replace(request, messages=(*request.messages, SystemMessage("HOOK CONTEXT")))
 
     brief = Brief()
     model = ScriptedModel(["first", "second"])
