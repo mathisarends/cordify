@@ -3,9 +3,11 @@ import pytest
 from harnessed.core.compaction import ModelSummarizer
 from harnessed.core.messages import AssistantMessage, ToolCall, UserMessage
 from harnessed.core.model import ModelInfo, ModelResponse, ModelUsage
+from harnessed.models import GenerationSettings
 
 
 class RequestModel:
+    settings = GenerationSettings()
     info = ModelInfo("session-model")
 
     def __init__(self, response):
@@ -27,7 +29,7 @@ async def test_model_summarizer_uses_neutral_request_with_focus_and_no_tools():
     summary = await summarizer.summarize((UserMessage("Fix tests/auth.py."),), max_tokens=32)
     assert summary.text == "Decisions and next steps." and summary.usage == usage
     request = model.requests[0]
-    assert request.model == "session-model" and request.max_tokens == 32
+    assert request.settings.max_tokens == 32
     assert not request.tools
     assert "Preserve failing test names." in request.messages[0].text
     assert "tests/auth.py" in request.messages[1].text

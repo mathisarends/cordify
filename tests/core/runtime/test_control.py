@@ -24,6 +24,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.context import ToolContext
 from harnessed.core.tools.decorator import tool
+from harnessed.models import ModelInfo
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.testing import ScriptedModel, call
 
@@ -308,7 +309,9 @@ async def test_crash_repair_is_idempotent_and_only_a_pause_preserves_the_open_tu
         TurnStartedEvent("turn"),
         StepStartedEvent("turn", 1),
         UserMessageEvent(UserMessage("task")),
-        ModelRequestedEvent(ModelRequest("model", (UserMessage("task"),)), request_id="request"),
+        ModelRequestedEvent(
+            ModelRequest((UserMessage("task"),)), request_id="request", model=ModelInfo("test")
+        ),
         AgentControlChangedEvent(state),
         AssistantMessageEvent(
             AssistantMessage("visible", id="message"), interrupted=True, request_id="request"

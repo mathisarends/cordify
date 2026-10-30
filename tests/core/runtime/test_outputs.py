@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import replace
 
 import pytest
@@ -6,9 +7,16 @@ from pydantic import BaseModel, field_validator
 
 from harnessed import Agent, Plugin, SessionClosed, StopReason, ToolCall, tool
 from harnessed.core.errors import ConfigError, OutputUnavailable, OutputValidationError
-from harnessed.core.hooks import SessionAppended, ToolPolicy
+from harnessed.core.hooks import ConfigureRequest, SessionAppended, ToolPolicy
 from harnessed.core.messages import AssistantMessage, PolicyDecision
-from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, OutputMode
+from harnessed.core.model import (
+    Model,
+    ModelChunk,
+    ModelInfo,
+    ModelRequest,
+    ModelResponse,
+    OutputMode,
+)
 from harnessed.core.outputs import OutputContract, OutputTypes
 from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.session.codec import decode_event, encode_event
@@ -20,6 +28,7 @@ from harnessed.core.session.events import (
     TurnOutcome,
 )
 from harnessed.core.session.store import MemorySessions
+from harnessed.kernel import Context, plugin
 from harnessed.testing import CallbackModel, ScriptedModel
 
 
@@ -30,6 +39,48 @@ class Triage(BaseModel):
 
 def answer(**arguments):
     return [ModelChunk(tool_call=ToolCall("final_answer", arguments))]
+
+
+@pytest.mark.parametrize("native_output", [True, False])
+async def test_output_mode_uses_the_model_captured_before_request_hooks(
+    native_output: bool,
+) -> None:
+    native_answer = '{"severity":2,"owner":"sdk"}'
+    tool_answer = answer(severity=2, owner="sdk")
+    original = ScriptedModel(
+        [native_answer if native_output else tool_answer],
+        info=ModelInfo("original", supports_structured_output=native_output),
+    )
+    replacement = ScriptedModel(
+        [tool_answer if native_output else native_answer],
+        info=ModelInfo("replacement", supports_structured_output=not native_output),
+    )
+
+    @plugin
+    async def swap(ctx: Context) -> AsyncIterator[None]:
+        async def configure(
+            event: ConfigureRequest, next_: Callable[[], Awaitable[ModelRequest]]
+        ) -> ModelRequest:
+            ctx.provide(Model, replacement)
+            return await next_()
+
+        ctx.on(ConfigureRequest, configure)
+        yield
+
+    async with Agent(
+        model=original, plugins=[swap(), AgentLoop(output_retries=0)]
+    ).session() as session:
+        first = await session.run("First", output=Triage)
+        assert first.output == Triage(severity=2, owner="sdk")
+        assert replacement.requests == []
+        assert original.requests[0].output_schema.mode == (
+            OutputMode.NATIVE if native_output else OutputMode.TOOL
+        )
+        second = await session.run("Second", output=Triage)
+        assert second.output == first.output
+        assert replacement.requests[0].output_schema.mode == (
+            OutputMode.TOOL if native_output else OutputMode.NATIVE
+        )
 
 
 async def test_fallback_answer_is_validated_without_policies_or_application_tool_effects():

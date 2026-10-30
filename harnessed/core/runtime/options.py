@@ -6,7 +6,7 @@ from pydantic import Field
 
 from harnessed.core.attachments import Attachment
 from harnessed.core.limits import FinalStepPolicy
-from harnessed.core.model import TokenLimitBehavior
+from harnessed.core.model import GenerationSettings, TokenLimitBehavior
 from harnessed.core.plugin import PluginConfig
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ErrorFormatter
@@ -17,7 +17,7 @@ class RunOptions(TypedDict, total=False):
 
     attachments: Iterable[Attachment]
     context: Mapping[str, Any] | None
-    settings: Mapping[str, Any] | None
+    settings: GenerationSettings | None
     max_steps: int | None
     token_budget: int | None
 
@@ -29,7 +29,6 @@ class AgentLoopConfig(PluginConfig):
     tool_timeout: Annotated[float, Field(gt=0)] = 30.0
     max_parallel_tools: Annotated[int, Field(ge=1)] = 4
     approval_timeout: Annotated[float, Field(gt=0)] = 300.0
-    max_tokens: Annotated[int, Field(ge=1)] | None = None
     context_window: Annotated[int, Field(ge=1)] | None = None
     on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT
     output_retries: Annotated[int, Field(ge=0)] = 2
@@ -42,7 +41,6 @@ class AgentOptions:
 
     max_steps: int
     tool_timeout: float
-    max_tokens: int | None
     context_window: int | None
     tool_output_limit: ToolOutputLimit
     max_parallel_tools: int
@@ -63,7 +61,6 @@ class AgentOptions:
         return cls(
             max_steps=config.max_steps,
             tool_timeout=config.tool_timeout,
-            max_tokens=config.max_tokens,
             context_window=config.context_window,
             tool_output_limit=tool_output_limit,
             max_parallel_tools=config.max_parallel_tools,

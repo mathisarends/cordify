@@ -18,7 +18,8 @@ those bytes.
 
 The persistence codec has a separate versioned boundary. Records require version
 3 and explicit dotted tags, such as `turn.start` and `tool.call.finished`. Versions
-1 and 2 are unsupported. Older formats,
+1 and 2 are unsupported; version 3 introduces typed generation settings, model
+identity on request events and a versioned provider-state envelope. Older formats,
 unknown fields, invalid discriminators, non-finite numbers and malformed nested
 values are rejected without rewriting the append-only log.
 See the [compatibility policy](../releases.md#compatibility-policy) before upgrading
@@ -38,7 +39,8 @@ and image parts. `user(...)` and `system(...)` are convenience constructors.
 
 The Core field is `reasoning`. Provider-specific fields, including DeepSeek's
 `reasoning_content` and Anthropic signatures, stay inside the optional adapter's
-opaque frozen `provider_state`. Unsigned synthetic or interrupted reasoning remains available for audit
+frozen `ProviderState.data`. The `provider_state` envelope names its format,
+version and originating provider/model binding; an absent envelope is `None`. Unsigned synthetic or interrupted reasoning remains available for audit
 and is omitted from native provider history; complete signed responses replay
 through their original provider state.
 

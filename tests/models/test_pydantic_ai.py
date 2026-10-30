@@ -12,6 +12,7 @@ from harnessed.core.messages import (
     ToolMessage,
     UserMessage,
 )
+from harnessed.models import GenerationSettings, ModelInfo
 
 pytest.importorskip("pydantic_ai")
 
@@ -60,7 +61,7 @@ async def test_response_contracts_use_native_schema_or_output_tools_and_repair_i
     provider = FunctionModel(
         stream_function=stream, profile=ModelProfile(supports_json_schema_output=native_output)
     )
-    result = await Agent(model=provider).run("Triage", output=Triage)
+    result = await Agent(model=PydanticAIModel(provider)).run("Triage", output=Triage)
     assert result.output.severity == 2 and len(seen) == 2 and result.tool_calls == ()
     parameters = seen[0]
     assert parameters.output_mode == ("native" if native_output else "tool")
@@ -126,7 +127,7 @@ async def test_native_tool_argument_previews_arrive_while_the_provider_is_still_
         await release.wait()
         yield {0: DeltaToolCall(json_args='1,"b":2}')}
 
-    app = Agent(model=FunctionModel(stream_function=chunks), plugins=[Tools()])
+    app = Agent(model=PydanticAIModel(FunctionModel(stream_function=chunks)), plugins=[Tools()])
     async with app.session() as session:
         notifications = []
 
@@ -164,7 +165,7 @@ async def test_interleaved_native_calls_keep_part_indices_names_and_updated_ids(
         yield {1: DeltaToolCall("d", ',"b":3}', tool_call_id="late")}
 
     model = PydanticAIModel(FunctionModel(stream_function=chunks))
-    async with model.stream(ModelRequest("fixture", (UserMessage("add"),))) as stream:
+    async with model.stream(ModelRequest((UserMessage("add"),))) as stream:
         chunks = [chunk async for chunk in stream]
         response = stream.response()
     assert [c.tool_call_start.index for c in chunks if c.tool_call_start] == [1, 0]
@@ -201,7 +202,7 @@ async def test_native_object_argument_patches_and_part_replacements_emit_snapsho
         def get(self):
             return native.ModelResponse(self.parts)
 
-    stream = _Stream(NativeStream())
+    stream = _Stream(NativeStream(), ModelInfo("test", provider="test"))
     chunks = [chunk async for chunk in stream]
     deltas = [c.tool_call_delta for c in chunks if c.tool_call_delta]
     assert [json.loads(d.arguments) for d in deltas] == [
@@ -246,7 +247,7 @@ async def test_provider_native_tool_deltas_are_not_previewed_or_executed():
         def get(self):
             return _web_search_response()
 
-    stream = _Stream(NativeStream())
+    stream = _Stream(NativeStream(), ModelInfo("test", provider="test"))
     chunks = [chunk async for chunk in stream]
     assert [c.tool_call_start.name for c in chunks if c.tool_call_start] == ["add"]
     assert not [c for c in chunks if c.tool_call_delta or c.tool_call]
@@ -266,12 +267,10 @@ async def test_native_tools_are_forwarded_and_their_parts_replay_from_provider_s
 
     search = WebSearchTool(max_uses=2)
     model = PydanticAIModel(FunctionModel(respond), native_tools=[search])
-    first = await model.request(ModelRequest("fixture", (UserMessage("weather?"),)))
+    first = await model.request(ModelRequest((UserMessage("weather?"),)))
     assert first.message.text == "It is sunny." and first.message.tool_calls == ()
     assert first.stop_reason == StopReason.END
-    await model.request(
-        ModelRequest("fixture", (UserMessage("weather?"), first.message, UserMessage("more")))
-    )
+    await model.request(ModelRequest((UserMessage("weather?"), first.message, UserMessage("more"))))
     assert [tools for _, tools in received] == [[search], [search]]
     replayed = received[-1][0][1].parts
     assert [type(part) for part in replayed] == [
@@ -297,7 +296,7 @@ async def test_invalid_native_argument_preview_remains_a_malformed_completed_cal
         yield {0: DeltaToolCall("add", arguments, tool_call_id="invalid")}
 
     model = PydanticAIModel(FunctionModel(stream_function=chunks))
-    async with model.stream(ModelRequest("fixture", (UserMessage("add"),))) as stream:
+    async with model.stream(ModelRequest((UserMessage("add"),))) as stream:
         chunks = [chunk async for chunk in stream]
         response = stream.response()
     assert any(c.tool_call_delta.arguments == arguments for c in chunks if c.tool_call_delta)
@@ -321,11 +320,46 @@ async def test_non_streaming_request_and_settings_are_delegated_to_pydantic_ai()
         seen.append(info.model_settings)
         return native.ModelResponse([native.TextPart("answer")])
 
-    model = PydanticAIModel(FunctionModel(respond), settings={"temperature": 0.5})
+    model = PydanticAIModel(FunctionModel(respond), settings=GenerationSettings(temperature=0.5))
     response = await model.request(
-        ModelRequest("fixture", (UserMessage("hi"),), settings={"temperature": 0})
+        ModelRequest((UserMessage("hi"),), settings=GenerationSettings(temperature=0))
     )
     assert response.message.text == "answer" and seen == [{"temperature": 0}]
+
+
+def test_native_models_require_an_explicit_adapter_at_the_agent_boundary():
+    model = FunctionModel(lambda messages, info: native.ModelResponse([native.TextPart("ok")]))
+    with pytest.raises(ConfigError, match="wrap native"):
+        Agent(model=model)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"format": "another-adapter.response"},
+        {"version": 2},
+        {"provider": "another-provider"},
+        {"model": "another-model"},
+    ],
+)
+async def test_incompatible_provider_state_is_rejected_before_calling_the_provider(changes):
+    received = []
+
+    def respond(messages, info):
+        received.append(messages)
+        return native.ModelResponse([native.TextPart("original")])
+
+    model = PydanticAIModel(FunctionModel(respond))
+    message = (await model.request(ModelRequest((UserMessage("hi"),)))).message
+    state = message.provider_state
+    assert state.format == "pydantic-ai.response" and state.version == 1
+    assert state.provider == model.info.provider and state.model == model.info.name
+    edited = replace(message, provider_state=replace(state, **changes))
+    with pytest.raises(InvalidRequest, match="Incompatible provider_state"):
+        await model.request(ModelRequest((edited,)))
+    assert len(received) == 1
+    await model.request(ModelRequest((replace(edited, provider_state=None),)))
+    assert len(received) == 2
 
 
 @pytest.mark.parametrize("source", ["native", "adapter", "run"])
@@ -339,11 +373,15 @@ async def test_effective_output_limit_is_budgeted_before_the_provider_is_called(
     provider = FunctionModel(
         stream_function=stream, settings={"max_tokens": 900} if source == "native" else None
     )
-    model = PydanticAIModel(provider, settings={"max_tokens": 900} if source == "adapter" else None)
-    options = AgentLoop(context_window=500, max_tokens=100 if source == "run" else None)
+    model = PydanticAIModel(
+        provider, settings=GenerationSettings(max_tokens=900) if source == "adapter" else None
+    )
+    options = AgentLoop(context_window=500)
     async with Agent(model=model, plugins=[options]).session() as session:
         with pytest.raises(ContextBudgetExceeded) as error:
-            await session.run("hi", settings={"max_tokens": 900} if source == "run" else None)
+            await session.run(
+                "hi", settings=GenerationSettings(max_tokens=900) if source == "run" else None
+            )
         assert error.value.reserve_tokens == 900
         assert seen == []
 
@@ -357,12 +395,12 @@ async def test_recorded_request_and_provider_share_resolved_settings():
 
     model = PydanticAIModel(
         FunctionModel(stream_function=stream, settings={"max_tokens": 700}),
-        settings={"max_tokens": 900, "temperature": 0.5},
+        settings=GenerationSettings(max_tokens=900, temperature=0.5),
     )
-    async with Agent(model=model, plugins=[AgentLoop(max_tokens=100)]).session() as session:
-        await session.run("hi", settings={"max_tokens": 200})
+    async with Agent(model=model).session() as session:
+        await session.run("hi", settings=GenerationSettings(max_tokens=200))
         request = session.log.requests[-1]
-        assert request.max_tokens == 200 and request.settings == {"temperature": 0.5}
+        assert request.settings == GenerationSettings(max_tokens=200, temperature=0.5)
         assert seen == [{"max_tokens": 200, "temperature": 0.5}]
 
 
@@ -384,12 +422,12 @@ async def test_edited_signed_history_requires_explicit_provider_state_invalidati
         )
 
     model = PydanticAIModel(FunctionModel(respond))
-    original = (await model.request(ModelRequest("fixture", (UserMessage("hi"),)))).message
+    original = (await model.request(ModelRequest((UserMessage("hi"),)))).message
     edited = replace(original, **changes)
     with pytest.raises(InvalidRequest, match="clear provider_state"):
-        await model.request(ModelRequest("fixture", (edited,)))
+        await model.request(ModelRequest((edited,)))
     assert len(received) == 1
-    await model.request(ModelRequest("fixture", (replace(edited, provider_state={}),)))
+    await model.request(ModelRequest((replace(edited, provider_state=None),)))
     parts = received[-1][0].parts
     assert not any(isinstance(part, native.ThinkingPart) for part in parts)
     assert (
@@ -423,13 +461,13 @@ async def test_session_settings_are_durable_and_reach_each_step_of_the_turn():
             yield "3"
 
     async with Agent(
-        model=FunctionModel(stream_function=stream), plugins=[Calculator()]
+        model=PydanticAIModel(FunctionModel(stream_function=stream)), plugins=[Calculator()]
     ).session() as session:
-        await session.run("Add", settings={"temperature": 0.1})
+        await session.run("Add", settings=GenerationSettings(temperature=0.1))
         replay = SessionLog(
             "settings", seed=[decode_event(encode_event(event)) for event in session.events]
         )
-        assert [request.settings["temperature"] for request in replay.requests] == [0.1, 0.1]
+        assert [request.settings.temperature for request in replay.requests] == [0.1, 0.1]
     assert seen == [{"temperature": 0.1}, {"temperature": 0.1}]
 
 
@@ -441,7 +479,7 @@ async def test_native_authentication_errors_map_to_host_error_types():
 
     model = PydanticAIModel(FunctionModel(denied))
     with pytest.raises(AuthError):
-        await model.request(ModelRequest("fixture", (UserMessage("hi"),)))
+        await model.request(ModelRequest((UserMessage("hi"),)))
 
 
 @pytest.mark.parametrize(
@@ -462,9 +500,7 @@ async def test_native_http_failures_map_without_a_second_retry_layer(status, exp
         raise exceptions.ModelHTTPError(status, "fixture", body={"error": "unavailable"})
 
     with pytest.raises(expected) as error:
-        await PydanticAIModel(FunctionModel(failed)).request(
-            ModelRequest("fixture", (UserMessage("hi"),))
-        )
+        await PydanticAIModel(FunctionModel(failed)).request(ModelRequest((UserMessage("hi"),)))
     assert error.value.status_code == status and len(calls) == 1
 
 
@@ -476,8 +512,7 @@ async def test_user_images_are_translated_without_flattening_the_prompt():
         return native.ModelResponse(parts=[native.TextPart("seen")])
 
     request = ModelRequest(
-        "fixture",
-        (UserMessage((TextPart("Look"), ImagePart("https://example.test/image.png"))),),
+        (UserMessage((TextPart("Look"), ImagePart("https://example.test/image.png"))),)
     )
     await PydanticAIModel(FunctionModel(respond)).request(request)
     prompt = received[-1].parts[0].content
@@ -513,7 +548,7 @@ async def test_sessions_enter_native_model_contexts_and_support_reuse(monkeypatc
     configured = (
         "test:resource"
         if model_input == "string"
-        else model
+        else PydanticAIModel(model)
         if model_input == "native"
         else PydanticAIModel(model)
     )
@@ -540,10 +575,10 @@ async def test_native_provider_closes_and_reopens_its_own_client_between_session
 
     provider = OpenAIProvider(api_key="test")
     model = OpenAIResponsesModel("gpt-6.1-terra", provider=provider)
-    agent = Agent(model=model)
+    agent = Agent(model=PydanticAIModel(model))
     async with agent.session():
         assert not provider.client.is_closed()
-        async with Agent(model=model).session():
+        async with Agent(model=PydanticAIModel(model)).session():
             assert not provider.client.is_closed()
         assert not provider.client.is_closed()
     assert provider.client.is_closed()
@@ -577,7 +612,7 @@ async def test_standalone_native_requests_exit_the_model_context_on_success_and_
         return native.ModelResponse(parts=[native.TextPart("done")])
 
     adapter = PydanticAIModel(ResourceModel(respond))
-    request = ModelRequest("fixture", (UserMessage("hi"),))
+    request = ModelRequest((UserMessage("hi"),))
     if fails:
         with pytest.raises(RuntimeError, match="request failed"):
             await adapter.request(request)
@@ -613,7 +648,7 @@ async def test_aborting_a_native_stream_closes_its_generator():
     model = PydanticAIModel(ResourceModel(stream_function=chunks))
 
     async def consume():
-        async with model.stream(ModelRequest("fixture", (UserMessage("hi"),))) as stream:
+        async with model.stream(ModelRequest((UserMessage("hi"),))) as stream:
             async for _ in stream:
                 pass
 
@@ -647,7 +682,7 @@ async def test_native_stream_usage_is_recorded_once_even_when_interrupted(outcom
             await asyncio.Event().wait()
 
     provider = RecordedModel(stream_function=chunks)
-    async with Agent(model=provider).session() as session:
+    async with Agent(model=PydanticAIModel(provider)).session() as session:
         handle = await session.submit("hello")
         async with asyncio.timeout(3):
             await started.wait()
@@ -728,7 +763,7 @@ async def test_native_deepseek_provider_round_trip_with_mock_http_transport():
         model = OpenAIChatModel(
             "deepseek-chat", provider=DeepSeekProvider(api_key="test", http_client=client)
         )
-        result = await Agent(model=model, plugins=[Calculator()]).run("Add")
+        result = await Agent(model=PydanticAIModel(model), plugins=[Calculator()]).run("Add")
         assert result.text == "3" and not client.is_closed
     assistant = next(
         message for message in requests[1]["messages"] if message["role"] == "assistant"
@@ -780,7 +815,7 @@ async def test_real_sdk_retries_are_counted_only_when_public_http_hooks_report_t
         async with AsyncOpenAI(api_key="test", max_retries=2, http_client=http) as client:
             model = OpenAIChatModel("fixture", provider=OpenAIProvider(openai_client=client))
             notifications = []
-            async with Agent(model=model).session() as session:
+            async with Agent(model=PydanticAIModel(model)).session() as session:
 
                 async def consume():
                     async for event in session.stream("work"):
@@ -909,12 +944,16 @@ async def test_native_anthropic_provider_preserves_signed_thinking_across_tool_r
         model = AnthropicModel(
             "claude-sonnet-5-5", provider=AnthropicProvider(api_key="test", http_client=client)
         )
-        result = await Agent(model=model, system_prompt="Fixed rules.", plugins=[Calculator()]).run(
+        result = await Agent(
+            model=PydanticAIModel(model), system_prompt="Fixed rules.", plugins=[Calculator()]
+        ).run(
             "Add",
-            settings={
-                "anthropic_cache_instructions": True,
-                "anthropic_cache_tool_definitions": True,
-            },
+            settings=GenerationSettings(
+                provider_options={
+                    "anthropic_cache_instructions": True,
+                    "anthropic_cache_tool_definitions": True,
+                }
+            ),
         )
         assert result.text == "3" and not client.is_closed
     assistant = next(
@@ -935,7 +974,7 @@ async def test_unsigned_partial_reasoning_is_not_sent_back_to_a_native_provider(
 
     model = PydanticAIModel(FunctionModel(respond))
     partial = AssistantMessage("visible partial", reasoning="interrupted unsigned thought")
-    response = await model.request(ModelRequest("fixture", (partial, UserMessage("continue"))))
+    response = await model.request(ModelRequest((partial, UserMessage("continue"))))
     assert response.message.text == "continued" and partial.reasoning
     parts = [
         part
@@ -957,7 +996,6 @@ async def test_multimodal_tool_returns_are_native_parts_with_preserved_image_det
     model = PydanticAIModel(FunctionModel(respond))
     response = await model.request(
         ModelRequest(
-            "fixture",
             (
                 AssistantMessage(tool_calls=(ToolCall("snapshot", id="call"),)),
                 ToolMessage(
@@ -967,7 +1005,7 @@ async def test_multimodal_tool_returns_are_native_parts_with_preserved_image_det
                     ),
                     tool_call_id="call",
                 ),
-            ),
+            )
         )
     )
     assert response.message.text == "seen"
@@ -1003,11 +1041,10 @@ async def test_tool_status_is_not_lost_in_native_model_history(status, exit_code
     model = PydanticAIModel(FunctionModel(respond))
     await model.request(
         ModelRequest(
-            "fixture",
             (
                 AssistantMessage(tool_calls=(ToolCall("work", id="call"),)),
                 ToolMessage("result", tool_call_id="call", status=status, exit_code=exit_code),
-            ),
+            )
         )
     )
     returned = next(

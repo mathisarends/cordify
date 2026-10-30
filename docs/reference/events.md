@@ -29,7 +29,7 @@ events. Live approval questions need an answer or a configured approver.
 | `ApprovalNeededEvent` | `approval.needed` | No | Live question identified by approval `request_id`; answer through `session.approvals` |
 | `SessionStatusChangedEvent` | `session.status.changed` | No | Session control status observed during this turn |
 | `TurnFinishedEvent[T]` | `turn.finished` | No | Assembled `RunResult[T]`; terminal on normal stream exhaustion |
-| `ModelRequestedEvent` | `model.requested` | Yes | Final submitted request snapshot for `request_id`, with runtime retry metadata |
+| `ModelRequestedEvent` | `model.requested` | Yes | Final request and selected ModelInfo for `request_id`, with runtime retry metadata |
 | `ModelRequestFailedEvent` | `model.request.failed` | Yes | Close `request_id` without an assistant message |
 | `ModelAttemptStartedEvent` | `model.attempt.started` | No | Observed provider or runtime retry attempt starts, scoped by `retry_kind` |
 | `ModelRetryScheduledEvent` | `model.retry.scheduled` | No | Plan a successor to the reported attempt; counters have not advanced |

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from harnessed.core.budget import ContextBudget
@@ -13,7 +12,7 @@ from harnessed.core.errors import ContextLengthExceeded, OutputValidationError
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
 from harnessed.core.limits import FinalStepPolicy
 from harnessed.core.messages import AssistantMessage, Observation, Role, SystemMessage, UserMessage
-from harnessed.core.model import Model, ModelRequest, resolve_request_settings
+from harnessed.core.model import GenerationSettings, Model, ModelRequest, resolve_request_settings
 from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.executor import ToolExecutor
@@ -90,7 +89,7 @@ class StepRunner:
         self,
         turn: str,
         step: int,
-        settings: Mapping[str, Any],
+        settings: GenerationSettings,
         *,
         max_steps: int,
         final: bool = False,
@@ -145,10 +144,8 @@ class StepRunner:
             await self.log.append(ObservationRecordedEvent(observation, turn, step))
         model = self.ctx[Model]
         request = ModelRequest(
-            model.info.name,
             (*self.log.messages, *self.session.context.owned_messages),
             self.ctx[ToolRegistry].visible_definitions(self.ctx),
-            self.options.max_tokens,
             settings=settings,
         )
         request = await self.ctx.dispatch(
@@ -167,9 +164,11 @@ class StepRunner:
                 messages=(*request.messages, SystemMessage(_FINAL_STEP_INSTRUCTION)),
             )
         else:
-            request = self.outputs.prepare(request, self.log.current_turn().start.output_schema)
-        request = resolve_request_settings(request, model.info.default_settings)
-        request = await self.compaction.prepare(request)
+            request = self.outputs.prepare(
+                request, self.log.current_turn().start.output_schema, model=model
+            )
+        request = resolve_request_settings(request, model.settings)
+        request = await self.compaction.prepare(request, model=model)
         if final:
             request = replace(request, tools=(), output_schema=None)
         if ContextBudget in self.ctx:
@@ -179,9 +178,9 @@ class StepRunner:
                 counter=self.ctx[TokenCounter],
             )
         request_id = uuid4().hex
-        record = self.retries.request(request, request_id)
+        record = self.retries.request(request, request_id, model.info)
         try:
-            response = await self._request(record)
+            response = await self._request(record, model)
         except ContextLengthExceeded:
             current = self.log.current_turn()
             if (
@@ -195,7 +194,7 @@ class StepRunner:
                 await self.retries.finished(record, ModelAttemptOutcome.EXHAUSTED)
                 raise
             try:
-                applied, _ = await self.compaction.compact(request)
+                applied, _ = await self.compaction.compact(request, model=model)
             except BaseException as error:
                 await self.retries.finished(
                     record,
@@ -272,7 +271,7 @@ class StepRunner:
             raise OutputValidationError(f"Structured output retry limit reached: {failure}")
         return True
 
-    async def _request(self, record: ModelRequestedEvent) -> AssistantMessage:
+    async def _request(self, record: ModelRequestedEvent, model: Model) -> AssistantMessage:
         request = record.request
         request_id = record.request_id
         try:
@@ -280,7 +279,7 @@ class StepRunner:
             await self.log.append(record)
             await self.log.append(ObservationsIncludedEvent(request_id, included))
             await self.retries.started(record)
-            return await self.responder.respond(request, request_id=request_id)
+            return await self.responder.respond(request, model=model, request_id=request_id)
         except BaseException as error:
             if self.log.request(request_id) is not None and not self.log.request_finished(
                 request_id

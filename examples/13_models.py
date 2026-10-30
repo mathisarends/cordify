@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from harnessed import Agent
 from harnessed.models import (
     AssistantMessage,
+    GenerationSettings,
     Model,
     ModelChunk,
     ModelInfo,
@@ -40,6 +41,8 @@ class EchoStream:
 
 class EchoModel:
     """Structural implementation: no Harnessed or SDK base class is required."""
+
+    settings = GenerationSettings()
 
     info = ModelInfo("local-echo", context_window=4096)
 

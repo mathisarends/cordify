@@ -4,18 +4,49 @@ from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Annotated, Any, Protocol, runtime_checkable
+from typing import Annotated, Any, Protocol, Self, runtime_checkable
 
-from pydantic import ConfigDict, Field, TypeAdapter
+from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass as validated_dataclass
 
 from .diagnostics import ModelDiagnostic
-from .messages import AssistantMessage, Message, ToolCall, freeze
+from .messages import AssistantMessage, JSONMapping, Message, ToolCall, freeze
 
 _VALUE_CONFIG = ConfigDict(
     strict=True, extra="forbid", allow_inf_nan=False, hide_input_in_errors=True
 )
-_MAX_TOKENS = TypeAdapter(Annotated[int, Field(ge=1)] | None, config=_VALUE_CONFIG)
+
+
+@validated_dataclass(frozen=True, slots=True, kw_only=True, config=_VALUE_CONFIG)
+class GenerationSettings:
+    """Immutable model defaults or per-turn overrides; None inherits a default.
+
+    Provider-specific JSON options are an explicit integration boundary. Common
+    fields have one canonical location and cannot also appear in provider_options.
+    """
+
+    __hash__ = None
+    max_tokens: Annotated[int, Field(ge=1)] | None = None
+    temperature: Annotated[float, Field(ge=0)] | None = None
+    provider_options: JSONMapping = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if {"max_tokens", "temperature"} & self.provider_options.keys():
+            raise ValueError("Use the typed generation fields for max_tokens and temperature")
+        object.__setattr__(self, "provider_options", freeze(self.provider_options))
+
+    def override(self, settings: Self | None) -> Self:
+        """Merge explicitly supplied values without mutating either configuration."""
+        if settings is None:
+            return self
+        if not isinstance(settings, GenerationSettings):
+            raise TypeError("settings must be GenerationSettings")
+        return replace(
+            self,
+            max_tokens=self.max_tokens if settings.max_tokens is None else settings.max_tokens,
+            temperature=self.temperature if settings.temperature is None else settings.temperature,
+            provider_options={**self.provider_options, **settings.provider_options},
+        )
 
 
 class StopReason(StrEnum):
@@ -78,37 +109,19 @@ class OutputSchema:
 @validated_dataclass(frozen=True, config=_VALUE_CONFIG)
 class ModelRequest:
     __hash__ = None
-    model: Annotated[str, Field(min_length=1)]
     messages: tuple[Message, ...]
     tools: tuple[ToolDefinition, ...] = ()
-    max_tokens: Annotated[int, Field(ge=1)] | None = None
-    settings: Mapping[str, Any] = field(default_factory=dict)
+    settings: GenerationSettings = field(default_factory=GenerationSettings)
     output_schema: OutputSchema | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
-        settings = dict(self.settings)
-        if "max_tokens" in settings:
-            object.__setattr__(
-                self, "max_tokens", _MAX_TOKENS.validate_python(settings.pop("max_tokens"))
-            )
-        object.__setattr__(self, "settings", freeze(settings))
 
 
-def resolve_request_settings(request: ModelRequest, defaults: Mapping[str, Any]) -> ModelRequest:
-    """Apply model defaults before compaction, budgeting, audit and execution.
-
-    Per-request settings override the explicit max_tokens field; that field
-    overrides model defaults. ModelRequest keeps the resolved limit canonical.
-    """
-    settings = dict(defaults)
-    default_max = settings.pop("max_tokens", None)
-    return replace(
-        request,
-        max_tokens=request.max_tokens if request.max_tokens is not None else default_max,
-        settings={**settings, **request.settings},
-    )
+def resolve_request_settings(request: ModelRequest, defaults: GenerationSettings) -> ModelRequest:
+    """Resolve defaults before compaction, budgeting, audit and execution."""
+    return replace(request, settings=defaults.override(request.settings))
 
 
 @validated_dataclass(frozen=True, config=_VALUE_CONFIG)
@@ -206,14 +219,11 @@ class ModelChunk:
 @validated_dataclass(frozen=True, slots=True, config=_VALUE_CONFIG)
 class ModelInfo:
     name: Annotated[str, Field(min_length=1)]
+    provider: Annotated[str, Field(min_length=1)] | None = field(default=None, kw_only=True)
     context_window: Annotated[int, Field(ge=1)] | None = None
     max_output: Annotated[int, Field(ge=1)] | None = None
     supports_images: bool = False
     supports_structured_output: bool = False
-    default_settings: Mapping[str, Any] = field(default_factory=dict, hash=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "default_settings", freeze(self.default_settings))
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +255,11 @@ class ModelStream(Protocol):
 class Model(Protocol):
     @property
     def info(self) -> ModelInfo: ...
+
+    @property
+    def settings(self) -> GenerationSettings:
+        """Immutable defaults, resolved into each request before execution."""
+        ...
 
     async def request(self, request: ModelRequest) -> ModelResponse: ...
     def stream(self, request: ModelRequest) -> AbstractAsyncContextManager[ModelStream]: ...

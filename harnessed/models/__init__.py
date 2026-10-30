@@ -15,6 +15,7 @@ from harnessed.core.messages import (
     ContentPart,
     ImagePart,
     Message,
+    ProviderState,
     SystemMessage,
     TextPart,
     ToolMessage,
@@ -23,6 +24,7 @@ from harnessed.core.messages import (
     user,
 )
 from harnessed.core.model import (
+    GenerationSettings,
     Model,
     ModelChunk,
     ModelInfo,
@@ -44,6 +46,7 @@ from .pydantic_ai import PydanticAIModel as PydanticAIModel
 __all__ = [
     "AssistantMessage",
     "ContentPart",
+    "GenerationSettings",
     "ImagePart",
     "Message",
     "Model",
@@ -60,6 +63,7 @@ __all__ = [
     "ModelStream",
     "ModelUsage",
     "OutputMode",
+    "ProviderState",
     "PydanticAIModel",
     "RetryKind",
     "RetryReason",

@@ -2,44 +2,78 @@
 
 ## Unreleased
 
-### Stable multimodal observations and explicit message names
+This update changes the model, message and observation APIs. The unreleased
+session format is version **3**; the latest published release, 0.6.0, uses
+version **2**. See the upgrade steps below before adopting the new APIs.
 
-- Rename message classes to `SystemMessage`, `UserMessage`, `AssistantMessage`
-  and `ToolMessage` throughout `harnessed.models`, examples and provider history.
-  The old short names are removed; `user()` and `system()` remain convenience
-  constructors.
-- Replace `Observation.full` / `.summary` with one immutable `content` value:
+### Model configuration and replay state
+
+- Add immutable `GenerationSettings` on models and typed per-turn overrides.
+  Move `max_tokens` out of `AgentLoop` and `ModelRequest` into settings; expose
+  JSON provider-specific options through `provider_options`.
+- Keep model selection on the configured `Model`. Remove `ModelRequest.model`
+  and record the selected `ModelInfo` on `ModelRequestedEvent.model`. Requests,
+  structured output and compaction use the captured model binding throughout.
+- Require `PydanticAIModel(native_model)` when passing a native model to `Agent`.
+  Custom model implementations now expose `settings: GenerationSettings`.
+- Replace raw assistant provider dictionaries with `ProviderState`, including
+  format/version and provider/model identity. Clear state with `None` when
+  deliberately discarding signed replay data; incompatible bindings fail explicitly.
+
+### Message names and multimodal observations
+
+- Rename `System`, `User`, `Assistant` and `ToolReply` to `SystemMessage`,
+  `UserMessage`, `AssistantMessage` and `ToolMessage` in `harnessed.models` and
+  throughout the SDK. Remove the old class names; `user()` and `system()` remain
+  convenience constructors.
+- Replace `Observation.full` and `.summary` with one immutable `content` value:
   text or a tuple of `TextPart` and `ImagePart`. Automatic `PreStep` capture still
-  uses `session.observe()`. Recorded snapshots keep their content, identity and
-  position until compaction or an explicitly installed retention policy.
-- Compact observations with their complete text/image content in the same
-  request. Existing `Compaction(keep_steps=5, ...)` retains five completed steps
-  in the active turn plus the current step without rewriting their snapshots.
-- Make `LatestObservationOnly()` an explicit one-snapshot-per-source policy;
+  uses `session.observe()`. Recorded snapshots keep their complete content,
+  identity and position until compaction or an explicit retention policy.
+- Compact observations and their images together in the same request. Existing
+  `Compaction(keep_steps=5, ...)` retains five completed steps in the active turn
+  plus the current step. Between compactions, previous snapshots stay unchanged.
+- Make `LatestObservationOnly()` an explicit one-snapshot-per-source policy and
   remove `max_summaries`. Omitting it retains snapshots until compaction.
-- Replace full/summary provenance with `IncludedObservation.source`, `.refs`,
-  `.turn_id`, `.step` and `.message_id`. Receipts match the complete final
-  text/image message, so removing an image also removes its receipt.
-- Advance session records to version **3** and remove pre-request-ID restoration.
-  Older formats fail without rewriting the stored log; no migration is provided.
+- Remove `ObservationForm`. Each `IncludedObservation` now carries `source`,
+  `refs`, `turn_id`, `step` and `message_id`. A receipt covers the complete final
+  text/image message; editing text or removing an image removes its receipt.
+
+### Session storage
+
+- Include the model, observation and receipt changes in one canonical format,
+  version **3**. Reject versions 1 and 2 without rewriting their logs; remove
+  legacy request-ID synthesis. No automatic format migration is provided.
+- Persist observation content and refs with the session so text and images
+  survive reopening and forks. Images remain inline; unchanged request prefixes
+  use the existing JSONL deltas. A content-addressed blob store is not included.
 
 ### Upgrade from 0.6.0
 
-1. Import the explicit message names from `harnessed.models`. Replace `ToolReply`
-   with `ToolMessage` and the other short class names with their `Message` names.
-2. Pass `Observation(source, content, refs=())` instead of full and summary text.
-   Put screenshots in the same content tuple as their text. Browser integrations
-   can remove request-time image insertion and observation-ID parsing.
-3. Omit `LatestObservationOnly` to preserve full snapshots until compaction, or
-   instantiate it without arguments to keep only the latest per source. Review
-   context budgets because old observations are no longer shortened every step.
-4. Read final inclusion refs and explicit turn/step/message identities instead of
-   `ObservationForm`. Message ID formatting remains internal. Snapshot captions
-   and important visual findings should be textual if they must survive the
-   default text-only compaction summarizer.
-5. Back up existing sessions and start a new version **3** store. Retained images
-   round-trip through observation events and request snapshots; JSONL still uses
-   prefix deltas rather than a content-addressed blob store.
+1. Import `GenerationSettings` from `harnessed.models` and configure generation
+   defaults on the model. Pass typed per-turn overrides to `session.run()` or
+   `submit()`. Move `max_tokens` out of `AgentLoop` and `ModelRequest`, and put
+   provider-specific JSON options in `provider_options`.
+2. Give custom models a `settings: GenerationSettings` attribute. Wrap native
+   provider models in `PydanticAIModel` explicitly. Read selected model metadata
+   from `ModelRequestedEvent.model` instead of `ModelRequest.model`.
+3. Replace raw assistant `provider_state` dictionaries with `ProviderState`.
+   Use `None`, rather than `{}`, when deliberately discarding replay state.
+4. Import `SystemMessage`, `UserMessage`, `AssistantMessage` and `ToolMessage`
+   from `harnessed.models` in place of their old short class names.
+5. Pass `Observation(source, content, refs=())` instead of full and summary text.
+   Put screenshots in the same content tuple as their text. Omit
+   `LatestObservationOnly` to retain snapshots until compaction, or instantiate
+   it without arguments to keep only the latest per source. Review budgets
+   because old observations are no longer shortened after every step.
+6. Use final inclusion refs and explicit turn/step/message identities instead
+   of `ObservationForm` or message-ID parsing. Browser integrations can replace
+   request-time image insertion with multimodal observations. The default
+   compaction summarizer reads text and captions, not image pixels; record
+   important visual findings as text if they must survive summarization.
+7. Back up version-2 sessions and start a new version-3 store. Existing published
+   formats are not migrated. See the [context guide](docs/guides/context.md),
+   [model guide](docs/guides/models.md) and [session guide](docs/guides/sessions.md).
 
 ## 0.6.0 (2026-10-30)
 

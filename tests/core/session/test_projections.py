@@ -35,6 +35,7 @@ from harnessed.core.session.events import (
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.session import SessionLog, derive_messages, derive_requests
 from harnessed.core.session.turns import derive_turns
+from harnessed.models import ModelInfo
 
 
 @pytest.mark.parametrize("seed", range(12))
@@ -65,7 +66,9 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         for step in range(1, rng.randint(2, 5)):
             await append(StepStartedEvent(str(turn), step))
             await append(
-                ModelRequestedEvent(ModelRequest("test", session.messages), request_id="request")
+                ModelRequestedEvent(
+                    ModelRequest(session.messages), request_id="request", model=ModelInfo("test")
+                )
             )
             call = ToolCall(f"tool-{rng.randrange(3)}", id=f"call-{turn}-{step}")
             request = ApprovalRequestedEvent(f"approval-{turn}-{step}", call, "test", "generated")
@@ -137,7 +140,9 @@ async def test_incremental_observations_and_compaction_match_every_prefix(seed):
                         )
                     )
             await append(
-                ModelRequestedEvent(ModelRequest("test", session.messages), request_id="request")
+                ModelRequestedEvent(
+                    ModelRequest(session.messages), request_id="request", model=ModelInfo("test")
+                )
             )
             message_id = f"{turn}:{step}"
             await append(
@@ -183,7 +188,9 @@ async def test_completed_message_does_not_enable_a_permanent_history_fold():
             )
         )
         await session.append(
-            ModelRequestedEvent(ModelRequest("test", session.messages), request_id="request")
+            ModelRequestedEvent(
+                ModelRequest(session.messages), request_id="request", model=ModelInfo("test")
+            )
         )
         await session.append(StepEndedEvent(str(index), 1))
         await session.append(TurnEndedEvent(str(index)))

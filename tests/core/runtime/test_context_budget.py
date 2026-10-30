@@ -26,6 +26,7 @@ from harnessed.core.session.events import (
     UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog
+from harnessed.models import GenerationSettings
 from harnessed.plugins import AgentLoop, Approvals, Compaction, at_ratio, every_turns
 from harnessed.testing import CallbackModel, ExtractiveSummarizer, ScriptedModel
 
@@ -315,10 +316,11 @@ async def test_unknown_turn_pins_are_reported_before_the_provider_call():
 async def test_budget_reserve_uses_maximum_and_keeps_the_stricter_window_limit():
     model = ScriptedModel(["ok"])
     for max_tokens in (80, 120):
+        model.settings = GenerationSettings(max_tokens=max_tokens)
         app = Application(
             model=model,
             plugins=[
-                AgentLoop(context_window=200, max_tokens=max_tokens),
+                AgentLoop(context_window=200),
                 Service(ContextBudget, ContextBudget(limit=100, reserve_tokens=20)),
             ],
         )
@@ -396,7 +398,7 @@ async def test_model_replacement_refreshes_request_names_and_context_windows(
             assert not replacement.requests
         else:
             assert (await session.run("x" * 1000)).text == "second"
-            assert replacement.requests[-1].model == "replacement"
+            assert session.last(ModelRequestedEvent).model.name == "replacement"
         assert windows[-1] == replacement_window
         await handle.aclose()
         if initial_window == 64:
@@ -405,7 +407,7 @@ async def test_model_replacement_refreshes_request_names_and_context_windows(
             assert error.value.limit == initial_window
         else:
             assert (await session.run("again")).text == "restored"
-            assert original.requests[-1].model == "original"
+            assert session.last(ModelRequestedEvent).model.name == "original"
         assert windows[-1] == initial_window
 
 
@@ -422,11 +424,11 @@ async def test_explicit_loop_window_still_wins_after_model_replacement():
     ).session() as session:
         await session.use(Service(Model, replacement))
         result = await session.run("x" * 1000)
-        assert result.completed and replacement.requests[-1].model == "replacement"
+        assert result.completed and session.last(ModelRequestedEvent).model.name == "replacement"
         assert windows == [2000]
 
 
-async def test_manual_compaction_uses_the_replacement_model_name():
+async def test_manual_compaction_uses_the_replacement_model():
     original = ScriptedModel(["old answer " * 100], info=ModelInfo("original"))
     replacement = ScriptedModel(["brief summary"], info=ModelInfo("replacement"))
     async with Application(
@@ -436,7 +438,7 @@ async def test_manual_compaction_uses_the_replacement_model_name():
         await session.run("old question " * 100)
         await session.use(Service(Model, replacement))
         assert await session.compact() is not None
-        assert replacement.requests[0].model == "replacement"
+        assert len(replacement.requests) == 1
         assert len(original.requests) == 1
 
 

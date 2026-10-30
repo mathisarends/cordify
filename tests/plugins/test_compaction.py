@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import replace
 
 import pytest
@@ -8,7 +9,15 @@ from harnessed.core.compaction import ContextState
 from harnessed.core.errors import ConfigError, ContextLengthExceeded, SessionStateError
 from harnessed.core.hooks import ConfigureRequest
 from harnessed.core.messages import AssistantMessage, SystemMessage, ToolCall
-from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, ModelUsage, UsagePurpose
+from harnessed.core.model import (
+    Model,
+    ModelChunk,
+    ModelInfo,
+    ModelRequest,
+    ModelResponse,
+    ModelUsage,
+    UsagePurpose,
+)
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionAppliedEvent,
@@ -19,6 +28,7 @@ from harnessed.core.session.events import (
     TurnOutcome,
 )
 from harnessed.core.session.session import SessionLog
+from harnessed.core.stream import CompactionStartedEvent
 from harnessed.core.tools.decorator import tool
 from harnessed.plugins import AgentLoop, Compaction, JsonlSessions, at_ratio, every_turns
 from harnessed.testing import CallbackModel, ScriptedModel, reply
@@ -33,6 +43,100 @@ class Brief:
         return f"summary {len(self.sources)}"
 
 
+@pytest.mark.parametrize("context_window", [None, 2000])
+async def test_compaction_window_uses_captured_model(context_window: int | None) -> None:
+    original = ScriptedModel(["original"], info=ModelInfo("original", context_window=8000))
+    replacement = ScriptedModel([], info=ModelInfo("replacement", context_window=64))
+    windows: list[int | None] = []
+
+    async def swap(
+        event: ConfigureRequest, next_: Callable[[], Awaitable[ModelRequest]]
+    ) -> ModelRequest:
+        event.session.ctx.provide(Model, replacement)
+        return await next_()
+
+    async with Agent(
+        model=original,
+        plugins=[
+            AgentLoop(context_window=context_window),
+            Compaction(trigger=lambda state: windows.append(state.context_window) or False),
+        ],
+    ).session() as session:
+        session.on(ConfigureRequest, swap)
+        assert (await session.run("hello")).text == "original"
+        assert windows == [context_window or original.info.context_window]
+        assert replacement.requests == []
+
+
+async def test_default_summary_uses_captured_model_after_a_request_hook() -> None:
+    original = ScriptedModel(["first", "summary", "second"], info=ModelInfo("original"))
+    replacement = ScriptedModel([], info=ModelInfo("replacement"))
+
+    async def swap(
+        event: ConfigureRequest, next_: Callable[[], Awaitable[ModelRequest]]
+    ) -> ModelRequest:
+        event.session.ctx.provide(Model, replacement)
+        return await next_()
+
+    async with Agent(
+        model=original, plugins=[Compaction(trigger=every_turns(1), keep_turns=0)]
+    ).session() as session:
+        await session.run("x" * 4000)
+        session.on(ConfigureRequest, swap)
+        assert (await session.run("current")).text == "second"
+        assert session.last(CompactionAppliedEvent).summary == "summary"
+        assert len(original.requests) == 3
+        assert replacement.requests == []
+
+
+async def test_manual_summary_uses_captured_model_before_start_observers() -> None:
+    original = ScriptedModel(["first", "summary"], info=ModelInfo("original"))
+    replacement = ScriptedModel([], info=ModelInfo("replacement"))
+    async with Agent(
+        model=original, plugins=[Compaction(trigger=lambda state: False, keep_turns=0)]
+    ).session() as session:
+        await session.run("x" * 4000)
+
+        def swap(event: CompactionStartedEvent) -> None:
+            session.ctx.provide(Model, replacement)
+
+        session.on(CompactionStartedEvent, swap)
+        applied = await session.compact()
+        assert applied is not None and applied.summary == "summary"
+        assert len(original.requests) == 2
+        assert replacement.requests == []
+
+
+async def test_context_recovery_summary_uses_captured_model() -> None:
+    requests: list[ModelRequest] = []
+
+    async def chunks(request: ModelRequest) -> AsyncIterator[ModelChunk]:
+        requests.append(request)
+        if len(requests) == 2:
+            raise ContextLengthExceeded("Too large")
+        yield ModelChunk(text="first" if len(requests) == 1 else "summary")
+
+    original = CallbackModel(chunks, info=ModelInfo("original"))
+    replacement = ScriptedModel(["continued"], info=ModelInfo("replacement"))
+
+    async def swap(
+        event: ConfigureRequest, next_: Callable[[], Awaitable[ModelRequest]]
+    ) -> ModelRequest:
+        event.session.ctx.provide(Model, replacement)
+        return await next_()
+
+    async with Agent(
+        model=original, plugins=[Compaction(trigger=lambda state: False, keep_turns=0)]
+    ).session() as session:
+        await session.run("x" * 4000)
+        session.on(ConfigureRequest, swap)
+        assert (await session.run("current")).text == "continued"
+        assert session.last(CompactionAppliedEvent).summary == "summary"
+        assert len(original.requests) == 3
+        assert len(replacement.requests) == 1
+        assert session.last(ModelRequestedEvent).model == replacement.info
+
+
 async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_instructions():
     model = ScriptedModel(["first", "summary", "second"])
     async with Agent(
@@ -44,7 +148,7 @@ async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_ins
         await session.run("current")
         summary_request = model.requests[1]
         assert not summary_request.tools and "Keep paths." in summary_request.messages[0].text
-        assert summary_request.max_tokens == 2048
+        assert summary_request.settings.max_tokens == 2048
         assert [message.text for message in model.requests[2].messages] == [
             "Fixed instructions.",
             "Conversation summary:\nsummary",

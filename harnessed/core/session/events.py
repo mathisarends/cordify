@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from time import time
@@ -22,7 +21,15 @@ from harnessed.core.messages import (
     UserMessage,
     freeze,
 )
-from harnessed.core.model import ModelRequest, ModelUsage, OutputSchema, StopReason, UsagePurpose
+from harnessed.core.model import (
+    GenerationSettings,
+    ModelInfo,
+    ModelRequest,
+    ModelUsage,
+    OutputSchema,
+    StopReason,
+    UsagePurpose,
+)
 from harnessed.kernel.events import Emit
 
 
@@ -287,7 +294,7 @@ class InboxAddedEvent(SessionEvent):
     target: InboxTarget
     mode: InboxMode
     context: tuple[Message, ...] = ()
-    settings: Mapping[str, Any] = field(default_factory=dict)
+    settings: GenerationSettings = field(default_factory=GenerationSettings)
     created_at: Annotated[float, Field(ge=0)] = field(default=0.0, kw_only=True)
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
     limits: TurnLimits = field(default_factory=TurnLimits, kw_only=True)
@@ -306,7 +313,8 @@ class InboxAddedEvent(SessionEvent):
         if self.limits != TurnLimits() and self.mode != InboxMode.FOLLOWUP:
             raise ValueError("Only a new turn can declare limits")
         object.__setattr__(self, "context", tuple(self.context))
-        object.__setattr__(self, "settings", freeze(self.settings))
+        if not isinstance(self.settings, GenerationSettings):
+            raise TypeError("Inbox settings must be GenerationSettings")
 
     @classmethod
     def create(
@@ -315,7 +323,7 @@ class InboxAddedEvent(SessionEvent):
         mode: InboxMode,
         *,
         context: tuple[Message, ...] = (),
-        settings: Mapping[str, Any] | None = None,
+        settings: GenerationSettings | None = None,
         output_schema: OutputSchema | None = None,
         limits: TurnLimits | None = None,
     ) -> Self:
@@ -326,7 +334,7 @@ class InboxAddedEvent(SessionEvent):
             _INBOX_ROUTES[mode],
             mode,
             context,
-            settings or {},
+            settings or GenerationSettings(),
             created_at=time(),
             output_schema=output_schema,
             limits=limits or TurnLimits(),
@@ -349,13 +357,14 @@ class TurnStartedEvent(SessionEvent):
     type: Literal[EventKind.TURN_START] = field(default=EventKind.TURN_START, kw_only=True)
     turn_id: Identifier
     input_id: str | None = None
-    settings: Mapping[str, Any] = field(default_factory=dict)
+    settings: GenerationSettings = field(default_factory=GenerationSettings)
     output_schema: OutputSchema | None = field(default=None, kw_only=True)
     limits: TurnLimits = field(default_factory=TurnLimits, kw_only=True)
     final_step: FinalStepPolicy = field(default=FinalStepPolicy.NONE, kw_only=True)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "settings", freeze(self.settings))
+        if not isinstance(self.settings, GenerationSettings):
+            raise TypeError("Turn settings must be GenerationSettings")
         object.__setattr__(self, "final_step", FinalStepPolicy(self.final_step))
 
 
@@ -439,6 +448,7 @@ class ModelRequestedEvent(SessionEvent):
         default=EventKind.MODEL_REQUESTED, kw_only=True
     )
     request: ModelRequest
+    model: ModelInfo = field(kw_only=True)
     request_id: Identifier = field(kw_only=True)
     retry_group_id: Identifier | None = field(default=None, kw_only=True)
     retry_kind: RetryKind | None = field(default=None, kw_only=True)

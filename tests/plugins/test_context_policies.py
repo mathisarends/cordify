@@ -377,18 +377,15 @@ async def test_cache_usage_is_preserved_as_provider_reported_usage():
 
 async def test_model_summarizer_uses_explicit_model_without_tools_and_closes_stream():
     llm = ScriptedModel(["summary"])
-    summary = await ModelSummarizer(llm, model_name="summary-model").summarize(
-        (UserMessage("history"),), max_tokens=32
-    )
+    summary = await ModelSummarizer(llm).summarize((UserMessage("history"),), max_tokens=32)
     assert summary.text == "summary"
-    assert llm.requests[0].model == "summary-model"
-    assert not llm.requests[0].tools and llm.requests[0].max_tokens == 32
+    assert not llm.requests[0].tools and llm.requests[0].settings.max_tokens == 32
 
 
 async def test_model_summarizer_keeps_tool_names_and_arguments_in_summary_input():
     llm = ScriptedModel(["summary"])
     messages = (AssistantMessage(tool_calls=(ToolCall("bash", {"command": "pytest tests/auth"}),)),)
-    await ModelSummarizer(llm, model_name="summary").summarize(messages, max_tokens=32)
+    await ModelSummarizer(llm).summarize(messages, max_tokens=32)
     transcript = llm.requests[0].messages[-1].text
     assert "bash" in transcript and "pytest tests/auth" in transcript
 

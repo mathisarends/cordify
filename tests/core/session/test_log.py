@@ -23,6 +23,7 @@ from harnessed.core.session.events import (
     UserMessageEvent,
 )
 from harnessed.core.session.session import SessionLog, derive_messages
+from harnessed.models import ModelInfo
 from harnessed.plugins import Approvals, JsonlSessions
 from harnessed.plugins.sessions import JsonlPersistence
 from harnessed.testing import ScriptedModel
@@ -203,11 +204,11 @@ def test_event_json_roundtrip_includes_requests_and_frozen_tool_data():
         AssistantMessageEvent(AssistantMessage(tool_calls=(call,)), request_id="request"),
         ModelRequestedEvent(
             ModelRequest(
-                "test",
                 (UserMessage("hello"),),
                 (ToolDefinition("nested", "description", {"type": "object", "properties": {}}),),
             ),
             request_id="request",
+            model=ModelInfo("test"),
         ),
         ToolCallFinishedEvent(call, ToolResult("ok")),
     )

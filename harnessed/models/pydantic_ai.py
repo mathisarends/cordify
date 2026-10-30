@@ -20,6 +20,7 @@ from harnessed.core.messages import (
     AssistantMessage,
     ContentPart,
     MalformedArguments,
+    ProviderState,
     Role,
     TextPart,
     ToolCall,
@@ -27,6 +28,7 @@ from harnessed.core.messages import (
     to_dict,
 )
 from harnessed.core.model import (
+    GenerationSettings,
     ModelChunk,
     ModelInfo,
     ModelRequest,
@@ -48,7 +50,7 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model as NativeModel
     from pydantic_ai.models import ModelRequestParameters, StreamedResponse
     from pydantic_ai.native_tools import AbstractNativeTool
-    from pydantic_ai.settings import ModelSettings
+    from pydantic_ai.settings import ModelSettings as NativeSettings
     from pydantic_ai.usage import RequestUsage as NativeUsage
 
 
@@ -82,7 +84,7 @@ class PydanticAIModel:
         self,
         model: str | NativeModel,
         *,
-        settings: ModelSettings | None = None,
+        settings: GenerationSettings | None = None,
         context_window: int | None = None,
         native_tools: Sequence[AbstractNativeTool] = (),
     ) -> None:
@@ -108,19 +110,33 @@ class PydanticAIModel:
         ):
             raise ConfigError("native_tools must be a sequence of PydanticAI native tools")
         self.native_tools = tuple(native_tools)
-        self.settings = dict(settings or {})
+        defaults = self._native.settings or {}
+        native_settings = dict(defaults)
+        self._generation_settings = GenerationSettings(
+            max_tokens=defaults.get("max_tokens"),
+            temperature=defaults.get("temperature"),
+            provider_options={
+                key: value
+                for key, value in native_settings.items()
+                if key not in ("max_tokens", "temperature")
+            },
+        ).override(settings)
         profile = self._native.profile
         self._info = ModelInfo(
             name=self._native.model_name,
+            provider=self._native.system,
             context_window=context_window or profile.get("context_window"),
             supports_images=bool(profile.get("supports_image_input")),
             supports_structured_output=bool(profile.get("supports_json_schema_output")),
-            default_settings={**(self._native.settings or {}), **self.settings},
         )
 
     @property
     def info(self) -> ModelInfo:
         return self._info
+
+    @property
+    def settings(self) -> GenerationSettings:
+        return self._generation_settings
 
     async def __aenter__(self) -> Self:
         await self._native.__aenter__()
@@ -134,11 +150,13 @@ class PydanticAIModel:
     ) -> bool | None:
         return await self._native.__aexit__(exc_type, exc_val, exc_tb)
 
-    def _settings(self, request: ModelRequest) -> ModelSettings:
-        request = resolve_request_settings(request, self.info.default_settings)
-        settings = to_dict(request.settings)
-        if request.max_tokens is not None:
-            settings["max_tokens"] = request.max_tokens
+    def _settings(self, request: ModelRequest) -> NativeSettings:
+        effective = resolve_request_settings(request, self.settings).settings
+        settings = to_dict(effective.provider_options)
+        if effective.max_tokens is not None:
+            settings["max_tokens"] = effective.max_tokens
+        if effective.temperature is not None:
+            settings["temperature"] = effective.temperature
         return settings
 
     def _parameters(self, request: ModelRequest) -> ModelRequestParameters:
@@ -155,12 +173,12 @@ class PydanticAIModel:
             async with self:
                 native = await model_request(
                     self._native,
-                    _history(request),
+                    _history(request, self.info),
                     model_settings=self._settings(request),
                     model_request_parameters=self._parameters(request),
                     instrument=False,
                 )
-                return _response(native)
+                return _response(native, self.info)
         except Exception as error:
             mapped = _error(error)
             if mapped is not None:
@@ -176,13 +194,13 @@ class PydanticAIModel:
                 self,
                 model_request_stream(
                     self._native,
-                    _history(request),
+                    _history(request, self.info),
                     model_settings=self._settings(request),
                     model_request_parameters=self._parameters(request),
                     instrument=False,
                 ) as native,
             ):
-                yield _Stream(native)
+                yield _Stream(native, self.info)
         except Exception as error:
             mapped = _error(error)
             if mapped is not None:
@@ -190,20 +208,31 @@ class PydanticAIModel:
             raise
 
 
-def _history(request: ModelRequest) -> list[NativeMessage]:
+def _history(request: ModelRequest, info: ModelInfo) -> list[NativeMessage]:
     from pydantic_ai import messages as native
 
     history: list[NativeMessage] = []
     calls = {call.id: call.name for message in request.messages for call in message.tool_calls}
     for message in request.messages:
         if message.role == Role.ASSISTANT:
-            if message.provider_state:
+            if message.provider_state is not None:
+                state = message.provider_state
+                if (
+                    state.format != "pydantic-ai.response"
+                    or state.version != 1
+                    or state.provider != info.provider
+                    or state.model != info.name
+                ):
+                    raise InvalidRequest(
+                        "Incompatible provider_state format or originating model; clear "
+                        "provider_state explicitly to discard the original signed response"
+                    )
                 restored = native.ModelMessagesTypeAdapter.validate_json(
-                    json.dumps([to_dict(message.provider_state)], allow_nan=False)
+                    json.dumps([to_dict(state.data)], allow_nan=False)
                 )[0]
                 if not isinstance(restored, native.ModelResponse):
                     raise ValueError("Assistant provider state must contain a response")
-                original = _response(restored).message
+                original = _response(restored, info).message
                 if (
                     message.content != original.content
                     or message.tool_calls != original.tool_calls
@@ -344,7 +373,7 @@ _STOP_REASONS = {
 }
 
 
-def _response(response: NativeResponse) -> ModelResponse:
+def _response(response: NativeResponse, info: ModelInfo) -> ModelResponse:
     from pydantic_ai import messages as native
 
     text, thinking, calls = [], [], []
@@ -361,11 +390,19 @@ def _response(response: NativeResponse) -> ModelResponse:
         else:
             raise ProviderError(f"Unsupported response part: {type(part).__name__}")
     raw = native.ModelMessagesTypeAdapter.dump_python([response], mode="json")[0]
+    if info.provider is None:
+        raise ProviderError("PydanticAI responses require a provider identity")
     message = AssistantMessage(
         "".join(text),
         tuple(calls),
         reasoning="".join(thinking),
-        provider_state=raw,
+        provider_state=ProviderState(
+            format="pydantic-ai.response",
+            version=1,
+            provider=info.provider,
+            model=info.name,
+            data=raw,
+        ),
     )
     reason = _STOP_REASONS.get(
         response.finish_reason or "", StopReason.TOOL_CALLS if calls else StopReason.END
@@ -399,8 +436,9 @@ class _ToolPreview:
 
 
 class _Stream:
-    def __init__(self, stream: StreamedResponse) -> None:
+    def __init__(self, stream: StreamedResponse, info: ModelInfo) -> None:
         self._native = stream
+        self._info = info
         self._response: ModelResponse | None = None
         self._iterator = self._chunks()
 
@@ -483,7 +521,7 @@ class _Stream:
                             event.index, arguments, preview.name, preview.call_id, mode
                         )
                     )
-        self._response = response = _response(self._native.get())
+        self._response = response = _response(self._native.get(), self._info)
         for call in response.message.tool_calls:
             yield ModelChunk(tool_call=call)
         yield ModelChunk(usage=response.usage, stop_reason=response.stop_reason)

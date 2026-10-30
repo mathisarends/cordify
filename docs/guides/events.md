@@ -80,8 +80,10 @@ history and the UI stream. These remain separate events.
 
 ## Model request lifecycle
 
-`ModelRequestedEvent(request, request_id=...)` records the final submitted
-snapshot after request hooks, output configuration and compaction. It marks a
+`ModelRequestedEvent(request, model=info, request_id=...)` records the final submitted
+snapshot after request hooks, output configuration and compaction, alongside
+the selected `ModelInfo`. Effective generation settings are part of the request;
+the selected model is event metadata, not a request override. It marks a
 Harnessed model invocation, rather than an individual HTTP transport attempt.
 Harnessed assigns a fresh UUID to every invocation, including retries after a
 context limit. `AssistantMessageEvent` and response
@@ -109,8 +111,8 @@ for counters, separate retry kinds and missing provider telemetry.
 
 Plugins can inject `SessionLog` from `harnessed` and call `log.request(id)` to
 retrieve the submitted snapshot, or `log.request_finished(id)` to inspect its
-completion. Session format version 3 requires explicit request IDs; older formats
-are rejected without rewriting the log. Recovery closes orphan requests as
+completion. Version 3 records require explicit request IDs and reject older
+formats without migration. Recovery closes orphan requests as
 cancelled before repairing their turn.
 
 `ObservationsIncludedEvent(request_id, observations)` records the observation

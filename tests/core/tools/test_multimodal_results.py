@@ -66,8 +66,8 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
             == counter.count_text(tool_result.text) + 1024
         )
         without_images = ToolMessage(history.text, tool_call_id=history.tool_call_id)
-        assert counter.count_request(ModelRequest("vision", (history,))) == (
-            counter.count_request(ModelRequest("vision", (without_images,))) + 1024
+        assert counter.count_request(ModelRequest((history,))) == (
+            counter.count_request(ModelRequest((without_images,))) + 1024
         )
 
 

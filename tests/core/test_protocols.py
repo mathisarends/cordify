@@ -56,6 +56,7 @@ class ForeignModel:
     def __init__(self, responses):
         self.backend = ScriptedModel(responses)
         self.info = self.backend.info
+        self.settings = self.backend.settings
         self.requests = self.backend.requests
 
     async def request(self, request):

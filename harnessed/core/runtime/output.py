@@ -35,18 +35,16 @@ class OutputHandler:
         self.options = options
         self.values = values
 
-    def prepare(self, request: ModelRequest, schema: OutputSchema | None) -> ModelRequest:
+    def prepare(
+        self, request: ModelRequest, schema: OutputSchema | None, *, model: Model
+    ) -> ModelRequest:
         """Expose either native JSON output or one reserved, side-effect-free answer tool."""
         if schema is None:
             return request
         self.ctx[OutputTypes].resolve(schema)
         if any(tool.name == FINAL_ANSWER for tool in request.tools):
             raise ConfigError("The tool name 'final_answer' is reserved for structured output")
-        mode = (
-            OutputMode.NATIVE
-            if self.ctx[Model].info.supports_structured_output
-            else OutputMode.TOOL
-        )
+        mode = OutputMode.NATIVE if model.info.supports_structured_output else OutputMode.TOOL
         schema = replace(schema, mode=mode)
         tools = request.tools
         if mode == OutputMode.TOOL:

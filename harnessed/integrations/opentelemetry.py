@@ -104,8 +104,8 @@ class _Span:
         if not self.native.is_recording():
             return
         if isinstance(value, ModelRequest):
-            if value.max_tokens is not None:
-                self.native.set_attribute("gen_ai.request.max_tokens", value.max_tokens)
+            if value.settings.max_tokens is not None:
+                self.native.set_attribute("gen_ai.request.max_tokens", value.settings.max_tokens)
             if self.config.capture_content:
                 self.content("input", [_message(message) for message in value.messages])
         elif isinstance(value, ModelUsage):

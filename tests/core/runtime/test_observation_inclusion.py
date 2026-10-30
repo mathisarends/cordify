@@ -80,9 +80,7 @@ async def test_snapshots_and_receipts_retain_text_and_images_together(latest_onl
                 following = session.events[index + 1]
                 assert isinstance(following, ObservationsIncludedEvent)
                 assert following.request_id == event.request_id
-        assert observations(ModelRequest("test", session.messages)) == observations(
-            model.requests[1]
-        )
+        assert observations(ModelRequest(session.messages)) == observations(model.requests[1])
 
 
 async def test_automatic_observations_keep_the_entire_previous_request_prefix():
@@ -92,10 +90,10 @@ async def test_automatic_observations_keep_the_entire_previous_request_prefix():
     first, second = model.requests
     assert second.messages[: len(first.messages)] == first.messages
     codec = EventLogCodec()
-    initial = ModelRequestedEvent(first, request_id="first")
+    initial = ModelRequestedEvent(first, model=model.info, request_id="first")
     codec.encode(initial)
     codec.accept(initial)
-    record = codec.encode(ModelRequestedEvent(second, request_id="second"))
+    record = codec.encode(ModelRequestedEvent(second, model=model.info, request_id="second"))
     assert record["data"]["request"]["messages"]["prefix"] == len(first.messages)
 
 

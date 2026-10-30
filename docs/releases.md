@@ -14,8 +14,8 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
   exact package version for reproducible deployments and persisted workflows.
 - Session records have an explicit format version. Release 0.1.0 uses version 1;
   releases 0.2.0 through 0.6.0 use version 2. Incompatible core record changes require
-  a new version. Unsupported versions fail explicitly, and no automatic format
-  migrations are provided.
+  a new version. The unreleased model API uses version 3. Unsupported versions
+  fail explicitly, and no automatic format migrations are provided.
 - Back up persisted sessions before upgrading. Application-defined events and
   versioned output contracts have their own validation requirements; see
   [custom events](guides/events.md) and
@@ -39,10 +39,23 @@ Message classes are named `SystemMessage`, `UserMessage`, `AssistantMessage` and
 and use inclusion `refs`, `turn_id`, `step` and `message_id` instead of
 `ObservationForm`. See [automatic observations](guides/context.md#steering-observations-and-retrieval).
 
-These breaking value and receipt changes advance session records to version **3**.
+The unreleased model and observation APIs share session format **3**.
 Back up older stores and start a new one; versions 1 and 2 are rejected without
 automatic migration. The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
 contains the upgrade steps and storage limits.
+
+### Model configuration and stored state
+
+- Add immutable `GenerationSettings` on models and typed per-turn overrides.
+  Move `max_tokens` out of `AgentLoop` and `ModelRequest` into settings; expose
+  JSON provider-specific options through `provider_options`.
+- Keep model selection on the configured `Model`. Remove `ModelRequest.model`
+  and record the selected `ModelInfo` on `ModelRequestedEvent.model`.
+- Require `PydanticAIModel(native_model)` when passing a native model to `Agent`.
+  Custom model implementations now expose `settings: GenerationSettings`.
+- Replace raw assistant provider dictionaries with `ProviderState`, including
+  format/version and provider/model identity. Clear state with `None` when
+  deliberately discarding signed replay data; incompatible bindings fail explicitly.
 
 ## 0.6.0 (2026-10-30)
 
