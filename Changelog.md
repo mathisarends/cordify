@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.5.0 (2026-10-30)
 
 This release adds tool metadata, action-chain boundaries, reserved final-step
 summaries and correlated compaction/model activity. It extends the event and hook

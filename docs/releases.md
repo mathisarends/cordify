@@ -26,7 +26,7 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## 0.5.0 (unreleased)
+## 0.5.0 (2026-10-30)
 
 This minor release adds tool metadata, action-chain boundaries, reserved final-step
 summaries and correlated compaction/model activity. It extends the event and hook
