@@ -57,6 +57,28 @@ and `aclose()` owns cleanup. Worker transport remains internal to integrations. 
 [sandboxes](../guides/sandboxes.md) for defaults, lifecycle, security boundaries,
 runtime requirements and the extension protocol.
 
+## Background shell commands
+
+Import `BackgroundShell` from `harnessed.plugins` and register it explicitly with
+`Shell(cwd)` or `Service(ShellBackend, LocalShell(...))` in `Agent(plugins=...)`.
+`BackgroundShell(cwd=".", *, timeout=600.0, max_timeout=600.0,
+max_background_commands=32)` requires an existing shell backend and a live session.
+It adds `start_command(argv, timeout=None)`, `read_command(command_id, wait=0.0)`,
+`write_command(command_id, text="", eof=False)`, `terminate_command(command_id)` and
+`list_commands()`. `Shell` and `ShellTools` retain their foreground-only tool set.
+
+`start_command` returns a mount-scoped ID promptly. Completion, failure, timeout
+or cancellation queues one durable session-inbox notification and wakes an idle
+agent. Output stays behind the normal `read_command` tool pipeline. Process trees
+are cleaned up on termination, plugin disposal, backend replacement and session
+closure; live handles are not restored or replayed. Backend capture limits and
+the 600-second maximum deadline still apply.
+
+`BackgroundShellBackend`, `ShellProcess`, `ProcessSnapshot`, `ProcessState`,
+`CommandInfo` and `CommandResult` are exported from `harnessed.plugins.shell`.
+Run-only backends explicitly reject background starts. See
+[registration, tool sequences and lifecycle](../guides/background-shell.md).
+
 ## Agent
 
 `Agent(*, model=None, system_prompt=None, plugins=(),

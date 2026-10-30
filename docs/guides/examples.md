@@ -6,6 +6,7 @@ requires its provider extra and credentials.
 
 | Topic | Run | Source |
 | --- | --- | --- |
+| Background shell control | `uv run python -m examples.35_background_shell` | [Code](https://github.com/mathisarends/harnessed/blob/main/examples/35_background_shell.py) |
 | Optional sandbox configuration | `uv run python -m examples.34_sandbox` | [Code](https://github.com/mathisarends/harnessed/blob/main/examples/34_sandbox.py) |
 | Tool agent | `uv run python -m examples.01_tool_agent` | [Code](https://github.com/mathisarends/harnessed/blob/main/examples/01_tool_agent.py) |
 | Plugin composition | `uv run python -m examples.02_plugins` | [Code](https://github.com/mathisarends/harnessed/blob/main/examples/02_plugins.py) |

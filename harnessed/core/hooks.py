@@ -125,3 +125,14 @@ class SessionAppended(Emit):
     log: SessionLog
     event: SessionEvent
     seq: int
+
+
+@dataclass(frozen=True)
+class SessionClosing(Emit):
+    """Release live resources after driver shutdown, before plugin disposal.
+
+    Explicit Session.aclose() dispatches this once. Plugins must also own cleanup
+    through Context effects for startup rollback and context teardown.
+    """
+
+    session: Session
