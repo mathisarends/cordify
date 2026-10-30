@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Iterable
 from typing import cast
 
 from harnessed.core.approvals import Approval, ApprovalState, approval_transition
-from harnessed.core.assets import AssetStore, MemoryAssets
+from harnessed.core.assets import AssetStore, _MemoryAssets
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.errors import ConfigError, SessionStateError
 from harnessed.core.event_registry import EventRegistry
@@ -56,7 +56,7 @@ from harnessed.core.session.history import (
 )
 from harnessed.core.session.history import derive_messages as derive_messages
 from harnessed.core.session.history import derive_requests as derive_requests
-from harnessed.core.session.images import SessionImages
+from harnessed.core.session.images import _SessionImages
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.store import SessionPersistence, validate_session_id
 from harnessed.core.session.turns import Turn, TurnProjection
@@ -132,7 +132,8 @@ class SessionLog:
         self._persistence = persistence
         self._files = files
         self._source_files = source_files
-        self.images = SessionImages(assets if assets is not None else MemoryAssets())
+        self._assets = assets if assets is not None else _MemoryAssets()
+        self._images = _SessionImages(self._assets)
         self._usage: ModelUsage | None = None
         self._observers: dict[EventBuffer[SessionEvent | TransientEvent | None], bool] = {}
         self._subscriptions_closed = False
@@ -190,6 +191,20 @@ class SessionLog:
         for seq, event in enumerate(self._events):
             if isinstance(event, CompactionAppliedEvent):
                 _validate_compaction(self._events, event, seq)
+
+    @property
+    def assets(self) -> AssetStore:
+        """The asset backend paired with this log; ownership cannot be replaced."""
+        return self._assets
+
+    async def resolve_request(self, request: ModelRequest) -> ModelRequest:
+        """Resolve stored images for manual model replay without changing the log.
+
+        Only images in this request are read. Missing or corrupt assets fail
+        explicitly. The returned transport copy can hold large image payloads;
+        callers should release it after use.
+        """
+        return await self._images.resolve(request)
 
     @property
     def events(self) -> tuple[SessionEvent, ...]:
@@ -383,7 +398,7 @@ class SessionLog:
     async def _append(self, event: SessionEvent) -> tuple[int, bool]:
         cancelled = False
         async with self._lock:
-            event = await self.images.retain_event(event)
+            event = await self._images.retain_event(event)
             if isinstance(event, InboxAddedEvent) and event.message.id in self._pending:
                 raise ValueError(f"Duplicate pending message id: {event.message.id}")
             if isinstance(event, InboxRemovedEvent) and event.message_id not in self._pending:
@@ -632,5 +647,5 @@ class SessionLog:
             seed=seed,
             registry=self.registry.copy(),
             source_files=self._files if self._files is not None else self._source_files,
-            assets=self.images.store,
+            assets=self.assets,
         )

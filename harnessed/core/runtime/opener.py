@@ -11,7 +11,7 @@ from harnessed.core.runtime.session import Session
 from harnessed.core.session.artifacts import copy_artifacts
 from harnessed.core.session.events import TurnStartedEvent
 from harnessed.core.session.files import SessionFiles
-from harnessed.core.session.images import SessionImages, copy_image_assets
+from harnessed.core.session.images import _copy_image_assets
 from harnessed.core.session.session import SessionLog
 from harnessed.core.session.store import SessionPersistence, SessionStore
 from harnessed.core.tools.registry import ToolRegistry
@@ -46,7 +46,7 @@ async def open_session(
     if branch is not None:
         if seed or await files.entries():
             raise ConfigError(f"Fork destination {session_id!r} already contains a log")
-        await copy_image_assets(branch.events, branch.images.store, assets)
+        await _copy_image_assets(branch.events, branch.assets, assets)
         missing = await copy_artifacts(branch.events, branch.source_files, files)
         seed = (*branch.events, *missing)
         for seq, event in enumerate(seed):
@@ -55,8 +55,7 @@ async def open_session(
     log = SessionLog(
         session_id, ctx=ctx, seed=seed, persistence=persistence, files=files, assets=assets
     )
-    ctx.provide(SessionImages, log.images)
-    ctx.effect(log.images.clear)
+    ctx.effect(log._images.clear)
     ctx.effect(log.finish_subscriptions)
     await log.repair_interrupted()
     _restore_output_schemas(ctx[OutputTypes], log)

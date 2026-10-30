@@ -168,7 +168,7 @@ class StepRunner:
                 request, self.log.current_turn().start.output_schema, model=model
             )
         request = resolve_request_settings(request, model.settings)
-        request = await self.log.images.retain_request(request)
+        request = await self.log._images.retain_request(request)
         request = await self.compaction.prepare(request, model=model)
         if final:
             request = replace(request, tools=(), output_schema=None)

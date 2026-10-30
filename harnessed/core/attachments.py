@@ -29,7 +29,7 @@ class File:
     path: str | Path
     encoding: str = "utf-8"
 
-    async def parts(self) -> tuple[ContentPart, ...]:
+    async def _parts(self) -> tuple[ContentPart, ...]:
         path = Path(self.path)
         text = await asyncio.to_thread(path.read_text, encoding=self.encoding)
         return (TextPart(f"File: {path.name}\n{text}"),)
@@ -40,7 +40,7 @@ class Image:
     path: str | Path
     detail: ImageDetail = ImageDetail.AUTO
 
-    async def parts(self, *, assets: AssetStore | None = None) -> tuple[ContentPart, ...]:
+    async def _parts(self, *, assets: AssetStore | None = None) -> tuple[ContentPart, ...]:
         location = str(self.path)
         if location.startswith(("https://", "http://", "data:image/")):
             return (ImagePart(location, self.detail),)
@@ -58,7 +58,7 @@ class Image:
 type Attachment = File | Image
 
 
-async def prepare_input(
+async def _prepare_input(
     content: str | Message,
     *,
     attachments: Iterable[Attachment] = (),
@@ -77,9 +77,9 @@ async def prepare_input(
         )
         for attachment in attachments:
             parts.extend(
-                await attachment.parts(assets=assets)
+                await attachment._parts(assets=assets)
                 if isinstance(attachment, Image)
-                else await attachment.parts()
+                else await attachment._parts()
             )
         message = UserMessage(tuple(parts), id=message.id)
     contributions = []

@@ -21,6 +21,7 @@ class AssetRef:
             raise ValueError("Asset size must be a non-negative integer")
 
     def verify(self, data: bytes) -> None:
+        """Raise ValueError if bytes differ in size or digest; usable by custom stores."""
         if len(data) != self.size_bytes or hashlib.sha256(data).hexdigest() != self.sha256:
             raise ValueError(f"Asset content does not match {self.sha256}")
 
@@ -36,11 +37,11 @@ class AssetStore(Protocol):
     async def read(self, ref: AssetRef) -> bytes: ...
 
 
-class MemoryAssets:
+class _MemoryAssets:
     def __init__(self) -> None:
         self._values: dict[str, bytes] = {}
 
-    def clear(self) -> None:
+    def _clear(self) -> None:
         self._values.clear()
 
     async def put(self, data: bytes, *, media_type: str) -> AssetRef:
@@ -57,3 +58,6 @@ class MemoryAssets:
             raise FileNotFoundError(ref.sha256) from None
         ref.verify(data)
         return data
+
+
+__all__ = ["AssetRef", "AssetStore"]

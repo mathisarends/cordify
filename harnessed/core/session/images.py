@@ -28,7 +28,7 @@ from .events import (
 )
 
 
-def event_contents(event: SessionEvent) -> Iterable[str | tuple[ContentPart, ...]]:
+def _event_contents(event: SessionEvent) -> Iterable[str | tuple[ContentPart, ...]]:
     """The standard event fields that own multimodal content."""
     if isinstance(event, InboxAddedEvent):
         yield event.message.content
@@ -45,13 +45,13 @@ def event_contents(event: SessionEvent) -> Iterable[str | tuple[ContentPart, ...
             yield message.content
 
 
-async def copy_image_assets(
+async def _copy_image_assets(
     events: Iterable[SessionEvent], source: AssetStore, destination: AssetStore
 ) -> None:
     """Copy only referenced assets, one at a time, before committing a fork."""
     seen: set[AssetRef] = set()
     for event in events:
-        for content in event_contents(event):
+        for content in _event_contents(event):
             if isinstance(content, str):
                 continue
             for part in content:
@@ -64,7 +64,7 @@ async def copy_image_assets(
                     seen.add(ref)
 
 
-class SessionImages:
+class _SessionImages:
     """Keep binary data out of history and resolve only selected request images.
 
     The LRU holds at most cache_bytes of ASCII data URLs, not an unbounded count
@@ -75,8 +75,8 @@ class SessionImages:
     def __init__(self, store: AssetStore, *, cache_bytes: int = 16 * 1024 * 1024) -> None:
         if type(cache_bytes) is not int or cache_bytes < 0:
             raise ValueError("Image cache size must be a non-negative integer")
-        self.store = store
-        self.cache_bytes = cache_bytes
+        self._store = store
+        self._cache_bytes = cache_bytes
         self._cache: OrderedDict[AssetRef, str] = OrderedDict()
         self._cache_size = 0
 
@@ -88,17 +88,17 @@ class SessionImages:
         previous = self._cache.pop(ref, None)
         if previous is not None:
             self._cache_size -= len(previous)
-        if len(url) > self.cache_bytes:
+        if len(url) > self._cache_bytes:
             return
         while self._cache and (
-            self._cache_size + len(url) > self.cache_bytes or len(self._cache) >= 256
+            self._cache_size + len(url) > self._cache_bytes or len(self._cache) >= 256
         ):
             _, evicted = self._cache.popitem(last=False)
             self._cache_size -= len(evicted)
         self._cache[ref] = url
         self._cache_size += len(url)
 
-    async def retain_content(
+    async def _retain_content(
         self, content: str | tuple[ContentPart, ...]
     ) -> str | tuple[ContentPart, ...]:
         if isinstance(content, str) or not any(
@@ -118,7 +118,7 @@ class SessionImages:
                     raise ValueError("Inline images require a base64 image data URL")
                 media_type = header[5:-7]
                 data = await run_sync(partial(base64.b64decode, encoded, validate=True))
-                ref = await self.store.put(data, media_type=media_type)
+                ref = await self._store.put(data, media_type=media_type)
                 self._remember(ref, part.url)
                 parts.append(ImageReference(ref, part.detail))
                 changed = True
@@ -128,7 +128,7 @@ class SessionImages:
 
     async def retain_message[M: Message](self, message: M) -> M:
         if isinstance(message, UserMessage | ToolMessage):
-            content = await self.retain_content(message.content)
+            content = await self._retain_content(message.content)
             if content is not message.content:
                 return replace(message, content=content)
         return message
@@ -161,11 +161,11 @@ class SessionImages:
             if message is not event.message:
                 return replace(event, message=message)
         elif isinstance(event, ObservationRecordedEvent):
-            content = await self.retain_content(event.observation.content)
+            content = await self._retain_content(event.observation.content)
             if content is not event.observation.content:
                 return replace(event, observation=replace(event.observation, content=content))
         elif isinstance(event, ToolExecutionFinishedEvent | ToolCallFinishedEvent):
-            content = await self.retain_content(event.result.content)
+            content = await self._retain_content(event.result.content)
             if content is not event.result.content:
                 return replace(event, result=replace(event.result, content=content))
         elif isinstance(event, ModelRequestedEvent):
@@ -202,7 +202,7 @@ class SessionImages:
                     ref = part.asset
                     url = resolved.get(ref)
                     if url is None:
-                        data = await self.store.read(ref)
+                        data = await self._store.read(ref)
                         encoded = await run_sync(partial(base64.b64encode, data))
                         url = f"data:{ref.media_type};base64,{encoded.decode('ascii')}"
                         self._remember(ref, url)

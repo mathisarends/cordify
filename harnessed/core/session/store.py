@@ -4,7 +4,7 @@ from typing import Annotated, Protocol
 
 from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter
 
-from harnessed.core.assets import AssetStore, MemoryAssets
+from harnessed.core.assets import AssetStore, _MemoryAssets
 from harnessed.core.errors import SessionLocked
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.events import SessionEvent
@@ -67,7 +67,7 @@ class _MemoryStore:
         self.max_sessions = max_sessions
         self._active: set[str] = set()
         self._files: dict[str, MemoryFiles] = {}
-        self._assets: dict[str, MemoryAssets] = {}
+        self._assets: dict[str, _MemoryAssets] = {}
         self._retained: dict[str, None] = {}
 
     def files(self, session_id: str) -> SessionFiles:
@@ -75,7 +75,7 @@ class _MemoryStore:
         return self._files.setdefault(session_id, MemoryFiles())
 
     def assets(self, session_id: str) -> AssetStore:
-        return self._assets.setdefault(validate_session_id(session_id), MemoryAssets())
+        return self._assets.setdefault(validate_session_id(session_id), _MemoryAssets())
 
     async def list(self) -> tuple[str, ...]:
         return tuple(
@@ -100,7 +100,7 @@ class _MemoryStore:
             files.clear()
         assets = self._assets.pop(session_id, None)
         if assets is not None:
-            assets.clear()
+            assets._clear()
         self.persistence.records.pop(session_id, None)
         self._retained.pop(session_id, None)
 

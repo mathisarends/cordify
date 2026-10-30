@@ -3,7 +3,7 @@ from contextlib import aclosing
 
 import pytest
 
-from harnessed.core.assets import MemoryAssets
+from harnessed.core.assets import _MemoryAssets
 from harnessed.core.messages import ToolCall, ToolResult, UserMessage
 from harnessed.core.session.events import (
     ToolCallFinishedEvent,
@@ -40,7 +40,7 @@ async def test_cancelled_result_checkpoint_drains_lock_write_and_flush(event_typ
             self.flushed = await self.load("checkpoint")
 
     persistence = Blocked()
-    log = SessionLog("checkpoint", persistence=persistence, assets=MemoryAssets())
+    log = SessionLog("checkpoint", persistence=persistence, assets=_MemoryAssets())
     blocker = None
     if phase == "lock":
         blocker = asyncio.create_task(log.append(UserMessageEvent(UserMessage("concurrent input"))))
@@ -88,7 +88,7 @@ async def test_checkpoint_is_flushed_before_observers_and_observers_remain_cance
             await asyncio.Event().wait()
 
         ctx.on(event_type, observer)
-        log = SessionLog("checkpoint", ctx=ctx, persistence=persistence, assets=MemoryAssets())
+        log = SessionLog("checkpoint", ctx=ctx, persistence=persistence, assets=_MemoryAssets())
         append = asyncio.create_task(log.append(receipt))
         await asyncio.wait_for(observing.wait(), 2)
         append.cancel()
@@ -98,7 +98,7 @@ async def test_checkpoint_is_flushed_before_observers_and_observers_remain_cance
 
 
 async def test_mixed_concurrent_checkpoints_publish_in_durable_log_order():
-    log = SessionLog("ordered", persistence=MemoryPersistence(), assets=MemoryAssets())
+    log = SessionLog("ordered", persistence=MemoryPersistence(), assets=_MemoryAssets())
     events = tuple(
         ToolExecutionFinishedEvent(str(index), ToolResult("finished"))
         if index % 2

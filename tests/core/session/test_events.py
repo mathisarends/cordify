@@ -7,7 +7,7 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
-from harnessed.core.assets import MemoryAssets
+from harnessed.core.assets import _MemoryAssets
 from harnessed.core.hooks import PrepareRequest
 from harnessed.core.messages import AssistantMessage, SystemMessage, UserMessage
 from harnessed.core.model import ModelChunk
@@ -138,7 +138,7 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
 
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("crashed")
-    session = SessionLog("crashed", persistence=persistence, assets=MemoryAssets())
+    session = SessionLog("crashed", persistence=persistence, assets=_MemoryAssets())
     for event in (
         TurnStartedEvent("turn"),
         StepStartedEvent("turn", 1),
@@ -206,7 +206,7 @@ async def test_failed_final_write_does_not_commit_a_message_but_live_deltas_are_
                 yield FailingPersistence()
 
             def assets(self, session_id):
-                return MemoryAssets()
+                return _MemoryAssets()
 
             def files(self, session_id):
                 return MemoryFiles()

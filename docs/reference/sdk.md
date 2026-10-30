@@ -312,7 +312,28 @@ session-local validation, durable schemas and encode/decode operations.
 messages, tool results and observations. `session.assets.put(data, media_type=...)`
 stores bytes and returns an `AssetRef`; `session.assets.read(ref)` returns verified
 bytes. Inline image data URLs are stored automatically on standard event admission.
-Use `await session.log.images.resolve(request)` when replaying a recorded request
+Use `await session.log.resolve_request(request)` when replaying a recorded request
 directly through a model; the agent loop resolves images automatically.
 See [session image storage](../guides/sessions.md#image-assets-and-memory) for
 cache bounds, external backend contracts and backup requirements.
+
+The image API has three explicit boundaries:
+
+| Audience | Public contract |
+| --- | --- |
+| Applications and plugins | `AssetRef`, `ImageReference`, `session.assets.put(...)`, `session.assets.read(...)` |
+| Manual replay and inspection | `session.log.assets`, `await session.log.resolve_request(request)` |
+| Custom storage backends | `SessionStore.assets(session_id) -> AssetStore`, `AssetStore.put/read`, `AssetRef.verify(data)` |
+
+`session.assets` and `log.assets` are read-only references to the same backend;
+applications can store/read content but cannot replace session storage in place.
+`AssetRef.verify(data)` raises `ValueError` on a size or digest mismatch and helps
+custom backends implement the integrity contract. Import `AssetStore` from
+`harnessed.core.assets` and `SessionStore` from `harnessed.core.session.store` when
+implementing a backend.
+
+Cache controls, admission/normalization helpers, concrete built-in asset stores
+and fork-copy helpers are internal. They are not injectable extension services.
+`File` and `Image` are attachment descriptors supplied to `run`/`steer`; their
+conversion methods are internal too. Use the public operations above rather than
+reaching into those implementations.

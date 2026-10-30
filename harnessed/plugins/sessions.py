@@ -344,7 +344,7 @@ class _JsonlStore:
 
     def assets(self, session_id: str) -> AssetStore:
         session_id = validate_session_id(session_id)
-        return DirectoryAssets(
+        return _DirectoryAssets(
             self.config.root / f"{session_id}.assets", durability=self.config.durability
         )
 
@@ -377,18 +377,18 @@ class _JsonlStore:
             await persistence.aclose()
 
 
-class DirectoryAssets:
+class _DirectoryAssets:
     """Atomic content-addressed binary files; no image bytes are retained here."""
 
     def __init__(self, root: str | Path, *, durability: Durability = Durability.FLUSH) -> None:
-        self.root = Path(root)
-        self.durability = durability
+        self._root = Path(root)
+        self._durability = durability
         self._operation = asyncio.Lock()
 
     def _path(self, ref: AssetRef) -> Path:
-        if self.root.is_symlink() or self.root.is_junction():
+        if self._root.is_symlink() or self._root.is_junction():
             raise ValueError("Session asset directory is outside its namespace")
-        root = self.root.resolve()
+        root = self._root.resolve()
         path = root / ref.sha256
         if path.is_symlink() or path.is_junction():
             raise ValueError("Session asset path is outside its namespace")
@@ -412,7 +412,7 @@ class DirectoryAssets:
             with temporary.open("xb") as stream:
                 stream.write(data)
                 stream.flush()
-                if self.durability is Durability.FSYNC:
+                if self._durability is Durability.FSYNC:
                     os.fsync(stream.fileno())
             os.replace(temporary, path)
         finally:

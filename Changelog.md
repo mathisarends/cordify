@@ -64,6 +64,10 @@ version **2**. See the upgrade steps below before adopting the new APIs.
 - Reopen image histories without loading image files. Verify size and SHA-256 on
   reads, copy referenced images when opening forks, and remove the asset namespace
   when deleting a session. Missing fork images fail before writing the fork log.
+- Keep cache management, image normalization, fork-copy helpers and concrete asset
+  backends internal. Expose read-only `session.assets` / `log.assets` ownership and
+  `log.resolve_request(request)` for manual replay. `AssetRef.verify(bytes)` remains
+  available to custom backends; `File`/`Image` conversion helpers are private.
 - Extend custom `SessionStore` implementations with `assets(session_id)` returning
   an `AssetStore`. Low-level persisted `SessionLog` construction requires an
   explicit asset store too. Memory sessions retain deduplicated binary assets in memory;
@@ -95,7 +99,7 @@ version **2**. See the upgrade steps below before adopting the new APIs.
 7. Implement `SessionStore.assets(session_id)` in custom storage plugins. Consumers
    of recorded messages and tool results must accept `ImageReference` alongside
    `ImagePart`. Use `session.assets.read(ref.asset)` for bytes, or
-   `await session.log.images.resolve(request)` for a provider-ready request.
+   `await session.log.resolve_request(request)` for a provider-ready request.
    Back up each JSONL log together with its `.assets` and `.files` directories.
 8. Back up version-2 sessions and start a new version-3 store. Existing published
    formats are not migrated. See the [context guide](docs/guides/context.md),

@@ -75,7 +75,7 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
             decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
         )
         recorded = next(e.request for e in restored if isinstance(e, ModelRequestedEvent))
-        assert await agent.log.images.resolve(recorded) == request
+        assert await agent.log.resolve_request(recorded) == request
         assert "changed after admission" not in recorded.messages[0].text
 
 
@@ -198,7 +198,7 @@ async def test_observations_remain_unchanged_in_later_steps_replay_and_forks():
 
 
 async def test_remote_images_are_references_without_download():
-    parts = await Image("https://example.com/screenshot.png", detail=ImageDetail.LOW).parts()
+    parts = await Image("https://example.com/screenshot.png", detail=ImageDetail.LOW)._parts()
     assert parts == (ImagePart("https://example.com/screenshot.png", ImageDetail.LOW),)
     message = UserMessage(list(parts))
     assert isinstance(message.content, tuple)

@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, M
 from contextvars import ContextVar
 from typing import Any, Unpack, overload
 
+from harnessed.core.assets import AssetStore
 from harnessed.core.attachments import Attachment
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.compaction import CompactionManager
@@ -79,7 +80,6 @@ class Session:
     def __init__(self, ctx: Context, session: SessionLog, options: AgentOptions) -> None:
         self.ctx = ctx
         self.log = session
-        self.assets = session.images.store
         self._options = options
         self._closing_hooks_done = False
         self.id = session.id
@@ -210,6 +210,11 @@ class Session:
     ) -> Disposer:
         owner = owner if owner is not None else Context.current() or self.ctx
         return owner.add_listener(event, callback, prepend=prepend, priority=priority)
+
+    @property
+    def assets(self) -> AssetStore:
+        """Read and write assets owned by this session's configured backend."""
+        return self.log.assets
 
     @property
     def status(self) -> SessionStatus:

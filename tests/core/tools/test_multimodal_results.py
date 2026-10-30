@@ -56,7 +56,7 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
         assert len(references) == 1 and references[0].detail == IMAGE.detail
         assert await session.assets.read(references[0].asset) == b"image"
         history = next(m for m in model.requests[1].messages if m.role == Role.TOOL)
-        resolved = await session.log.images.resolve(
+        resolved = await session.log.resolve_request(
             ModelRequest((ToolMessage(tool_result.content, tool_call_id=history.tool_call_id),))
         )
         assert history.content == resolved.messages[0].content

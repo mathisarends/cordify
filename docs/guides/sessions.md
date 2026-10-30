@@ -92,7 +92,7 @@ Harnessed does not download them or promise that their contents stay unchanged.
 Use stored bytes for reproducible screenshots.
 
 `await session.assets.read(image_reference.asset)` returns the original bytes.
-For manual replay, `await session.log.images.resolve(recorded_request)` produces
+For manual replay, `await session.log.resolve_request(recorded_request)` produces
 a provider-ready copy; it does not replace the recorded request. Custom token
 counters and summarizers receive reference-bearing requests/messages and must
 resolve images explicitly if they need to send them to another provider. The
