@@ -139,3 +139,14 @@ def test_live_notifications_cannot_spoof_a_different_registered_discriminator():
     registry = events.EventRegistry()
     with pytest.raises(TypeError, match="registered"):
         registry.validate(events.TextDeltaEvent("message", "hello", type="reasoning.delta"))
+
+
+def test_compaction_lifecycle_roundtrips_as_live_events_but_cannot_enter_the_durable_codec():
+    adapter = TypeAdapter(StreamEvent[None])
+    for event in (
+        events.CompactionStartedEvent("compact"),
+        events.CompactionFinishedEvent("compact", events.CompactionOutcome.CANCELLED),
+    ):
+        assert adapter.validate_json(adapter.dump_json(event)) == event
+        with pytest.raises(TypeError):
+            encode_event(event)

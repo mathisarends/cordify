@@ -75,6 +75,12 @@ messages actually present after request transformation. It follows the request
 event even when the tuple is empty. Each `IncludedObservation` carries its source,
 refs and full/summary form; see [observation delivery](context.md).
 
+Compaction start/finish and model attempt/retry notifications are also public
+typed events. Their activity records are transient; successful compaction remains
+a durable `CompactionAppliedEvent`. See [compaction activity](compaction.md#display-compaction-activity)
+and [model retry activity](streaming.md#model-and-retry-activity) for correlation,
+outcomes, unknown provider counters and cancellation semantics.
+
 ## Tool lifecycle
 
 For an application asking whether a tool is finished, observe

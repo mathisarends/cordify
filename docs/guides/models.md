@@ -135,7 +135,7 @@ credentials or live remote calls.
 
 ## Provider failures and retries
 
-Harnessed has no retry policy of its own. Retries come from the provider SDK client
+Harnessed has no general provider retry policy of its own. Retries come from the provider SDK client
 that PydanticAI uses; the OpenAI and Anthropic clients retry connection errors,
 429 and 5xx responses twice by default. Supply your own client to change that:
 
@@ -157,3 +157,72 @@ and the failed turn ends as `TurnOutcome.ABORTED`. The session returns to `IDLE`
 so it remains usable. The failed user message stays in history and is not queued
 again. To retry, send a short follow-up such as `run("continue")` instead of
 repeating the original prompt, which would duplicate it in history.
+
+### Report observed SDK attempts
+
+Adapters can carry typed diagnostics in `ModelChunk(diagnostic=...)`, or await
+`report_model_diagnostic(...)` from public SDK callbacks. The callback path also
+works during `Model.stream()` context entry, before the stream yields, and during
+SDK backoff. Both paths reach the same request-scoped runtime observer. Import
+the diagnostic values and helpers from `harnessed.models`:
+
+```python
+from harnessed.models import (
+    ModelAttemptStarted,
+    ModelRetryScheduled,
+    RetryReason,
+    report_model_diagnostic,
+)
+
+# In the adapter's awaited callbacks, when these facts are actually observed:
+await report_model_diagnostic(ModelAttemptStarted(attempt=1, max_retries=2))
+await report_model_diagnostic(
+    ModelRetryScheduled(
+        attempt=1,
+        max_retries=2,
+        reason=RetryReason.RATE_LIMIT,
+        status_code=429,
+        delay_seconds=0.5,
+    )
+)
+# After backoff, immediately before the actual second attempt:
+await report_model_diagnostic(ModelAttemptStarted(attempt=2, max_retries=2))
+```
+
+Do not implement another retry loop just to emit diagnostics. Report a scheduled
+retry only after the SDK/adapter decided to retry, and a start only when it
+actually starts. An attempt is numbered from one. `retry_count` is derived as
+`attempt - 1`; scheduling retains the count of the last started attempt. Limits
+exclude the initial attempt; unknown counts or limits remain `None`.
+
+The runtime closes an attempt as `RETRYING` when it receives a retry decision and
+closes the last running attempt on success, failure or cancellation. An adapter
+can explicitly report `ModelAttemptFinished(outcome=..., attempt=...)`, including
+`ModelAttemptOutcome.EXHAUSTED` when it observes retry-budget exhaustion. It must
+not emit another start after text, reasoning, tool previews or completed calls. The
+runtime rejects such replay and preserves the partial response.
+
+A public HTTP request hook can report actual starts even if the SDK exposes no
+retry-decision hook. A subsequent observed start closes its predecessor as
+`RETRYING`; no scheduled event or delay is invented. Maintain the attempt counter
+per request/task when instrumenting a shared client, rather than globally.
+
+Use structured `RetryReason`, optional `status_code` and `delay_seconds` for
+diagnosis. Do not send prompts, credentials, raw response bodies or exception
+strings as diagnostic payloads. These metadata never become assistant content.
+Callbacks must be awaited and propagate cancellation; they are scoped per task
+and request, so a shared model does not mix concurrent sessions' counters.
+
+The PydanticAI bridge does **not** inspect private SDK retry methods or install
+HTTP hooks. Its default internal SDK retries remain unobserved. Without supplied
+instrumentation, the runtime emits a final `ModelAttemptFinishedEvent` with
+`attempt=None`, `retry_count=None` and `max_retries=None`; it never claims that
+one Harnessed request equals one HTTP attempt. Supply instrumented SDK clients
+using public callbacks, or an adapter that emits diagnostic chunks, when your
+provider exposes these facts. If no suitable hook exists, counts stay unknown.
+
+Standalone model users can bind the same callback with
+`with model_diagnostics(async_sink):` around `model.request(...)` or the whole
+`async with model.stream(...)` scope. `report_model_diagnostic` outside a scope
+does nothing. See [streaming retry activity](streaming.md#model-and-retry-activity)
+for the public events and runtime recovery counters.

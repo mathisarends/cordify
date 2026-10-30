@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add transient compaction start/finish events with correlated outcomes, while
+  retaining the durable applied projection and estimated token savings.
+- Add typed model retry diagnostics through chunks and task-scoped adapter
+  callbacks, and forward model requests/failures and attempt activity to the UI
+  stream. SDK counts stay unknown without actual adapter telemetry.
+- Distinguish provider retries, context recovery and structured-output correction;
+  persist runtime retry correlation on model requests without replaying transient
+  notifications. Existing retry policies and provider exception behavior remain.
+
 ## 0.4.0 (2026-10-29)
 
 This release adds explicit system prompt composition, optional MCP server tools

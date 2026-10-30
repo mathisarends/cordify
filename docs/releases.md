@@ -6,6 +6,16 @@ still evolving before 1.0.
 Detailed breaking changes and upgrade instructions are recorded in the repository
 [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
 
+## Unreleased
+
+- Compaction activity exposes correlated start/finish notifications and typed
+  applied, discarded, failed and cancelled outcomes.
+- Model activity streams include request/failure records and typed retry
+  diagnostics. Adapter callbacks and chunks can report observed SDK attempts;
+  hidden SDK retry counts stay unknown.
+- Context recovery and output correction use separate counters and durable
+  request correlation. See [streaming](guides/streaming.md#model-and-retry-activity).
+
 ## Compatibility policy
 
 - Minor releases during 0.x may introduce breaking API or storage changes. Release

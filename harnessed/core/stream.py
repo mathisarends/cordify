@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Literal, final
 
 from pydantic import Field
 
+from harnessed.core.diagnostics import (
+    ModelAttemptFinished,
+    ModelAttemptStarted,
+    ModelRetryScheduled,
+    RetryKind,
+)
 from harnessed.core.event_kinds import EventKind
 from harnessed.core.messages import ToolCall
 from harnessed.core.model import ToolArgumentsMode, ToolCallDelta, ToolCallStart
@@ -13,6 +20,8 @@ from harnessed.core.session.control import SessionStatus
 from harnessed.core.session.events import (
     CompactionAppliedEvent,
     DurableEvent,
+    ModelRequestedEvent,
+    ModelRequestFailedEvent,
     SpillCreatedEvent,
     SpillExpiredEvent,
     ToolCallFinishedEvent,
@@ -35,6 +44,63 @@ class TransientEvent(Emit):
 
 class CustomTransientEvent(TransientEvent):
     """Extension point for live application notifications."""
+
+
+class CompactionOutcome(StrEnum):
+    APPLIED = "applied"
+    DISCARDED = "discarded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True, slots=True)
+class CompactionStartedEvent(TransientEvent):
+    type: Literal[EventKind.COMPACTION_STARTED] = field(
+        default=EventKind.COMPACTION_STARTED, kw_only=True
+    )
+    compaction_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class CompactionFinishedEvent(TransientEvent):
+    type: Literal[EventKind.COMPACTION_FINISHED] = field(
+        default=EventKind.COMPACTION_FINISHED, kw_only=True
+    )
+    compaction_id: str
+    outcome: CompactionOutcome
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "outcome", CompactionOutcome(self.outcome))
+
+
+@dataclass(frozen=True, slots=True)
+class ModelAttemptStartedEvent(ModelAttemptStarted, TransientEvent):
+    type: Literal[EventKind.MODEL_ATTEMPT_STARTED] = field(
+        default=EventKind.MODEL_ATTEMPT_STARTED, kw_only=True
+    )
+    request_id: str
+    retry_group_id: str
+    retry_kind: RetryKind = field(default=RetryKind.PROVIDER, kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelRetryScheduledEvent(ModelRetryScheduled, TransientEvent):
+    type: Literal[EventKind.MODEL_RETRY_SCHEDULED] = field(
+        default=EventKind.MODEL_RETRY_SCHEDULED, kw_only=True
+    )
+    request_id: str
+    retry_group_id: str
+    retry_kind: RetryKind = field(default=RetryKind.PROVIDER, kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelAttemptFinishedEvent(ModelAttemptFinished, TransientEvent):
+    type: Literal[EventKind.MODEL_ATTEMPT_FINISHED] = field(
+        default=EventKind.MODEL_ATTEMPT_FINISHED, kw_only=True
+    )
+    request_id: str
+    retry_group_id: str
+    retry_kind: RetryKind = field(default=RetryKind.PROVIDER, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +178,13 @@ type StreamEvent[T] = Annotated[
         | SessionStatusChangedEvent
         | TurnFinishedEvent[T]
         | CompactionAppliedEvent
+        | CompactionStartedEvent
+        | CompactionFinishedEvent
+        | ModelAttemptStartedEvent
+        | ModelAttemptFinishedEvent
+        | ModelRetryScheduledEvent
+        | ModelRequestedEvent
+        | ModelRequestFailedEvent
         | SpillCreatedEvent
         | SpillExpiredEvent
     ),

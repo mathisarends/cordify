@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from pydantic import Field
 
+from harnessed.core.diagnostics import RetryKind
 from harnessed.core.event_kinds import EventKind
 from harnessed.core.messages import (
     ApprovalAnswer,
@@ -434,6 +435,14 @@ class ModelRequestedEvent(SessionEvent):
     )
     request: ModelRequest
     request_id: Identifier = field(kw_only=True)
+    retry_group_id: Identifier | None = field(default=None, kw_only=True)
+    retry_kind: RetryKind | None = field(default=None, kw_only=True)
+    attempt: Annotated[int, Field(ge=1)] = field(default=1, kw_only=True)
+    max_retries: Annotated[int, Field(ge=0)] | None = field(default=None, kw_only=True)
+
+    def __post_init__(self) -> None:
+        if self.retry_kind is not None:
+            object.__setattr__(self, "retry_kind", RetryKind(self.retry_kind))
 
 
 @dataclass(frozen=True)
