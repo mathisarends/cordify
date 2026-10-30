@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from harnessed.core.errors import ApprovalUnavailable
@@ -29,8 +30,9 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.context import ToolContexts
+from harnessed.core.tools.info import ToolChain
 from harnessed.core.tools.output_limit import ToolOutputLimit
-from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
+from harnessed.core.tools.policy import OutputLimit
 from harnessed.core.tools.registry import ToolRegistry, format_tool_error
 from harnessed.core.tools.scheduling import PreparedToolCall, ToolScheduler, ToolScheduling
 from harnessed.core.tracing import span
@@ -38,6 +40,13 @@ from harnessed.kernel import Context
 
 if TYPE_CHECKING:
     from harnessed.core.runtime.session import Session
+
+
+@dataclass
+class ToolBatch:
+    """A monotonic boundary shared by workers of one assistant response."""
+
+    broken: bool = False
 
 
 class ToolExecutor:
@@ -50,7 +59,11 @@ class ToolExecutor:
         self.session = session
 
     async def run(
-        self, calls: tuple[ToolCall, ...], *, results: Mapping[str, ToolResult] | None = None
+        self,
+        calls: tuple[ToolCall, ...],
+        *,
+        results: Mapping[str, ToolResult] | None = None,
+        allow_execution: bool = True,
     ) -> None:
         if not calls:
             return
@@ -58,6 +71,9 @@ class ToolExecutor:
         registry = self.ctx[ToolRegistry]
         for call in calls:
             await self.log.append(ToolCallRequestedEvent(call))
+            if not allow_execution:
+                await self.skip(call, "Application actions are disabled in the final step")
+                continue
             if results is not None and call.id in results:
                 plans.append(PreparedToolCall(call, ToolScheduling(), results[call.id]))
                 continue
@@ -74,25 +90,16 @@ class ToolExecutor:
                     )
                 )
         scheduler = ToolScheduler(self.options.max_parallel_tools)
+        batch = ToolBatch()
         for group in scheduler.groups(plans):
-            await self.run_group(group, scheduler)
+            await self.run_group(group, scheduler, batch)
+
+    async def skip(self, call: ToolCall, reason: str) -> None:
+        await self.log.append(ToolCallFinishedEvent(call, ToolResult(reason, ToolStatus.SKIPPED)))
 
     async def run_group(
-        self, plans: tuple[PreparedToolCall, ...], scheduler: ToolScheduler
+        self, plans: tuple[PreparedToolCall, ...], scheduler: ToolScheduler, batch: ToolBatch
     ) -> None:
-        authorizations: list[ToolResult | None] = []
-        for plan in plans:
-            result = plan.error
-            if result is None:
-                try:
-                    result = self.ctx[ToolRegistry].check_enabled(plan, ctx=self.ctx)
-                except Exception as exc:
-                    result = ToolResult.error(
-                        format_tool_error(plan.call, exc, self.options.error_formatter)
-                    )
-            if result is None:
-                result = await self.authorize(plan.call)
-            authorizations.append(result)
         reviewed = [asyncio.Event() for _ in plans]
 
         async def worker(index: int, plan: PreparedToolCall) -> None:
@@ -104,15 +111,33 @@ class ToolExecutor:
                     if isinstance(plan.output_limit, OutputLimit)
                     else ToolOutputLimit(plan.output_limit)
                 )
-                result = authorizations[index]
-                reviewable = result is None
-                if result is None:
-                    async with scheduler.slots:
-                        result, reviewable = await self.invoke(plan)
+                reviewable = False
+                async with scheduler.slots:
+                    if batch.broken:
+                        result = ToolResult(
+                            "Skipped because an earlier tool ended this action chain",
+                            ToolStatus.SKIPPED,
+                        )
+                    else:
+                        result = await self.authorize(plan)
+                        if result is None:
+                            # Approval can yield while another worker breaks the chain.
+                            if batch.broken:
+                                result = ToolResult(
+                                    "Skipped because an earlier tool ended this action chain",
+                                    ToolStatus.SKIPPED,
+                                )
+                            else:
+                                result, reviewable = await self.invoke(plan, batch)
                 if index:
                     await reviewed[index - 1].wait()
                 if reviewable:
-                    result = await self.review(plan.call, result, output_limit=plan.output_limit)
+                    requested_break = result.break_chain
+                    result = await self.review(plan, result)
+                    if requested_break and not result.break_chain:
+                        result = replace(result, break_chain=True)
+                    if result.break_chain:
+                        batch.broken = True
                 if limit is not None:
                     result = limit.apply(result)
                 await self.log.append(ToolCallFinishedEvent(plan.call, result))
@@ -121,11 +146,17 @@ class ToolExecutor:
 
         await scheduler.run(plans, worker)
 
-    async def authorize(self, call: ToolCall) -> ToolResult | None:
+    async def authorize(self, plan: PreparedToolCall) -> ToolResult | None:
+        call = plan.call
         try:
+            if plan.error is not None:
+                return plan.error
+            unavailable = self.ctx[ToolRegistry].check_enabled(plan, ctx=self.ctx)
+            if unavailable is not None:
+                return unavailable
             previous = self.log.latest_approval(call.id)
             decision = await self.ctx.dispatch(
-                ToolPolicy(call, self.session),
+                ToolPolicy(call, self.session, tool=plan.tool),
                 default=lambda: PolicyDecision.ALLOW,
             )
             if not isinstance(decision, PolicyDecision):
@@ -159,24 +190,25 @@ class ToolExecutor:
         except Exception as exc:
             return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
 
-    async def invoke(self, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
+    async def invoke(self, plan: PreparedToolCall, batch: ToolBatch) -> tuple[ToolResult, bool]:
         with span(
             self.ctx, "tool", session_id=self.log.id, tool=plan.call.name, call_id=plan.call.id
         ) as current:
             current.set_attribute("input", plan.call)
-            result, reviewable = await self.execute(plan)
+            result, reviewable = await self.execute(plan, batch)
             current.set_attribute("output", result)
             return result, reviewable
 
-    async def execute(self, plan: PreparedToolCall) -> tuple[ToolResult, bool]:
+    async def execute(self, plan: PreparedToolCall, batch: ToolBatch) -> tuple[ToolResult, bool]:
         call = plan.call
         execution = self.ctx[ToolContexts].create(call)
         result: ToolResult | None = None
+        reviewable = False
         try:
             await self.log.append(ToolExecutionStartedEvent(call.id))
             await self.log.flush()
             returned = await self.ctx.dispatch(
-                ExecuteTool(call, self.session),
+                ExecuteTool(call, self.session, tool=plan.tool),
                 default=lambda: self.ctx[ToolRegistry].execute(
                     call,
                     ctx=self.ctx,
@@ -189,15 +221,19 @@ class ToolExecutor:
             if not isinstance(returned, ToolResult):
                 raise TypeError("Tool hooks must return a ToolResult")
             result = returned
-            return result, True
+            reviewable = True
         except asyncio.CancelledError:
             execution.signal.set()
             result = ToolResult("Tool execution cancelled", ToolStatus.CANCELLED)
             raise
         except Exception as exc:
             result = ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
-            return result, False
         finally:
+            if result is not None:
+                if plan.tool is not None and plan.tool.chain is ToolChain.STOP_AFTER:
+                    result = replace(result, break_chain=True)
+                if result.break_chain:
+                    batch.broken = True
             if result is not None and self.log.execution_pending(call.id):
                 limit = (
                     None
@@ -208,21 +244,23 @@ class ToolExecutor:
                 )
                 receipt = limit.apply(result) if limit is not None else result
                 await self.log.append(ToolExecutionFinishedEvent(call.id, receipt))
+        assert result is not None
+        return result, reviewable
 
     async def review(
         self,
-        call: ToolCall,
+        plan: PreparedToolCall,
         result: ToolResult,
-        *,
-        output_limit: OutputLimitSetting = OutputLimit.INHERIT,
     ) -> ToolResult:
         try:
             result = await self.ctx.dispatch(
-                ReviewToolResult(call, result, self.session, output_limit=output_limit),
+                ReviewToolResult(
+                    plan.call, result, self.session, output_limit=plan.output_limit, tool=plan.tool
+                ),
                 default=lambda: result,
             )
             if not isinstance(result, ToolResult):
                 raise TypeError("Tool hooks must return a ToolResult")
             return result
         except Exception as exc:
-            return ToolResult.error(format_tool_error(call, exc, self.options.error_formatter))
+            return ToolResult.error(format_tool_error(plan.call, exc, self.options.error_formatter))

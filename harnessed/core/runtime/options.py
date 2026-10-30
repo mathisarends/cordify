@@ -5,6 +5,7 @@ from typing import Annotated, Any, Self, TypedDict
 from pydantic import Field
 
 from harnessed.core.attachments import Attachment
+from harnessed.core.limits import FinalStepPolicy
 from harnessed.core.model import TokenLimitBehavior
 from harnessed.core.plugin import PluginConfig
 from harnessed.core.tools.output_limit import ToolOutputLimit
@@ -32,6 +33,7 @@ class AgentLoopConfig(PluginConfig):
     context_window: Annotated[int, Field(ge=1)] | None = None
     on_max_tokens: TokenLimitBehavior = TokenLimitBehavior.ACCEPT
     output_retries: Annotated[int, Field(ge=0)] = 2
+    final_step: FinalStepPolicy = FinalStepPolicy.NONE
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,7 @@ class AgentOptions:
     error_formatter: ErrorFormatter | None
     on_max_tokens: TokenLimitBehavior
     output_retries: int
+    final_step: FinalStepPolicy
 
     @classmethod
     def resolve(
@@ -68,4 +71,5 @@ class AgentOptions:
             error_formatter=error_formatter,
             on_max_tokens=config.on_max_tokens,
             output_retries=config.output_retries,
+            final_step=config.final_step,
         )

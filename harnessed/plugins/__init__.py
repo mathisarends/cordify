@@ -1,6 +1,7 @@
 from harnessed.core.approvals import ApprovalGate as ApprovalGate
 from harnessed.core.approvals import Approvals as Approvals
 from harnessed.core.compaction import ContextState as ContextState
+from harnessed.core.limits import FinalStepPolicy as FinalStepPolicy
 from harnessed.core.messages import ApprovalAnswer as ApprovalAnswer
 from harnessed.core.plugin import Service as Service
 from harnessed.core.prompt.context import ContextValue as ContextValue
@@ -37,6 +38,7 @@ __all__ = [
     "Durability",
     "Filesystem",
     "FilesystemTools",
+    "FinalStepPolicy",
     "Instructions",
     "JsonlSessions",
     "LatestObservationOnly",

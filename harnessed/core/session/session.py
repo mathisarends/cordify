@@ -501,6 +501,8 @@ class SessionLog:
         started = set()
         executed: set[str] = set()
         cancelled_executions: set[str] = set()
+        call_batches: dict[str, str] = {}
+        broken_batches: set[str] = set()
         for event in self._events:
             match event:
                 case TurnStartedEvent(turn_id=turn_id):
@@ -509,15 +511,20 @@ class SessionLog:
                     step = index
                 case AssistantMessageEvent(message=message):
                     for call in message.tool_calls:
+                        call_batches[call.id] = message.id
                         unanswered[call.id] = call
                         started.discard(call.id)
                         executed.discard(call.id)
-                case ToolCallFinishedEvent(call_id=call_id):
+                case ToolCallFinishedEvent(call_id=call_id, result=result):
+                    if result.break_chain and call_id in call_batches:
+                        broken_batches.add(call_batches[call_id])
                     unanswered.pop(call_id, None)
                 case ToolExecutionStartedEvent(call_id=call_id):
                     started.add(call_id)
                 case ToolExecutionFinishedEvent(call_id=call_id, result=result):
                     executed.add(call_id)
+                    if result.break_chain and call_id in call_batches:
+                        broken_batches.add(call_batches[call_id])
                     if result.status is ToolStatus.CANCELLED:
                         cancelled_executions.add(call_id)
                 case StepEndedEvent():
@@ -535,6 +542,17 @@ class SessionLog:
                 )
             )
         for call in unanswered.values():
+            if call.id not in started and call_batches.get(call.id) in broken_batches:
+                await self.append(
+                    ToolCallFinishedEvent(
+                        call,
+                        ToolResult(
+                            "Skipped because an earlier tool ended this action chain",
+                            ToolStatus.SKIPPED,
+                        ),
+                    )
+                )
+                continue
             if call.id in executed and call.id not in cancelled_executions:
                 await self.append(
                     ToolCallFinishedEvent(

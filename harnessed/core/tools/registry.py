@@ -16,6 +16,7 @@ from harnessed.core.model import ToolDefinition
 from harnessed.core.tools.arguments import ToolArguments, tool_result_content
 from harnessed.core.tools.context import ToolContext, ToolContexts
 from harnessed.core.tools.enabled import ToolEnabled, bind_enabled, validate_enabled
+from harnessed.core.tools.info import ToolChain, ToolInfo, ToolMetadata
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting, validate_output_limit
 from harnessed.core.tools.references import ToolReference, ToolSelector, tool_selector
 from harnessed.core.tools.scheduling import (
@@ -60,8 +61,14 @@ class ToolSpec:
     override: bool = False
     output_limit: OutputLimitSetting = OutputLimit.INHERIT
     parameter_fields: ParameterFields | None = None
+    metadata: tuple[object, ...] = ()
+    chain: ToolChain = ToolChain.CONTINUE
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", ToolMetadata(self.metadata).values)
+        object.__setattr__(self, "chain", ToolChain(self.chain))
+        if self.parallel and self.chain is ToolChain.STOP_AFTER:
+            raise ValueError("STOP_AFTER tools must run sequentially")
         if self.description is not None and not isinstance(self.description, str):
             raise TypeError("Tool description must be a string or None")
         validate_output_limit(self.output_limit)
@@ -208,6 +215,8 @@ class ToolRegistry:
         output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
         owner: Context | None = None,
+        metadata: tuple[object, ...] = (),
+        chain: ToolChain = ToolChain.CONTINUE,
     ) -> Callable[[F], F]: ...
 
     def tool(
@@ -225,6 +234,8 @@ class ToolRegistry:
         output_limit: OutputLimitSetting = OutputLimit.INHERIT,
         override: bool = False,
         owner: Context | None = None,
+        metadata: tuple[object, ...] = (),
+        chain: ToolChain = ToolChain.CONTINUE,
     ):
         def register(callback):
             self.register(
@@ -239,6 +250,8 @@ class ToolRegistry:
                 output_limit=output_limit,
                 override=override,
                 owner=owner,
+                metadata=metadata,
+                chain=chain,
             )
             return callback
 
@@ -260,6 +273,8 @@ class ToolRegistry:
         owner: Context | None = None,
         spec: ToolSpec | None = None,
         parameter_fields: Mapping[str, FieldInfo] | None = None,
+        metadata: tuple[object, ...] = (),
+        chain: ToolChain = ToolChain.CONTINUE,
     ) -> Disposer:
         spec = spec or ToolSpec(
             name=name,
@@ -271,6 +286,8 @@ class ToolRegistry:
             readonly=readonly,
             override=override,
             output_limit=output_limit,
+            metadata=metadata,
+            chain=chain,
         )
         name, timeout, parallel = spec.name, spec.timeout, spec.parallel
         resources, readonly, override = spec.resources, spec.readonly, spec.override
@@ -437,6 +454,13 @@ class ToolRegistry:
             ToolScheduling(tool.spec.parallel, tuple(keys)),
             binding=tool,
             output_limit=tool.spec.output_limit,
+            tool=ToolInfo(
+                tool.definition,
+                ToolMetadata(tool.spec.metadata),
+                tool.spec.readonly,
+                tool.spec.parallel,
+                tool.spec.chain,
+            ),
         )
 
     async def execute(

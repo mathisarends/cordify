@@ -49,6 +49,7 @@ def test_canonical_tags_roundtrip_with_discriminated_schema():
             "settings": {},
             "output_schema": None,
             "limits": {"max_steps": None, "token_budget": None},
+            "final_step": "none",
         },
     }
     assert decode_event(encode_event(event)) == event

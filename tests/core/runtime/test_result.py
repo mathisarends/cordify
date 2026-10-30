@@ -164,7 +164,7 @@ async def test_token_budget_stops_before_the_step_that_would_exceed_it():
         assert not result.completed
         assert len(model.requests) == 2
         start = session.log.turns[-1].start
-        assert start.limits == TurnLimits(token_budget=20)
+        assert start.limits == TurnLimits(max_steps=32, token_budget=20)
         restored = decode_event(json.loads(json.dumps(encode_event(start))))
         assert restored == start
 

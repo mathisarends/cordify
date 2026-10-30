@@ -182,6 +182,91 @@ previous owner.
 
 See [the runnable class plugin example](https://github.com/mathisarends/harnessed/blob/main/examples/06_explicit_registration.py).
 
+## Application metadata and captured tool descriptions
+
+Attach immutable application values without changing the model's tool schema:
+
+```python
+from dataclasses import dataclass
+
+from harnessed import Plugin, ToolResult, tool
+from harnessed.hooks import Next, ReviewToolResult
+from harnessed.kernel import hook
+
+
+@dataclass(frozen=True)
+class AuditTag:
+    category: str
+
+
+class Workspace(Plugin):
+    @tool(readonly=True, metadata=(AuditTag(category="workspace"),))
+    async def inspect(self) -> str:
+        return "Workspace inspected."
+
+    @hook(ReviewToolResult)
+    async def review(self, event: ReviewToolResult, next_: Next[ToolResult]) -> ToolResult:
+        tag = event.tool.metadata.get(AuditTag) if event.tool is not None else None
+        result = await next_()
+        return result.with_note(f"Audit category: {tag.category}") if tag else result
+```
+
+`metadata=` accepts a tuple of values with distinct exact Python types. Duplicate
+types raise `ValueError`; base-class lookup is not implicit. `ToolMetadata.get(T)`
+returns `T | None`. The collection is immutable, and callers must also keep its
+values immutable. Metadata stays process-local: it is neither sent to the model
+nor automatically persisted. Write an application event if audit storage is needed.
+
+`ToolPolicy`, `ExecuteTool` and `ReviewToolResult` expose `tool: ToolInfo | None`.
+The snapshot includes `definition`, `metadata`, `readonly`, `parallel` and `chain`
+from the registration captured during planning. It never follows a replacement
+registration by name. Calls without a registered tool have `tool=None`; synthetic
+structured-answer results do not pass through these hooks. Import `ToolInfo`,
+`ToolMetadata` and `ToolChain` from `harnessed` when annotating consumers.
+
+Direct registry registration accepts the same metadata and chain options.
+Schema-defined integrations use `register_external(..., spec=ToolSpec(metadata=...))`
+and receive the same captured descriptions, without introducing provider metadata
+into the model-facing `ToolDefinition`.
+
+## End an action chain
+
+One model response may contain several calls. A context-changing tool can stop
+the remaining calls from that response while keeping the turn open:
+
+```python
+from harnessed import Plugin, ToolChain, ToolResult, tool
+
+
+class Workspace(Plugin):
+    @tool(chain=ToolChain.STOP_AFTER)
+    async def switch_context(self, context_id: str) -> str:
+        return f"Active context: {context_id}"
+
+    @tool
+    async def refresh(self) -> ToolResult:
+        return ToolResult("State changed; decide again.", break_chain=True)
+```
+
+The default is `ToolChain.CONTINUE`. `STOP_AFTER` runs alone, after earlier
+parallel calls finish. Once its execution is attempted, later calls are skipped,
+including when execution fails or times out. A denial or disabled tool does not
+trigger the boundary because execution never starts. Combining `STOP_AFTER` with
+`parallel=True` raises `ValueError`.
+
+`break_chain=True` is a per-result signal. With sequential tools it skips the
+remaining calls. With parallel tools it prevents further starts after the signal;
+already-started invocations finish normally. Use a sequential tool for a hard
+context boundary. A review hook may also request a break. Review, spill and output
+limiting cannot clear a break already requested by execution.
+
+Skipped calls receive `ToolStatus.SKIPPED` through the usual `ToolCallFinishedEvent`
+and model history, in the original call order. They have no execution receipt and
+do not request approval. Prior effects remain intact. Break signals are durable
+in execution receipts and final results; recovery preserves skipped status for
+unstarted calls after a recorded break. The next model step can decide again,
+subject to the turn's existing limits.
+
 ## Hook signatures
 
 `@hook(Event)` and `@ctx.hook(Event)` derive the callback type from the event:

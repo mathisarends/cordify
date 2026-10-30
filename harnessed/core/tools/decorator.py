@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Any, overload
 
 from harnessed.core.tools.enabled import ToolEnabled
+from harnessed.core.tools.info import ToolChain
 from harnessed.core.tools.policy import OutputLimit, OutputLimitSetting
 from harnessed.core.tools.registry import ParameterFields, ToolSpec
 from harnessed.core.tools.scheduling import ResourceSpec, resource_spec
@@ -24,6 +25,8 @@ def tool[F: Callable[..., Any]](
     output_limit: OutputLimitSetting = OutputLimit.INHERIT,
     override: bool = False,
     parameter_fields: ParameterFields | None = None,
+    metadata: tuple[object, ...] = (),
+    chain: ToolChain = ToolChain.CONTINUE,
 ) -> Callable[[F], F]: ...
 
 
@@ -41,6 +44,8 @@ def tool(
     output_limit: OutputLimitSetting = OutputLimit.INHERIT,
     override: bool = False,
     parameter_fields: ParameterFields | None = None,
+    metadata: tuple[object, ...] = (),
+    chain: ToolChain = ToolChain.CONTINUE,
 ):
     """Declare a tool; an explicit model description overrides its docstring."""
 
@@ -58,6 +63,8 @@ def tool(
             override=override,
             output_limit=output_limit,
             parameter_fields=parameter_fields,
+            metadata=metadata,
+            chain=chain,
         )
         callback._harnessed_tool = spec
         callback._harnessed_registrations = [

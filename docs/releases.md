@@ -8,6 +8,11 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 
 ## Unreleased
 
+- Tools support typed application metadata, captured hook descriptions and fixed
+  or dynamic action-chain boundaries with durable, explicit skipped results.
+- `PreStep` exposes effective remaining steps. `AgentLoop` can reserve a final
+  text summary inside the step limit; it remains incomplete and cannot execute
+  application actions. Resolved limits and policy survive pause/reopen.
 - Compaction activity exposes correlated start/finish notifications and typed
   applied, discarded, failed and cancelled outcomes.
 - Model activity streams include request/failure records and typed retry

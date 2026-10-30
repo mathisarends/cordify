@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from harnessed.core.errors import OutputTokenLimit
 from harnessed.core.hooks import TurnStopping
+from harnessed.core.limits import FinalStepPolicy
 from harnessed.core.model import StopReason, TokenLimitBehavior, sum_usage
 from harnessed.core.runtime.control import SessionControl
 from harnessed.core.runtime.options import AgentOptions
@@ -62,16 +64,25 @@ class TurnRunner:
         if previous is None:
             candidates = self.log.inbox.next_turn or self.log.inbox.next_step
             first = candidates[0] if candidates else None
+            limits = first.limits if first is not None else TurnLimits()
             start = TurnStartedEvent(
                 turn,
                 first.message.id if first is not None else None,
                 first.settings if first is not None else {},
                 output_schema=first.output_schema if first is not None else None,
-                limits=first.limits if first is not None else TurnLimits(),
+                limits=replace(limits, max_steps=limits.max_steps or self.options.max_steps),
+                final_step=self.options.final_step,
             )
             await self.log.append(start)
         else:
             start = previous.start
+            if (
+                previous.steps
+                and start.final_step is FinalStepPolicy.SUMMARIZE
+                and previous.steps[-1].number >= (start.limits.max_steps or self.options.max_steps)
+            ):
+                await self.log.append(TurnEndedEvent(turn, TurnOutcome.MAX_STEPS))
+                return True
             if previous.steps and not await self.continue_from(previous.steps[-1]):
                 await self.log.append(TurnEndedEvent(turn))
                 return True
@@ -82,10 +93,14 @@ class TurnRunner:
             if budget is not None and self._spent_tokens() >= budget:
                 await self.log.append(TurnEndedEvent(turn, TurnOutcome.TOKEN_BUDGET))
                 return True
+            final = step == max_steps and start.final_step is FinalStepPolicy.SUMMARIZE
             with span(self.ctx, "step", session_id=self.log.id, turn_id=turn, step=step):
-                if not await self.steps.run(turn, step, settings):
+                if not await self.steps.run(turn, step, settings, max_steps=max_steps, final=final):
                     return True
             await self.control.checkpoint()
+            if final:
+                await self.log.append(TurnEndedEvent(turn, TurnOutcome.MAX_STEPS))
+                return True
             if await self.continue_from(self.log.current_turn().steps[-1]):
                 continue
             await self.log.append(TurnEndedEvent(turn))

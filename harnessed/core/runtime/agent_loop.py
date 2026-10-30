@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from harnessed.core.limits import FinalStepPolicy
 from harnessed.core.model import Model, TokenLimitBehavior
 from harnessed.core.plugin import Plugin
 from harnessed.core.runtime.options import AgentLoopConfig, AgentOptions
@@ -37,6 +38,7 @@ class AgentLoop(Plugin, slot="loop"):
         context_window: int | None = _DEFAULTS.context_window,
         on_max_tokens: TokenLimitBehavior = _DEFAULTS.on_max_tokens,
         output_retries: int = _DEFAULTS.output_retries,
+        final_step: FinalStepPolicy = _DEFAULTS.final_step,
         error_formatter: ErrorFormatter | None = None,
     ) -> None:
         super().__init__(
@@ -48,6 +50,7 @@ class AgentLoop(Plugin, slot="loop"):
             context_window=context_window,
             on_max_tokens=on_max_tokens,
             output_retries=output_retries,
+            final_step=final_step,
         )
         self.error_formatter = error_formatter
 

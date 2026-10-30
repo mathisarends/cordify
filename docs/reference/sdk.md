@@ -141,6 +141,12 @@ the turn's billed input plus output tokens with `token_budget=`; both are stored
 with the turn and survive a restart. `ToolOutputLimit(...)` and `Approvals(...)` replace their default
 policy slots explicitly.
 
+`AgentLoop(final_step=FinalStepPolicy.SUMMARIZE)` reserves the last available
+step for an action-free text summary. Import `FinalStepPolicy` from
+`harnessed.plugins`; the default is `NONE`. The summary returns `MAX_STEPS` with
+`completed=False`, respects per-run limits and produces only `result.text`, even
+when the run requested structured output. See [reserved summaries](../guides/sessions.md#step-progress-and-a-reserved-summary).
+
 ## RunResult and values
 
 A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,
@@ -167,6 +173,9 @@ unhashable. See [values and record versions](../concepts/values.md).
 | Plugin / @tool | Class-based reusable capability |
 | @tool(description="...") | Explicit model-facing description; None falls back to the docstring |
 | @tool(enabled=True \| False \| predicate) | Per-tool visibility and execution condition; synchronous predicates use Inject and mounted instance state |
+| @tool(metadata=(value, ...)) | Immutable application annotations keyed by exact type; no automatic model or persistence effect |
+| @tool(chain=ToolChain.STOP_AFTER) | Run this tool, then skip remaining calls from the same model response; default CONTINUE |
+| ToolResult(..., break_chain=True) | Request the same boundary dynamically; already-started parallel calls finish |
 | PluginConfig / Config = MyConfig | Module-level validated configuration model |
 | PluginState(factory) | Typed state freshly created before each mount's setup; available through cleanup |
 | name: Inject[T] | Per-mount dependency assigned before setup; optional T \| None receives None if absent |
@@ -187,6 +196,14 @@ temporal restarts. `Inject` binds values without adding lifetime dependencies.
 Model-filled parameters become a strict Pydantic form; unknown fields and invalid
 values fail before invocation. See [tools and hooks](../guides/tools.md) and
 [composition](../guides/plugins.md).
+
+`ToolPolicy`, `ExecuteTool` and `ReviewToolResult` expose the captured
+`ToolInfo | None` as `event.tool`; `event.tool.metadata.get(T)` returns `T | None`.
+`ToolChain`, `ToolInfo` and `ToolMetadata` are exported by `harnessed`.
+Skipped calls have `ToolStatus.SKIPPED` and retain their model-history pairing.
+`PreStep.max_steps` is the effective turn limit; `remaining_steps` includes the
+current step, `is_last_step` indicates one remaining step, and `is_final_step`
+identifies an action-free reserved summary.
 
 ## Event classes and data
 
