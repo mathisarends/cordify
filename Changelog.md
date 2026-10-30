@@ -1,22 +1,80 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (unreleased)
 
-- Add typed, process-local tool metadata and captured tool descriptions in policy,
-  execution and result-review hooks, including schema-defined external tools.
-- Add fixed and dynamic action-chain boundaries, durable break signals and explicit
-  skipped results while preserving already-started parallel work.
-- Expose effective step progress and persist resolved limits across reopen. Add
-  opt-in final-step text summaries within the limit, with runtime action blocking
-  and an explicit incomplete outcome, including for structured-output runs.
-- Add transient compaction start/finish events with correlated outcomes, while
-  retaining the durable applied projection and estimated token savings.
-- Add typed model retry diagnostics through chunks and task-scoped adapter
-  callbacks, and forward model requests/failures and attempt activity to the UI
-  stream. SDK counts stay unknown without actual adapter telemetry.
-- Distinguish provider retries, context recovery and structured-output correction;
-  persist runtime retry correlation on model requests without replaying transient
-  notifications. Existing retry policies and provider exception behavior remain.
+This release adds tool metadata, action-chain boundaries, reserved final-step
+summaries and correlated compaction/model activity. It extends the event and hook
+contracts from 0.4.0; the session record format remains version **2**.
+
+### Tool metadata and action chains
+
+- Add `@tool(metadata=(...))` with typed, process-local annotations. Import
+  `ToolInfo`, `ToolMetadata` and `ToolChain` from `harnessed`. Policy, execution and
+  result-review hooks expose the captured registration through `event.tool`,
+  including for schema-defined external tools. Missing registrations have
+  `tool=None`; metadata is neither sent to the model nor automatically persisted.
+- Add `ToolChain.STOP_AFTER` for a sequential boundary after earlier parallel
+  calls finish, and `ToolResult(..., break_chain=True)` for a dynamic boundary.
+  Unstarted later calls in the response receive `ToolStatus.SKIPPED` without
+  approval or execution; already-started parallel calls finish normally. Break
+  signals survive result review and persistence, including crash recovery.
+- See [tools and hooks](docs/guides/tools.md) for metadata lookup, external
+  registration and the exact denial, failure and parallel-execution behavior.
+
+### Step progress and final summaries
+
+- `PreStep` exposes the effective `max_steps`, `remaining_steps` (including the
+  current step), `is_last_step` and `is_final_step`. Turn-start records capture
+  the resolved step limit and final-step policy for pause/reopen.
+- Add opt-in `AgentLoop(final_step=FinalStepPolicy.SUMMARIZE)`, importing the
+  policy from `harnessed.plugins`. The last available step becomes a text-only
+  summary within the existing limit. Runtime execution blocks any returned tool
+  calls, and continuation hooks cannot extend the limit. The default remains
+  `FinalStepPolicy.NONE`.
+- A reserved summary ends with `StopReason.MAX_STEPS` and `completed=False`.
+  Structured-output runs expose the summary through `.text`; `.output` raises
+  `OutputUnavailable`. Token budgets and provider failures may prevent a summary.
+  See [step progress](docs/guides/sessions.md#step-progress-and-a-reserved-summary).
+
+### Compaction, model activity and event documentation
+
+- Add transient `CompactionStartedEvent` and `CompactionFinishedEvent`, correlated
+  by `compaction_id`, with applied, discarded, failed and cancelled outcomes.
+  `CompactionAppliedEvent` remains the durable history projection and records
+  estimated token savings rather than provider billing.
+- Add typed `ModelAttemptStartedEvent`, `ModelRetryScheduledEvent` and
+  `ModelAttemptFinishedEvent`, and forward `ModelRequestedEvent` and
+  `ModelRequestFailedEvent` to UI streams. Provider retries, context recovery and
+  structured-output correction retain separate counters and correlation.
+- Adapters can report observed provider attempts through chunks or awaited,
+  task-scoped `report_model_diagnostic()` callbacks. Hidden SDK counters remain
+  unknown; this telemetry adds no provider retry policy and does not change
+  provider exception behavior. Runtime retry correlation is persisted on model
+  requests; transient activity is not replayed.
+- Document durable versus transient events, request/turn completion, cancellation
+  and partial results in the [event reference](docs/reference/events.md) and
+  [streaming guide](docs/guides/streaming.md). Add the offline basic-stream example
+  `uv run python -m examples.33_basic_stream`.
+
+### Upgrade from 0.4.0
+
+1. Pass the effective keyword-only `max_steps=` when manually constructing
+   `PreStep` events. Hook consumers can use `remaining_steps`, `is_last_step` and
+   `is_final_step` instead of deriving progress from recipe defaults.
+2. Update exhaustive stream/event handlers for compaction and model activity, and
+   tool-result handlers for `ToolStatus.SKIPPED` and `break_chain`. A failed model
+   request or finished attempt does not itself finish a turn; inspect
+   `TurnFinishedEvent.result` for the run outcome. Keep unknown retry counts as
+   `None` rather than treating them as zero.
+3. Keep existing version **2** session stores; no format migration is required
+   from 0.4.0. Update strict application schemas for the new defaulted fields on
+   model requests, turn starts and tool results before reading 0.5.0 records.
+   Older readers may reject those records. Existing paused turns without a
+   resolved step limit use the reopening agent's configured limit.
+4. Tool metadata, action-chain boundaries and final summaries are opt-in.
+   Existing tools continue their chain by default. If enabling summaries for
+   `output=T` runs, check `completed` before accessing `.output`; a reserved
+   summary is an incomplete text result, not a validated `T`.
 
 ## 0.4.0 (2026-10-29)
 
