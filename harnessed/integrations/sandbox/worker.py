@@ -66,6 +66,8 @@ def parts(path: str) -> tuple[str, ...]:
 @contextmanager
 def parent(path: str, *, create: bool = False) -> Generator[tuple[int, str]]:
     """Pin directories with openat; never resolve then reopen an attacker-controlled path."""
+    if sys.platform == "win32":
+        raise RuntimeError("The sandbox worker must execute inside a POSIX sandbox")
     components = parts(path)
     fd = os.open("/workspace", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -85,6 +87,8 @@ def parent(path: str, *, create: bool = False) -> Generator[tuple[int, str]]:
 
 @contextmanager
 def opened(path: str, *, directory: bool = False) -> Generator[int]:
+    if sys.platform == "win32":
+        raise RuntimeError("The sandbox worker must execute inside a POSIX sandbox")
     with parent(path) as (fd, name):
         flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
         child = os.open(name, flags | (os.O_DIRECTORY if directory else 0), dir_fd=fd)
@@ -169,6 +173,8 @@ def match_path(path: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
 
 
 def matches(pattern: str, limit: int) -> list[str]:
+    if sys.platform == "win32":
+        raise RuntimeError("The sandbox worker must execute inside a POSIX sandbox")
     parts(pattern)
     if limit < 1:
         raise ValueError("Glob limit must be positive")
@@ -193,6 +199,8 @@ def matches(pattern: str, limit: int) -> list[str]:
 
 
 def command(request: Request) -> CommandResult:
+    if sys.platform == "win32":
+        raise RuntimeError("The sandbox worker must execute inside a POSIX sandbox")
     if not request.argv or request.timeout <= 0 or request.max_output_bytes < 256:
         raise ValueError("Invalid command arguments or limits")
     components = parts(request.path)
@@ -257,6 +265,8 @@ def command(request: Request) -> CommandResult:
 
 
 def dispatch(request: Request) -> object:
+    if sys.platform == "win32":
+        raise RuntimeError("The sandbox worker must execute inside a POSIX sandbox")
     if request.version != 1:
         raise ValueError("Unsupported sandbox protocol version")
     match request.operation:
