@@ -200,14 +200,31 @@ async def show(session: Session) -> None:
                 case events.ModelRequestFailedEvent(request_id=key, outcome=outcome):
                     print("Request closed:", key, outcome)
                 case events.ModelRetryScheduledEvent() as retry:
-                    print("Retry planned:", retry.retry_kind, retry.retry_group_id,
-                          retry.attempt, retry.reason, retry.delay_seconds)
+                    print(
+                        "Retry planned:",
+                        retry.retry_kind,
+                        retry.retry_group_id,
+                        retry.attempt,
+                        retry.reason,
+                        retry.delay_seconds,
+                    )
                 case events.ModelAttemptStartedEvent() as attempt:
-                    print("Attempt started:", attempt.retry_kind, attempt.request_id,
-                          attempt.retry_group_id, attempt.attempt)
+                    print(
+                        "Attempt started:",
+                        attempt.retry_kind,
+                        attempt.request_id,
+                        attempt.retry_group_id,
+                        attempt.attempt,
+                    )
                 case events.ModelAttemptFinishedEvent() as attempt:
-                    print("Attempt closed:", attempt.retry_kind, attempt.request_id,
-                          attempt.outcome, attempt.attempt, attempt.partial)
+                    print(
+                        "Attempt closed:",
+                        attempt.retry_kind,
+                        attempt.request_id,
+                        attempt.outcome,
+                        attempt.attempt,
+                        attempt.partial,
+                    )
                 case events.ToolCallFinishedEvent(call=call, result=result):
                     if result.status is ToolStatus.SKIPPED:
                         print("Not executed:", call.id, call.name)
