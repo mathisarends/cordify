@@ -51,6 +51,7 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.30_conditional_tools",
         "examples.31_mcp",
         "examples.32_system_prompts",
+        "examples.33_basic_stream",
     ],
 )
 def test_offline_sdk_example_runs(module):

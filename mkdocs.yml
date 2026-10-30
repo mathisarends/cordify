@@ -51,6 +51,7 @@ nav:
       - Immutable values and the codec: concepts/values.md
   - Reference:
       - Core SDK: reference/sdk.md
+      - Events: reference/events.md
   - Benchmarks:
       - Session memory and replay: benchmarks/sessions.md
   - Contributing:

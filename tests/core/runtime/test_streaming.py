@@ -1,4 +1,6 @@
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import aclosing
 
 import pytest
 from pydantic import BaseModel, field_validator
@@ -15,14 +17,18 @@ from harnessed import (
 )
 from harnessed.core.errors import ApprovalUnavailable, OutputUnavailable, SessionClosed
 from harnessed.core.messages import ToolStatus
-from harnessed.core.model import ModelChunk
+from harnessed.core.model import ModelChunk, ModelRequest
 from harnessed.core.session.events import ApprovalStatus
 from harnessed.events import (
     ApprovalNeededEvent,
     ApprovalResolvedEvent,
+    AssistantMessageEvent,
+    EventStream,
     InboxAddedEvent,
     ModelAttemptFinishedEvent,
     ModelRequestedEvent,
+    ModelRequestFailedEvent,
+    ModelRequestOutcome,
     ReasoningDeltaEvent,
     SessionEvent,
     SessionStatusChangedEvent,
@@ -33,7 +39,7 @@ from harnessed.events import (
     TurnFinishedEvent,
 )
 from harnessed.plugins import Approvals, MemorySessions
-from harnessed.testing import ScriptedModel
+from harnessed.testing import CallbackModel, ScriptedModel
 
 
 class Work(Plugin):
@@ -46,6 +52,72 @@ class Work(Plugin):
         await call.progress("Publishing")
         self.effects.append("published")
         return "done"
+
+
+@pytest.mark.parametrize("partial", [False, True])
+async def test_model_failure_raises_without_a_terminal_ui_event(partial: bool) -> None:
+    async def respond(request: ModelRequest) -> AsyncIterator[ModelChunk]:
+        if partial:
+            yield ModelChunk(text="partial")
+        raise ValueError("model failed")
+
+    async with Agent(model=CallbackModel(respond)).session() as session:
+        received: list[EventStream[None]] = []
+        with pytest.raises(ValueError, match="model failed"):
+            async with aclosing(session.stream("Review")) as stream:
+                async for event in stream:
+                    received.append(event)
+
+        assert not any(isinstance(event, TurnFinishedEvent) for event in received)
+        assert "".join(event.text for event in received if isinstance(event, TextDeltaEvent)) == (
+            "partial" if partial else ""
+        )
+        requested = session.last(ModelRequestedEvent)
+        assert requested is not None
+        completions = [
+            event
+            for event in session.events
+            if isinstance(event, AssistantMessageEvent | ModelRequestFailedEvent)
+            and event.request_id == requested.request_id
+        ]
+        assert len(completions) == 1
+        completion = completions[0]
+        if partial:
+            assert isinstance(completion, AssistantMessageEvent)
+            assert completion.interrupted and completion.message.text == "partial"
+        else:
+            assert isinstance(completion, ModelRequestFailedEvent)
+            assert completion.outcome is ModelRequestOutcome.FAILED
+
+
+async def test_closing_the_ui_stream_does_not_cancel_the_model_request() -> None:
+    release = asyncio.Event()
+
+    async def respond(request: ModelRequest) -> AsyncIterator[ModelChunk]:
+        yield ModelChunk(text="partial")
+        await release.wait()
+        yield ModelChunk(text=" reply")
+
+    async with Agent(model=CallbackModel(respond)).session() as session:
+        try:
+            async with aclosing(session.stream("Review")) as stream:
+                async for event in stream:
+                    if isinstance(event, TextDeltaEvent):
+                        break
+                else:
+                    pytest.fail("The stream ended without text")
+            requested = session.last(ModelRequestedEvent)
+            assert requested is not None
+            assert not session.log.request_finished(requested.request_id)
+        finally:
+            release.set()
+
+        await asyncio.wait_for(session.wait_until_idle(), 3)
+        response = session.last(AssistantMessageEvent)
+        assert response is not None
+        assert response.request_id == requested.request_id
+        assert response.message.text == "partial reply" and not response.interrupted
+        assert session.last(ModelRequestFailedEvent) is None
 
 
 async def test_slow_stream_overflows_without_blocking_the_run_or_losing_the_durable_answer():

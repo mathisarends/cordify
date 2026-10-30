@@ -451,6 +451,12 @@ class Session:
         output: type[Any] | OutputContract[Any] | None = None,
         buffer_size: int = 256,
     ) -> AsyncGenerator[EventStream[Any], None]:
+        """Queue one turn and yield its UI and declared application events.
+
+        Normal exhaustion ends with TurnFinishedEvent. Runtime failures raise
+        without that notification. Closing the iterator removes its approval
+        responder but does not abort the turn; use abort() to cancel its work.
+        """
         limits = TurnLimits(max_steps, token_budget)
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None

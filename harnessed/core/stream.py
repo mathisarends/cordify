@@ -55,6 +55,8 @@ class CompactionOutcome(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CompactionStartedEvent(TransientEvent):
+    """Start a summarization attempt, paired with CompactionFinishedEvent."""
+
     type: Literal[EventKind.COMPACTION_STARTED] = field(
         default=EventKind.COMPACTION_STARTED, kw_only=True
     )
@@ -63,6 +65,11 @@ class CompactionStartedEvent(TransientEvent):
 
 @dataclass(frozen=True, slots=True)
 class CompactionFinishedEvent(TransientEvent):
+    """Close a compaction attempt, including discarded or failed summaries.
+
+    A successful CompactionAppliedEvent with the same id precedes this event.
+    """
+
     type: Literal[EventKind.COMPACTION_FINISHED] = field(
         default=EventKind.COMPACTION_FINISHED, kw_only=True
     )
@@ -75,6 +82,12 @@ class CompactionFinishedEvent(TransientEvent):
 
 @dataclass(frozen=True, slots=True)
 class ModelAttemptStartedEvent(ModelAttemptStarted, TransientEvent):
+    """Start an observed provider attempt or a runtime recovery request.
+
+    retry_kind separates provider attempts from context and output retries;
+    their counters have different scopes and must not be combined.
+    """
+
     type: Literal[EventKind.MODEL_ATTEMPT_STARTED] = field(
         default=EventKind.MODEL_ATTEMPT_STARTED, kw_only=True
     )
@@ -85,6 +98,11 @@ class ModelAttemptStartedEvent(ModelAttemptStarted, TransientEvent):
 
 @dataclass(frozen=True, slots=True)
 class ModelRetryScheduledEvent(ModelRetryScheduled, TransientEvent):
+    """Plan a successor to the reported attempt without advancing its counters.
+
+    The planned attempt may never start, for example on cancellation in backoff.
+    """
+
     type: Literal[EventKind.MODEL_RETRY_SCHEDULED] = field(
         default=EventKind.MODEL_RETRY_SCHEDULED, kw_only=True
     )
@@ -95,6 +113,12 @@ class ModelRetryScheduledEvent(ModelRetryScheduled, TransientEvent):
 
 @dataclass(frozen=True, slots=True)
 class ModelAttemptFinishedEvent(ModelAttemptFinished, TransientEvent):
+    """Report an attempt outcome within retry_kind, not the turn's outcome.
+
+    Missing provider telemetry permits a finish with unknown counters and no
+    preceding start notification. RETRYING closes this attempt, not its group.
+    """
+
     type: Literal[EventKind.MODEL_ATTEMPT_FINISHED] = field(
         default=EventKind.MODEL_ATTEMPT_FINISHED, kw_only=True
     )
@@ -158,7 +182,10 @@ class SessionStatusChangedEvent(TransientEvent):
 @final
 @dataclass(frozen=True, slots=True)
 class TurnFinishedEvent[T](TransientEvent):
-    """Terminate a UI stream with its assembled, optionally typed run result."""
+    """End a normally exhausted UI stream with its assembled run result.
+
+    Stream errors or consumer cancellation can prevent this notification.
+    """
 
     __hash__ = None
     type: Literal[EventKind.TURN_FINISHED] = field(default=EventKind.TURN_FINISHED, kw_only=True)

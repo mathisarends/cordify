@@ -33,6 +33,10 @@ and [the response-contract guide](structured-output.md).
 
 ## UI streaming
 
+Start with `uv run python -m examples.33_basic_stream` for a consumer handling
+only text and the terminal result. See
+[the source](https://github.com/mathisarends/harnessed/blob/main/examples/33_basic_stream.py).
+
 `uv run python -m examples.26_ui_stream` shows text, reasoning, tool progress,
 an acknowledged approval and a typed terminal report. See
 [the source](https://github.com/mathisarends/harnessed/blob/main/examples/26_ui_stream.py)

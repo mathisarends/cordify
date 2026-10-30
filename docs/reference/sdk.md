@@ -198,6 +198,8 @@ also used by `@hook`. `TurnEndedEvent` is the durable turn-end record;
 `TurnFinishedEvent[T]` carries the assembled result at the end of a UI stream.
 Every event has an explicit namespaced `type` discriminator.
 See [events and schemas](../guides/events.md).
+The [event reference](events.md) lists every built-in event, its discriminator
+and whether it is part of the UI stream or only the durable audit log.
 
 `StreamEvent[T]` describes the built-in UI union. `EventStream[T]` includes the
 application extension bases. Declare frozen dataclasses extending `DurableEvent`

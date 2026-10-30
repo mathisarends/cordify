@@ -428,6 +428,13 @@ class ObservationRecordedEvent(SessionEvent):
 
 @dataclass(frozen=True)
 class ModelRequestedEvent(SessionEvent):
+    """Commit one Harnessed model invocation's final request snapshot.
+
+    The request_id correlates its usage and exactly one assistant message or
+    request failure. Provider-internal transport retries retain this identity.
+    Retry metadata here describes runtime recovery, not provider SDK counters.
+    """
+
     __hash__ = None
 
     type: Literal[EventKind.MODEL_REQUESTED] = field(
@@ -447,6 +454,8 @@ class ModelRequestedEvent(SessionEvent):
 
 @dataclass(frozen=True)
 class ModelRequestFailedEvent(SessionEvent):
+    """Close a request without an assistant message; not a turn completion."""
+
     __hash__ = None
 
     type: Literal[EventKind.MODEL_REQUEST_FAILED] = field(
@@ -518,6 +527,8 @@ class CompactionAppliedEvent(SessionEvent):
 
     preserve_turns pins full turns; retained_turns is temporary sliding retention.
     preserve_inputs holds event offsets of active-turn inputs kept verbatim.
+    This is an applied history change, not a notification for every attempted
+    summary; failed or non-reducing summaries do not produce this record.
     """
 
     __hash__ = None
@@ -613,6 +624,12 @@ class RuleTriggeredEvent(SessionEvent):
 
 @dataclass(frozen=True)
 class AssistantMessageEvent(SessionEvent):
+    """Close a model request with its accepted or interrupted partial message.
+
+    An interrupted message is terminal for its request_id and is not followed
+    by a ModelRequestFailedEvent for that same request.
+    """
+
     __hash__ = None
 
     type: Literal[EventKind.ASSISTANT_MESSAGE] = field(

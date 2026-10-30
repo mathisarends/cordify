@@ -136,7 +136,7 @@ async def project_stream_events(
     results: RunResults,
     schema: OutputSchema | None = None,
 ) -> AsyncGenerator[EventStream[Any], None]:
-    """Project raw events into stream notifications and exactly one terminal result."""
+    """Project UI events, yielding one terminal result after normal exhaustion."""
     events: list[SessionEvent] = []
     calls: set[str] = set()
     control_calls: set[str] = set()
