@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Close unusable MCP connections and hide their tools after protocol errors,
+  invalid tool responses, terminated HTTP sessions and stdio disconnects.
+  Malformed transport messages fail promptly; ordinary tool `isError` results
+  leave the connection available. Failed operations are not automatically retried.
+- Wake all pending MCP calls when cancellation, timeout or unmount closes their
+  shared connection, and drain the owned request tasks during cleanup.
+- Apply a five-second network inactivity timeout to HTTP session termination so
+  an unresponsive DELETE endpoint cannot indefinitely block mount cleanup.
+- Add real-socket HTTP coverage for stateful/stateless JSON and SSE sessions,
+  OAuth discovery, PKCE, token refresh/reuse, redirects, credential forwarding,
+  parallel calls, failures and cleanup. Extend stdio tests for process crashes,
+  malformed output, minimal environment inheritance and literal arguments.
+- Document MCP deployment trust boundaries, server isolation and resource limits
+  in the [MCP guide](docs/guides/mcp.md#deployment-boundary).
+
 ## 0.5.0 (2026-10-30)
 
 This release adds tool metadata, action-chain boundaries, reserved final-step
