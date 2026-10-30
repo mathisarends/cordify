@@ -1,9 +1,14 @@
 import asyncio
 import json
+import os
 import subprocess
 import sys
+from collections.abc import Generator
+from contextlib import nullcontext
+from http.client import HTTPMessage
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from threading import Thread
+from pathlib import Path
+from threading import Thread, get_ident
 
 import pytest
 
@@ -24,9 +29,50 @@ from harnessed.core.messages import AssistantMessage, ToolResult, ToolStatus
 from harnessed.core.model import ModelChunk, ModelUsage
 from harnessed.core.session.events import AgentControlChangedEvent, ControlState
 from harnessed.core.tracing import Tracer
-from harnessed.integrations.opentelemetry import OpenTelemetryTracer
+from harnessed.integrations.opentelemetry import OpenTelemetryTracer, otlp_provider
 from harnessed.plugins import Approvals, Compaction, every_turns
 from harnessed.testing import CallbackModel, ScriptedModel, reply
+
+type Collector = tuple[str, list[tuple[str, HTTPMessage, bytes]]]
+
+
+@pytest.fixture
+def otlp_collector() -> Generator[Collector]:
+    requests: list[tuple[str, HTTPMessage, bytes]] = []
+
+    class Receiver(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            requests.append(
+                (self.path, self.headers, self.rfile.read(int(self.headers["Content-Length"])))
+            )
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Receiver)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", requests
+    finally:
+        server.shutdown()
+        worker.join(timeout=3)
+        server.server_close()
+
+
+@pytest.fixture
+def shutdown_threads(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    threads: list[int] = []
+    original_shutdown = TracerProvider.shutdown
+
+    def shutdown(provider: TracerProvider) -> None:
+        threads.append(get_ident())
+        original_shutdown(provider)
+
+    monkeypatch.setattr(TracerProvider, "shutdown", shutdown)
+    return threads
 
 
 @pytest.fixture
@@ -339,25 +385,12 @@ assert not any(n.startswith('opentelemetry') for n in sys.modules)
 
 
 @pytest.mark.parametrize("path", ["/v1/traces", "/api/public/otel/v1/traces"])
-async def test_real_otlp_http_export_to_local_collector(path):
-    requests = []
-
-    class Collector(BaseHTTPRequestHandler):
-        def do_POST(self):
-            requests.append(
-                (self.path, self.headers, self.rfile.read(int(self.headers["Content-Length"])))
-            )
-            self.send_response(200)
-            self.end_headers()
-
-        def log_message(self, *args):
-            pass
-
-    server = HTTPServer(("127.0.0.1", 0), Collector)
-    worker = Thread(target=server.serve_forever, daemon=True)
-    worker.start()
+async def test_real_otlp_http_export_to_local_collector(
+    path: str, otlp_collector: Collector
+) -> None:
+    base_url, requests = otlp_collector
     provider = TracerProvider()
-    endpoint = f"http://127.0.0.1:{server.server_port}{path}"
+    endpoint = f"{base_url}{path}"
     provider.add_span_processor(
         SimpleSpanProcessor(
             OTLPSpanExporter(endpoint=endpoint, headers={"x-test": "harnessed"}, timeout=3)
@@ -381,6 +414,163 @@ async def test_real_otlp_http_export_to_local_collector(path):
         assert names == ["harnessed.model", "harnessed.step", "harnessed.turn"]
     finally:
         provider.shutdown()
-        server.shutdown()
-        worker.join(timeout=3)
-        server.server_close()
+
+
+@pytest.mark.parametrize("endpoint_source", ["explicit", "traces_env", "base_env"])
+@pytest.mark.parametrize("fail", [False, True])
+async def test_otlp_provider_shared_sessions_and_batch_delivery_on_exit(
+    otlp_collector: Collector,
+    monkeypatch: pytest.MonkeyPatch,
+    shutdown_threads: list[int],
+    endpoint_source: str,
+    fail: bool,
+) -> None:
+    base_url, requests = otlp_collector
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", base_url)
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "x-test=harnessed")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", "3")
+    monkeypatch.setenv("OTEL_BSP_SCHEDULE_DELAY", "60000")
+    monkeypatch.setenv("OTEL_TRACES_SAMPLER", "always_on")
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "environment-service")
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=test")
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
+    endpoint = None
+    expected_path = "/v1/traces"
+    if endpoint_source == "traces_env":
+        expected_path = "/configured-traces"
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", f"{base_url}{expected_path}")
+    elif endpoint_source == "explicit":
+        expected_path = "/api/public/otel/v1/traces"
+        endpoint = f"{base_url}{expected_path}"
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", f"{base_url}/overridden")
+
+    global_provider = trace.get_tracer_provider()
+    main_thread = get_ident()
+    attributes = {"service.name": "overridden", "openinference.project.name": "shared-agent"}
+    expected_error = (
+        pytest.raises(RuntimeError, match="application failed") if fail else nullcontext()
+    )
+    with expected_error:
+        async with otlp_provider(
+            service_name="my-service", endpoint=endpoint, resource_attributes=attributes
+        ) as provider:
+            assert trace.get_tracer_provider() is global_provider
+            assert provider.resource.attributes["service.name"] == "my-service"
+            assert provider.resource.attributes["deployment.environment.name"] == "test"
+            agent = Agent(
+                model=ScriptedModel(["done", "done"]),
+                plugins=[OpenTelemetryTracer(tracer_provider=provider)],
+            )
+            with provider.get_tracer("application").start_as_current_span("api.request"):
+                await asyncio.gather(agent.run("one"), agent.run("two"))
+            if fail:
+                raise RuntimeError("application failed")
+
+    assert attributes["service.name"] == "overridden"
+    assert trace.get_tracer_provider() is global_provider
+    assert len(shutdown_threads) == 1
+    assert shutdown_threads[0] != main_thread
+    spans = []
+    for path, headers, body in requests:
+        assert path == expected_path
+        assert headers["x-test"] == "harnessed"
+        assert headers["Content-Type"] == "application/x-protobuf"
+        data = ExportTraceServiceRequest.FromString(body)
+        for resource in data.resource_spans:
+            exported_attributes = {
+                a.key: a.value.string_value for a in resource.resource.attributes
+            }
+            assert exported_attributes["service.name"] == "my-service"
+            assert exported_attributes["openinference.project.name"] == "shared-agent"
+            spans.extend(s for scope in resource.scope_spans for s in scope.spans)
+    assert len(spans) == 7
+    parent = next(s for s in spans if s.name == "api.request")
+    turns = [s for s in spans if s.name == "harnessed.turn"]
+    assert len(turns) == 2
+    assert all(s.parent_span_id == parent.span_id for s in turns)
+    assert all(s.trace_id == parent.trace_id for s in spans)
+
+
+async def test_otlp_provider_shuts_down_after_task_cancellation(
+    otlp_collector: Collector, shutdown_threads: list[int]
+) -> None:
+    base_url, requests = otlp_collector
+    ready = asyncio.Event()
+    main_thread = get_ident()
+
+    async def run() -> None:
+        async with otlp_provider(
+            service_name="cancelled", endpoint=f"{base_url}/v1/traces"
+        ) as provider:
+            with provider.get_tracer("application").start_as_current_span("before.cancel"):
+                pass
+            ready.set()
+            await asyncio.Event().wait()
+
+    task = asyncio.create_task(run())
+    await asyncio.wait_for(ready.wait(), timeout=5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(shutdown_threads) == 1
+    assert shutdown_threads[0] != main_thread
+    assert requests
+
+
+async def test_otlp_provider_cleans_up_when_exporter_setup_fails(
+    monkeypatch: pytest.MonkeyPatch, shutdown_threads: list[int]
+) -> None:
+    from harnessed.integrations import opentelemetry
+
+    def fail_exporter(*, endpoint: str | None) -> None:
+        raise RuntimeError("exporter setup failed")
+
+    monkeypatch.setattr(opentelemetry, "OTLPSpanExporter", fail_exporter)
+    main_thread = get_ident()
+    with pytest.raises(RuntimeError, match="exporter setup failed"):
+        async with otlp_provider(service_name="my-service"):
+            pytest.fail("provider must not be yielded when setup fails")
+    assert len(shutdown_threads) == 1
+    assert shutdown_threads[0] != main_thread
+
+
+@pytest.mark.parametrize("service_name", ["", "   "])
+async def test_otlp_provider_rejects_empty_service_names(service_name: str) -> None:
+    with pytest.raises(ValueError, match="service_name must not be empty"):
+        async with otlp_provider(service_name=service_name):
+            pytest.fail("provider must not be yielded without a service name")
+
+
+def test_otlp_example_exports_on_exit(otlp_collector: Collector) -> None:
+    base_url, requests = otlp_collector
+    result = subprocess.run(
+        [sys.executable, "-m", "examples.29_tracing", "--otlp"],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env={
+            **os.environ,
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": f"{base_url}/v1/traces",
+            "OTEL_EXPORTER_OTLP_TRACES_HEADERS": "x-test=harnessed",
+            "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT": "3",
+            "OTEL_TRACES_SAMPLER": "always_on",
+            "PYTHONUTF8": "1",
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Completed tool loop" in result.stdout
+    spans = [
+        span
+        for _, _, body in requests
+        for resource in ExportTraceServiceRequest.FromString(body).resource_spans
+        for scope in resource.scope_spans
+        for span in scope.spans
+    ]
+    assert {s.name for s in spans} == {
+        "backend.request",
+        "harnessed.turn",
+        "harnessed.step",
+        "harnessed.model",
+        "harnessed.tool",
+    }

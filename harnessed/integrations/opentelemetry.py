@@ -1,11 +1,16 @@
 import asyncio
 import json
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Generator, Mapping
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import Any
 
 from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.util.types import AttributeValue
 from pydantic import Field
 
 from harnessed.core.messages import (
@@ -31,6 +36,37 @@ _KINDS = {
     "model": ("LLM", "generation"),
     "tool": ("TOOL", "tool"),
 }
+
+
+@asynccontextmanager
+async def otlp_provider(
+    *,
+    service_name: str,
+    endpoint: str | None = None,
+    resource_attributes: Mapping[str, AttributeValue] | None = None,
+) -> AsyncGenerator[TracerProvider]:
+    """Own a batched OTLP/HTTP provider for an application's async lifespan.
+
+    Open once around all agent sessions and other instrumentation sharing this
+    provider. Standard OpenTelemetry environment variables configure the exporter,
+    resource and sampler; explicit arguments take precedence. ``service_name``
+    overrides any resource attribute with the same name.
+
+    The global provider is unchanged. Exiting shuts down this provider outside
+    the event loop, including when setup or application work raises. Shutdown
+    attempts to export pending batches; it does not confirm backend ingestion.
+    """
+    if not service_name.strip():
+        raise ValueError("service_name must not be empty")
+    provider = TracerProvider(
+        resource=Resource.create({**(resource_attributes or {}), "service.name": service_name}),
+        shutdown_on_exit=False,
+    )
+    try:
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+        yield provider
+    finally:
+        await asyncio.to_thread(provider.shutdown)
 
 
 class OpenTelemetryConfig(PluginConfig):
@@ -199,4 +235,4 @@ def _message(message: Message) -> dict[str, Any]:
     return value
 
 
-__all__ = ["OpenTelemetryConfig", "OpenTelemetryTracer"]
+__all__ = ["OpenTelemetryConfig", "OpenTelemetryTracer", "otlp_provider"]

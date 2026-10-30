@@ -10,49 +10,92 @@ uv add 'harnessed[otel]'
 Import it from `harnessed.integrations.opentelemetry`; importing the core SDK or
 `harnessed.plugins` does not import OpenTelemetry or require this extra.
 
-## Configure the backend at application startup
+## Open a provider for your application
 
-Create one OpenTelemetry provider per backend process and pass it to the plugin.
-The application owns exporter credentials, resources, sampling and shutdown.
-This example uses standard OTLP/HTTP environment variables, so switching between
-Phoenix, Langfuse and a collector does not change agent code:
+Use `otlp_provider()` when the application does not already have an OpenTelemetry
+provider. Open it once around all agents, sessions and other instrumentation that
+share its export pipeline. The helper creates a provider with a batch processor
+and an OTLP/HTTP exporter; it never installs or replaces the global provider.
 
 ```python
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+import asyncio
 
 from harnessed import Agent
-from harnessed.integrations.opentelemetry import OpenTelemetryTracer
+from harnessed.integrations.opentelemetry import OpenTelemetryTracer, otlp_provider
 
-provider = TracerProvider(
-    resource=Resource.create(
-        {
-            "service.name": "my-backend",
-            "openinference.project.name": "my-agent",
-        }
-    )
-)
-provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
+async def main() -> None:
+    async with otlp_provider(
+        service_name="my-app",
+        resource_attributes={"openinference.project.name": "my-agent"},
+    ) as provider:
+        agent = Agent(
+            model="openai:gpt-4.1-mini",
+            plugins=[OpenTelemetryTracer(tracer_provider=provider)],
+        )
+        async with agent.session() as session:
+            result = await session.run("Explain the Voyager program briefly.")
+            print(result.text)
+
+
+asyncio.run(main())
+```
+
+Install the model's provider extra separately, for example `harnessed[openai,otel]`.
+Closing the helper shuts down its provider outside the event loop, including
+after setup errors, application errors and task cancellation. Close active
+sessions first, as the nesting above does. Batch exports run outside the agent
+task. Closing a session or unmounting its plugin never shuts down the shared
+provider or flushes on every turn. Shutdown attempts to drain pending batches;
+check exporter diagnostics and the destination to confirm delivery.
+
+With `endpoint=None`, the exporter reads standard OpenTelemetry environment
+variables for endpoints, headers and timeouts. An explicit `endpoint=` takes
+precedence and must be the full trace ingestion URL, including `/v1/traces` where
+required. There is no implicit Phoenix endpoint. Resource environment variables
+and sampling settings remain SDK-owned. Explicit resource attributes override
+environment attributes, and `service_name` overrides `service.name` from either
+source; the caller's mapping is not changed.
+
+Content capture and size limits stay on `OpenTelemetryTracer`, independently of
+the provider. Application CLI flags and optional imports stay at the entry point;
+the helper lives in the explicitly imported optional integration. See the
+[runnable example](examples.md#tracing) for offline console and OTLP modes.
+
+## Reuse an existing application provider
+
+An existing provider means the Python application already configures OpenTelemetry,
+for example to instrument an API server's HTTP and database operations. A running
+Phoenix server is the telemetry destination, not a provider in the application.
+Pass the application's provider directly to each agent:
+
+```python
+# provider comes from the application's existing telemetry setup.
 agent = Agent(
     model="openai:gpt-4.1-mini",
     plugins=[OpenTelemetryTracer(tracer_provider=provider)],
 )
 ```
 
-Install the model's provider extra separately, for example `harnessed[openai,otel]`.
-In an async backend's lifespan cleanup, after active sessions have closed, run
-`await asyncio.to_thread(provider.shutdown)`. Batch exports run outside the agent
-task. Closing or unmounting a plugin never shuts down a shared provider or flushes
-on every turn. Short scripts should call `provider.shutdown()` in a `finally`
-block. See the executable [offline example](examples.md#tracing).
+The application retains ownership of exporters, resources, sampling and shutdown;
+`otlp_provider()` is not needed in this case. Its lifespan cleanup can run
+`await asyncio.to_thread(provider.shutdown)` after all active work has closed.
+Alternatively, omit `tracer_provider` to use OpenTelemetry's global provider. The
+plugin never replaces or shuts down that provider. Without SDK/exporter setup,
+OpenTelemetry's normal no-op behavior remains in place; exporter environment
+variables alone do not create a pipeline.
 
-If the backend already has a configured provider, pass that same provider, or
-omit `tracer_provider` to use OpenTelemetry's global provider. The integration
-never replaces the global provider. A missing SDK/exporter configuration leaves
-OpenTelemetry's normal no-op behavior in place.
+For custom spans, use the same provider's public OTel API:
+
+```python
+application_tracer = provider.get_tracer("my-app")
+with application_tracer.start_as_current_span("application.request"):
+    result = await agent.run("Explain the Voyager program briefly.")
+```
+
+Custom spans opened inside an agent tool inherit that tool's context as well.
+Operations outside an active context, such as browser startup or independent
+background events, need their own explicit parent context to join an agent trace.
 
 ## Phoenix
 

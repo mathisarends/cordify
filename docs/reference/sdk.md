@@ -7,11 +7,26 @@ and SDK errors from `harnessed.errors`.
 
 ## Tracing
 
+`harnessed.integrations.opentelemetry.otlp_provider(*, service_name,
+endpoint=None, resource_attributes=None)` is an async context manager yielding an
+SDK `TracerProvider` with batched OTLP/HTTP export. It requires `harnessed[otel]`.
+Open once around all agents and sessions using the provider; exiting shuts down
+only that provider outside the event loop, including on errors and cancellation.
+It never installs a global provider. `service_name` must contain non-whitespace
+characters and overrides `service.name` in resources and environment variables.
+`resource_attributes` accepts a mapping of OTel attribute values; explicit values
+override resource environment attributes without mutating the mapping. `endpoint`
+is a full trace ingestion URL; None uses exporter environment configuration.
+Headers, timeouts and sampling remain configured through standard OTel settings.
+Shutdown attempts to drain batches and does not confirm destination ingestion.
+
 `harnessed.integrations.opentelemetry.OpenTelemetryTracer(*, tracer_provider=None,
 capture_content=False, max_content_length=16384)` replaces the `tracer` slot and
 requires `harnessed[otel]`. It emits nested runtime spans through the application's
 OpenTelemetry provider, without owning its exporters or shutdown. Import the
 integration explicitly; public SDK facades remain usable without the extra.
+Pass an existing application provider directly when one is already configured;
+the helper is optional. Content capture and limits stay on the plugin.
 See [tracing](../guides/tracing.md) for Phoenix and Langfuse configuration,
 content capture, parent context and the emitted attributes.
 

@@ -1,12 +1,15 @@
-"""Run offline with: uv run --extra otel python -m examples.29_tracing"""
+"""Run offline; add --otlp to send to a configured OTLP/HTTP endpoint."""
 
+import argparse
 import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 
 from harnessed import Agent, Plugin, PolicyDecision, tool
-from harnessed.integrations.opentelemetry import OpenTelemetryTracer
+from harnessed.integrations.opentelemetry import OpenTelemetryTracer, otlp_provider
 from harnessed.models import ModelUsage
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel, call, reply
@@ -18,12 +21,32 @@ class Calculator(Plugin):
         return a + b
 
 
-async def main() -> None:
-    # A backend creates this once during startup. Use BatchSpanProcessor and an
-    # OTLPSpanExporter in production; the tracing guide has both backend configs.
+@asynccontextmanager
+async def console_provider() -> AsyncGenerator[TracerProvider]:
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
     try:
+        yield provider
+    finally:
+        await asyncio.to_thread(provider.shutdown)
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser(description="Trace an offline scripted tool loop")
+    parser.add_argument(
+        "--otlp", action="store_true", help="Export via OTLP/HTTP instead of the offline console"
+    )
+    args = parser.parse_args()
+    # Open once at application startup; close after every session using it.
+    manager = (
+        otlp_provider(
+            service_name="harnessed-example",
+            resource_attributes={"openinference.project.name": "harnessed-example"},
+        )
+        if args.otlp
+        else console_provider()
+    )
+    async with manager as provider:
         agent = Agent(
             model=ScriptedModel(
                 [
@@ -40,9 +63,9 @@ async def main() -> None:
         with provider.get_tracer("backend").start_as_current_span("backend.request"):
             result = await agent.run("Add 19 and 23")
         assert result.text == "42"
-        print("Exported turn, step, model and tool spans; content capture is disabled.")
-    finally:
-        await asyncio.to_thread(provider.shutdown)
+    print(
+        "Completed tool loop; content capture is disabled. Check the exporter for delivery errors."
+    )
 
 
 if __name__ == "__main__":
