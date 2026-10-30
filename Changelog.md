@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.6.0 (Unreleased)
+## 0.6.0 (2026-10-30)
 
 This release adds explicit Docker and Bubblewrap sandboxes and hardens MCP
 transport failures and cleanup. It includes breaking shell/filesystem backend
