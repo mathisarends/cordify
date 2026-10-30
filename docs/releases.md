@@ -6,21 +6,6 @@ still evolving before 1.0.
 Detailed breaking changes and upgrade instructions are recorded in the repository
 [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
 
-## Unreleased
-
-- Tools support typed application metadata, captured hook descriptions and fixed
-  or dynamic action-chain boundaries with durable, explicit skipped results.
-- `PreStep` exposes effective remaining steps. `AgentLoop` can reserve a final
-  text summary inside the step limit; it remains incomplete and cannot execute
-  application actions. Resolved limits and policy survive pause/reopen.
-- Compaction activity exposes correlated start/finish notifications and typed
-  applied, discarded, failed and cancelled outcomes.
-- Model activity streams include request/failure records and typed retry
-  diagnostics. Adapter callbacks and chunks can report observed SDK attempts;
-  hidden SDK retry counts stay unknown.
-- Context recovery and output correction use separate counters and durable
-  request correlation. See [streaming](guides/streaming.md#model-and-retry-activity).
-
 ## Compatibility policy
 
 - Minor releases during 0.x may introduce breaking API or storage changes. Release
@@ -28,7 +13,7 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 - Patch releases within a minor line are intended for compatible fixes. Pin the
   exact package version for reproducible deployments and persisted workflows.
 - Session records have an explicit format version. Release 0.1.0 uses version 1;
-  releases 0.2.0 through 0.4.0 use version 2. Incompatible core record changes require
+  releases 0.2.0 through 0.5.0 use version 2. Incompatible core record changes require
   a new version. Unsupported versions fail explicitly, and no automatic format
   migrations are provided.
 - Back up persisted sessions before upgrading. Application-defined events and
@@ -40,6 +25,58 @@ Python 3.12, 3.13 and 3.14 are supported on Linux, Windows and macOS. Provider
 integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
+
+## 0.5.0 (2026-10-30)
+
+This minor release adds tool metadata, action-chain boundaries, reserved final-step
+summaries and correlated compaction/model activity. It extends the event and hook
+contracts from 0.4.0; the session record format remains version 2.
+
+### Highlights
+
+- Attach typed, process-local `metadata=(...)` to tools and inspect captured
+  `ToolInfo` in policy, execution and result-review hooks. Metadata also works
+  for schema-defined external tools and is neither sent to the model nor
+  automatically persisted. See [tools and hooks](guides/tools.md).
+- End the remaining action chain in a model response with
+  `ToolChain.STOP_AFTER` or `ToolResult(..., break_chain=True)`. Unstarted calls
+  receive `ToolStatus.SKIPPED`; already-started parallel work finishes normally,
+  and durable break signals survive recovery. See
+  [action-chain boundaries](guides/tools.md#end-an-action-chain).
+- Inspect effective step progress in `PreStep` and optionally reserve the last
+  available step with `AgentLoop(final_step=FinalStepPolicy.SUMMARIZE)`.
+  The summary cannot execute tools and remains an incomplete text result within
+  the configured limit. Resolved limits and policy survive pause/reopen. See
+  [step progress and summaries](guides/sessions.md#step-progress-and-a-reserved-summary).
+- Observe compaction start/finish notifications and applied, discarded, failed
+  or cancelled outcomes. Stream model requests, failures and typed retry activity,
+  keeping provider attempts, context recovery and output correction separate.
+  Adapter callbacks and chunks can report actual SDK attempts; hidden retry
+  counts remain unknown. See [streaming](guides/streaming.md#model-and-retry-activity).
+- Use the [event reference](reference/events.md) for durable/transient delivery,
+  correlation and completion contracts, and run the offline
+  [basic-stream example](guides/examples.md).
+
+### Upgrade from 0.4.0
+
+1. Supply the effective keyword-only `max_steps=` when constructing `PreStep`
+   manually. Hook consumers can read `remaining_steps`, `is_last_step` and
+   `is_final_step` directly.
+2. Extend exhaustive event handlers for compaction and model activity, and handle
+   `ToolStatus.SKIPPED` and `ToolResult.break_chain`. Request/attempt completion
+   does not imply turn completion. Preserve unknown retry counters as `None`.
+3. Keep existing version 2 session stores; no format migration is required.
+   Update strict application schemas for the additional defaulted model-request,
+   turn-start and tool-result fields. Older readers may reject 0.5.0 records.
+   Paused older turns without a resolved step limit use the reopening agent's
+   configuration.
+4. Existing tool chains and step-limit behavior remain the defaults. Opt in to
+   metadata, chain boundaries and final summaries as needed. A reserved summary
+   returns `StopReason.MAX_STEPS` with `completed=False`; for `output=T` runs,
+   use `.text` because `.output` raises `OutputUnavailable`.
+
+The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the detailed changes and upgrade instructions.
 
 ## 0.4.0 (2026-10-29)
 
