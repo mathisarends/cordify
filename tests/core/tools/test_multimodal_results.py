@@ -3,7 +3,15 @@ import json
 import pytest
 
 from harnessed import Agent, Plugin, SystemPrompt
-from harnessed.core.messages import ImageDetail, ImagePart, Role, TextPart, ToolReply, ToolResult
+from harnessed.core.messages import (
+    ImageDetail,
+    ImagePart,
+    ImageReference,
+    Role,
+    TextPart,
+    ToolMessage,
+    ToolResult,
+)
 from harnessed.core.model import ModelInfo, ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
@@ -44,9 +52,14 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
         result = await session.run("Look at the screenshot.")
         tool_result = result.tool_calls[0][1]
         assert tool_result.exit_code == 0 and tool_result.rule_matches
-        assert [p for p in tool_result.content if isinstance(p, ImagePart)] == [IMAGE]
+        references = [p for p in tool_result.content if isinstance(p, ImageReference)]
+        assert len(references) == 1 and references[0].detail == IMAGE.detail
+        assert await session.assets.read(references[0].asset) == b"image"
         history = next(m for m in model.requests[1].messages if m.role == Role.TOOL)
-        assert history.content == tool_result.content
+        resolved = await session.log.resolve_request(
+            ModelRequest((ToolMessage(tool_result.content, tool_call_id=history.tool_call_id),))
+        )
+        assert history.content == resolved.messages[0].content
         assert history.status == tool_result.status and history.exit_code == 0
         records = json.loads(json.dumps([encode_event(e) for e in session.events]))
         replay = SessionLog("replay", seed=[decode_event(e) for e in records])
@@ -65,7 +78,7 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
             count_content(counter, tool_result.content)
             == counter.count_text(tool_result.text) + 1024
         )
-        without_images = ToolReply(history.text, tool_call_id=history.tool_call_id)
+        without_images = ToolMessage(history.text, tool_call_id=history.tool_call_id)
         assert counter.count_request(ModelRequest((history,))) == (
             counter.count_request(ModelRequest((without_images,))) + 1024
         )

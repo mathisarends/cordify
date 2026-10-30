@@ -203,7 +203,7 @@ async def test_runtime_system_plugin_is_rejected_before_setup_or_event_registrat
     calls = []
 
     class Feature(Plugin):
-        usage = SystemSection(text="System rules.")
+        usage = SystemSection(text="SystemMessage rules.")
 
         async def setup(self) -> None:
             calls.append(self)

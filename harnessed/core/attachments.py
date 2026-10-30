@@ -7,14 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from harnessed.core.assets import AssetStore
 from harnessed.core.messages import (
     ContentPart,
     ImageDetail,
     ImagePart,
+    ImageReference,
     Message,
     Role,
     TextPart,
-    User,
+    UserMessage,
     freeze,
     system,
     to_dict,
@@ -27,7 +29,7 @@ class File:
     path: str | Path
     encoding: str = "utf-8"
 
-    async def parts(self) -> tuple[ContentPart, ...]:
+    async def _parts(self) -> tuple[ContentPart, ...]:
         path = Path(self.path)
         text = await asyncio.to_thread(path.read_text, encoding=self.encoding)
         return (TextPart(f"File: {path.name}\n{text}"),)
@@ -38,7 +40,7 @@ class Image:
     path: str | Path
     detail: ImageDetail = ImageDetail.AUTO
 
-    async def parts(self) -> tuple[ContentPart, ...]:
+    async def _parts(self, *, assets: AssetStore | None = None) -> tuple[ContentPart, ...]:
         location = str(self.path)
         if location.startswith(("https://", "http://", "data:image/")):
             return (ImagePart(location, self.detail),)
@@ -47,6 +49,8 @@ class Image:
         if mime not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
             raise ValueError("Images must be PNG, JPEG, GIF or WebP")
         data = await asyncio.to_thread(path.read_bytes)
+        if assets is not None:
+            return (ImageReference(await assets.put(data, media_type=mime), self.detail),)
         encoded = base64.b64encode(data).decode("ascii")
         return (ImagePart(f"data:{mime};base64,{encoded}", self.detail),)
 
@@ -54,11 +58,12 @@ class Image:
 type Attachment = File | Image
 
 
-async def prepare_input(
+async def _prepare_input(
     content: str | Message,
     *,
     attachments: Iterable[Attachment] = (),
     context: Mapping[str, Any] | None = None,
+    assets: AssetStore | None = None,
 ) -> tuple[Message, tuple[Message, ...]]:
     message = user(content) if isinstance(content, str) else content
     attachments = tuple(attachments)
@@ -71,8 +76,12 @@ async def prepare_input(
             else list(message.content)
         )
         for attachment in attachments:
-            parts.extend(await attachment.parts())
-        message = User(tuple(parts), id=message.id)
+            parts.extend(
+                await attachment._parts(assets=assets)
+                if isinstance(attachment, Image)
+                else await attachment._parts()
+            )
+        message = UserMessage(tuple(parts), id=message.id)
     contributions = []
     for name, value in (context or {}).items():
         if not isinstance(name, str):

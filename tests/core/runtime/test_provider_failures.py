@@ -4,7 +4,7 @@ import pytest
 
 from harnessed import Agent, SessionStatus
 from harnessed.core.errors import RateLimited
-from harnessed.core.messages import User
+from harnessed.core.messages import UserMessage
 from harnessed.core.session.events import TurnOutcome
 from harnessed.testing import ScriptedModel
 
@@ -38,7 +38,9 @@ async def test_failed_model_call_ends_the_turn_and_leaves_the_session_usable():
         result = await session.run("continue")
 
     assert result.text == "recovered"
-    assert [message.content for message in session.messages if isinstance(message, User)] == [
+    assert [
+        message.content for message in session.messages if isinstance(message, UserMessage)
+    ] == [
         "first",
         "continue",
     ]

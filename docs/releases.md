@@ -28,6 +28,22 @@ library. Harnessed is distributed under the
 
 ## Unreleased
 
+Observations become immutable text/image snapshots delivered automatically through
+the existing `PreStep` and `session.observe()` APIs. They stay unchanged between
+model calls and are removed with their steps at compaction boundaries. An explicit
+`LatestObservationOnly()` policy can instead retain one snapshot per source.
+
+Message classes are named `SystemMessage`, `UserMessage`, `AssistantMessage` and
+`ToolMessage`. Replace `Observation(full=..., summary=...)` with
+`Observation(content=...)`, remove `max_summaries` from `LatestObservationOnly`,
+and use inclusion `refs`, `turn_id`, `step` and `message_id` instead of
+`ObservationForm`. See [automatic observations](guides/context.md#steering-observations-and-retrieval).
+
+The unreleased model and observation APIs share session format **3**.
+Back up older stores and start a new one; versions 1 and 2 are rejected without
+automatic migration. The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the upgrade steps and storage limits.
+
 ### Model configuration and stored state
 
 - Add immutable `GenerationSettings` on models and typed per-turn overrides.
@@ -40,9 +56,6 @@ library. Harnessed is distributed under the
 - Replace raw assistant provider dictionaries with `ProviderState`, including
   format/version and provider/model identity. Clear state with `None` when
   deliberately discarding signed replay data; incompatible bindings fail explicitly.
-- Advance the session record format to **3**. Versions 1 and 2 are rejected,
-  without automatic migration or legacy request-ID synthesis. Preserve old stores
-  separately and start new stores when adopting this API.
 
 ## 0.6.0 (2026-10-30)
 

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import subprocess
 import sys
@@ -291,7 +292,8 @@ async def test_structured_and_image_content_and_output_limits():
     result, _ = await run_tool(transport)
     value = result.tool_calls[0][1]
     assert json.loads(value.content[-1].text) == {"answer": 42}
-    assert value.content[1].url == "data:image/png;base64,aA=="
+    assert value.content[1].asset.sha256 == hashlib.sha256(b"h").hexdigest()
+    assert value.content[1].asset.media_type == "image/png"
     transport = MemoryTransport(
         result=CallToolResult(content=[TextContent(type="text", text="x" * 1000)])
     )

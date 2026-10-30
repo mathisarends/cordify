@@ -12,7 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from harnessed.core.budget import ContextBudget, truncate
-from harnessed.core.messages import Message, System, User, to_dict
+from harnessed.core.messages import Message, SystemMessage, UserMessage, to_dict
 from harnessed.core.model import (
     GenerationSettings,
     Model,
@@ -90,7 +90,7 @@ class ModelSummarizer:
             instructions += f"\nFocus: {self.focus}"
         request = resolve_request_settings(
             ModelRequest(
-                (System(instructions), User(transcript)),
+                (SystemMessage(instructions), UserMessage(transcript)),
                 settings=GenerationSettings(max_tokens=max_tokens),
             ),
             self.model.settings,

@@ -166,6 +166,9 @@ class EventLogCodec:
         if not isinstance(record, dict):
             raise SessionFormatError("Invalid session record envelope")
         freeze(record)
+        version = record.get("version")
+        if type(version) is not int or version != CURRENT_VERSION:
+            raise SessionFormatError("Unsupported session record version")
         previous = self._previous
         prefix = 0
         reuse_tools = False

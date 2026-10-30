@@ -1,3 +1,4 @@
+from harnessed.core.assets import AssetRef
 from harnessed.core.diagnostics import (
     ModelAttemptFinished,
     ModelAttemptOutcome,
@@ -11,15 +12,16 @@ from harnessed.core.diagnostics import (
     report_model_diagnostic,
 )
 from harnessed.core.messages import (
-    Assistant,
+    AssistantMessage,
     ContentPart,
     ImagePart,
+    ImageReference,
     Message,
     ProviderState,
-    System,
+    SystemMessage,
     TextPart,
-    ToolReply,
-    User,
+    ToolMessage,
+    UserMessage,
     system,
     user,
 )
@@ -44,10 +46,12 @@ from harnessed.core.model import (
 from .pydantic_ai import PydanticAIModel as PydanticAIModel
 
 __all__ = [
-    "Assistant",
+    "AssetRef",
+    "AssistantMessage",
     "ContentPart",
     "GenerationSettings",
     "ImagePart",
+    "ImageReference",
     "Message",
     "Model",
     "ModelAttemptFinished",
@@ -68,15 +72,15 @@ __all__ = [
     "RetryKind",
     "RetryReason",
     "StopReason",
-    "System",
+    "SystemMessage",
     "TextPart",
     "TokenLimitBehavior",
     "ToolArgumentsMode",
     "ToolCallDelta",
     "ToolCallStart",
     "ToolDefinition",
-    "ToolReply",
-    "User",
+    "ToolMessage",
+    "UserMessage",
     "model_diagnostics",
     "report_model_diagnostic",
     "system",

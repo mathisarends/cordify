@@ -19,7 +19,7 @@ from tempfile import TemporaryDirectory
 from time import perf_counter
 
 from harnessed import Agent
-from harnessed.core.messages import Assistant
+from harnessed.core.messages import AssistantMessage
 from harnessed.core.model import (
     GenerationSettings,
     ModelChunk,
@@ -35,7 +35,7 @@ from harnessed.plugins import MemorySessions
 
 class EchoStream:
     def __init__(self, text: str) -> None:
-        self.value = ModelResponse(Assistant(text))
+        self.value = ModelResponse(AssistantMessage(text))
         self.done = False
 
     def __aiter__(self) -> AsyncIterator[ModelChunk]:
@@ -67,7 +67,7 @@ class EchoModel:
         self.text = text
 
     async def request(self, request: ModelRequest) -> ModelResponse:
-        return ModelResponse(Assistant(self.text))
+        return ModelResponse(AssistantMessage(self.text))
 
     @asynccontextmanager
     async def stream(self, request: ModelRequest) -> AsyncGenerator[EchoStream]:

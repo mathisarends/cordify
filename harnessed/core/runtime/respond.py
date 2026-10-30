@@ -4,7 +4,7 @@ from dataclasses import replace
 from uuid import uuid4
 
 from harnessed.core.diagnostics import ModelAttemptOutcome, model_diagnostics
-from harnessed.core.messages import Assistant, ToolCall
+from harnessed.core.messages import AssistantMessage, ToolCall
 from harnessed.core.model import Model, ModelRequest, ModelStream
 from harnessed.core.runtime.diagnostics import RequestDiagnostics
 from harnessed.core.session.events import AssistantMessageEvent, ModelUsageRecordedEvent
@@ -24,7 +24,9 @@ class ModelResponder:
         self.ctx = ctx
         self.log = log
 
-    async def respond(self, request: ModelRequest, *, model: Model, request_id: str) -> Assistant:
+    async def respond(
+        self, request: ModelRequest, *, model: Model, request_id: str
+    ) -> AssistantMessage:
         with span(
             self.ctx, "model", session_id=self.log.id, model=model.info.name, request_id=request_id
         ) as current:
@@ -55,15 +57,15 @@ class ModelResponder:
         request_id: str,
         trace: Span,
         diagnostics: RequestDiagnostics,
-    ) -> Assistant:
+    ) -> AssistantMessage:
         message_id = uuid4().hex
         calls: list[ToolCall] = []
         text: list[str] = []
         reasoning: list[str] = []
         stream: ModelStream | None = None
 
-        def message() -> Assistant:
-            return Assistant(
+        def message() -> AssistantMessage:
+            return AssistantMessage(
                 "".join(text),
                 tuple(calls),
                 reasoning="".join(reasoning),
@@ -71,7 +73,8 @@ class ModelResponder:
             )
 
         try:
-            async with model.stream(request) as stream:
+            transport = await self.log.resolve_request(request)
+            async with model.stream(transport) as stream:
                 async for chunk in stream:
                     if chunk.diagnostic is not None:
                         await diagnostics.receive(chunk.diagnostic)

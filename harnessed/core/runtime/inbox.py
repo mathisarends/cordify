@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from harnessed.core.attachments import Attachment, prepare_input
+from harnessed.core.attachments import Attachment, _prepare_input
 from harnessed.core.messages import Message
 from harnessed.core.model import GenerationSettings, OutputSchema
 from harnessed.core.runtime.control import SessionControl
@@ -78,8 +78,13 @@ class InboxWriter:
     ) -> InboxItem:
         async with self._sending():
             self.control.check_open()
-            message, contributions = await prepare_input(
-                content, attachments=attachments, context=context
+            message, contributions = await _prepare_input(
+                content, attachments=attachments, context=context, assets=self.log.assets
+            )
+            self.control.check_open()
+            message = await self.log._images.retain_message(message)
+            contributions = tuple(
+                [await self.log._images.retain_message(item) for item in contributions]
             )
             self.control.check_open()
             event = InboxAddedEvent.create(

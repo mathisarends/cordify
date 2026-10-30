@@ -2,21 +2,23 @@
 
 ## Unreleased
 
-### Model configuration and stored state
+This update changes the model, message and observation APIs. The unreleased
+session format is version **3**; the latest published release, 0.6.0, uses
+version **2**. See the upgrade steps below before adopting the new APIs.
+
+### Model configuration and replay state
 
 - Add immutable `GenerationSettings` on models and typed per-turn overrides.
   Move `max_tokens` out of `AgentLoop` and `ModelRequest` into settings; expose
   JSON provider-specific options through `provider_options`.
 - Keep model selection on the configured `Model`. Remove `ModelRequest.model`
-  and record the selected `ModelInfo` on `ModelRequestedEvent.model`.
+  and record the selected `ModelInfo` on `ModelRequestedEvent.model`. Requests,
+  structured output and compaction use the captured model binding throughout.
 - Require `PydanticAIModel(native_model)` when passing a native model to `Agent`.
   Custom model implementations now expose `settings: GenerationSettings`.
 - Replace raw assistant provider dictionaries with `ProviderState`, including
   format/version and provider/model identity. Clear state with `None` when
   deliberately discarding signed replay data; incompatible bindings fail explicitly.
-- Advance the session record format to **3**. Versions 1 and 2 are rejected,
-  without automatic migration or legacy request-ID synthesis. Preserve old stores
-  separately and start new stores when adopting this API.
 
 ### Background shell commands
 
@@ -24,6 +26,84 @@
   stdin/EOF, process-tree termination and session-inbox completion notifications.
   Existing `Shell`/`ShellTools` tools remain unchanged. See the
   [developer guide](docs/guides/background-shell.md) and offline example 35.
+
+### Message names and multimodal observations
+
+- Rename `System`, `User`, `Assistant` and `ToolReply` to `SystemMessage`,
+  `UserMessage`, `AssistantMessage` and `ToolMessage` in `harnessed.models` and
+  throughout the SDK. Remove the old class names; `user()` and `system()` remain
+  convenience constructors.
+- Replace `Observation.full` and `.summary` with one immutable `content` value:
+  text or a tuple of text and image parts. Automatic `PreStep` capture still
+  uses `session.observe()`. Recorded snapshots keep their complete content,
+  identity and position until compaction or an explicit retention policy.
+- Compact observations and their images together in the same request. Existing
+  `Compaction(keep_steps=5, ...)` retains five completed steps in the active turn
+  plus the current step. Between compactions, previous snapshots stay unchanged.
+- Make `LatestObservationOnly()` an explicit one-snapshot-per-source policy and
+  remove `max_summaries`. Omitting it retains snapshots until compaction.
+- Remove `ObservationForm`. Each `IncludedObservation` now carries `source`,
+  `refs`, `turn_id`, `step` and `message_id`. A receipt covers the complete final
+  text/image message; editing text or removing an image removes its receipt.
+
+### Session storage
+
+- Include the model, observation and receipt changes in one canonical format,
+  version **3**. Reject versions 1 and 2 without rewriting their logs; remove
+  legacy request-ID synthesis. No automatic format migration is provided.
+- Store inline images from observations, user inputs and tool results as typed
+  `ImageReference(AssetRef(...))` values. JSONL writes the binary data once per
+  session under `<id>.assets/<sha256>` before committing a referencing event.
+  Historical requests retain references rather than Base64 payloads.
+- Resolve only images selected for the model request, after compaction and budget
+  checks. File I/O runs off the event loop; a per-session LRU reuses encoded images
+  with a 16 MiB payload / 256-entry limit. Oversized images bypass the cache.
+- Read local image attachments directly into the asset store. Applications can
+  use `session.assets.put(bytes, media_type=...)` and `ImageReference` to avoid a
+  Base64 round trip. External HTTP image URLs remain external.
+- Reopen image histories without loading image files. Verify size and SHA-256 on
+  reads, copy referenced images when opening forks, and remove the asset namespace
+  when deleting a session. Missing fork images fail before writing the fork log.
+- Keep cache management, image normalization, fork-copy helpers and concrete asset
+  backends internal. Expose read-only `session.assets` / `log.assets` ownership and
+  `log.resolve_request(request)` for manual replay. `AssetRef.verify(bytes)` remains
+  available to custom backends; `File`/`Image` conversion helpers are private.
+- Extend custom `SessionStore` implementations with `assets(session_id)` returning
+  an `AssetStore`. Low-level persisted `SessionLog` construction requires an
+  explicit asset store too. Memory sessions retain deduplicated binary assets in memory;
+  JSONL sessions retain them on disk. Compaction does not delete audit assets.
+
+### Upgrade from 0.6.0
+
+1. Import `GenerationSettings` from `harnessed.models` and configure generation
+   defaults on the model. Pass typed per-turn overrides to `session.run()` or
+   `submit()`. Move `max_tokens` out of `AgentLoop` and `ModelRequest`, and put
+   provider-specific JSON options in `provider_options`.
+2. Give custom models a `settings: GenerationSettings` attribute. Wrap native
+   provider models in `PydanticAIModel` explicitly. Read selected model metadata
+   from `ModelRequestedEvent.model` instead of `ModelRequest.model`.
+3. Replace raw assistant `provider_state` dictionaries with `ProviderState`.
+   Use `None`, rather than `{}`, when deliberately discarding replay state.
+4. Import `SystemMessage`, `UserMessage`, `AssistantMessage` and `ToolMessage`
+   from `harnessed.models` in place of their old short class names.
+5. Pass `Observation(source, content, refs=())` instead of full and summary text.
+   Put screenshots in the same content tuple as their text. Omit
+   `LatestObservationOnly` to retain snapshots until compaction, or instantiate
+   it without arguments to keep only the latest per source. Review budgets
+   because old observations are no longer shortened after every step.
+6. Use final inclusion refs and explicit turn/step/message identities instead
+   of `ObservationForm` or message-ID parsing. Browser integrations can replace
+   request-time image insertion with multimodal observations. The default
+   compaction summarizer reads text and captions, not image pixels; record
+   important visual findings as text if they must survive summarization.
+7. Implement `SessionStore.assets(session_id)` in custom storage plugins. Consumers
+   of recorded messages and tool results must accept `ImageReference` alongside
+   `ImagePart`. Use `session.assets.read(ref.asset)` for bytes, or
+   `await session.log.resolve_request(request)` for a provider-ready request.
+   Back up each JSONL log together with its `.assets` and `.files` directories.
+8. Back up version-2 sessions and start a new version-3 store. Existing published
+   formats are not migrated. See the [context guide](docs/guides/context.md),
+   [model guide](docs/guides/models.md) and [session guide](docs/guides/sessions.md).
 
 ## 0.6.0 (2026-10-30)
 

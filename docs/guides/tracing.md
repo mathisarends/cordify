@@ -156,6 +156,6 @@ instrumentors have their own capture settings.
 Custom tracer implementations still use the provider-independent
 `harnessed.core.tracing.Tracer` and `Span` protocols. `span(name, **attributes)`
 opens a synchronous context manager across asynchronous work. The runtime sets
-typed `ModelRequest`, `ModelUsage`, `Assistant`, `ToolCall` and `ToolResult` values
+typed `ModelRequest`, `ModelUsage`, `AssistantMessage`, `ToolCall` and `ToolResult` values
 on the span; exporters map these values at the integration boundary. The default
 tracer ignores them without serializing content.

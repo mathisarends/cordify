@@ -9,7 +9,7 @@ from harnessed import Plugin, PolicyDecision, ToolCall, tool
 from harnessed.core.budget import ContextBudget
 from harnessed.core.errors import ContextBudgetExceeded, ContextLengthExceeded
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest
-from harnessed.core.messages import Assistant, Role, System, user
+from harnessed.core.messages import AssistantMessage, Role, SystemMessage, user
 from harnessed.core.model import Model, ModelChunk, ModelInfo
 from harnessed.core.plugin import Bundle, Service
 from harnessed.core.session.codec import decode_event, encode_event
@@ -162,7 +162,7 @@ async def test_compaction_preserves_request_hook_context_and_combines_triggers_o
     @extensions.on(PrepareRequest)
     async def request_context(event, next_):
         request = await next_()
-        return replace(request, messages=(*request.messages, System("HOOK CONTEXT")))
+        return replace(request, messages=(*request.messages, SystemMessage("HOOK CONTEXT")))
 
     async with harness.session("composed") as agent:
         await agent.run("x" * 2000)
@@ -210,7 +210,7 @@ async def test_preserved_turns_can_be_reconstructed_from_original_log_events():
         await session.append(TurnStartedEvent(turn))
         await session.append(UserMessageEvent(user(turn)))
         await session.append(
-            AssistantMessageEvent(Assistant(f"answer {turn}"), request_id="request")
+            AssistantMessageEvent(AssistantMessage(f"answer {turn}"), request_id="request")
         )
         await session.append(TurnEndedEvent(turn))
     await session.append(CompactionAppliedEvent(5, "first summary"))
@@ -241,7 +241,7 @@ async def test_budget_guard_blocks_oversized_requests_after_configure_hooks():
     @extensions.on(ConfigureRequest)
     async def inflate(event, next_):
         request = await next_()
-        return replace(request, messages=(*request.messages, System("x" * 1000)))
+        return replace(request, messages=(*request.messages, SystemMessage("x" * 1000)))
 
     async with harness.session("guard") as agent:
         with pytest.raises(ContextBudgetExceeded) as error:

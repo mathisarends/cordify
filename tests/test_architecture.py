@@ -172,6 +172,16 @@ def test_application_facade_stays_small_and_has_no_transitional_names():
     } & set(harnessed.__all__)
 
 
+def test_message_facade_uses_explicit_canonical_names_without_aliases():
+    import harnessed.core.messages as messages
+    import harnessed.models as models
+
+    for name in ("SystemMessage", "UserMessage", "AssistantMessage", "ToolMessage"):
+        assert getattr(models, name) is getattr(messages, name)
+    for name in ("System", "User", "Assistant", "ToolReply"):
+        assert not hasattr(messages, name) and not hasattr(models, name)
+
+
 def test_package_root_has_only_public_entrypoints_and_no_transition_modules():
     assert {path.name for path in PACKAGE.glob("*.py")} == {
         "__init__.py",

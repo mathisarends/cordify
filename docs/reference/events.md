@@ -110,7 +110,7 @@ raises or disconnects; neither event means that the session has no queued work.
 | `ContextMessageEvent` | `context.message` | Context `message` with its lifetime and optional `turn_id` |
 | `ContextValueChangedEvent` | `context.changed` | Named context fact changed or removed |
 | `ObservationRecordedEvent` | `observation.recorded` | Observation received at `(turn_id, step)` |
-| `ObservationPolicyAppliedEvent` | `observation.policy.applied` | Observation-summary retention policy changed |
+| `ObservationPolicyAppliedEvent` | `observation.policy.applied` | Explicit observation-count retention policy changed |
 
 A model request closes with exactly one assistant message or request failure.
 Usage and included-observation records do not close it. Provider-internal
