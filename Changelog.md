@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (unreleased)
+
+This minor release adds typed model generation settings, versioned provider replay
+state and opt-in background shell commands. It includes breaking model API changes
+from 0.6.0 and advances the session record format to **3**.
 
 ### Model configuration and stored state
 
@@ -24,6 +28,57 @@
   stdin/EOF, process-tree termination and session-inbox completion notifications.
   Existing `Shell`/`ShellTools` tools remain unchanged. See the
   [developer guide](docs/guides/background-shell.md) and offline example 35.
+
+### Session cleanup
+
+- Share one cleanup operation across concurrent `session.aclose()` calls. Every
+  successful close waits for driver shutdown and resource cleanup; cancelling one
+  caller leaves cleanup running for the remaining callers. Release live resources
+  once through `SessionClosing`, including background shell processes.
+
+### Upgrade from 0.6.0
+
+1. Import `GenerationSettings` from `harnessed.models`. Move `AgentLoop(max_tokens=...)`
+   and `ModelInfo(default_settings=...)` into the model's `settings`. Replace raw
+   `settings` dictionaries on adapters and run/submit/stream calls with
+   `GenerationSettings(max_tokens=..., temperature=..., provider_options={...})`.
+   `None` inherits a model default; explicit zero temperature is preserved.
+2. Construct `ModelRequest(messages, ..., settings=GenerationSettings(...))` without
+   `model` or `max_tokens`. Read the selected identity from
+   `ModelRequestedEvent.model`, not `event.request.model`. Request hooks configure
+   requests; change the registered `Model` service to select a different model for
+   subsequent steps. A prepared step keeps its captured model binding throughout
+   structured output, compaction and execution.
+3. Add an immutable `settings: GenerationSettings` property to custom `Model`
+   implementations. Wrap native PydanticAI model objects in `PydanticAIModel(...)`
+   before passing them to `Agent`; string model names remain supported. Configure
+   the summarization model directly instead of using `ModelSummarizer(model_name=...)`.
+4. Replace raw `Assistant(provider_state=...)` dictionaries with `ProviderState` from
+   `harnessed.models`, or use `None` to deliberately discard replay state. The
+   PydanticAI adapter creates state automatically and rejects incompatible
+   format/version, provider/model identities or edits to signed response content.
+5. Back up existing session stores and start new stores for this release. Record
+   versions **1** and **2** are rejected; no automatic migration is provided.
+   Update event consumers for `ModelRequestedEvent.model` and typed settings.
+6. Opt in to `BackgroundShell` alongside `Shell` or an explicitly registered
+   backend. Keep the session context open while jobs are needed. Running handles
+   and captured output are not restored from persisted sessions or forks.
+
+For example, configure defaults on the model and override them per turn:
+
+```python
+from harnessed import Agent
+from harnessed.models import GenerationSettings, PydanticAIModel
+
+model = PydanticAIModel(
+    "openai:gpt-4.1",
+    settings=GenerationSettings(max_tokens=4096, temperature=0.2),
+)
+agent = Agent(model=model)
+
+# Inside an async function:
+# result = await agent.run("Give a short answer.", settings=GenerationSettings(max_tokens=512))
+```
 
 ## 0.6.0 (2026-10-30)
 
