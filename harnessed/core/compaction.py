@@ -154,19 +154,19 @@ class CompactionManager:
         self._retry_after_step: tuple[str, int] | None = None
         self._retry_through = 0
 
-    async def state(self, request: ModelRequest) -> ContextState:
+    async def state(self, request: ModelRequest, *, model: Model) -> ContextState:
         budget = self.ctx[ContextBudget] if ContextBudget in self.ctx else ContextBudget()
         return ContextState(
             await count_request(self.ctx[TokenCounter], request),
             budget.output_reserve(request),
-            budget.window_limit(self.context_window or self.ctx[Model].info.context_window),
+            budget.window_limit(self.context_window or model.info.context_window),
             self.session_log.uncompacted_turn_count,
         )
 
-    async def prepare(self, request: ModelRequest) -> ModelRequest:
+    async def prepare(self, request: ModelRequest, *, model: Model) -> ModelRequest:
         if CompactionPolicy not in self.ctx:
             return request
-        state = await self.state(request)
+        state = await self.state(request, model=model)
         policy = self.ctx[CompactionPolicy]
         if not set(policy.settings.preserve_turns) <= self.session_log._known_turns:
             raise ValueError("preserve_turns must refer to existing turns in the session log")
@@ -179,11 +179,11 @@ class CompactionManager:
         over_budget = state.ratio is not None and state.ratio > 1
         if not due and not over_budget:
             return request
-        _, compacted = await self.compact(request, force=over_budget)
+        _, compacted = await self.compact(request, model=model, force=over_budget)
         return compacted
 
     async def compact(
-        self, request: ModelRequest, *, force: bool = True
+        self, request: ModelRequest, *, model: Model, force: bool = True
     ) -> tuple[CompactionAppliedEvent | None, ModelRequest]:
         async with self._lock:
             policy = self.ctx[CompactionPolicy] if CompactionPolicy in self.ctx else None
@@ -211,7 +211,9 @@ class CompactionManager:
             outcome = CompactionOutcome.FAILED
             try:
                 await self.session_log.publish(CompactionStartedEvent(compaction_id))
-                applied, compacted = await self._apply(request, plan, settings, compaction_id)
+                applied, compacted = await self._apply(
+                    request, plan, settings, compaction_id, model=model
+                )
                 outcome = (
                     CompactionOutcome.APPLIED
                     if applied is not None
@@ -234,13 +236,15 @@ class CompactionManager:
         plan: CompactionPlan,
         settings: CompactionSettings,
         compaction_id: str,
+        *,
+        model: Model,
     ) -> tuple[CompactionAppliedEvent | None, ModelRequest]:
         policy = self.ctx[CompactionPolicy] if CompactionPolicy in self.ctx else None
         current = self.session_log.open_turn
         counter = self.ctx[TokenCounter]
         summarizer = policy.summarizer if policy is not None else None
         if summarizer is None:
-            summarizer = ModelSummarizer(self.ctx[Model], focus=settings.focus)
+            summarizer = ModelSummarizer(model, focus=settings.focus)
         # The input request stays a snapshot even if new inbox/context records arrive.
         events = self.session_log.events
         previous = self.session_log.last(CompactionAppliedEvent)

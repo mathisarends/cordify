@@ -168,7 +168,7 @@ class StepRunner:
                 request, self.log.current_turn().start.output_schema, model=model
             )
         request = resolve_request_settings(request, model.settings)
-        request = await self.compaction.prepare(request)
+        request = await self.compaction.prepare(request, model=model)
         if final:
             request = replace(request, tools=(), output_schema=None)
         if ContextBudget in self.ctx:
@@ -194,7 +194,7 @@ class StepRunner:
                 await self.retries.finished(record, ModelAttemptOutcome.EXHAUSTED)
                 raise
             try:
-                applied, _ = await self.compaction.compact(request)
+                applied, _ = await self.compaction.compact(request, model=model)
             except BaseException as error:
                 await self.retries.finished(
                     record,

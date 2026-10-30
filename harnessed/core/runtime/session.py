@@ -309,12 +309,13 @@ class Session:
     async def compact(self) -> CompactionAppliedEvent | None:
         """Summarize completed history while idle or paused; return its log record."""
         async with self.control.maintenance():
+            model = self.ctx[Model]
             request = ModelRequest(
                 (*self.log.messages, *self.context.owned_messages),
                 self.ctx[ToolRegistry].visible_definitions(self.ctx),
             )
-            request = resolve_request_settings(request, self.ctx[Model].settings)
-            applied, _ = await self._compaction.compact(request)
+            request = resolve_request_settings(request, model.settings)
+            applied, _ = await self._compaction.compact(request, model=model)
             return applied
 
     @overload
