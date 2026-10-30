@@ -116,7 +116,7 @@ class Worker(Plugin):
 ```
 
 A keyword-only `ToolContext` is supplied automatically; `Inject[ToolContext]`
-is also supported. Its signal, progress, call and append-only session log belong
+is also supported. Its signal, progress, call and live conversation state belong
 to this call. It does not expose the model driver. Normal service arguments use
 `Inject[T]`; an unmarked application parameter always belongs to the model.
 

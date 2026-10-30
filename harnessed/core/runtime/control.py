@@ -146,7 +146,7 @@ class SessionControl:
 
     @asynccontextmanager
     async def maintenance(self) -> AsyncGenerator[None]:
-        """Reserve an idle/paused boundary while permitting durable queued input."""
+        """Reserve an idle/paused boundary while permitting queued input."""
         self._check_external()
         task = asyncio.current_task()
         if self._maintenance_owner is task:
@@ -265,8 +265,8 @@ class SessionControl:
         self._check_external()
         async with self._request():
             self.closing = True
-        # Startup rollback preserves queued work; a durable pause also survives close.
-        if self.ready and not self.log.control.paused:
+        # Closing owns local cleanup; there is no archived paused execution.
+        if self.ready:
             await self._terminate(immediate=True, keep_inbox=False, during_close=True)
         if self.task is not None and not self.task.done():
             self.task.cancel()
@@ -275,6 +275,5 @@ class SessionControl:
             except asyncio.CancelledError:
                 if not self.task.cancelled():
                     raise
-        await self.log.flush()
         self.status = SessionStatus.CLOSED
         self.notify()

@@ -15,7 +15,7 @@ from harnessed.core.stream import (
 
 
 class RequestRetries:
-    """Recover runtime retry correlation from durable request and step records."""
+    """Track runtime retry correlation from the current turn's request and step records."""
 
     def __init__(self, log: SessionLog, options: AgentOptions) -> None:
         self.log = log

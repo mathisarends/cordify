@@ -56,6 +56,7 @@ from harnessed.core.session.events import (
     TurnStartedEvent,
 )
 from harnessed.core.session.session import SessionLog
+from harnessed.core.session.state import SessionState
 from harnessed.core.session.turns import Turn
 from harnessed.core.stream import (
     EventStream,
@@ -75,7 +76,7 @@ _driving: ContextVar[Session | None] = ContextVar("harnessed_driving", default=N
 
 
 class Session:
-    """A live conversation with durable inputs, turn-scoped results and controls."""
+    """A live conversation with in-memory inputs, turn-scoped results and controls."""
 
     def __init__(self, ctx: Context, session: SessionLog, options: AgentOptions) -> None:
         self.ctx = ctx
@@ -84,6 +85,7 @@ class Session:
         self._close_task: asyncio.Task[None] | None = None
         self.id = session.id
         self.context = DynamicContext(session)
+        self._boundary_state = session.snapshot()
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
         self.control = SessionControl(session, self._drive, lambda: _driving.get() is self)
         self._live_approvals = LiveApprovals()
@@ -141,11 +143,16 @@ class Session:
     def last[E: SessionEvent](self, kind: type[E]) -> E | None:
         return self.log.last(kind)
 
-    def fork(
-        self, session_id: str, *, at: int | None = None, inherit_approvals: bool = False
-    ) -> SessionLog:
-        """Create a branch from a closed log prefix; pass it to Agent.session()."""
-        return self.log.fork(session_id, at=at, inherit_approvals=inherit_approvals)
+    def snapshot(self) -> SessionState:
+        """Export an idle conversation without retaining its runtime or doing I/O."""
+        self.control.check_open()
+        if (
+            self.log.open_turn is not None
+            or self.log.has_wakeup
+            or self.status is SessionStatus.PAUSED
+        ):
+            raise SessionStateError("Export requires an idle session with no queued input")
+        return self.log.snapshot()
 
     async def emit(self, event: SessionEvent | TransientEvent) -> None:
         self.control.check_open()
@@ -228,19 +235,21 @@ class Session:
 
     def _session_event(self, event: SessionAppended) -> None:
         if event.log is self.log:
-            self._submission_event(event.event, event.seq)
+            if isinstance(event.event, TurnEndedEvent):
+                self._boundary_state = self.log.snapshot()
+            self._submission_event(event.event)
             if isinstance(event.event, AgentControlChangedEvent):
                 self.control.synchronize()
             else:
                 self.control.notify()
             self._publish(event.event)
 
-    def _submission_event(self, event: SessionEvent, seq: int) -> None:
+    def _submission_event(self, event: SessionEvent) -> None:
         submitted = None
         if isinstance(event, TurnStartedEvent):
             submitted = self._queued_submissions.pop(event.input_id, None)
             if submitted is not None:
-                submitted.start, submitted.turn_id = seq, event.turn_id
+                submitted.turn_id = event.turn_id
                 self._submitted_turns[event.turn_id] = submitted
             return
         if isinstance(event, InboxRemovedEvent):
@@ -248,16 +257,24 @@ class Session:
             records = (submitted.input, event) if submitted is not None else ()
         elif isinstance(event, TurnEndedEvent):
             submitted = self._submitted_turns.get(event.turn_id)
-            records = (
-                (submitted.input, *self.log.events[submitted.start : seq + 1])
-                if submitted is not None and submitted.start is not None
-                else ()
-            )
+            records = (submitted.input, *self.log.turns[-1].events) if submitted is not None else ()
         else:
             return
         if submitted is not None:
             try:
-                value = self.control.error or self._results.build(records, schema=submitted.schema)
+                value = (
+                    SessionClosed("This session closed before the turn finished")
+                    if self.control.closing
+                    else self.control.error
+                ) or self._results.build(
+                    records,
+                    schema=submitted.schema,
+                    state=(
+                        self._boundary_state
+                        if isinstance(event, TurnEndedEvent) or self.log.open_turn is not None
+                        else self.log.snapshot()
+                    ),
+                )
             except Exception as error:
                 value = error
             self._finish_submission(submitted, value)
@@ -278,7 +295,8 @@ class Session:
             failure = self.control.error
             if failure is None and (self.control.closing or self.status is SessionStatus.CLOSED):
                 failure = SessionClosed(
-                    "This handle closed before the turn finished; reopen the session to continue"
+                    "This handle closed before the turn finished; "
+                    "use an earlier conversation snapshot to continue"
                 )
             if failure is not None:
                 for submitted in tuple(self._submissions.values()):
@@ -329,6 +347,8 @@ class Session:
             )
             request = resolve_request_settings(request, model.settings)
             applied, _ = await self._compaction.compact(request, model=model)
+            if self.log.open_turn is None:
+                self._boundary_state = self.log.snapshot()
             return applied
 
     @overload
@@ -392,26 +412,41 @@ class Session:
         token_budget: int | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
     ) -> RunHandle[Any]:
-        """Durably enqueue a turn and return its session-owned completion handle."""
+        """Admit a turn to the in-memory inbox and return its session-owned completion handle."""
         self.control.check_open()
         limits = TurnLimits(max_steps, token_budget)
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
+        return await self._enqueue(
+            content,
+            attachments=attachments,
+            context=context,
+            settings=settings,
+            limits=limits,
+            schema=schema,
+        )
+
+    async def _enqueue(
+        self,
+        content: str | Message,
+        *,
+        attachments: Iterable[Attachment] = (),
+        context: Mapping[str, Any] | None = None,
+        settings: GenerationSettings | None = None,
+        limits: TurnLimits,
+        schema: OutputSchema | None,
+        on_prepared: Callable[[InboxAddedEvent], None] | None = None,
+    ) -> RunHandle[Any]:
         self._output_values.hold(schema)
         submitted = None
-        offset = len(self.log.events)
 
         def prepared(item: InboxAddedEvent) -> None:
             nonlocal submitted
             submitted = SubmittedRun(item, schema)
             self._submissions[submitted.handle] = submitted
             self._queued_submissions[item.message.id] = submitted
-            # An input observer can wake the driver before append() returns.
-            start = next(
-                seq for seq in range(offset, len(self.log.events)) if self.log.events[seq] is item
-            )
-            for seq in range(start, len(self.log.events)):
-                self._submission_event(self.log.events[seq], seq)
+            if on_prepared is not None:
+                on_prepared(item)
 
         try:
             await self._inbox_writer.send(
@@ -473,24 +508,28 @@ class Session:
         limits = TurnLimits(max_steps, token_budget)
         compiled = self.ctx[OutputTypes].register(output) if output is not None else None
         schema = compiled.definition if compiled is not None else None
-        with self._output_values.expect(schema):
-            async with StreamApprovals(self, self._live_approvals) as approvals:
-                raw = self._stream_turn(
+        async with StreamApprovals(self, self._live_approvals) as approvals:
+            queue: EventBuffer[AgentEvent | None] = EventBuffer(buffer_size, merge=coalesce_deltas)
+            self._subscribers.add(queue)
+            try:
+                handle = await self._enqueue(
                     content,
                     attachments=attachments,
                     context=context,
                     settings=settings,
-                    output_schema=schema,
                     limits=limits,
-                    prepared=approvals.prepared,
-                    buffer_size=buffer_size,
+                    schema=schema,
+                    on_prepared=approvals.prepared,
                 )
-                projected = project_stream_events(raw, results=self._results, schema=schema)
+                raw = self._stream_turn(queue, handle.id)
+                projected = project_stream_events(raw, completion=handle.result)
                 try:
                     async for event in projected:
                         yield event
                 finally:
                     await projected.aclose()
+            finally:
+                self._subscribers.discard(queue)
 
     async def stop(self, *, keep_inbox: bool = False) -> None:
         """Finish the current step, end its turn and return to idle."""
@@ -548,30 +587,10 @@ class Session:
 
     async def _stream_turn(
         self,
-        content: str | Message,
-        *,
-        attachments: Iterable[Attachment] = (),
-        context: Mapping[str, Any] | None = None,
-        settings: GenerationSettings | None = None,
-        output_schema: OutputSchema | None = None,
-        limits: TurnLimits | None = None,
-        prepared: Callable[[InboxAddedEvent], None] | None = None,
-        buffer_size: int = 256,
+        queue: EventBuffer[AgentEvent | None],
+        input_id: str,
     ) -> AsyncGenerator[AgentEvent, None]:
-        queue: EventBuffer[AgentEvent | None] = EventBuffer(buffer_size, merge=coalesce_deltas)
-        self._subscribers.add(queue)
         try:
-            item = await self._inbox_writer.send(
-                content,
-                InboxMode.FOLLOWUP,
-                attachments=attachments,
-                context=context,
-                settings=settings,
-                output_schema=output_schema,
-                limits=limits,
-                prepared=prepared,
-            )
-            input_id = item.id
             turn_id = None
             while True:
                 event = await queue.get()
@@ -581,7 +600,7 @@ class Session:
                     if self.control.closing or self.status is SessionStatus.CLOSED:
                         raise SessionClosed(
                             "This handle closed before the turn finished; "
-                            "reopen the session to continue"
+                            "use an earlier conversation snapshot to continue"
                         )
                     if any(item.id == input_id for item in self.inbox.pending):
                         self._wake()

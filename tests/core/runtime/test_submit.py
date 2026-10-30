@@ -3,12 +3,12 @@ import asyncio
 import pytest
 from pydantic import BaseModel, field_validator
 
-from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
+from harnessed import Agent, Plugin, SessionStatus, StopReason, tool
 from harnessed.core.messages import UserMessage
 from harnessed.events import InboxAddedEvent
 from harnessed.hooks import PreStep, StepDecision
-from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
+from tests._audit import Audit
 
 
 async def test_submit_acknowledges_queue_order_and_results_can_be_awaited_repeatedly():
@@ -108,21 +108,6 @@ async def test_stop_and_abort_complete_handles_and_discard_queued_runs(immediate
         assert session.status is SessionStatus.IDLE
 
 
-async def test_closed_live_handles_fail_while_durable_input_can_resume(tmp_path):
-    agent = Agent(model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path)])
-    async with agent.session("paused") as session:
-        await session.pause()
-        handle = await session.submit("saved input")
-    with pytest.raises(SessionClosed):
-        await handle.result()
-    fresh = Agent(model=ScriptedModel(["restored"]), plugins=[JsonlSessions(tmp_path)])
-    async with fresh.session("paused") as session:
-        assert session.status is SessionStatus.PAUSED
-        await session.resume()
-        await session.wait_until_idle()
-        assert session.messages[-1].text == "restored"
-
-
 async def test_driver_errors_are_delivered_through_the_run_handle():
     async with Agent(model=ScriptedModel([])).session() as session:
         handle = await session.submit("no response")
@@ -133,6 +118,7 @@ async def test_driver_errors_are_delivered_through_the_run_handle():
 
 async def test_rejecting_queued_runs_completes_every_handle_without_another_wakeup():
     async with Agent(model=ScriptedModel([])).session() as session:
+        session_audit = Audit(session)
         session.add_hook(PreStep, lambda event, next_: StepDecision.reject())
         await session.pause()
         handles = [await session.submit(str(index)) for index in range(3)]
@@ -140,7 +126,7 @@ async def test_rejecting_queued_runs_completes_every_handle_without_another_wake
         async with asyncio.timeout(2):
             results = [await handle.result() for handle in handles]
         assert all(result.stop_reason is StopReason.REJECTED for result in results)
-        assert not session.inbox.pending and len(session.turns) == 3
+        assert not session.inbox.pending and len(session_audit.turns) == 3
 
 
 async def test_delayed_structured_results_retain_the_original_validated_values():

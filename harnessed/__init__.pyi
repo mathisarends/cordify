@@ -29,6 +29,7 @@ from harnessed.core.runtime.handles import RunHandle as RunHandle
 from harnessed.core.runtime.result import RunResult as RunResult
 from harnessed.core.runtime.session import Session as Session
 from harnessed.core.session.session import SessionLog as SessionLog
+from harnessed.core.session.state import SessionState as SessionState
 from harnessed.core.tools.context import ToolContext as ToolContext
 from harnessed.core.tools.decorator import tool as tool
 from harnessed.core.tools.info import ToolChain as ToolChain
@@ -71,6 +72,7 @@ __all__ = [
     "Session",
     "SessionClosed",
     "SessionLog",
+    "SessionState",
     "SessionStatus",
     "StopReason",
     "StreamOverflow",

@@ -37,9 +37,27 @@ class AssetStore(Protocol):
     async def read(self, ref: AssetRef) -> bytes: ...
 
 
+@dataclass(frozen=True)
+class AssetValue:
+    ref: AssetRef
+    data: bytes
+
+    def __post_init__(self) -> None:
+        self.ref.verify(self.data)
+
+
 class _MemoryAssets:
-    def __init__(self) -> None:
-        self._values: dict[str, bytes] = {}
+    def __init__(self, values: tuple[AssetValue, ...] = ()) -> None:
+        self._values: dict[str, AssetValue] = {value.ref.sha256: value for value in values}
+
+    def snapshot(self, refs: set[AssetRef]) -> tuple[AssetValue, ...]:
+        return tuple(
+            AssetValue(ref, self._values[ref.sha256].data)
+            for ref in sorted(refs, key=lambda ref: (ref.sha256, ref.media_type))
+        )
+
+    def retain(self, refs: set[AssetRef]) -> None:
+        self._values = {ref.sha256: self._values[ref.sha256] for ref in refs}
 
     def _clear(self) -> None:
         self._values.clear()
@@ -48,12 +66,12 @@ class _MemoryAssets:
         if not isinstance(data, bytes):
             raise TypeError("Asset content must be bytes")
         ref = AssetRef(hashlib.sha256(data).hexdigest(), media_type, len(data))
-        self._values.setdefault(ref.sha256, data)
+        self._values.setdefault(ref.sha256, AssetValue(ref, data))
         return ref
 
     async def read(self, ref: AssetRef) -> bytes:
         try:
-            data = self._values[ref.sha256]
+            data = self._values[ref.sha256].data
         except KeyError:
             raise FileNotFoundError(ref.sha256) from None
         ref.verify(data)

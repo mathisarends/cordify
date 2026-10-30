@@ -21,7 +21,7 @@ public APIs or persisted session formats.
 | Provide instructions, facts or memories | [Context](guides/context.md) |
 | Load task instructions and resources on demand | [Skills](guides/skills.md) |
 | Bound or spill large tool results | [Output](guides/output.md) |
-| Pause, stop, resume or fork work | [Sessions](guides/sessions.md) |
+| Continue conversations and control live work | [Sessions](guides/sessions.md) |
 | Approve side effects without a UI | [Approvals](guides/approvals.md) |
 | Test without network calls | [Testing](guides/testing.md) |
 | Send traces to Phoenix or Langfuse | [Tracing](guides/tracing.md) |

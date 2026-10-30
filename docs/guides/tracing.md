@@ -157,7 +157,7 @@ Queued turns processed by an already-running driver share that driver's parent
 context; they are not automatically reparented to the later submitting HTTP
 request. Reopening durable work inherits the resuming caller's context, rather
 than resurrecting old trace IDs. Session, turn, request and tool-call IDs provide
-the link back to the durable log. Trace context is not persisted in the log.
+correlation with externally captured execution events. Trace context is not part of a conversation snapshot.
 
 The integration emits OpenInference span kinds, model names and token/cost
 attributes for Phoenix, plus Langfuse observation types and recognized usage

@@ -3,20 +3,9 @@ from pathlib import Path
 import pytest
 
 from harnessed import Agent, PolicyDecision, SystemPrompt, SystemSection
-from harnessed.core.assets import _MemoryAssets
-from harnessed.core.session.events import TurnEndedEvent, TurnStartedEvent
-from harnessed.core.session.session import SessionLog
 from harnessed.plugins import Approvals, Filesystem, Shell
 from harnessed.plugins.filesystem import FileSystemBackend, LocalFileSystem
-from harnessed.testing import (
-    FakeShell,
-    InMemoryFS,
-    InMemoryPersistence,
-    ScriptedModel,
-    assert_tool_called,
-    call,
-    reply,
-)
+from harnessed.testing import FakeShell, InMemoryFS, ScriptedModel, assert_tool_called, call, reply
 
 pytest_plugins = ["harnessed.testing.pytest_plugin"]
 
@@ -60,20 +49,6 @@ async def test_virtual_and_local_filesystems_share_ranges_newlines_and_edit_sema
         assert not await files.exists(Path("nested/test.txt"))
         with pytest.raises(ValueError):
             await files.write(Path("../outside"), "no")
-
-
-async def test_failure_injection_preserves_session_append_atomicity():
-    persistence = InMemoryPersistence(fail_after=1)
-    log = SessionLog("failure", persistence=persistence, assets=_MemoryAssets())
-    await log.append(TurnStartedEvent("one"))
-    original = log.events
-    with pytest.raises(OSError, match="Injected"):
-        await log.append(TurnEndedEvent("one"))
-    assert log.events == original and await persistence.load("failure") == original
-    await log.flush()
-    assert persistence.flushes == 1
-    await persistence.aclose()
-    assert persistence.closed
 
 
 async def test_pytest_fixture_replaces_feature_slots_without_duplicate_configuration(

@@ -31,7 +31,6 @@ class SubmittedRun:
 
     input: InboxAddedEvent
     schema: OutputSchema | None
-    start: int | None = None
     turn_id: str | None = None
     handle: RunHandle[Any] = field(init=False)
     _completion: asyncio.Future[RunResult[Any] | Exception] = field(init=False, repr=False)

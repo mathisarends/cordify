@@ -18,7 +18,7 @@ def harnessed_session():
         *,
         script=(),
         plugins=(),
-        session_id=None,
+        state=None,
         system_prompt: str | SystemPrompt | None = None,
     ):
         plugins = tuple(plugins)
@@ -35,6 +35,6 @@ def harnessed_session():
             system_prompt=system_prompt,
             plugins=(*configured, *plugins),
         )
-        return app.session(session_id)
+        return app.session(state=state)
 
     return open_session

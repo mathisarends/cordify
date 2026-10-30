@@ -28,6 +28,7 @@ from harnessed.kernel.plugin import PluginStatus
 from harnessed.models import Model
 from harnessed.plugins import Approvals, ContextValue, Instructions, Service
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit
 
 
 class Calculator(Plugin):
@@ -136,11 +137,14 @@ async def test_dynamic_context_is_durable_changes_only_and_does_not_change_syste
         plugins=[ContextValue("user", lambda: current[0])],
     )
     async with app.session() as session:
+        session_audit = Audit(session)
         await session.run("First")
         await session.run("Same context")
         current[0] = "two"
         await session.run("Changed context")
-        changes = [event for event in session.events if isinstance(event, ContextValueChangedEvent)]
+        changes = [
+            event for event in session_audit.events if isinstance(event, ContextValueChangedEvent)
+        ]
         assert [event.value for event in changes] == ["one", "two"]
         assert await session.prompt.render() == "Fixed rules."
         assert session.context.values == {"user": "two"}
@@ -227,7 +231,7 @@ async def test_latest_dynamic_context_survives_compaction_and_replay():
     await session.append(CompactionAppliedEvent(len(session), "Earlier work."))
     text = "\n".join(message.text for message in session.messages)
     assert "current" in text and ">old<" not in text
-    replay = SessionLog("context-replay", seed=session.events)
+    replay = SessionLog("context-replay", state=session.snapshot())
     assert replay.messages == session.messages
     assert DynamicContext(replay).values == {"user": "current"}
 
@@ -259,14 +263,14 @@ async def test_public_session_type_and_forks_open_as_independent_conversations()
     from harnessed import Session as LiveSession
 
     app = Agent(model=ScriptedModel(["first", "alternate", "resumed"]))
-    async with app.session("original") as session:
+    async with app.session() as session:
         assert isinstance(session, LiveSession)
         await session.run("Remember the original")
-        branch = session.fork("branch")
-    async with app.session(branch) as alternative:
+        branch = session.snapshot()
+    async with app.session(state=branch) as alternative:
         await alternative.run("Try another approach")
         assert alternative.messages[-1].text == "alternate"
-    async with app.session("original") as resumed:
+    async with app.session(state=branch) as resumed:
         assert all(message.text != "Try another approach" for message in resumed.messages)
         await resumed.run("Continue")
         assert resumed.messages[-1].text == "resumed"

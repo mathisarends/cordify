@@ -43,6 +43,22 @@ class StoredFile:
     modified_ns: int
 
 
+@dataclass(frozen=True)
+class TextValue:
+    key: FileKey
+    text: str
+    modified_ns: int
+
+    def __post_init__(self) -> None:
+        validate_file_key(self.key)
+        if (
+            not isinstance(self.text, str)
+            or type(self.modified_ns) is not int
+            or self.modified_ns < 0
+        ):
+            raise ValueError("Text resources require string content and a non-negative timestamp")
+
+
 class SessionFiles(Protocol):
     """A session namespace; keys never refer to files belonging to another session."""
 
@@ -53,10 +69,20 @@ class SessionFiles(Protocol):
 
 
 class MemoryFiles:
-    """Artifacts retained alongside the in-memory log across live session leases."""
+    """Text resources owned by one live conversation."""
 
-    def __init__(self) -> None:
-        self._values: dict[str, tuple[str, int]] = {}
+    def __init__(self, values: tuple[TextValue, ...] = ()) -> None:
+        self._values: dict[str, tuple[str, int]] = {
+            value.key: (value.text, value.modified_ns) for value in values
+        }
+
+    def snapshot(self, keys: set[str]) -> tuple[TextValue, ...]:
+        return tuple(
+            TextValue(key, *self._values[key]) for key in sorted(keys) if key in self._values
+        )
+
+    def retain(self, keys: set[str]) -> None:
+        self._values = {key: value for key, value in self._values.items() if key in keys}
 
     async def put(self, key: str, text: str) -> None:
         key = validate_file_key(key)
@@ -76,7 +102,7 @@ class MemoryFiles:
         self._values.pop(validate_file_key(key), None)
 
     def clear(self) -> None:
-        """Release all artifacts when the owning memory store deletes a session."""
+        """Release the live session's text resources."""
         self._values.clear()
 
     async def entries(self) -> tuple[StoredFile, ...]:

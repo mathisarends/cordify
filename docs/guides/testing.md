@@ -74,9 +74,9 @@ agent = Agent(
 ```
 
 Inspect `files.files` and `commands.calls` to assert side effects. An unconfigured
-fake command fails; it never launches a subprocess. `InMemoryPersistence` provides
-a controllable storage backend with flush/close observations and write-failure
-injection for persistence tests.
+fake command fails; it never launches a subprocess. Conversation snapshots support
+JSON round trips without a storage backend; assert their imported context and
+resource contents directly.
 
 ## Opt into the pytest fixture
 
@@ -108,9 +108,9 @@ those replacement recipes. Provider SDKs
 and credentials are unnecessary for these tests. Configure pytest-asyncio as you
 normally would for asynchronous tests; Harnessed does not change its settings.
 
-## Memory and replay benchmarks
+## Conversation-state benchmarks
 
-`uv run python -m scripts.benchmark_sessions` measures growing conversations,
-lossless JSONL encoding/replay and repeated one-shot runs without a provider.
-See [the workload, metrics and baseline](../benchmarks/sessions.md) before
-interpreting the results. These measurements have no machine-dependent CI thresholds.
+`uv run python -m scripts.benchmark_sessions` measures compacted conversations,
+state round trips and repeated one-shot runs without a provider or retained model
+requests. `scripts.benchmark_image_assets` measures active screenshot resources.
+See [the workload and metrics](../benchmarks/sessions.md).

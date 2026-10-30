@@ -17,7 +17,6 @@ from harnessed.core.session.events import (
     SpillCreatedEvent,
     SpillExpirationReason,
     SpillExpiredEvent,
-    ToolCallFinishedEvent,
 )
 from harnessed.core.session.files import FileOffset, ReadLimit, SessionFiles
 from harnessed.core.session.session import SessionLog
@@ -45,36 +44,17 @@ class _SessionSpills:
         self.config = config
         self._operation = asyncio.Lock()
         self._active: dict[str, SpillRef] = {}
-        self._expired: set[str] = set()
 
-    def apply(self, event) -> None:
+    def apply(self, event: SpillCreatedEvent | SpillExpiredEvent) -> None:
         if isinstance(event, SpillExpiredEvent):
             self._active.pop(event.ref.path, None)
-            self._expired.add(event.ref.path)
-            return
-        if isinstance(event, SpillCreatedEvent):
-            ref = event.ref
-            self._expired.discard(ref.path)
-        elif isinstance(event, ToolCallFinishedEvent) and event.result.spill is not None:
-            ref = event.result.spill
-            if ref.path in self._expired:
-                return
-        else:
-            return
-        if ref.path.startswith("spills/"):
-            self._active[ref.path] = ref
+        elif event.ref.path.startswith("spills/"):
+            self._active[event.ref.path] = event.ref
 
-    async def recover(self) -> None:
-        for event in self.session.events:
-            self.apply(event)
-        entries = await self.files.entries()
-        present = {entry.key for entry in entries}
-        for key in tuple(self._active):
-            if key not in present:
-                await self._expire(key, reason=SpillExpirationReason.MISSING)
-        for entry in entries:
-            if entry.key.startswith("spills/") and entry.key not in self._active:
-                await self.files.remove(entry.key)
+    async def restore(self) -> None:
+        self._active = {
+            ref.path: ref for ref in self.session.resources if ref.path.startswith("spills/")
+        }
         await self._make_room(0, extra_files=0)
 
     async def _expire(
@@ -82,16 +62,12 @@ class _SessionSpills:
     ) -> None:
         ref = self._active.pop(key, None)
         if ref is not None:
-            previously_expired = key in self._expired
-            self._expired.add(key)
             event = SpillExpiredEvent(ref, reason)
             try:
                 await self.session.append(event)
             except BaseException:
-                if event not in self.session.events:
+                if self.session.last(SpillExpiredEvent) is not event:
                     self._active[key] = ref
-                    if not previously_expired:
-                        self._expired.discard(key)
                 raise
         await self.files.remove(key)
 
@@ -186,12 +162,14 @@ class Spill(Plugin, slot="spill", needs=(SessionLog, SessionFiles, TokenCounter)
         self, ctx: Context, session: Inject[SessionLog], files: Inject[SessionFiles]
     ) -> None:
         self.store = _SessionSpills(files, session, self.config)
-        await self.store.recover()
+        await self.store.restore()
         ctx.provide(SpillStore, self.store)
 
     @hook(SessionAppended, priority=Priority.GUARD)
     def recorded(self, event: SessionAppended) -> None:
-        if event.log is self.store.session:
+        if event.log is self.store.session and isinstance(
+            event.event, SpillCreatedEvent | SpillExpiredEvent
+        ):
             self.store.apply(event.event)
 
     @hook(ReviewToolResult, priority=Priority.OBSERVE)

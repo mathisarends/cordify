@@ -14,7 +14,7 @@ belong in [the roadmap](docs/contributing/roadmap.md).
 | `agent.py` and public facades | Application SDK and explicit public exports | The lower layers |
 | `testing` | Scripted models, fakes, assertions and pytest support | Library layers; production code never imports testing |
 
-Protocols belong to their consumer. The loop's `Model`, `SessionStore`, `Approver`,
+Protocols belong to their consumer. The loop's `Model`, `Approver`,
 `Summarizer` and `TokenCounter` contracts live in core. Feature-specific contracts
 such as `FileSystemBackend` and `ShellBackend` live with their implementations and
 plugins. Plugins do not import other plugins. Shared behavior crosses a core
@@ -25,8 +25,8 @@ protocol instead.
 - `kernel/` is independent of the agent and third-party packages.
 - `core/runtime/` owns live sessions, turn and step orchestration, model calls,
   tool execution, output validation, streaming, inbox handling and controls.
-- `core/session/` owns immutable durable events, logs, projections, codecs,
-  persistence contracts and session-owned files.
+- `core/session/` owns immutable conversation snapshots, retained working context,
+  execution events, codecs and session-owned memory resources.
 - `core/tools/` owns declarations, argument validation, references, registration,
   policies, resource scheduling and output limits.
 - `core/prompt/` owns instruction composition and dynamic context.
@@ -50,7 +50,7 @@ protocol instead.
   on the existing scheduling, policy and execution pipeline without importing MCP.
 - `events/`, `hooks.py` and `errors.py` expose public names for core domain values,
   hooks and the error tree.
-- `agent.py` resolves the model/instructions/plugin recipe and opens owned sessions.
+- `agent.py` resolves the model/instructions/plugin recipe and opens owned sessions from explicit conversation state.
 
 Do not restore `seams`, `adapters`, `app`, `llms`, `presets` or native provider
 clients. Applications use the small root SDK, `harnessed.plugins`,

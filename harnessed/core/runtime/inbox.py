@@ -43,7 +43,7 @@ def _item(event: InboxAddedEvent) -> InboxItem:
 
 
 class InboxWriter:
-    """Serialize durable inbox appends; the session and its inbox share one writer."""
+    """Serialize in-memory inbox admission; the session and its inbox share one writer."""
 
     def __init__(self, log: SessionLog, control: SessionControl) -> None:
         self.log = log
@@ -95,20 +95,18 @@ class InboxWriter:
                 output_schema=output_schema,
                 limits=limits,
             )
-            offset = len(self.log.events)
-            try:
-                await self.log.append(event)
-            finally:
-                # An acknowledged write survives cancellation of its submitting caller.
-                if any(record is event for record in self.log.events[offset:]):
-                    if prepared is not None:
-                        prepared(event)
-                    self.control.wake()
+
+            def committed() -> None:
+                if prepared is not None:
+                    prepared(event)
+                self.control.wake()
+
+            await self.log.append(event, on_committed=committed)
             return _item(event)
 
 
 class SessionInbox:
-    """Expose queued input snapshots and durable removal without owning a loop."""
+    """Expose queued input snapshots and removal without owning a loop."""
 
     def __init__(self, log: SessionLog, control: SessionControl, writer: InboxWriter) -> None:
         self.log = log
@@ -126,7 +124,7 @@ class SessionInbox:
         try:
             await self.log.append(InboxRemovedEvent(item_id, InboxRemovalReason.DISCARDED))
         except ValueError:
-            # A model step may have claimed the item while persistence was awaited.
+            # A model step may have claimed the item while admission observers were awaited.
             if not any(item.id == item_id for item in self.pending):
                 raise KeyError(item_id) from None
             raise

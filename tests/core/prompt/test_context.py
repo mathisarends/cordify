@@ -23,11 +23,11 @@ from harnessed.core.session.events import (
     ModelRequestedEvent,
     ObservationRecordedEvent,
 )
-from harnessed.core.session.session import SessionLog
 from harnessed.kernel import hook
 from harnessed.plugins import Approvals, Service
 from harnessed.plugins.filesystem import FileSystemBackend, LocalFileSystem
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit, AuditProjection
 
 
 async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
@@ -42,7 +42,8 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("step"))], "first", "second"])
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools]
-    ).session("context") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("review", context={"ticket": "Fix login", "details": {"issue": 42}})
         for request in model.requests[:2]:
             assert "Task context [ticket]:\nFix login" in [m.text for m in request.messages]
@@ -50,8 +51,8 @@ async def test_task_context_lasts_one_turn_and_precedes_task_prompt():
             assert request.messages[2].text == "review"
         await agent.run("unrelated")
         assert all("Task context" not in m.text for m in model.requests[-1].messages)
-        assert any(isinstance(e, ContextMessageEvent) for e in agent.log.events)
-        assert "Fix login" in json.dumps([encode_event(e) for e in agent.log.events])
+        assert any(isinstance(e, ContextMessageEvent) for e in agent_audit.events)
+        assert "Fix login" in json.dumps([encode_event(e) for e in agent_audit.events])
 
 
 async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payload(tmp_path):
@@ -60,9 +61,10 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
     image = tmp_path / "screenshot.png"
     image.write_bytes(b"image-test-bytes")
     model = ScriptedModel(["reviewed"])
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "attachments"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("Review", attachments=[File(diff), Image(image)])
         request = model.requests[0]
         message = request.messages[0]
@@ -72,7 +74,7 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
         assert image_part.url.startswith("data:image/png;")
         diff.write_text("changed after admission", encoding="utf-8")
         restored = tuple(
-            decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
+            decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent_audit.events
         )
         recorded = next(e.request for e in restored if isinstance(e, ModelRequestedEvent))
         assert await agent.log.resolve_request(recorded) == request
@@ -83,7 +85,7 @@ async def test_steering_carries_attachments_like_a_run(tmp_path):
     log = tmp_path / "failure.log"
     log.write_text("AssertionError: login", encoding="utf-8")
     model = ScriptedModel(["looked"])
-    async with Application(model=model).session("steer-attachments") as agent:
+    async with Application(model=model).session() as agent:
         await agent.steer("Check this failure", attachments=[File(log)])
         await agent.control.join()
         message = model.requests[0].messages[0]
@@ -93,9 +95,9 @@ async def test_steering_carries_attachments_like_a_run(tmp_path):
 
 async def test_quiet_context_survives_prompt_updates_and_typed_user_steering():
     model = ScriptedModel(["first", "second"])
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "typed"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session() as agent:
         await agent.context.set("change", "External change")
         await agent.control.join()
         assert model.requests == []
@@ -124,7 +126,7 @@ async def test_push_context_from_pre_step_is_in_the_current_request():
     model = ScriptedModel(["done"])
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), Recall()]
-    ).session("push") as agent:
+    ).session() as agent:
         await agent.run("my task")
         assert seen == [(True, "my task")]
         assert len(model.requests) == 1
@@ -152,7 +154,7 @@ async def test_explicit_class_needs_and_injected_dynamic_project_context(tmp_pat
             Service(FileSystemBackend, LocalFileSystem(tmp_path)),
             Project(),
         ],
-    ).session("project") as agent:
+    ).session() as agent:
         await agent.run("one")
         instructions.write_text("second rules", encoding="utf-8")
         await agent.run("two")
@@ -160,7 +162,7 @@ async def test_explicit_class_needs_and_injected_dynamic_project_context(tmp_pat
         assert any("second rules" in message.text for message in model.requests[1].messages)
 
 
-async def test_observations_remain_unchanged_in_later_steps_replay_and_forks():
+async def test_observations_remain_unchanged_in_later_steps():
     states = iter(["before", "after"])
 
     class BrowserObserver(Plugin, needs=(Session,)):
@@ -180,21 +182,20 @@ async def test_observations_remain_unchanged_in_later_steps_replay_and_forks():
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("click", {"ref": "button-1"}))], "done"])
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), tools, BrowserObserver()]
-    ).session("browser") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("Open settings")
         assert model.requests[0].messages[-1].text == "FULL before refs"
         texts = [m.text for m in model.requests[1].messages]
         assert "FULL before refs" in texts
         assert texts[-1] == "FULL after refs"
-        assert any(isinstance(e, ObservationRecordedEvent) for e in agent.log.events)
-        replay = SessionLog("replay", seed=agent.log.events)
+        assert any(isinstance(e, ObservationRecordedEvent) for e in agent_audit.events)
+        replay = AuditProjection(agent_audit.events)
         assert replay.messages == agent.log.messages
         assert [m.text for m in replay.messages if m.text.startswith("FULL")] == [
             "FULL before refs",
             "FULL after refs",
         ]
-        fork = agent.log.fork("fork")
-        assert fork.messages == replay.messages
 
 
 async def test_remote_images_are_references_without_download():

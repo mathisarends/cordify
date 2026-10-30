@@ -11,7 +11,6 @@ from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.events import ModelRequestedEvent
 from harnessed.kernel import Context, plugin
 from harnessed.models import GenerationSettings, ModelInfo
-from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel
 
 
@@ -69,20 +68,6 @@ async def test_shared_model_defaults_are_not_changed_by_session_overrides():
         assert decode_event(encode_event(event)) == event
         assert model.requests[1].settings == defaults
     assert model.settings is defaults
-
-
-async def test_queued_generation_overrides_survive_a_jsonl_restart(tmp_path):
-    defaults = GenerationSettings(max_tokens=4096, temperature=0.2)
-    model = ScriptedModel(["restored"], settings=defaults)
-    app = Agent(model=model, plugins=[JsonlSessions(tmp_path)])
-    async with app.session("queued") as session:
-        await session.pause()
-        await session.submit("Queued", settings=GenerationSettings(max_tokens=512))
-    async with app.session("queued") as restored:
-        await restored.resume()
-        await restored.wait_until_idle()
-        assert model.requests[0].settings == GenerationSettings(max_tokens=512, temperature=0.2)
-        assert restored.last(ModelRequestedEvent).model == model.info
 
 
 async def test_request_uses_the_model_binding_captured_before_request_hooks():

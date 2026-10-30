@@ -42,43 +42,27 @@ reaching a limit can leave a structured run without a validated answer; reading
 its `output` then raises `OutputUnavailable`. Check `result.completed` (or
 `stop_reason` for the cause) first when the caller permits incomplete work.
 
-## Durable contracts
+## Output contracts and conversation state
 
-The inbox, turn and model request persist the response schema. `OutputValidatedEvent`
-records the accepted JSON and its assistant-message ID; `OutputValidationFailedEvent`
-records repair attempts. Neither event imports or serializes a Python class.
-Live results reuse the validated object so custom validators run once.
-
-For persisted workflows, give the validator an application-owned versioned key:
+Each turn receives its output type or an explicit versioned `OutputContract`.
+`OutputValidatedEvent` records accepted JSON and `OutputValidationFailedEvent`
+records correction attempts. Neither imports or serializes Python code. Live
+results reuse the validated object so custom validators run once.
 
 ```python
 from harnessed import OutputContract
 
 triage_output = OutputContract("support.triage.v1", Triage)
-
-
-async def triage_persisted(session, report: str) -> Triage:
-    return (await session.run(report, output=triage_output)).output
-
-
-async def resume(agent: Agent):
-    async with agent.session("triage-session", restore_outputs=[triage_output]) as session:
-        await session.resume()
-        await session.wait_until_idle()
+result = await agent.run(report, state=state, output=triage_output)
+await repository.save(conversation_id, result.state.to_json())
 ```
 
 Change the key when validation semantics change, including custom validators that
-leave JSON Schema unchanged. A key cannot name two different validators in one
-registry. Restoration matches the key and verifies the schema; equal schemas alone
-never substitute Python validators. No key is used to import Python code.
-
-`output=Triage` remains supported and derives its identity from the supplied type.
-Restore it with `restore_outputs=[Triage]`. Generic types such as `list[int]` and
-`list[str]` also retain distinct identities.
-
-An application that reuses the same `Agent` already knows its output types. Closed
-history can be read without a validator registry. An unknown pending contract fails
-at session opening, before its queued input is consumed.
+leave JSON Schema unchanged. A registry matches validator identity and schema;
+equal schemas do not substitute validators. `output=Triage` and generic types
+such as `list[int]` remain supported. Supply the output type again for each turn.
+Conversation snapshots contain no pending outputs or Python validator registry;
+paused execution restoration is outside their contract.
 
 Run the offline [structured-output example](examples.md#structured-output) to see
 an invalid answer corrected through the tool fallback without provider credentials.

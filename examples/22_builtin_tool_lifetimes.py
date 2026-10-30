@@ -5,7 +5,6 @@ from pathlib import Path
 
 from harnessed import Agent, PluginValidation, PolicyDecision, ToolCall
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.events import ToolCallFinishedEvent
 from harnessed.kernel import Context, plugin
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
@@ -43,24 +42,24 @@ async def main():
         plugins=[Approvals(default=PolicyDecision.ALLOW), ShellTools()],
         plugin_validation=PluginValidation.WARN,
     )
-    async with agent.session("tool-lifetimes") as session:
+    outputs = []
+    async with agent.session() as session:
         registry = session.ctx[ToolRegistry]
         assert registry.definitions == ()
         print("Before a backend: no shell tools")
         first = await session.use(shell_backend("local"))
         assert [tool.name for tool in registry.definitions] == ["run_command"]
-        print((await session.run("Say hello using the shell.")).text)
+        first_result = await session.run("Say hello using the shell.")
+        print(first_result.text)
+        outputs.extend(result.content for _, result in first_result.tool_calls)
         await first.aclose()
         assert registry.definitions == ()
         print("Backend removed: no shell tools")
         await session.use(shell_backend("remote"))
         assert [tool.name for tool in registry.definitions] == ["run_command"]
-        print((await session.run("Run another command.")).text)
-        outputs = [
-            event.result.content
-            for event in session.events
-            if isinstance(event, ToolCallFinishedEvent)
-        ]
+        second_result = await session.run("Run another command.")
+        print(second_result.text)
+        outputs.extend(result.content for _, result in second_result.tool_calls)
         assert len(outputs) == 2 and "local:" in outputs[0] and ("remote:" in outputs[1])
         print("Recorded outputs:", *outputs, sep="\n")
 

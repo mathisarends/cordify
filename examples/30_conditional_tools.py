@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass
 
 from harnessed import Agent, Plugin, tool
-from harnessed.events import ToolCallFinishedEvent
 from harnessed.kernel import Inject
 from harnessed.plugins import Service
 from harnessed.testing import ScriptedModel, call
@@ -41,15 +40,13 @@ async def main() -> None:
     async with Agent(
         model=model, plugins=[Service(PointerState, PointerState()), PointerTools()]
     ).session() as session:
-        await session.run("Observe, then click.")
+        result = await session.run("Observe, then click.")
         assert [definition.name for definition in model.requests[0].tools] == ["observe"]
         assert [definition.name for definition in model.requests[2].tools] == [
             "observe",
             "click_at",
         ]
-        results = [
-            event.result for event in session.events if isinstance(event, ToolCallFinishedEvent)
-        ]
+        results = [output for _, output in result.tool_calls]
         assert [result.status for result in results] == ["unavailable", "ok", "ok"]
         for result in results:
             print(f"{result.status}: {result.text}")

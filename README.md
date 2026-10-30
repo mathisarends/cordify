@@ -7,7 +7,7 @@
 [![Status: Alpha](https://img.shields.io/badge/status-alpha-f59e0b?style=for-the-badge)](https://github.com/mathisarends/harnessed/blob/main/docs/releases.md)
 
 A Python agent SDK built from reversible plugins. Harnessed owns the loop,
-tool policies and append-only session log; optional provider integrations use
+tool policies and explicit conversation state; optional provider integrations use
 PydanticAI's Direct API. Python **3.12-3.14**, Pydantic v2 and modern generics.
 
 Harnessed 0.x is **alpha software**. APIs and persisted session formats may
@@ -59,8 +59,25 @@ session owns its runtime and plugin lifetimes.
   change. `Inject[T]` binds values; `provides=True` publishes the mounted plugin.
 - **Context:** explicitly ordered system sections are fixed per session; named
   context values and steering supply changes during a run.
-- **History:** immutable events are the source of truth. Persistence, replay,
-  forks and control outcomes use the same append-only log.
+- **State:** export an immutable `SessionState` and inject it into the next run.
+  Applications own persistence; completed conversations are not archived by the agent.
+  Compaction retains only the active summary and selected context.
+
+## Continue a conversation
+
+```python
+from harnessed import SessionState
+
+# Inside an async function; your application owns the repository.
+payload = await repository.load(conversation_id)
+state = SessionState.from_json(payload) if payload is not None else None
+result = await agent.run("Continue.", state=state)
+await repository.save(conversation_id, result.state.to_json())
+```
+
+State includes retained context and referenced image/spill contents. Export and
+import perform no storage I/O. See [sessions](docs/guides/sessions.md) for ownership,
+compaction, live controls and independent continuations.
 
 ## Test without credentials
 
@@ -86,7 +103,7 @@ Start with the [documentation index](https://github.com/mathisarends/harnessed/b
 - [MCP server tools over stdio and HTTP](https://github.com/mathisarends/harnessed/blob/main/docs/guides/mcp.md)
 - [Docker and Bubblewrap sandboxes](https://github.com/mathisarends/harnessed/blob/main/docs/guides/sandboxes.md)
 - [Instructions and changing context](https://github.com/mathisarends/harnessed/blob/main/docs/guides/context.md)
-- [Sessions, controls, persistence and forks](https://github.com/mathisarends/harnessed/blob/main/docs/guides/sessions.md)
+- [Sessions, controls and application-owned state](https://github.com/mathisarends/harnessed/blob/main/docs/guides/sessions.md)
 - [Typed events and custom extensions](https://github.com/mathisarends/harnessed/blob/main/docs/guides/events.md)
 - [Approvals and headless operation](https://github.com/mathisarends/harnessed/blob/main/docs/guides/approvals.md)
 - [Offline testing](https://github.com/mathisarends/harnessed/blob/main/docs/guides/testing.md)

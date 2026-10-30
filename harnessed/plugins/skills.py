@@ -18,7 +18,7 @@ from pydantic import (
 
 from harnessed.core.errors import ConfigError
 from harnessed.core.hooks import SessionAppended
-from harnessed.core.messages import ToolStatus, freeze, to_dict
+from harnessed.core.messages import AssistantMessage, ToolMessage, ToolStatus, freeze, to_dict
 from harnessed.core.plugin import Plugin
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.prompt.values import SystemSection
@@ -338,11 +338,20 @@ class Skills(Plugin, slot="skills", needs=(SessionLog, DynamicContext)):
         self._log = session
         self._context = context
         self._calls: set[str] = set()
-        self._loaded: dict[str, str] = {}
-        for event in session.events:
-            self._remember(event)
-        if session.last(CompactionAppliedEvent) is not None:
-            await self._retain()
+        self._loaded = {
+            key.removeprefix("skill:"): value
+            for key, value in context.values.items()
+            if key.startswith("skill:")
+        }
+        for message in session.messages:
+            if isinstance(message, AssistantMessage):
+                self._calls.update(
+                    call.id for call in message.tool_calls if call.name == "load_skill"
+                )
+            elif isinstance(message, ToolMessage) and message.tool_call_id in self._calls:
+                if message.status is ToolStatus.OK:
+                    self._remember_instructions(message.text)
+                self._calls.discard(message.tool_call_id)
 
     def _remember(self, event) -> None:
         if isinstance(event, ToolCallRequestedEvent):
@@ -352,15 +361,17 @@ class Skills(Plugin, slot="skills", needs=(SessionLog, DynamicContext)):
                 self._calls.discard(event.call.id)
         elif isinstance(event, ToolCallFinishedEvent) and event.call_id in self._calls:
             if event.result.status == ToolStatus.OK:
-                try:
-                    data, _ = json.JSONDecoder().raw_decode(event.result.text.lstrip())
-                    loaded = _Loaded.model_validate(data)
-                except (ValueError, TypeError):
-                    pass
-                else:
-                    self._loaded[loaded.name] = loaded.instructions
+                self._remember_instructions(event.result.text)
             if isinstance(event, ToolCallFinishedEvent):
                 self._calls.discard(event.call_id)
+
+    def _remember_instructions(self, text: str) -> None:
+        try:
+            data, _ = json.JSONDecoder().raw_decode(text.lstrip())
+            loaded = _Loaded.model_validate(data)
+        except (ValueError, TypeError):
+            return
+        self._loaded[loaded.name] = loaded.instructions
 
     async def _retain(self) -> None:
         for name, instructions in self._loaded.items():

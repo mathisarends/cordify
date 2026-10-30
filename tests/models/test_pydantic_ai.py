@@ -13,6 +13,7 @@ from harnessed.core.messages import (
     UserMessage,
 )
 from harnessed.models import GenerationSettings, ModelInfo
+from tests._audit import Audit, AuditProjection
 
 pytest.importorskip("pydantic_ai")
 
@@ -32,7 +33,6 @@ from harnessed.core.messages import ImagePart, TextPart
 from harnessed.core.model import ModelRequest, StopReason, ToolArgumentsMode
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ModelUsageRecordedEvent
-from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.decorator import tool
 from harnessed.models import PydanticAIModel
 from harnessed.plugins import AgentLoop
@@ -93,10 +93,11 @@ async def test_direct_stream_preserves_thinking_signature_tools_and_replay_state
 
     model = PydanticAIModel(FunctionModel(stream_function=stream), context_window=12_000)
     async with Agent(model=model, plugins=[Calculator()]).session() as session:
+        session_audit = Audit(session)
         result = await session.run("Add")
         assert result.text == "3" and result.tool_calls[0][1].content == "3"
-        records = json.loads(json.dumps([encode_event(event) for event in session.events]))
-        replay = SessionLog("replay", seed=[decode_event(record) for record in records])
+        records = json.loads(json.dumps([encode_event(event) for event in session_audit.events]))
+        replay = AuditProjection([decode_event(record) for record in records])
         assert replay.messages == session.messages
         thinking = next(
             part
@@ -398,8 +399,9 @@ async def test_recorded_request_and_provider_share_resolved_settings():
         settings=GenerationSettings(max_tokens=900, temperature=0.5),
     )
     async with Agent(model=model).session() as session:
+        session_audit = Audit(session)
         await session.run("hi", settings=GenerationSettings(max_tokens=200))
-        request = session.log.requests[-1]
+        request = session_audit.requests[-1]
         assert request.settings == GenerationSettings(max_tokens=200, temperature=0.5)
         assert seen == [{"max_tokens": 200, "temperature": 0.5}]
 
@@ -463,9 +465,10 @@ async def test_session_settings_are_durable_and_reach_each_step_of_the_turn():
     async with Agent(
         model=PydanticAIModel(FunctionModel(stream_function=stream)), plugins=[Calculator()]
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("Add", settings=GenerationSettings(temperature=0.1))
-        replay = SessionLog(
-            "settings", seed=[decode_event(encode_event(event)) for event in session.events]
+        replay = AuditProjection(
+            [decode_event(encode_event(event)) for event in session_audit.events]
         )
         assert [request.settings.temperature for request in replay.requests] == [0.1, 0.1]
     assert seen == [{"temperature": 0.1}, {"temperature": 0.1}]
@@ -683,6 +686,7 @@ async def test_native_stream_usage_is_recorded_once_even_when_interrupted(outcom
 
     provider = RecordedModel(stream_function=chunks)
     async with Agent(model=PydanticAIModel(provider)).session() as session:
+        session_audit = Audit(session)
         handle = await session.submit("hello")
         async with asyncio.timeout(3):
             await started.wait()
@@ -700,7 +704,9 @@ async def test_native_stream_usage_is_recorded_once_even_when_interrupted(outcom
         assert usage.input_tokens > 0 and usage.output_tokens > 0
         assert session.usage.input_tokens == usage.input_tokens
         assert session.usage.output_tokens == usage.output_tokens
-        assert sum(isinstance(event, ModelUsageRecordedEvent) for event in session.events) == 1
+        assert (
+            sum(isinstance(event, ModelUsageRecordedEvent) for event in session_audit.events) == 1
+        )
 
 
 def _openai_sse(parts, finish):

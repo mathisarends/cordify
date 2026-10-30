@@ -2,8 +2,7 @@
 
 import asyncio
 
-from harnessed import Agent, Plugin, ToolResult, tool
-from harnessed.core.session.session import SessionLog
+from harnessed import Agent, Plugin, SessionLog, ToolResult, tool
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.hooks import Next, ReviewToolResult
 from harnessed.kernel import Inject, hook
@@ -42,7 +41,7 @@ class TemporaryEcho(Plugin):
 async def main():
     model = ScriptedModel([call(Echo.echo, text="Hello"), "Done."])
     agent = Agent(model=model, plugins=[Echo(prefix="Echo: ")])
-    async with agent.session("methods") as session:
+    async with agent.session() as session:
         print((await session.run("Echo Hello.")).text)
         handle = await session.use(TemporaryEcho())
         assert "temporary_echo" in {t.name for t in session.ctx[ToolRegistry].definitions}

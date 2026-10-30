@@ -1,4 +1,3 @@
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -11,8 +10,8 @@ from pydantic.errors import PydanticInvalidForJsonSchema
 from harnessed import Agent, Plugin, ToolContext, events, tool
 from harnessed.core.errors import SessionFormatError
 from harnessed.core.runtime.result import RunResult
-from harnessed.plugins import JsonlSessions
 from harnessed.testing import ScriptedModel, call
+from tests._audit import Audit
 
 
 class ProjectEventKind(StrEnum):
@@ -41,58 +40,43 @@ class Indexer(Plugin):
         return "indexed"
 
 
-async def test_custom_events_stream_persist_replay_and_fork_without_rerunning_tools(tmp_path):
+async def test_custom_audit_events_are_separate_from_conversation_state():
     model = ScriptedModel([call(Indexer.index), "done"])
-    agent = Agent(model=model, plugins=[Indexer(), JsonlSessions(tmp_path)])
-    async with agent.session("index") as session:
+    async with Agent(model=model, plugins=[Indexer()]).session() as session:
+        audit = Audit(session)
         live = [event async for event in session.stream("Index")]
         assert next(event for event in live if isinstance(event, IndexProgress)).text == "Indexing"
         assert next(event for event in live if isinstance(event, ProjectIndexed)).files == 42
-        assert not any(isinstance(event, IndexProgress) for event in session.events)
-        branch = session.fork("branch")
-        assert any(isinstance(event, ProjectIndexed) for event in branch.events)
-        assert "project.indexed" in session.log.registry.schema()["discriminator"]["mapping"]
-
-    stored = [json.loads(line) for line in (tmp_path / "index.jsonl").read_text().splitlines()]
-    assert sum(record["type"] == "project.indexed" for record in stored) == 1
-    assert not any(record["type"] == "project.progress" for record in stored)
+        assert not any(isinstance(event, IndexProgress) for event in audit.events)
+        indexed = next(event for event in audit.events if isinstance(event, ProjectIndexed))
+        registry = session.log.registry
+        assert registry.decode(registry.encode(indexed)) == indexed
+        state = live[-1].result.state
     fresh_model = ScriptedModel([])
-    fresh = Agent(model=fresh_model, plugins=[Indexer(), JsonlSessions(tmp_path)])
-    async with fresh.session("index") as restored:
-        assert (
-            next(event for event in restored.events if isinstance(event, ProjectIndexed)).files
-            == 42
-        )
-        assert fresh_model.requests == []
-    async with fresh.session(branch) as forked:
-        assert any(isinstance(event, ProjectIndexed) for event in forked.events)
+    async with Agent(model=fresh_model).session(state=state) as restored:
+        assert not restored.events and fresh_model.requests == []
+        assert restored.messages[-1].text == "done"
 
 
-async def test_runtime_declarations_remain_readable_after_plugin_disposal(tmp_path):
-    agent = Agent(model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path)])
-    async with agent.session("runtime") as session:
+async def test_runtime_declarations_remain_readable_after_plugin_disposal():
+    async with Agent(model=ScriptedModel([])).session() as session:
+        audit = Audit(session)
         handle = await session.use(Indexer())
         await session.emit(ProjectIndexed(3))
         await handle.aclose()
         await session.emit(ProjectIndexed(4))
-    fresh = Agent(model=ScriptedModel([]), plugins=[Indexer(), JsonlSessions(tmp_path)])
-    async with fresh.session("runtime") as restored:
-        assert [event.files for event in restored.events] == [3, 4]
+        records = [session.log.registry.encode(event) for event in audit.events]
+        assert [session.log.registry.decode(record).files for record in records] == [3, 4]
 
 
-async def test_event_catalogs_are_isolated_and_unknown_logs_fail_without_rewriting(tmp_path):
-    agent = Agent(model=ScriptedModel([]), plugins=[Indexer(), JsonlSessions(tmp_path)])
-    async with agent.session("custom") as session:
-        await session.emit(ProjectIndexed(1))
-    original = (tmp_path / "custom.jsonl").read_bytes()
-    bare = Agent(model=ScriptedModel([]), plugins=[JsonlSessions(tmp_path)])
-    with pytest.raises(SessionFormatError, match="Unknown session event"):
-        async with bare.session("custom"):
-            pytest.fail("custom types must be known before loading")
-    assert (tmp_path / "custom.jsonl").read_bytes() == original
-    async with bare.session("other") as session:
+async def test_event_catalogs_are_isolated_between_configurations():
+    async with Agent(model=ScriptedModel([]), plugins=[Indexer()]).session() as session:
+        record = session.log.registry.encode(ProjectIndexed(1))
+    async with Agent(model=ScriptedModel([])).session() as bare:
+        with pytest.raises(SessionFormatError, match="Unknown session event"):
+            bare.log.registry.decode(record)
         with pytest.raises(TypeError, match="registered"):
-            await session.emit(ProjectIndexed(2))
+            await bare.emit(ProjectIndexed(2))
 
 
 def test_custom_event_schema_is_strict_and_registry_rejects_collisions_atomically():

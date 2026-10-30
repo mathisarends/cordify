@@ -18,8 +18,6 @@ from harnessed.core.runtime.inbox import SessionInbox
 from harnessed.core.session.events import (
     RuleAction,
     RuleTriggeredEvent,
-    ToolCallFinishedEvent,
-    ToolCallRequestedEvent,
 )
 from harnessed.core.session.session import SessionLog
 from harnessed.core.tokens import TokenCounter, count_content
@@ -135,35 +133,6 @@ class Rules(Plugin, needs=(SessionLog, DynamicContext, TokenCounter, SessionInbo
         self._counts[key] = self._counts[key] + 1 if matched else 0
         self._last_counts[index] = self._counts[key]
         return key, self._counts[key]
-
-    async def setup(
-        self,
-        session: Inject[SessionLog],
-        context: Inject[DynamicContext],
-        counter: Inject[TokenCounter],
-    ) -> None:
-        # Match bits are recorded with the canonical tool result.
-        calls: dict[str, ToolCall] = {}
-        for event in session.events:
-            if isinstance(event, ToolCallRequestedEvent):
-                calls[event.call.id] = event.call
-            elif isinstance(event, ToolCallFinishedEvent) and event.call_id in calls:
-                recorded = dict(event.result.rule_matches)
-                for index, rule in enumerate(self.rules):
-                    rule_id = f"{self.name}:{index}"
-                    if rule_id in recorded:
-                        self._count(
-                            index,
-                            rule,
-                            calls[event.call_id],
-                            event.result,
-                            counter,
-                            matched=recorded[rule_id],
-                        )
-        for index, rule in enumerate(self.rules):
-            for kind, text in rule.actions:
-                if kind is RuleAction.CONTEXT and self._last_counts.get(index, 0) >= rule.repeated:
-                    await context.set(f"rule:{self.name}:{index}", text)
 
     @hook(ReviewToolResult)
     async def review(

@@ -36,7 +36,7 @@ from harnessed.core.messages import PolicyDecision, ToolStatus, to_dict
 from harnessed.core.model import ModelChunk
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.events import ToolProgressEvent
-from harnessed.plugins import ApprovalGate, Approvals, JsonlSessions, ToolOutputLimit
+from harnessed.plugins import ApprovalGate, Approvals, ToolOutputLimit
 from harnessed.plugins.mcp import MCP
 from harnessed.testing import ScriptedModel
 
@@ -328,15 +328,11 @@ async def test_reopening_session_does_not_replay_remote_calls(tmp_path):
     model = ScriptedModel([[ModelChunk(tool_call=call)], "done", "next"])
     agent = Agent(
         model=model,
-        plugins=[
-            MCP("docs", transport=transport),
-            JsonlSessions(tmp_path),
-            Approvals(default=PolicyDecision.ALLOW),
-        ],
+        plugins=[MCP("docs", transport=transport), Approvals(default=PolicyDecision.ALLOW)],
     )
-    async with agent.session("saved") as session:
+    async with agent.session() as session:
         await session.run("search")
-    async with agent.session("saved") as session:
+    async with agent.session() as session:
         await session.run("continue")
     assert transport.calls == [("search", {"query": "once"})]
 

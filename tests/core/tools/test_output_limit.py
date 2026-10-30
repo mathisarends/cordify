@@ -11,15 +11,15 @@ from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ToolCallFinishedEvent, ToolExecutionFinishedEvent
 from harnessed.core.session.files import SessionFiles
-from harnessed.core.session.session import SessionLog
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import hook
-from harnessed.plugins import Approvals, JsonlSessions, Service
+from harnessed.plugins import Approvals, Service
 from harnessed.plugins.filesystem import FileSystemBackend, FilesystemTools, LocalFileSystem
 from harnessed.plugins.shell import LocalShell, ShellBackend, ShellTools
 from harnessed.plugins.spill import Spill
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit, AuditProjection
 
 
 def test_output_limit_includes_notice_keeps_head_and_tail_and_is_idempotent():
@@ -58,10 +58,11 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("cat"))], "done"])
     async with Application(
         model=model,
-        plugins=[Approvals(default=PolicyDecision.ALLOW), features, JsonlSessions(tmp_path)],
-    ).session("bounded") as agent:
+        plugins=[Approvals(default=PolicyDecision.ALLOW), features],
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("inspect")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
+        result = next(e.result for e in agent_audit.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) == 32000
         assert result.content.startswith("HEAD") and result.content.endswith("TAIL ERROR")
         assert model.requests[1].messages[-1].text == result.content
@@ -69,12 +70,12 @@ async def test_two_megabyte_result_is_bounded_in_model_log_and_replay_by_default
         receipt = agent.last(ToolExecutionFinishedEvent).result
         assert len(receipt.content) == 32000
         assert receipt.truncation.original_chars == len(source)
-        restored = tuple(decode_event(encode_event(e)) for e in agent.log.events)
-        assert SessionLog("replay", seed=restored).messages == agent.log.messages
+        restored = tuple(decode_event(encode_event(e)) for e in agent_audit.events)
+        assert AuditProjection(restored).messages == agent.log.messages
         replayed = next(e.result for e in restored if isinstance(e, ToolCallFinishedEvent))
         assert replayed == result and replayed.exit_code == 3
     # The unreviewed receipt adds one bounded copy to the durable audit trail.
-    assert (tmp_path / "bounded.jsonl").stat().st_size < 5 * ToolOutputLimit().max_chars
+    assert len(json.dumps([encode_event(e) for e in restored])) < 5 * ToolOutputLimit().max_chars
 
 
 @pytest.mark.parametrize("stage", ["execution", "review", "error"])
@@ -99,9 +100,10 @@ async def test_final_guard_also_limits_review_enrichment_and_tool_errors(stage):
     async with Application(
         model=model,
         plugins=[Approvals(default=PolicyDecision.ALLOW), ToolOutputLimit(512), features],
-    ).session("enriched") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
+        result = next(e.result for e in agent_audit.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) <= 512 and result.truncation is not None
         assert (result.status == ToolStatus.ERROR) == (stage == "error")
         assert decode_event(
@@ -126,9 +128,10 @@ async def test_output_budget_is_configured_with_the_plugin_slot():
         model=model,
         plugins=[Approvals(default=PolicyDecision.ALLOW), ToolOutputLimit(512), features],
     )
-    async with harness.session("small-budget") as agent:
+    async with harness.session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
+        result = next(e.result for e in agent_audit.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) == 512
 
 
@@ -147,16 +150,11 @@ async def test_spill_retains_full_output_before_the_final_limit_is_applied(tmp_p
     async with Application(
         system_prompt=SystemPrompt(sections=(spill.usage,)),
         model=model,
-        plugins=[
-            Approvals(default=PolicyDecision.ALLOW),
-            ToolOutputLimit(4096),
-            features,
-            JsonlSessions(tmp_path),
-            spill,
-        ],
-    ).session("spill-budget") as agent:
+        plugins=[Approvals(default=PolicyDecision.ALLOW), ToolOutputLimit(4096), features, spill],
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
+        result = next(e.result for e in agent_audit.events if isinstance(e, ToolCallFinishedEvent))
         assert result.spill is not None and len(result.content) <= 4096
         files = agent.ctx[SessionFiles]
         chunks = [
@@ -177,7 +175,7 @@ async def test_read_file_supports_bounded_unicode_character_ranges_and_continuat
             Service(FileSystemBackend, LocalFileSystem(tmp_path)),
             FilesystemTools(),
         ],
-    ).session("ranges") as agent:
+    ).session() as agent:
         registry = agent.ctx[ToolRegistry]
         result = await registry.execute(ToolCall("read_file", {"path": "large.txt"}))
         assert result.content.startswith(original[:8000])
@@ -226,9 +224,10 @@ async def test_large_shell_stdout_stderr_and_exit_code_remain_bounded(tmp_path):
             Service(ShellBackend, LocalShell()),
             ShellTools(tmp_path),
         ],
-    ).session("shell-budget") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("go")
-        result = next(e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent))
+        result = next(e.result for e in agent_audit.events if isinstance(e, ToolCallFinishedEvent))
         assert len(result.content) == 1024 and "TAIL_ERROR" in result.content
         assert result.status == ToolStatus.ERROR and result.exit_code == 3
         assert 500000 < result.truncation.original_chars < 1048576

@@ -123,6 +123,10 @@ class TurnProjection:
             self.validate(event)
             self.apply(event)
 
+    def release_closed(self) -> None:
+        self._closed.clear()
+        self._snapshot = None
+
     @property
     def closed_count(self) -> int:
         return len(self._closed)

@@ -4,6 +4,7 @@ from harnessed.core.model import ModelChunk
 from harnessed.core.session.events import ApprovalRequestedEvent
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit
 
 
 class Cleanup(Plugin):
@@ -30,9 +31,10 @@ async def test_a_tool_asks_the_configured_approver_mid_call():
     approvals = Approvals(default=PolicyDecision.ALLOW, approver=lambda request: next(answers))
     model = ScriptedModel(_calls(3))
     async with Agent(model=model, plugins=[tools, approvals]).session() as session:
+        session_audit = Audit(session)
         result = await session.run("clean up")
         assert [r.text for _, r in result.tool_calls] == ["kept the files", "deleted", "deleted"]
-        requests = [e for e in session.events if isinstance(e, ApprovalRequestedEvent)]
+        requests = [e for e in session_audit.events if isinstance(e, ApprovalRequestedEvent)]
         assert [e.scope for e in requests] == ["tool-call"] * 3
         assert requests[-1].grant_id is not None  # the ALWAYS grant answered the third call
         assert tools.deleted == ["c1", "c2"]

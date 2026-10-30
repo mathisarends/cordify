@@ -6,7 +6,7 @@ from pathlib import Path
 
 from harnessed import Agent, ApprovalAnswer, SystemPrompt, SystemSection
 from harnessed.events import ApprovalNeededEvent, TextDeltaEvent, ToolCallRequestedEvent
-from harnessed.plugins import AgentLoop, Filesystem, JsonlSessions
+from harnessed.plugins import AgentLoop, Filesystem
 
 
 async def main():
@@ -23,9 +23,9 @@ async def main():
                 filesystem.usage,
             )
         ),
-        plugins=[filesystem, AgentLoop(max_steps=8), JsonlSessions()],
+        plugins=[filesystem, AgentLoop(max_steps=8)],
     )
-    async with agent.session("project-tour") as session:
+    async with agent.session() as session:
         async for event in session.stream("Read pyproject.toml and explain the package."):
             match event:
                 case TextDeltaEvent(text=text):

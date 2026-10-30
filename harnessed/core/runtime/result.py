@@ -16,6 +16,7 @@ from harnessed.core.outputs import OutputTypes, OutputValues
 from harnessed.core.session.codec import CURRENT_VERSION, decode_event
 from harnessed.core.session.events import (
     AssistantMessageEvent,
+    CompactionAppliedEvent,
     ModelUsageRecordedEvent,
     OutputValidatedEvent,
     OutputValidationFailedEvent,
@@ -27,6 +28,7 @@ from harnessed.core.session.events import (
     TurnStartedEvent,
 )
 from harnessed.core.session.history import derive_messages
+from harnessed.core.session.state import SessionState
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,7 @@ class RunResult[T]:
     stop_reason: StopReason = StopReason.END
     turn_id: str | None = None
     messages: tuple[Message, ...] = ()
+    state: SessionState = field(default_factory=SessionState, kw_only=True)
     _output: T | _NoOutput = field(default=_NO_OUTPUT, repr=False, kw_only=True)
 
     @property
@@ -104,7 +107,9 @@ class RunResult[T]:
         )
 
 
-def result_from_events(events: tuple[SessionEvent, ...], *, output: Any = None) -> RunResult[Any]:
+def result_from_events(
+    events: tuple[SessionEvent, ...], *, output: Any = None, state: SessionState | None = None
+) -> RunResult[Any]:
     """Build a turn-scoped result, giving explicit termination precedence."""
     final = next((e for e in reversed(events) if isinstance(e, AssistantMessageEvent)), None)
     turn = next((e for e in events if isinstance(e, TurnEndedEvent)), None)
@@ -131,20 +136,27 @@ def result_from_events(events: tuple[SessionEvent, ...], *, output: Any = None) 
         sum_usage(e.usage for e in events if isinstance(e, ModelUsageRecordedEvent)),
         reason,
         turn.turn_id if turn else None,
-        derive_messages(events),
+        derive_messages(
+            tuple(event for event in events if not isinstance(event, CompactionAppliedEvent))
+        ),
+        state=state if state is not None else SessionState(),
         _output=output,
     )
 
 
 class RunResults:
-    """Materialize durable answers using the application's registered output contracts."""
+    """Materialize turn answers using the application's registered output contracts."""
 
     def __init__(self, outputs: OutputTypes, values: OutputValues) -> None:
         self.outputs = outputs
         self.values = values
 
     def build(
-        self, events: tuple[SessionEvent, ...], *, schema: OutputSchema | None = None
+        self,
+        events: tuple[SessionEvent, ...],
+        *,
+        schema: OutputSchema | None = None,
+        state: SessionState | None = None,
     ) -> RunResult[Any]:
         start = next((e for e in events if isinstance(e, TurnStartedEvent)), None)
         schema = start.output_schema if start is not None else schema
@@ -165,4 +177,4 @@ class RunResults:
                 value = self.values.pop(proof.id)
             else:
                 value, _ = self.outputs.resolve(schema).parse(dict(proof.data))
-        return result_from_events(events, output=value)
+        return result_from_events(events, output=value, state=state)

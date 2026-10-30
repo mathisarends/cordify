@@ -69,7 +69,7 @@ async def validated_tool():
     )
     async with Agent(
         model=model, plugins=[tools, Approvals(trust=[IssuesTools.create_issue])]
-    ).session("forms") as agent:
+    ).session() as agent:
         result = await agent.run("Create an authentication issue for alice.")
         results = [
             event.result for event in result.events if isinstance(event, ToolCallFinishedEvent)

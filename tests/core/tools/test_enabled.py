@@ -21,6 +21,7 @@ from harnessed.kernel import Context, Inject, InjectMarker, Key
 from harnessed.models import AssistantMessage, ModelResponse
 from harnessed.plugins import AgentLoop, Approvals, Service
 from harnessed.testing import ScriptedModel, call, reply
+from tests._audit import Audit
 
 
 @dataclass
@@ -129,9 +130,12 @@ async def test_condition_is_rechecked_after_an_earlier_tool_and_resource_wait(pa
             Approvals(default=PolicyDecision.ALLOW),
         ],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("invalidate then click")
         results = [
-            event.result for event in session.events if isinstance(event, ToolCallFinishedEvent)
+            event.result
+            for event in session_audit.events
+            if isinstance(event, ToolCallFinishedEvent)
         ]
         assert [result.status for result in results] == ["ok", "unavailable"]
 

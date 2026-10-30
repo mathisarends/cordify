@@ -94,7 +94,7 @@ async def main():
                 memory_tools,
             ],
         )
-        async with harness.session("review") as agent:
+        async with harness.session() as agent:
             result = await agent.run(
                 "Review this PR.",
                 attachments=[File(root / "PR.diff"), Image(root / "screenshot.png")],

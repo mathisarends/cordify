@@ -32,10 +32,10 @@ runpy.run_module(module, run_name="__main__", alter_sys=True)
         "examples.11_temporal_needs",
         "examples.12_layered_sdk",
         "examples.13_models",
-        "examples.14_session_log",
+        "examples.14_session_state",
         "examples.15_tool_output_limits",
         "examples.16_compaction_policies",
-        "examples.17_resume_crash",
+        "examples.17_external_state",
         "examples.18_parallel_tools",
         "examples.19_approvals_and_priorities",
         "examples.20_pause_resume_stop",
@@ -84,9 +84,6 @@ _INTERNAL_EXAMPLE_IMPORTS = {
     ("harnessed.core.prompt.system_prompt", "SystemPromptStore"),
     ("harnessed.core.session.codec", "decode_event"),
     ("harnessed.core.session.codec", "encode_event"),
-    ("harnessed.core.session.session", "SessionLog"),
-    ("harnessed.core.session.session", "derive_messages"),
-    ("harnessed.core.session.session", "derive_requests"),
     ("harnessed.core.tools.registry", "ToolRegistry"),
 }
 

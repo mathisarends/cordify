@@ -1,124 +1,121 @@
-# Conversations, logs and branches
+# Conversations and explicit state
 
-`Agent` holds reusable configuration. `Agent.session()` opens a live `Session`,
-which exposes `run`, `submit`, `stream`, context, usage, messages, events and turn snapshots
-directly. `SessionLog` is the underlying append-only store and projection layer;
-advanced integrations can inspect it through `session.log` or inject it as a service.
+`Agent` holds reusable configuration. `Agent.session()` opens a live conversation;
+`SessionState` is an immutable value that your application can save and inject
+into another session. Harnessed keeps conversation state in memory and does not
+create session files, maintain an archive or look up conversations by ID.
 
-## Resume by ID
-
-`MemorySessions` retains conversations for the lifetime of its configured plugin.
-`JsonlSessions` persists them across processes. Both enforce one live writer per
-ID. IDs contain 1–128 ASCII letters, digits, underscores or hyphens, beginning with
-a letter or digit. Omitting an ID generates a fresh one.
-
-To bound in-memory retention, install `MemorySessions(max_sessions=100)` from
-`harnessed.plugins`. It keeps the 100 most recently closed conversations and
-deletes older logs and artifacts when a lease closes. Reopening a retained ID
-protects it while active and refreshes its recency when closed. Active sessions
-are never evicted and do not count toward the limit. The default `None` retains
-all sessions.
-
-`MemorySessions(max_sessions=0)` is ephemeral: closing a session discards its
-stored log and files, including after failure or cancellation. Reopening the ID
-starts empty. `Agent.run()` uses a fresh session and therefore leaves no retained
-session in this mode. Returned `RunResult` values remain usable, but spilled files
-must be read before closing. Caller-held results/logs still consume memory.
-Retention limits conversation count, not bytes or the length of an active session.
-
-JSONL records store unchanged model history prefixes and tool definitions relative
-to the preceding request. Ordered loading reconstructs every recorded request;
-ordinary growing conversations no longer repeat their entire history on disk.
-Use `EventLogCodec` from `harnessed.core.session.codec` when reading raw JSONL
-records in order. `encode_event`/`decode_event` handle standalone event exports.
+## Continue from application-owned state
 
 ```python
-from harnessed import Agent
-from harnessed.plugins import JsonlSessions
+from harnessed import Agent, SessionState
 
-agent = Agent(model="deepseek:deepseek-chat", plugins=[JsonlSessions()])
+agent = Agent(model=model, plugins=plugins)
 
-# Inside an async function:
-# async with agent.session("support-4711") as session:
-#     result = await session.run("Investigate the login issue")
+# repository and conversation_id belong to your application.
+payload = await repository.load(conversation_id)
+state = SessionState.from_json(payload) if payload is not None else None
+
+result = await agent.run("Continue investigating the issue.", state=state)
+await repository.save(conversation_id, result.state.to_json())
+print(result.text)
 ```
 
-Each `run` queues its own turn. Concurrent calls receive separate results and do
-not wait for later turns to finish. The session's full log and accumulated usage
-remain available independently of any one result.
+Omit `state` to start empty. Supply a `SessionState` to continue its conversation.
+Each open session has a fresh runtime ID for correlation. Your application owns
+conversation keys, authorization, revisions, deletion and expiration. Coordinate
+concurrent writes through your repository, for example with revision checks.
+
+For several turns in one live session:
+
+```python
+async with agent.session(state=state) as session:
+    await session.run("Inspect the project.")
+    result = await session.run("Explain your findings.")
+    next_state = session.snapshot()
+
+await repository.save(conversation_id, next_state.to_json())
+```
+
+`result.state` belongs to that result's terminal turn boundary. Awaiting an old
+handle after a later turn finishes still returns the old turn's snapshot.
+`session.snapshot()` captures the current idle conversation and rejects an open
+turn, paused session, queued input or closing/closed session. A snapshot can be
+taken immediately after an awaited single run. Snapshot creation does not call
+a model, trigger compaction or write to a storage backend.
+
+Terminal stop, abort, rejection and limit outcomes can also produce state after
+local cleanup closes outstanding tool calls. Exporting a paused execution or
+pending approval is not supported. A discarded queued run has no executed turn;
+its result carries the most recent terminal conversation state when another turn
+is active. Queued work is never imported by a conversation snapshot.
+
+## Snapshot contents and compaction
+
+Snapshots contain the active summary, retained messages and the small amount of
+metadata needed for named context, observation provenance and future compaction.
+Full typed assistant messages preserve provider replay data and tool-call/result
+pairs. The final assistant reply is included; exporting only the last model
+request would omit that reply.
+
+Compaction replaces the working context with its new summary and selected
+messages. Subsequent summaries replace earlier ones. The discarded raw history,
+old requests and old execution events do not enter the snapshot. Runtime owners
+also release discarded context; current-turn result buffering may retain it until
+that turn ends. Caller-held results and earlier snapshots remain independent
+owners of their data. Compaction cannot revive a turn it previously discarded.
+
+The configured model, system instructions, tool definitions and plugin instances
+are provided by the new `Agent`. Static system instructions do not accumulate
+when importing state. Provider replay data retains its original identity and an
+incompatible model binding fails explicitly. Generation and output settings are
+provided for each new turn. Python validators and pending output contracts are
+not imported. Approval grants and plugin counters belong to the live session;
+new sessions evaluate their current approval policy again.
+
+`SessionState.to_json()` and `SessionState.from_json()` use state format **1**.
+Unknown versions, unknown fields, incomplete tool pairs and corrupt stored
+resources fail explicitly. Old JSONL event logs are not conversation snapshots
+and are not automatically migrated. The standalone audit-event codec has its own
+versioned envelope.
+
+## Independent continuations
+
+```python
+a = await agent.run("Explore approach A.", state=next_state)
+b = await agent.run("Explore approach B.", state=next_state)
+```
+
+The input snapshot is unchanged. Each continuation owns separate mutable runtime
+containers and returns its own state. No fork object, parent archive or implicit
+merge is involved.
 
 ## Image assets and memory
 
-An open JSONL session keeps its event history in RAM, but its stored image bytes
-live in `<root>/<session-id>.assets/<sha256>`. Inline `ImagePart` data URLs in
-standard message, observation and tool-result events are converted to
-`ImageReference` values before admission. Each reference carries an `AssetRef`
-with SHA-256, media type and byte size; image detail remains on `ImageReference`.
-The binary file is committed before the referencing event. Request records and
-streamed durable events contain these references, not expanded Base64 strings.
+Inline images are normalized to `ImageReference(AssetRef(...))` values. Use
+`await session.assets.put(data, media_type="image/png")` when screenshot bytes
+are already available, and `await session.assets.read(ref)` to read verified
+bytes while the session is open. Import `ImageReference` from `harnessed.models`.
+Only selected images are resolved for model transport after compaction and budget
+checks. The encoded-image cache is bounded to 16 MiB and 256 entries.
 
-Local `Image(path)` attachments go directly into storage. Applications that
-already have screenshot bytes can avoid encoding and decoding Base64:
+A snapshot includes the bytes of every image referenced by its retained context.
+JSON encodes those bytes as Base64; there are no additional asset directories.
+Size and SHA-256 are validated on import. Closing the originating session or
+compacting it later cannot invalidate an earlier snapshot. HTTP(S) image URLs
+remain external references; Harnessed does not download them automatically.
+Explicit `File(path)` and `Image(path)` attachments still read caller-selected
+files. Explicit filesystem or shell tools retain their own I/O behavior.
 
-```python
-from harnessed import Observation
-from harnessed.models import ImageReference, TextPart
+The optional `Spill` plugin uses session-local memory for large textual outputs.
+Snapshots include retained spill references and contents. Summaries conservatively
+retain active spill dependencies; their explicit count/byte quotas still apply.
+Expired references remain unavailable. Session-owned text and image resources are
+released when their live owner closes; exported snapshots own their bytes.
+These limits are not a total process memory limit: active provider requests,
+caller-held snapshots, results and un-compacted context also consume memory.
 
-# Inside an async PreStep hook:
-asset = await event.session.assets.put(screenshot_bytes, media_type="image/png")
-event.session.observe(
-    Observation("browser", (TextPart(browser_text), ImageReference(asset)), refs=(snapshot_id,))
-)
-```
-
-After request hooks, compaction and budget checks, the runtime resolves only
-selected images for the model transport. A per-live-session LRU retains at most
-16 MiB of encoded image payload and 256 entries. Reused cached images require no
-file read or Base64 encoding. Larger images bypass the cache; repeated references
-within one request still share their resolved payload. File I/O, hashing for the
-JSONL backend and Base64 conversion run in worker threads. Closing the session
-clears its encoded-image cache.
-
-The cache limit is not a total process memory limit. The active provider request,
-SDK serialization, event metadata and caller-held values also consume memory.
-The log still grows with history. `MemorySessions` intentionally keeps its binary
-assets in RAM; choose `JsonlSessions` to keep historical image bytes on disk.
-No provider latency or token-cost improvement is implied by the storage format.
-
-Reopening reads references without opening image files. On a cache miss, the
-store checks byte size and SHA-256 before returning an image. Missing or corrupt
-images fail explicitly before the model call. HTTP(S) URLs remain external:
-Harnessed does not download them or promise that their contents stay unchanged.
-Use stored bytes for reproducible screenshots.
-
-`await session.assets.read(image_reference.asset)` returns the original bytes.
-For manual replay, `await session.log.resolve_request(recorded_request)` produces
-a provider-ready copy; it does not replace the recorded request. Custom token
-counters and summarizers receive reference-bearing requests/messages and must
-resolve images explicitly if they need to send them to another provider. The
-default token estimate counts references as images; the default summarizer reads
-text only.
-
-Custom session backends implement `SessionStore.assets(session_id) -> AssetStore`
-with async `put(bytes, *, media_type) -> AssetRef` and `read(ref) -> bytes`.
-The store owns durability, isolation and integrity checks; the runtime owns
-request selection and the bounded encoded cache. Custom durable event payloads
-are not automatically rewritten: applications should store their binary data
-through `session.assets` and record explicit references themselves. Automatic
-fork copying covers the standard multimodal fields; custom event payloads must
-manage any additional asset references themselves. When constructing a low-level
-`SessionLog` with persistence directly, an explicit matching `assets` store is
-required, so binary references cannot silently point to a temporary memory store.
-
-Back up the JSONL log together with its `.assets` and `.files` directories.
-Compaction removes images from model context, not from the audit history or disk.
-Session deletion removes both namespaces. Opening a fork copies every image
-referenced by its event prefix, including historical requests, before writing
-its log; a missing image fails the fork. Copies are independent of parent deletion.
-Failed admissions can leave unreferenced asset files; these are reclaimed on
-session deletion, not by an automatic garbage collector.
-
-## Submit without waiting for completion
+## Submit, steer and observe
 
 ```python
 first = await session.submit("Inspect the project.")
@@ -127,211 +124,62 @@ print((await first.result()).text)
 print((await second.result()).text)
 ```
 
-`submit()` returns after the input is durably acknowledged. Its `RunHandle[T]`
-provides `id`, `done()` and an awaitable `result()`. Runs execute in queue order
-under the session's existing driver. No background task is created per handle.
-`run()` is the convenience form that submits and waits for the result.
+`submit()` acknowledges admission to the in-memory inbox and returns a
+`RunHandle[T]`. Runs execute in queue order. Cancelling a result waiter does not
+cancel the queued or executing run. Repeated waits return the same result and
+validated output. Closing fails unfinished live handles with `SessionClosed`.
 
-| Call | Goes to | While a turn runs | While idle | Returns |
-|---|---|---|---|---|
-| `run(text)` / `stream(text)` | a new turn | queued after earlier turns | starts at once | `RunResult` / this turn's events |
-| `submit(text)` | a new turn | queued after earlier turns | starts at once | `RunHandle[T]` |
-| `steer(text)` | the running turn | joins its next step | starts a new turn | `InboxItem` |
-| `context.set(name, value)` | named context | sent with the next step | sent with the next turn; starts nothing | `None` |
-| `observe(observation)` | the next step's history | latest state per source joins the next step | waits for the next turn; starts nothing | `None` |
-
-A queued follow-up is just another `run()` or `submit()`. Facts that must not wake
-the agent belong in `context.set()`. `steer` accepts the same `attachments` as `run`.
-`observe` is synchronous and kept in memory until the next step records it; a newer
-observation from the same source replaces an unrecorded older one. Use it from hooks
-for changing state such as a browser page, and see [context](context.md) for
-observation policies.
-
-`StepDecision.reject()` in a `PreStep` hook permanently consumes that step's
-pending inputs and ends the turn with `StopReason.REJECTED`. Later runs never
-retry rejected work. Use the session's pause/resume controls to hold work instead.
-
-Repeated result waits return the same result, including the originally validated
-structured output. Cancelling a result waiter leaves the run queued or executing.
-Driver errors are delivered through the handle; closing the session fails unfinished
-live handles with SessionClosed while retaining their durable inputs or paused turn.
-
-Concurrent `session.aclose()` calls share one driver shutdown and resource cleanup.
-Cancelling a close waiter leaves that cleanup running; a later close waits for the
-same operation. Driver and closing hooks cannot await their own session closure.
-
-## Fork a closed prefix
-
-```python
-# async with agent.session("support-4711") as session:
-#     branch = session.fork("support-4711-alternative")
-# async with agent.session(branch) as alternative:
-#     await alternative.run("Try another approach")
-```
-
-`at` selects an exclusive event offset at a closed turn boundary. A fork retains
-the active artifact references from that prefix. Opening the branch copies those
-files into its own namespace and verifies their recorded SHA-256 digests. Later
-parent files are excluded, and deleting the branch leaves the parent's files intact.
-The file copy happens when the branch is opened: if retention has removed a source
-file by then, the branch records it as missing. Invalid external paths are never read.
-
-A fork retains the original frozen values without changing the parent. Approval grants are
-revoked in the new branch unless `inherit_approvals=True` is explicitly requested.
-Opening the branch writes its seed to a new destination; an existing non-empty
-destination is rejected.
-
-## Subscribe to the raw log
-
-```python
-# async for event in session.subscribe():
-#     await audit_database.append(event)
-```
-
-Subscribers receive acknowledged durable records in append order. Set
-`transient=True` to also observe live notifications. These subscriptions are
-independent of a particular `run` or `stream` and remain active through dependent
-plugin teardown. They end when the session's owning scope finishes. Start the
-consumer before the work whose records you need; existing records are available
-through `session.events`.
-
-`session.subscribe(buffer_size=256)` and `session.stream(..., buffer_size=256)`
-bound each consumer's queue. A consumer that falls behind is disconnected and
-raises `harnessed.StreamOverflow`; the producer and other consumers continue.
-Durable events and completed answers remain available in `session.events`.
-Live deltas are transient and cannot be replayed. Increase the positive buffer
-size or consume faster before reconnecting.
-
-See [the immutable value and codec contract](../concepts/values.md) for record
-versions, validation and replay semantics.
+`steer(text)` adds input to the next step of an active turn, or starts a new turn
+while idle. `context.set(name, value)` supplies a quiet named fact; it starts no
+work. `observe(observation)` buffers the latest pending snapshot per source until
+the next step records it. Unrecorded observations are not exported. Use these
+operations from hooks as described in [context](context.md).
 
 ## Control a live run
 
 ```python
-running = await session.submit("Review the patch.")
-await session.pause()  # Wait for the complete model/tool step to commit.
-await session.context.set("ci", "Tests passed.")
-await session.resume()  # Continue the same turn.
-result = await running.result()
-await session.wait_until_idle()  # Wait for all queued turns too.
-```
-
-`stop()` finishes the current step and returns `StopReason.STOPPED` to its run.
-`abort()` cancels the model and tools immediately, drains their cleanup, repairs
-outstanding calls and returns `StopReason.ABORTED`. Both return to `SessionStatus.IDLE`.
-An abort overtakes a pending graceful stop. Repeated controls are safe.
-
-Limit a single turn with `run(..., max_steps=8, token_budget=50_000)`. The token
-budget counts input plus output tokens of every model call in the turn and is
-checked before each step, so the turn ends with `StopReason.TOKEN_BUDGET` instead
-of starting another one. For a wall-clock limit, stop the turn from a timer; the
-caller still receives a normal result:
-
-```python
 handle = await session.submit("Investigate the outage.")
-timer = asyncio.get_running_loop().call_later(120, lambda: asyncio.ensure_future(session.stop()))
-try:
-    result = await handle.result()  # StopReason.STOPPED after two minutes
-finally:
-    timer.cancel()
+await session.pause()
+await session.context.set("ci", "Checks passed.")
+await session.resume()
+result = await handle.result()
+await session.wait_until_idle()
 ```
 
-Queued runs receive `StopReason.DISCARDED` unless `keep_inbox=True`. Retained
-inputs always start separate turns. Pause accepts queued runs but prevents them
-from starting until `resume()`. `wait_until_idle()` also waits through a pause;
-wrap it in `asyncio.timeout(...)` when your application needs a deadline.
+`pause()` waits for a whole model/tool step. `resume()` continues the same open
+session. `stop()` completes the current step and ends the turn;
+`abort()` cancels activity, drains cleanup and closes outstanding calls. Both
+return the live session to idle. Queued runs are discarded unless
+`keep_inbox=True`; retained inputs start separate turns. `wait_until_idle()` also
+waits through a pause. Driver hooks cannot wait for their own control boundary.
 
-Control methods that wait for a step boundary must be called from outside that
-step. A tool or driver hook cannot await its own completion. Depend on the narrow
-`SessionControl` service when a plugin needs to expose controls to an external UI.
-
-Closing a paused handle preserves its durable pause. Reopening it requires
-`resume()` and does not repeat committed tools. Outstanding `run`/`stream` waiters
-on the closed handle raise `SessionClosed`; their durable turn or queued input is
-retained. A crash during an active run
-repairs unfinished activity as aborted and leaves the reopened session idle.
-After closing, operations raise `SessionClosed`; the final status is `CLOSED`.
-See [the runnable control example](https://github.com/mathisarends/harnessed/blob/main/examples/20_pause_resume_stop.py).
+Concurrent `aclose()` calls share cleanup. Cancelling a close waiter does not
+cancel cleanup for other callers. Live processes and connections are released
+once. Persisting a conversation does not preserve external workspace state,
+background shell commands or Python execution stacks.
 
 ## Step progress and a reserved summary
 
-`PreStep` exposes the effective `max_steps`, `remaining_steps` (including the step
-about to start), and `is_last_step`. `is_final_step` identifies a reserved summary
-step; the last ordinary step has `is_last_step=True` and `is_final_step=False`.
-Effective step limits and the final-step policy are recorded at turn start and
-survive pause/reopen even if the agent's loop configuration changes. Remaining
-steps are an allowance, not a guarantee: token budgets or controls can stop earlier.
+`PreStep` exposes `max_steps`, `remaining_steps`, `is_last_step` and `is_final_step`.
+The remaining count includes the step about to start.
 
-```python
-from harnessed import Agent
-from harnessed.plugins import AgentLoop, FinalStepPolicy
+Use `run(..., max_steps=8, token_budget=50_000)` to bound a turn. Token budgets
+count input and output across that turn's model calls. `AgentLoop` can reserve a
+final summary with `FinalStepPolicy.SUMMARIZE`; this produces text and
+`StopReason.MAX_STEPS`, not a validated structured output. See [step limits](../reference/sdk.md).
 
-agent = Agent(
-    model=model,
-    plugins=[AgentLoop(max_steps=12, final_step=FinalStepPolicy.SUMMARIZE)],
-)
-result = await agent.run("Investigate the issue.")
-print(result.text)
-```
+## Application-owned audit
 
-`FinalStepPolicy.NONE` is the default. `SUMMARIZE` reserves the last available
-step for a text summary of results, uncertainty and unfinished work. With a
-12-step limit, at most 11 steps perform ordinary work. With `max_steps=1`, the
-only step is a summary. Earlier normal completion needs no additional request.
-Per-run `max_steps=` overrides also determine where the summary is reserved.
+Use `session.subscribe()` or event hooks to write a complete audit externally.
+Subscriptions receive execution events in admission order; `transient=True` also
+includes live notifications. Start the consumer before work begins. Consumers
+with a full buffer are disconnected with `StreamOverflow`; they do not stop the
+producer. Already returned `RunResult.events` remain available to their caller.
 
-The summary request has no tools or output schema. Runtime execution also blocks
-any calls the model returns anyway, recording them as skipped without policy,
-approval or execution hooks. The summary ends with `StopReason.MAX_STEPS` and
-`completed=False`; continuation hooks cannot start another step. It creates no
-extra step after the limit and never starts after the token budget is exhausted.
-A provider or context failure may still prevent a usable summary.
-
-This policy currently returns only `result.text`. If the run declares `output=T`,
-earlier normal completion still validates `T`; a reserved summary does not create
-a validated value, and accessing its `.output` raises `OutputUnavailable`.
-The summary is streamed through the ordinary text and turn-finished events.
-
-## Inspect or remove queued input
-
-```python
-await session.pause()
-queued = await session.submit("Review after the current task.")
-await session.inbox.remove(queued.id)
-assert (await queued.result()).stop_reason is StopReason.DISCARDED
-await session.resume()
-```
-
-`pending` returns a frozen snapshot of `InboxItem` values. Each has an `id`,
-`InboxKind.RUN` or `STEER`, a frozen `content` message and `created_at` in Unix
-seconds. Removing an already claimed or unknown ID raises `KeyError`. Removal
-is durable and only discards that queued turn. `steer()` returns its `InboxItem`;
-it adds a message to the running turn's next step, or wakes a new turn when idle.
-Plugins can inject `SessionInbox` to steer or inspect inputs without the driver.
-
-## Session-owned files
-
-Storage also provides a narrow `SessionFiles` service for optional features.
-MemorySessions retains these artifacts with its in-memory conversation; JsonlSessions
-keeps them under `<session-id>.files/` beside the log. Different session IDs have
-separate namespaces. Relative keys reject traversal, absolute paths and platform
-reserved names. Character ranges preserve Unicode and exact newline sequences.
-
-Disk reads, atomic replacements, flushes and directory scans run off the event
-loop. Cancellation drains an in-flight worker before a following operation obtains
-the same storage lock. The optional Spill plugin can build retention and content
-addressing over this shared storage contract without importing the JSONL plugin.
-
-## List and delete stored conversations
-
-```python
-ids = await agent.sessions.list()  # Sorted tuple of session IDs.
-await agent.sessions.delete("old-task")  # Log, artifacts and recovery sidecars.
-```
-
-Deleting a live session raises SessionLocked, including when another process owns
-its JSONL writer. Deleting a missing ID is idempotent. Other sessions' files are
-untouched. Metadata operations mount the sessions slot and explicitly configured
-Service dependencies; they do not start the model or unrelated capabilities.
-A custom sessions plugin should own its backend setup or use those explicit services.
-The log and artifact directory are removed under the same exclusive writer lock.
+`session.events`, `session.turns` and request lookup describe the current turn's
+execution buffer, which is released after terminal delivery. They are not an
+archive of earlier runs. `session.messages` exposes retained working context;
+`session.last(Event)` provides limited recent diagnostics and can be cleared by
+compaction. Use snapshots for continuation and an external audit for historical
+inspection. [Event extensions](events.md) remain available for typed application
+records; custom audit events do not automatically become conversation state.

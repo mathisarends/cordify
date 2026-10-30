@@ -1,10 +1,8 @@
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
-from harnessed.core.session.events import SessionEvent
-from harnessed.core.session.store import MemoryPersistence
 from harnessed.core.tools.registry import ToolError
 from harnessed.plugins.filesystem import FileStat, Filesystem, SearchResult, search_files
 from harnessed.plugins.shell import ProcResult, Shell
@@ -152,42 +150,3 @@ class FakeShell(Shell):
         self.responses = dict(responses or {})
         self.calls: list[CommandCall] = []
         super().__init__(implementation=_FakeCommands(self.responses, self.calls), **options)
-
-
-class InMemoryPersistence(MemoryPersistence):
-    """A controllable log backend with flush/close observations and write failure injection."""
-
-    def __init__(
-        self,
-        seed: Mapping[str, Iterable[SessionEvent]] | None = None,
-        *,
-        fail_after: int | None = None,
-    ) -> None:
-        super().__init__()
-        self.records = {key: list(events) for key, events in (seed or {}).items()}
-        self.fail_after = fail_after
-        self.writes = 0
-        self.flushes = 0
-        self.closed = False
-
-    def _check_open(self) -> None:
-        if self.closed:
-            raise RuntimeError("Persistence is closed")
-
-    async def load(self, session_id):
-        self._check_open()
-        return await super().load(session_id)
-
-    async def append(self, session_id, seq, event) -> None:
-        self._check_open()
-        if self.fail_after is not None and self.writes >= self.fail_after:
-            raise OSError("Injected persistence failure")
-        await super().append(session_id, seq, event)
-        self.writes += 1
-
-    async def flush(self) -> None:
-        self._check_open()
-        self.flushes += 1
-
-    async def aclose(self) -> None:
-        self.closed = True

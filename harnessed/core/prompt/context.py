@@ -24,15 +24,9 @@ class DynamicContext:
 
     def __init__(self, session: SessionLog) -> None:
         self.log = session
-        self._values: dict[str, str] = {}
+        self._values = session.context_values
         self._lock = asyncio.Lock()
         self._owned: list[_OwnedContext] = []
-        for event in session.events:
-            if isinstance(event, ContextValueChangedEvent):
-                if event.value is None:
-                    self._values.pop(event.name, None)
-                else:
-                    self._values[event.name] = event.value
 
     @property
     def values(self) -> dict[str, str]:

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class LiveApproval:
-    """A live approval handle; answer() waits for its decision's durable acknowledgement."""
+    """A live approval handle; answer() waits for its decision's in-memory admission."""
 
     def __init__(self, request: ApprovalRequestedEvent) -> None:
         self.request_id = request.request_id
@@ -89,7 +89,7 @@ class LiveApprovals:
 
 
 class SessionApprovals:
-    """Approval snapshots and acknowledged responses addressed by durable request ID."""
+    """Approval snapshots and acknowledged responses addressed by request ID."""
 
     def __init__(
         self,
@@ -137,6 +137,15 @@ class SessionApprovals:
             and record.resolution.status == ApprovalStatus.ANSWERED
         ):
             if record.decision is not decision:
+                raise ValueError("An approval cannot change its submitted decision")
+            return
+        latest = self.log.last(ApprovalResolvedEvent)
+        if (
+            latest is not None
+            and latest.request_id == request_id
+            and latest.status == ApprovalStatus.ANSWERED
+        ):
+            if latest.decision is not decision:
                 raise ValueError("An approval cannot change its submitted decision")
             return
         raise ApprovalUnavailable("This approval is no longer pending")

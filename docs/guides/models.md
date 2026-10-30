@@ -68,7 +68,7 @@ async with agent.session() as session:
 `model.settings` exposes the defaults. Per-turn settings override concrete values;
 `None` inherits the configured value, and `temperature=0` is a real override.
 Overrides do not mutate a shared model. They are stored with the inbox item and
-turn, survive reopening, and apply to every step of that turn. Model-service
+live turn and apply to every step of that turn. Supply overrides again for the next turn. Model-service
 replacement uses the new model's defaults for subsequent requests.
 
 The adapter snapshots native model defaults at construction, applies its own

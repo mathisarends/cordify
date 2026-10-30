@@ -127,7 +127,7 @@ The local background backend retains the latest bytes of each stream, so progres
 and recent diagnostics remain visible after the capture limit is reached.
 
 Handles and captured output are live resources and are not restored from persisted
-sessions or forks. Already queued notifications remain durable, but replay never
+sessions or snapshots. Conversation snapshots exclude queued notifications and never
 launches or reattaches to a process. IDs from another session or a previous mount
 are rejected.
 
