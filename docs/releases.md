@@ -6,25 +6,6 @@ still evolving before 1.0.
 Detailed breaking changes and upgrade instructions are recorded in the repository
 [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
 
-## Unreleased
-
-- Add optional Docker and Bubblewrap sandbox integrations with shared shell/file
-  workspaces, bounded transfers, explicit exports, resource controls and a typed
-  backend extension protocol. Native runtime dependencies are application-managed.
-- `FilesystemTools` now includes discovery, editing and deletion. `ShellTools`
-  passes relative working directories to its backend instead of resolving them
-  against the host at mount time. See [sandboxes](guides/sandboxes.md).
-- Resolve typed `shell` and `file_system` handles with `sandbox.services(session)`.
-  Custom sandbox backends supply these services after asynchronous readiness,
-  without implementing the internal worker protocol.
-- Sandbox startup and shell deadlines raise `TimeoutError`, including time spent
-  waiting for the worker channel. UTF-8 failures use `UnicodeError`; file reads
-  fail explicitly when their requested range exceeds the transfer byte budget.
-  Filesystem backends now implement `grep()` (a `search_files` fallback is
-  available), and built-in sandboxes perform a search in one worker request.
-  Move `env` and `max_output_bytes` from `ShellTools` to the backend; `Shell`
-  accepts them only when it owns the local backend.
-
 ## Compatibility policy
 
 - Minor releases during 0.x may introduce breaking API or storage changes. Release
@@ -32,7 +13,7 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 - Patch releases within a minor line are intended for compatible fixes. Pin the
   exact package version for reproducible deployments and persisted workflows.
 - Session records have an explicit format version. Release 0.1.0 uses version 1;
-  releases 0.2.0 through 0.5.0 use version 2. Incompatible core record changes require
+  releases 0.2.0 through 0.6.0 use version 2. Incompatible core record changes require
   a new version. Unsupported versions fail explicitly, and no automatic format
   migrations are provided.
 - Back up persisted sessions before upgrading. Application-defined events and
@@ -44,6 +25,59 @@ Python 3.12, 3.13 and 3.14 are supported on Linux, Windows and macOS. Provider
 integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
+
+## 0.6.0 (Unreleased)
+
+This minor release adds explicit Docker and Bubblewrap sandboxes and hardens MCP
+transport failures and cleanup. It includes breaking shell/filesystem backend
+changes from 0.5.0; the session record format remains version 2.
+
+### Highlights
+
+- Compose `DockerSandbox` or `BubblewrapSandbox` with `ShellTools()` and
+  `FilesystemTools()` for a shared isolated workspace, resource controls,
+  bounded transfers and explicit binary exports. Networking is disabled by
+  default. Native runtimes and images/rootfs are application-managed; there is
+  no new Python extra or fallback to local execution. See
+  [sandboxes](guides/sandboxes.md).
+- Resolve typed `shell` and `file_system` handles through
+  `sandbox.services(session)`. Custom `SandboxBackend` implementations expose
+  these services after asynchronous readiness, without implementing the internal
+  worker protocol. Shell deadlines include queueing and launcher startup.
+- Use the full filesystem tool set through `FilesystemTools`. Backends support
+  bounded binary reads and `grep()`; built-in sandboxes batch each search into
+  one worker request. Oversized requested file ranges fail explicitly, and
+  invalid UTF-8 raises `UnicodeError`.
+- Failed MCP connections close promptly, hide their tools, wake pending calls
+  and drain owned tasks. HTTP session termination has a five-second network
+  inactivity timeout. Ordinary tool `isError` results keep the connection usable;
+  failed operations are never automatically retried. See
+  [MCP tools and deployment boundaries](guides/mcp.md#deployment-boundary).
+- Expand real-socket MCP HTTP and stdio tests, and exercise native Docker in CI
+  on Linux/Python 3.12. Bubblewrap runtime tests require an explicitly configured
+  host. Run the offline [sandbox example](guides/examples.md).
+
+### Upgrade from 0.5.0
+
+1. Move `env` and `max_output_bytes` from `ShellTools` to the shell backend or
+   sandbox. `Shell` accepts these options only for its owned local backend;
+   combining them with `implementation=` raises `ValueError`.
+2. Treat `ShellTools(cwd=...)` as a backend-relative path. Sandboxes require paths
+   relative to their workspace, without absolute host paths or `..` components.
+   Custom shell backends must include queueing and startup in request deadlines.
+3. Add `read_bytes()` and `grep()` to custom `FileSystemBackend` implementations;
+   `harnessed.plugins.filesystem.search_files` is an optional grep fallback.
+   Preserve character-based text ranges and explicit byte-limit failures.
+4. Review allowlists and prompts for `FilesystemTools`, which now includes
+   discovery, editing, deletion and `usage` guidance. Runtime mounts must choose
+   `section_delivery` explicitly. Tool approval policies continue to apply.
+5. Keep existing version 2 session stores. Export sandbox results before closing
+   the session; reopened sessions and forks create fresh sandbox workspaces.
+   Replace failed MCP connections instead of reusing their closed mounts.
+
+The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the full backend migration requirements. Existing local `Shell` and
+`Filesystem` configurations need no sandbox integration.
 
 ## 0.5.0 (2026-10-30)
 
