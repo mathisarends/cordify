@@ -20,6 +20,13 @@ version **2**. See the upgrade steps below before adopting the new APIs.
   format/version and provider/model identity. Clear state with `None` when
   deliberately discarding signed replay data; incompatible bindings fail explicitly.
 
+### Background shell commands
+
+- Add the explicit `BackgroundShell` plugin with start, live output inspection,
+  stdin/EOF, process-tree termination and session-inbox completion notifications.
+  Existing `Shell`/`ShellTools` tools remain unchanged. See the
+  [developer guide](docs/guides/background-shell.md) and offline example 35.
+
 ### Message names and multimodal observations
 
 - Rename `System`, `User`, `Assistant` and `ToolReply` to `SystemMessage`,

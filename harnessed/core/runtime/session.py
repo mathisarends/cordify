@@ -11,6 +11,7 @@ from harnessed.core.compaction import CompactionManager
 from harnessed.core.errors import SessionClosed, SessionStateError
 from harnessed.core.hooks import (
     SessionAppended,
+    SessionClosing,
 )
 from harnessed.core.messages import (
     Message,
@@ -79,6 +80,7 @@ class Session:
         self.ctx = ctx
         self.log = session
         self._options = options
+        self._closing_hooks_done = False
         self.id = session.id
         self.context = DynamicContext(session)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
@@ -496,7 +498,12 @@ class Session:
         try:
             await self.control.close()
         finally:
-            self._publish(None)
+            try:
+                if self.control.closing and not self._closing_hooks_done:
+                    self._closing_hooks_done = True
+                    await self.ctx.dispatch(SessionClosing(self))
+            finally:
+                self._publish(None)
 
     async def _drive(self) -> None:
         token = _driving.set(self)

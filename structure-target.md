@@ -79,6 +79,9 @@ Internal modules import their owning layer rather than the root facade.
   available until all cleanup effects finish.
 - Plugins declare service requirements explicitly with `needs`; `Inject` binds
   attribute and parameter values without inferring lifetime dependencies.
+- Background shell execution is an explicit `BackgroundShell` plugin on an existing
+  backend. It owns live command handles per mount and delivers completion through
+  the session inbox. `Shell` and `ShellTools` remain foreground-only tools.
 - Registration ownership uses public `Context.register()` and
   `RegistrationState.active`. Higher layers do not inspect private kernel state.
 - Prompt metadata is normalized into typed `PromptContribution` values at the agent

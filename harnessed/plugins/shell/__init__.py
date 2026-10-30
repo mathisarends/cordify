@@ -1,185 +1,30 @@
 import asyncio
-import os
-import signal
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Protocol, Self
+from typing import Annotated, Self
 
 from pydantic import Field, model_validator
 from pydantic.fields import FieldInfo
 
+from harnessed.core.hooks import SessionClosing
 from harnessed.core.messages import ToolResult, ToolStatus, result_content, to_dict
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.prompt.values import SystemSection
+from harnessed.core.runtime.inbox import SessionInbox
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError, ToolRegistry
 from harnessed.kernel import Context, Inject
 
-if os.name == "nt":
-    from .windows import WindowsJob
-
-
-@dataclass(frozen=True, slots=True)
-class ProcResult:
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-class ShellBackend(Protocol):
-    """Run commands with cwd interpreted relative to the backend's filesystem.
-
-    The timeout includes queueing, launch and execution. Expiry raises
-    TimeoutError; cancellation propagates CancelledError after owned cleanup.
-    A failed or interrupted command must never be replayed automatically.
-    Environment and capture limits are configured on the backend itself.
-    """
-
-    async def run(self, argv: list[str], *, cwd: Path, timeout: float) -> ProcResult: ...
-
-
-class _Options(PluginConfig):
-    max_timeout: Annotated[float, Field(gt=0, le=600)] = 600.0
-    max_output_bytes: Annotated[int, Field(ge=256)] = 1_048_576
-    env: dict[str, str] | None = None
-
-
-class _Command(PluginConfig):
-    argv: Annotated[list[str], Field(min_length=1)]
-    timeout: Annotated[float, Field(gt=0, le=600)]
-
-
-class LocalShell:
-    """Own descendants and drain bounded stdout/stderr throughout execution.
-
-    Half the capture budget is reserved for each stream so noisy stdout cannot
-    hide stderr diagnostics. Commands inherit the host environment unless env
-    is explicitly supplied. This is process ownership, not a filesystem sandbox.
-    """
-
-    def __init__(
-        self,
-        *,
-        max_timeout: float = 600.0,
-        max_output_bytes: int = 1_048_576,
-        env: Mapping[str, str] | None = None,
-    ) -> None:
-        self.options = _Options(
-            max_timeout=max_timeout,
-            max_output_bytes=max_output_bytes,
-            env=dict(env) if env is not None else None,
-        )
-
-    async def run(self, argv: list[str], *, cwd: Path, timeout: float) -> ProcResult:
-        command = _Command(argv=argv, timeout=timeout)
-        if command.timeout > self.options.max_timeout:
-            raise ValueError(f"timeout must not exceed {self.options.max_timeout:g} seconds")
-        job = WindowsJob() if os.name == "nt" else None
-        process: asyncio.SubprocessTransport | None = None
-        terminated = False
-        protocol = _ProcessProtocol(self.options.max_output_bytes)
-
-        def terminate() -> None:
-            nonlocal terminated
-            if terminated:
-                return
-            terminated = True
-            if job is not None:
-                job.close()
-            elif process is not None:
-                try:
-                    os.killpg(process.get_pid(), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            if process is not None and process.get_returncode() is None:
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
-
-        spawning = asyncio.create_task(
-            asyncio.get_running_loop().subprocess_exec(
-                lambda: protocol,
-                *command.argv,
-                cwd=cwd,
-                env=self.options.env,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                creationflags=(0x00000004 | 0x00000200) if job else 0,
-                start_new_session=os.name != "nt",
-            )
-        )
-        try:
-            async with asyncio.timeout(command.timeout):
-                process, _ = await asyncio.shield(spawning)
-                if job is not None:
-                    job.attach_and_resume(process.get_pid())
-                await protocol.exited.wait()
-                terminate()
-                await protocol.closed.wait()
-            returncode = process.get_returncode()
-            assert returncode is not None
-            return ProcResult(returncode, protocol.stdout.text(), protocol.stderr.text())
-        finally:
-
-            async def cleanup() -> None:
-                nonlocal process
-                try:
-                    if process is None:
-                        process, _ = await spawning
-                finally:
-                    terminate()
-                if process is not None:
-                    await protocol.closed.wait()
-                    process.close()
-
-            cleanup_task = asyncio.create_task(cleanup())
-            while not cleanup_task.done():
-                try:
-                    await asyncio.shield(cleanup_task)
-                except asyncio.CancelledError:
-                    continue
-            cleanup_task.result()
-
-
-class _ProcessProtocol(asyncio.SubprocessProtocol):
-    def __init__(self, max_output_bytes: int) -> None:
-        self.stdout = _Capture(max_output_bytes // 2, "stdout")
-        self.stderr = _Capture(max_output_bytes // 2, "stderr")
-        self.exited = asyncio.Event()
-        self.closed = asyncio.Event()
-
-    def pipe_data_received(self, fd: int, data: bytes) -> None:
-        (self.stdout if fd == 1 else self.stderr).feed(data)
-
-    def process_exited(self) -> None:
-        self.exited.set()
-
-    def connection_lost(self, exc) -> None:
-        self.closed.set()
-
-
-class _Capture:
-    def __init__(self, limit: int, name: str) -> None:
-        self.limit = limit
-        self.name = name
-        self.data = bytearray()
-        self.total = 0
-
-    def feed(self, chunk: bytes) -> None:
-        self.total += len(chunk)
-        self.data.extend(chunk[: max(0, self.limit - len(self.data))])
-
-    def text(self) -> str:
-        content = self.data.decode(errors="replace")
-        if self.total > len(self.data):
-            content += (
-                f"\n[{self.name} truncated: kept {len(self.data)} of {self.total} bytes. "
-                "Filter output or use a smaller range.]"
-            )
-        return content
+from .background import BackgroundCommands, command_result
+from .background import CommandInfo as CommandInfo
+from .background import CommandResult as CommandResult
+from .local import LocalShell as LocalShell
+from .process import BackgroundShellBackend as BackgroundShellBackend
+from .process import ProcessSnapshot as ProcessSnapshot
+from .process import ProcessState as ProcessState
+from .process import ProcResult as ProcResult
+from .process import ShellBackend as ShellBackend
+from .process import ShellProcess as ShellProcess
 
 
 def proc_result(value: ProcResult) -> ToolResult:
@@ -294,3 +139,141 @@ class Shell(ShellTools, slot="shell"):
                 env=config.env,
             )
         ctx.provide(ShellBackend, backend)
+
+
+class BackgroundShellConfig(ShellToolsConfig):
+    timeout: Annotated[float, Field(gt=0, le=600)] = 600.0
+    max_background_commands: Annotated[int, Field(ge=1)] = 32
+
+
+class BackgroundShell(Plugin, needs=(ShellBackend, ToolRegistry, SessionInbox)):
+    """Opt in to session-owned background commands on an interactive ShellBackend."""
+
+    Config = BackgroundShellConfig
+    config: BackgroundShellConfig
+    usage = SystemSection(
+        text=(
+            "Use start_command for long shell work, then continue other tasks. "
+            "Completion arrives through the session inbox, including while idle. "
+            "read_command inspects live output; write_command sends stdin or EOF; "
+            "terminate_command kills a dead end before retrying. list_commands finds retained IDs."
+        )
+    )
+
+    def __init__(
+        self,
+        cwd: str | Path = ".",
+        *,
+        timeout: float = 600.0,
+        max_timeout: float = 600.0,
+        max_background_commands: int = 32,
+    ) -> None:
+        super().__init__(
+            cwd=Path(cwd),
+            timeout=timeout,
+            max_timeout=max_timeout,
+            max_background_commands=max_background_commands,
+        )
+
+    async def setup(self, ctx: Context) -> None:
+        self.cwd = self.config.cwd
+        self._commands = BackgroundCommands(self.config.max_background_commands)
+        ctx.effect(self._commands.close)
+        ctx.on(SessionClosing, self._close_commands)
+        ctx[ToolRegistry].result_converter(CommandResult, command_result, owner=ctx)
+
+    async def _close_commands(self, event: SessionClosing) -> None:
+        await self._commands.close()
+
+    def _command_fields(self) -> Mapping[str, FieldInfo]:
+        return {"timeout": Field(le=self.config.max_timeout)}
+
+    @tool(timeout=600, parameter_fields=_command_fields)
+    async def start_command(
+        self,
+        argv: Annotated[list[str], Field(min_length=1)],
+        timeout: Annotated[float, Field(gt=0, le=600)] | None = None,
+        *,
+        shell: Inject[ShellBackend],
+        inbox: Inject[SessionInbox],
+    ) -> CommandResult:
+        """Start argv without shell expansion and return a command_id without waiting for exit.
+
+        Completion notifies the agent. Use read_command for live output, write_command
+        for stdin and terminate_command to stop a dead end. The timeout bounds the
+        command's entire lifetime, independently of this tool call.
+        """
+        limit = timeout if timeout is not None else self.config.timeout
+        if limit > self.config.max_timeout:
+            raise ToolError(f"timeout must not exceed {self.config.max_timeout:g} seconds")
+        if not isinstance(shell, BackgroundShellBackend):
+            raise ToolError("This ShellBackend does not support background commands")
+        return await self._commands.start(shell, argv, cwd=self.cwd, timeout=limit, inbox=inbox)
+
+    @tool(readonly=True, parallel=True, timeout=35)
+    async def read_command(
+        self, command_id: str, wait: Annotated[float, Field(ge=0, le=30)] = 0.0
+    ) -> CommandResult:
+        """Read bounded stdout/stderr and state, optionally waiting up to 30 seconds for exit.
+
+        Repeated reads return snapshots without consuming output. A cancelled read
+        or an expired wait leaves the background command running.
+        """
+        command = self._commands.get(command_id)
+        if wait:
+            try:
+                async with asyncio.timeout(wait):
+                    await command.process.wait()
+            except TimeoutError:
+                pass
+        return command.result()
+
+    @tool
+    async def write_command(
+        self,
+        command_id: str,
+        text: Annotated[str, Field(max_length=65536)] = "",
+        eof: bool = False,
+    ) -> CommandResult:
+        """Write UTF-8 text to background stdin; eof=True closes stdin after this input.
+
+        This is a pipe, not a terminal: use terminate_command to kill a command.
+        """
+        command = self._commands.get(command_id)
+        await command.process.write(text, eof=eof)
+        return command.result()
+
+    @tool(timeout=600)
+    async def terminate_command(self, command_id: str) -> CommandResult:
+        """Kill a background command and its descendants, draining cleanup before returning.
+
+        Safe to repeat on a completed command. Use a fresh start_command to retry.
+        """
+        command = self._commands.get(command_id)
+        await command.process.terminate()
+        return command.result()
+
+    @tool(readonly=True, parallel=True)
+    def list_commands(self) -> tuple[CommandInfo, ...]:
+        """List this mount's retained command IDs, argv, states and exit codes."""
+        return self._commands.summaries()
+
+
+__all__ = [
+    "BackgroundShell",
+    "BackgroundShellBackend",
+    "BackgroundShellConfig",
+    "CommandInfo",
+    "CommandResult",
+    "LocalShell",
+    "ProcessSnapshot",
+    "ProcessState",
+    "ProcResult",
+    "Shell",
+    "ShellBackend",
+    "ShellConfig",
+    "ShellProcess",
+    "ShellTools",
+    "ShellToolsConfig",
+    "proc_result",
+]
