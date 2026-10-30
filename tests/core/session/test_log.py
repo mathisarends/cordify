@@ -5,6 +5,7 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision, StreamOverflow, ToolCall, ToolResult
+from harnessed.core.assets import MemoryAssets
 from harnessed.core.messages import AssistantMessage, UserMessage
 from harnessed.core.model import ModelRequest, ToolDefinition
 from harnessed.core.session.codec import decode_event, encode_event
@@ -131,7 +132,7 @@ async def test_jsonl_rejects_valid_json_without_final_record_delimiter(tmp_path)
 async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("interrupted")
-    session = SessionLog("interrupted", persistence=persistence)
+    session = SessionLog("interrupted", persistence=persistence, assets=MemoryAssets())
     call = ToolCall("missing", id="call-1")
     for event in (
         TurnStartedEvent("turn-1"),
@@ -156,7 +157,7 @@ async def test_resume_repairs_open_turn_and_unanswered_tools(tmp_path):
 async def test_resume_wakes_durable_pending_followup(tmp_path):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
-    session = SessionLog("pending", persistence=persistence)
+    session = SessionLog("pending", persistence=persistence, assets=MemoryAssets())
     await session.append(
         InboxAddedEvent(UserMessage("queued"), InboxTarget.NEXT_TURN, InboxMode.FOLLOWUP)
     )

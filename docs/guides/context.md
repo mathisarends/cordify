@@ -242,12 +242,15 @@ event.session.observe(
 )
 ```
 
-`content` accepts a string or a tuple of text and image parts, including an
+`content` accepts a string or a tuple of text, `ImagePart` and `ImageReference`
+parts, including an
 image-only tuple. Text and images are projected together as one `UserMessage`.
 The user role is the model's input role; it does not mean a human authored the
 snapshot. `refs` identify application state and are not attachment locations.
 
-Recorded snapshots keep the same content, identity and history position after
+Inline image data is stored as an `ImageReference` before recording; see
+[image assets](sessions.md#image-assets-and-memory). Recorded snapshots then keep
+the same content, identity and history position after
 their step ends. They are not automatically replaced by summaries. Ordinary
 steps append to the existing request prefix, which allows provider caches and
 the JSONL prefix codec to reuse unchanged history. This does not guarantee a

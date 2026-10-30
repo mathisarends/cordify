@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import BinaryIO, TextIO
 from uuid import uuid4
 
+from harnessed.core.assets import AssetRef, AssetStore
 from harnessed.core.errors import SessionLocked
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.plugin import Plugin, PluginConfig
@@ -193,14 +194,17 @@ class JsonlPersistence:
         lock = self._lock(path)
         try:
             root = self.root.resolve()
-            directory = root / f"{session_id}.files"
-            resolved = directory.resolve()
-            if directory.is_symlink() or directory.is_junction() or resolved != directory:
-                raise ValueError("Session artifact directory is outside its namespace")
-            if not resolved.is_relative_to(root) or resolved == root:
-                raise ValueError("Invalid session artifact deletion target")
-            if resolved.exists():
-                shutil.rmtree(resolved)
+            directories = [root / f"{session_id}.{kind}" for kind in ("files", "assets")]
+            # Validate every target before deleting either namespace.
+            for directory in directories:
+                resolved = directory.resolve()
+                if directory.is_symlink() or directory.is_junction() or resolved != directory:
+                    raise ValueError("Session artifact directory is outside its namespace")
+                if not resolved.is_relative_to(root) or resolved == root:
+                    raise ValueError("Invalid session artifact deletion target")
+            for directory in directories:
+                if directory.exists():
+                    shutil.rmtree(directory)
             archive_pattern = re.compile(
                 re.escape(session_id) + r"\.incomplete-\d+-[a-f0-9]{64}\.bin"
             )
@@ -338,6 +342,12 @@ class _JsonlStore:
         session_id = validate_session_id(session_id)
         return DirectoryFiles(self.config.root / f"{session_id}.files")
 
+    def assets(self, session_id: str) -> AssetStore:
+        session_id = validate_session_id(session_id)
+        return DirectoryAssets(
+            self.config.root / f"{session_id}.assets", durability=self.config.durability
+        )
+
     async def list(self) -> tuple[str, ...]:
         def collect():
             result = []
@@ -365,6 +375,63 @@ class _JsonlStore:
             yield persistence
         finally:
             await persistence.aclose()
+
+
+class DirectoryAssets:
+    """Atomic content-addressed binary files; no image bytes are retained here."""
+
+    def __init__(self, root: str | Path, *, durability: Durability = Durability.FLUSH) -> None:
+        self.root = Path(root)
+        self.durability = durability
+        self._operation = asyncio.Lock()
+
+    def _path(self, ref: AssetRef) -> Path:
+        if self.root.is_symlink() or self.root.is_junction():
+            raise ValueError("Session asset directory is outside its namespace")
+        root = self.root.resolve()
+        path = root / ref.sha256
+        if path.is_symlink() or path.is_junction():
+            raise ValueError("Session asset path is outside its namespace")
+        return path
+
+    async def put(self, data: bytes, *, media_type: str) -> AssetRef:
+        if not isinstance(data, bytes):
+            raise TypeError("Asset content must be bytes")
+        async with self._operation:
+            return await run_sync(partial(self._put, data, media_type))
+
+    def _put(self, data: bytes, media_type: str) -> AssetRef:
+        ref = AssetRef(hashlib.sha256(data).hexdigest(), media_type, len(data))
+        path = self._path(ref)
+        if path.exists():
+            self._read(ref)
+            return ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            with temporary.open("xb") as stream:
+                stream.write(data)
+                stream.flush()
+                if self.durability is Durability.FSYNC:
+                    os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return ref
+
+    async def read(self, ref: AssetRef) -> bytes:
+        async with self._operation:
+            return await run_sync(partial(self._read, ref))
+
+    def _read(self, ref: AssetRef) -> bytes:
+        path = self._path(ref)
+        with path.open("rb") as stream:
+            # Bound the read even if an external writer changes the file after stat.
+            if os.fstat(stream.fileno()).st_size != ref.size_bytes:
+                raise ValueError(f"Asset size does not match {ref.sha256}")
+            data = stream.read(ref.size_bytes + 1)
+        ref.verify(data)
+        return data
 
 
 class DirectoryFiles:

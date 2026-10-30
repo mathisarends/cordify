@@ -35,7 +35,9 @@ validates their discriminated unions and supplies the durable JSON schema.
 values in `harnessed.models`. Constructors only accept fields belonging to
 that role: tool calls, reasoning and native provider state belong to `AssistantMessage`;
 a ToolMessage requires a call ID. User messages and tool replies can contain text
-and image parts. `user(...)` and `system(...)` are convenience constructors.
+and image parts. Stored images use `ImageReference` with a content-addressed
+`AssetRef`; model transport copies resolve them to `ImagePart` data URLs.
+`user(...)` and `system(...)` are convenience constructors.
 
 The Core field is `reasoning`. Provider-specific fields, including DeepSeek's
 `reasoning_content` and Anthropic signatures, stay inside the optional adapter's

@@ -304,3 +304,15 @@ and whether it is part of the UI stream or only the durable audit log.
 application extension bases. Declare frozen dataclasses extending `DurableEvent`
 or `TransientEvent` and list them on `Plugin.events`. EventRegistry supplies
 session-local validation, durable schemas and encode/decode operations.
+
+### Stored images
+
+`harnessed.models` exports `AssetRef` and `ImageReference` alongside `ImagePart`.
+`ImageReference(asset, detail=ImageDetail.AUTO)` is a content part usable in user
+messages, tool results and observations. `session.assets.put(data, media_type=...)`
+stores bytes and returns an `AssetRef`; `session.assets.read(ref)` returns verified
+bytes. Inline image data URLs are stored automatically on standard event admission.
+Use `await session.log.images.resolve(request)` when replaying a recorded request
+directly through a model; the agent loop resolves images automatically.
+See [session image storage](../guides/sessions.md#image-assets-and-memory) for
+cache bounds, external backend contracts and backup requirements.

@@ -73,7 +73,8 @@ class ModelResponder:
             )
 
         try:
-            async with model.stream(request) as stream:
+            transport = await self.log.images.resolve(request)
+            async with model.stream(transport) as stream:
                 async for chunk in stream:
                     if chunk.diagnostic is not None:
                         await diagnostics.receive(chunk.diagnostic)

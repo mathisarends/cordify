@@ -34,7 +34,7 @@ version **2**. See the upgrade steps below before adopting the new APIs.
   throughout the SDK. Remove the old class names; `user()` and `system()` remain
   convenience constructors.
 - Replace `Observation.full` and `.summary` with one immutable `content` value:
-  text or a tuple of `TextPart` and `ImagePart`. Automatic `PreStep` capture still
+  text or a tuple of text and image parts. Automatic `PreStep` capture still
   uses `session.observe()`. Recorded snapshots keep their complete content,
   identity and position until compaction or an explicit retention policy.
 - Compact observations and their images together in the same request. Existing
@@ -51,9 +51,23 @@ version **2**. See the upgrade steps below before adopting the new APIs.
 - Include the model, observation and receipt changes in one canonical format,
   version **3**. Reject versions 1 and 2 without rewriting their logs; remove
   legacy request-ID synthesis. No automatic format migration is provided.
-- Persist observation content and refs with the session so text and images
-  survive reopening and forks. Images remain inline; unchanged request prefixes
-  use the existing JSONL deltas. A content-addressed blob store is not included.
+- Store inline images from observations, user inputs and tool results as typed
+  `ImageReference(AssetRef(...))` values. JSONL writes the binary data once per
+  session under `<id>.assets/<sha256>` before committing a referencing event.
+  Historical requests retain references rather than Base64 payloads.
+- Resolve only images selected for the model request, after compaction and budget
+  checks. File I/O runs off the event loop; a per-session LRU reuses encoded images
+  with a 16 MiB payload / 256-entry limit. Oversized images bypass the cache.
+- Read local image attachments directly into the asset store. Applications can
+  use `session.assets.put(bytes, media_type=...)` and `ImageReference` to avoid a
+  Base64 round trip. External HTTP image URLs remain external.
+- Reopen image histories without loading image files. Verify size and SHA-256 on
+  reads, copy referenced images when opening forks, and remove the asset namespace
+  when deleting a session. Missing fork images fail before writing the fork log.
+- Extend custom `SessionStore` implementations with `assets(session_id)` returning
+  an `AssetStore`. Low-level persisted `SessionLog` construction requires an
+  explicit asset store too. Memory sessions retain deduplicated binary assets in memory;
+  JSONL sessions retain them on disk. Compaction does not delete audit assets.
 
 ### Upgrade from 0.6.0
 
@@ -78,7 +92,12 @@ version **2**. See the upgrade steps below before adopting the new APIs.
    request-time image insertion with multimodal observations. The default
    compaction summarizer reads text and captions, not image pixels; record
    important visual findings as text if they must survive summarization.
-7. Back up version-2 sessions and start a new version-3 store. Existing published
+7. Implement `SessionStore.assets(session_id)` in custom storage plugins. Consumers
+   of recorded messages and tool results must accept `ImageReference` alongside
+   `ImagePart`. Use `session.assets.read(ref.asset)` for bytes, or
+   `await session.log.images.resolve(request)` for a provider-ready request.
+   Back up each JSONL log together with its `.assets` and `.files` directories.
+8. Back up version-2 sessions and start a new version-3 store. Existing published
    formats are not migrated. See the [context guide](docs/guides/context.md),
    [model guide](docs/guides/models.md) and [session guide](docs/guides/sessions.md).
 

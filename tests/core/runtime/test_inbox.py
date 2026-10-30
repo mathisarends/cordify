@@ -5,6 +5,7 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision
+from harnessed.core.assets import MemoryAssets
 from harnessed.core.messages import system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
@@ -103,7 +104,7 @@ async def test_steering_enters_the_running_turn_before_its_next_step():
 async def test_resume_reconstructs_pending_routing_from_the_log(tmp_path, mode):
     persistence = JsonlPersistence(tmp_path)
     await persistence.load("pending")
-    session = SessionLog("pending", persistence=persistence)
+    session = SessionLog("pending", persistence=persistence, assets=MemoryAssets())
     event = InboxAddedEvent.create(user("task"), mode)
     await session.append(event)
     await persistence.aclose()

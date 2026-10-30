@@ -79,6 +79,7 @@ class Session:
     def __init__(self, ctx: Context, session: SessionLog, options: AgentOptions) -> None:
         self.ctx = ctx
         self.log = session
+        self.assets = session.images.store
         self._options = options
         self._closing_hooks_done = False
         self.id = session.id

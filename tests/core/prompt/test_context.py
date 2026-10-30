@@ -75,7 +75,8 @@ async def test_file_and_image_attachments_are_snapshotted_in_log_and_wire_payloa
             decode_event(json.loads(json.dumps(encode_event(e)))) for e in agent.log.events
         )
         recorded = next(e.request for e in restored if isinstance(e, ModelRequestedEvent))
-        assert recorded == request and "changed after admission" not in recorded.messages[0].text
+        assert await agent.log.images.resolve(recorded) == request
+        assert "changed after admission" not in recorded.messages[0].text
 
 
 async def test_steering_carries_attachments_like_a_run(tmp_path):

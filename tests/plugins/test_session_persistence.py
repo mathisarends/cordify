@@ -5,6 +5,7 @@ import threading
 import pytest
 
 from harnessed import Agent
+from harnessed.core.assets import MemoryAssets
 from harnessed.core.messages import UserMessage
 from harnessed.core.session.events import UserMessageEvent
 from harnessed.core.session.session import SessionLog
@@ -29,7 +30,7 @@ async def test_fsync_does_not_block_event_loop_and_cancel_keeps_sequence_consist
     writer = JsonlPersistence(tmp_path, durability=Durability.FSYNC)
     await writer.load("off-thread")
     monkeypatch.setattr(persistence_module.os, "fsync", slow_fsync)
-    session = SessionLog("off-thread", persistence=writer)
+    session = SessionLog("off-thread", persistence=writer, assets=MemoryAssets())
     first = UserMessageEvent(UserMessage("first"))
     task = asyncio.create_task(session.append(first))
     try:

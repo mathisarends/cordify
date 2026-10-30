@@ -19,6 +19,7 @@ from harnessed.core.errors import (
 from harnessed.core.messages import (
     AssistantMessage,
     ContentPart,
+    ImageReference,
     MalformedArguments,
     ProviderState,
     Role,
@@ -286,6 +287,8 @@ def _content(content: str | tuple[ContentPart, ...]):
 
     if isinstance(content, str):
         return content
+    if any(isinstance(part, ImageReference) for part in content):
+        raise InvalidRequest("Resolve stored image references before calling a model directly")
     return [
         part.text
         if isinstance(part, TextPart)
@@ -294,6 +297,7 @@ def _content(content: str | tuple[ContentPart, ...]):
             vendor_metadata={"detail": "high" if part.detail == "original" else part.detail},
         )
         for part in content
+        if not isinstance(part, ImageReference)
     ]
 
 

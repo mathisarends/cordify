@@ -59,3 +59,40 @@ The same host/workload with the retention implementation produced:
 The limit controls closed conversation ownership. It does not promise a fixed
 process memory footprint: global caches, active conversations and caller-held
 results can still allocate memory. Artifacts are evicted together with their log.
+
+## Stored screenshot histories
+
+```shell
+uv run python -m scripts.benchmark_image_assets --frames 25 100 --repeat 3 --output .harnessed/benchmarks/images.json
+uv run python -m scripts.benchmark_image_assets --frames 100 --repeat 3 --no-tracemalloc --output .harnessed/benchmarks/image-latency.json
+```
+
+This workload supplies a unique 512 KiB synthetic image payload per single-step
+turn, uses JSONL with flush durability and explicitly selects
+`LatestObservationOnly()` to keep one image in the active request. The model
+retains no requests and contacts no provider. Capture/Base64 input construction is
+outside the timed turn; image admission, persistence and transport resolution are
+inside it. These are storage/runtime measurements, not vision-model benchmarks.
+`--image-bytes` changes payload size. The default run traces Python allocations;
+use the second command to measure latency without tracing overhead.
+
+Measured on 2026-10-30, Windows / CPython 3.14, medians of three samples. The
+baseline is PR commit `4a880c8`, before binary assets; both versions ran the same
+workload. Memory figures are retained traced allocations, not total process RSS.
+
+| Frames | Live memory before | Live memory with assets | Resume memory before | Resume memory with assets |
+| --- | --- | --- | --- | --- |
+| 25 | 17.29 MiB | 15.97 MiB | 34.30 MiB | 0.98 MiB |
+| 100 | 67.73 MiB | 16.43 MiB | 135.12 MiB | 1.86 MiB |
+
+At 100 frames, inline JSONL occupied 133.65 MiB. The reference-based log occupied
+0.34 MiB plus 50 MiB of binary assets. The live measurement includes the bounded
+16 MiB encoded-image cache; reopening reads metadata without populating that cache.
+Event and request metadata still grow with history.
+
+In the separate runs **without tracing**, the median single-step turn took
+9.36 ms before and 8.14 ms with assets; reopening took 579 ms and 116 ms,
+respectively. Host load, storage and payloads affect these numbers; they are not
+latency guarantees. Large active requests can exceed the cache limit and still
+require image reads and encoding. Tests separately verify warm-cache reuse,
+byte/entry bounds, oversized-image bypass and no reads of compacted-away images.

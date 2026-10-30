@@ -1,3 +1,4 @@
+from harnessed.core.assets import AssetRef
 from harnessed.core.diagnostics import (
     ModelAttemptFinished,
     ModelAttemptOutcome,
@@ -14,6 +15,7 @@ from harnessed.core.messages import (
     AssistantMessage,
     ContentPart,
     ImagePart,
+    ImageReference,
     Message,
     ProviderState,
     SystemMessage,
@@ -44,10 +46,12 @@ from harnessed.core.model import (
 from .pydantic_ai import PydanticAIModel as PydanticAIModel
 
 __all__ = [
+    "AssetRef",
     "AssistantMessage",
     "ContentPart",
     "GenerationSettings",
     "ImagePart",
+    "ImageReference",
     "Message",
     "Model",
     "ModelAttemptFinished",

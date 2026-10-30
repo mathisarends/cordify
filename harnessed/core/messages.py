@@ -11,6 +11,8 @@ from uuid import uuid4
 
 from pydantic import Field, PlainSerializer
 
+from harnessed.core.assets import AssetRef
+
 
 def freeze(value: Any) -> Any:
     if value is None or isinstance(value, str | bool | int):
@@ -66,6 +68,7 @@ class DenialSource(StrEnum):
 class ContentKind(StrEnum):
     TEXT = "text"
     IMAGE_URL = "image_url"
+    IMAGE_REFERENCE = "image_reference"
 
 
 class ImageDetail(StrEnum):
@@ -228,7 +231,20 @@ class ImagePart:
     type: Literal[ContentKind.IMAGE_URL] = ContentKind.IMAGE_URL
 
 
-type ContentPart = TextPart | ImagePart
+@dataclass(frozen=True)
+class ImageReference:
+    """A stored image; resolved only for the model transport."""
+
+    asset: AssetRef
+    detail: ImageDetail = ImageDetail.AUTO
+    type: Literal[ContentKind.IMAGE_REFERENCE] = ContentKind.IMAGE_REFERENCE
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.asset, AssetRef) or not self.asset.media_type.startswith("image/"):
+            raise ValueError("Image references require an image asset")
+
+
+type ContentPart = TextPart | ImagePart | ImageReference
 
 
 def content_text(content: str | tuple[ContentPart, ...]) -> str:
@@ -243,7 +259,7 @@ def _content(value: str | tuple[ContentPart, ...]) -> str | tuple[ContentPart, .
     if isinstance(value, str):
         return value
     parts = tuple(value)
-    if any(not isinstance(part, TextPart | ImagePart) for part in parts):
+    if any(not isinstance(part, TextPart | ImagePart | ImageReference) for part in parts):
         raise TypeError("Message content must be a string or text/image parts")
     return parts
 

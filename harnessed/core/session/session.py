@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Iterable
 from typing import cast
 
 from harnessed.core.approvals import Approval, ApprovalState, approval_transition
+from harnessed.core.assets import AssetStore, MemoryAssets
 from harnessed.core.buffering import EventBuffer
 from harnessed.core.errors import ConfigError, SessionStateError
 from harnessed.core.event_registry import EventRegistry
@@ -55,6 +56,7 @@ from harnessed.core.session.history import (
 )
 from harnessed.core.session.history import derive_messages as derive_messages
 from harnessed.core.session.history import derive_requests as derive_requests
+from harnessed.core.session.images import SessionImages
 from harnessed.core.session.inbox import Inbox
 from harnessed.core.session.store import SessionPersistence, validate_session_id
 from harnessed.core.session.turns import Turn, TurnProjection
@@ -113,7 +115,10 @@ class SessionLog:
         files: SessionFiles | None = None,
         registry: EventRegistry | None = None,
         source_files: SessionFiles | None = None,
+        assets: AssetStore | None = None,
     ) -> None:
+        if persistence is not None and assets is None:
+            raise ConfigError("A persisted SessionLog requires an explicit asset store")
         self.registry = registry or (
             ctx[EventRegistry] if ctx is not None and EventRegistry in ctx else EventRegistry()
         )
@@ -127,6 +132,7 @@ class SessionLog:
         self._persistence = persistence
         self._files = files
         self._source_files = source_files
+        self.images = SessionImages(assets if assets is not None else MemoryAssets())
         self._usage: ModelUsage | None = None
         self._observers: dict[EventBuffer[SessionEvent | TransientEvent | None], bool] = {}
         self._subscriptions_closed = False
@@ -367,6 +373,7 @@ class SessionLog:
             seq, cancelled = await self._append(event)
         if cancelled and terminal:
             raise asyncio.CancelledError
+        event = self._events[seq]
         if self.ctx is not None:
             await self.ctx.dispatch(SessionAppended(self, event, seq))
             await self.ctx.dispatch(event)
@@ -376,6 +383,7 @@ class SessionLog:
     async def _append(self, event: SessionEvent) -> tuple[int, bool]:
         cancelled = False
         async with self._lock:
+            event = await self.images.retain_event(event)
             if isinstance(event, InboxAddedEvent) and event.message.id in self._pending:
                 raise ValueError(f"Duplicate pending message id: {event.message.id}")
             if isinstance(event, InboxRemovedEvent) and event.message_id not in self._pending:
@@ -624,4 +632,5 @@ class SessionLog:
             seed=seed,
             registry=self.registry.copy(),
             source_files=self._files if self._files is not None else self._source_files,
+            assets=self.images.store,
         )

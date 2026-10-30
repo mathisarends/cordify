@@ -200,12 +200,13 @@ async def test_snapshots_resume_and_fork_with_images_and_refs(tmp_path):
     async with app.session("observations") as session:
         session.observe(snapshot)
         await session.run("go")
+        original_snapshot = session.last(ObservationRecordedEvent).observation
         original_events = session.events
         original_receipt = session.last(ObservationsIncludedEvent).observations
         original_message = observations(model.requests[0])[0]
     async with app.session("observations") as restored:
         assert restored.events == original_events
-        assert restored.last(ObservationRecordedEvent).observation == snapshot
+        assert restored.last(ObservationRecordedEvent).observation == original_snapshot
         await restored.run("continue")
         assert observations(model.requests[1]) == (original_message,)
         assert restored.last(ObservationsIncludedEvent).observations == original_receipt

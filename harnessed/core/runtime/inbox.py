@@ -79,7 +79,12 @@ class InboxWriter:
         async with self._sending():
             self.control.check_open()
             message, contributions = await prepare_input(
-                content, attachments=attachments, context=context
+                content, attachments=attachments, context=context, assets=self.log.images.store
+            )
+            self.control.check_open()
+            message = await self.log.images.retain_message(message)
+            contributions = tuple(
+                [await self.log.images.retain_message(item) for item in contributions]
             )
             self.control.check_open()
             event = InboxAddedEvent.create(

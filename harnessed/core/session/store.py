@@ -4,6 +4,7 @@ from typing import Annotated, Protocol
 
 from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter
 
+from harnessed.core.assets import AssetStore, MemoryAssets
 from harnessed.core.errors import SessionLocked
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.session.events import SessionEvent
@@ -33,6 +34,7 @@ class SessionStore(Protocol):
 
     def open(self, session_id: str) -> AbstractAsyncContextManager[SessionPersistence]: ...
     def files(self, session_id: str) -> SessionFiles: ...
+    def assets(self, session_id: str) -> AssetStore: ...
     async def list(self) -> tuple[str, ...]: ...
     async def delete(self, session_id: str) -> None: ...
 
@@ -65,17 +67,22 @@ class _MemoryStore:
         self.max_sessions = max_sessions
         self._active: set[str] = set()
         self._files: dict[str, MemoryFiles] = {}
+        self._assets: dict[str, MemoryAssets] = {}
         self._retained: dict[str, None] = {}
 
     def files(self, session_id: str) -> SessionFiles:
         session_id = validate_session_id(session_id)
         return self._files.setdefault(session_id, MemoryFiles())
 
+    def assets(self, session_id: str) -> AssetStore:
+        return self._assets.setdefault(validate_session_id(session_id), MemoryAssets())
+
     async def list(self) -> tuple[str, ...]:
         return tuple(
             sorted(
                 self.persistence.records.keys()
                 | self._files.keys()
+                | self._assets.keys()
                 | self._active
                 | self._retained.keys()
             )
@@ -91,6 +98,9 @@ class _MemoryStore:
         files = self._files.pop(session_id, None)
         if files is not None:
             files.clear()
+        assets = self._assets.pop(session_id, None)
+        if assets is not None:
+            assets.clear()
         self.persistence.records.pop(session_id, None)
         self._retained.pop(session_id, None)
 
