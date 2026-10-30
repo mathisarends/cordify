@@ -164,7 +164,9 @@ class StepRunner:
                 messages=(*request.messages, System(_FINAL_STEP_INSTRUCTION)),
             )
         else:
-            request = self.outputs.prepare(request, self.log.current_turn().start.output_schema)
+            request = self.outputs.prepare(
+                request, self.log.current_turn().start.output_schema, model=model
+            )
         request = resolve_request_settings(request, model.settings)
         request = await self.compaction.prepare(request)
         if final:
