@@ -91,6 +91,13 @@ through its public high-level API, so Harnessed closes its owned transport.
 Remote cancellation is best-effort: an external operation may already have
 completed. Calls are never automatically retried.
 
+Protocol errors, including a terminated HTTP session or a crashed stdio server,
+also close the connection when a call detects the failure. A tool's ordinary
+`isError` result leaves the connection available. The built-in transports reject
+malformed messages immediately instead of waiting for a call timeout. HTTP session
+termination uses a five-second network inactivity timeout, so an unresponsive
+DELETE endpoint does not indefinitely hold up mount cleanup.
+
 The tool catalog is a snapshot for the mount's lifetime. To reconnect or discover
 changed tools, remove and mount a new recipe:
 
@@ -115,6 +122,27 @@ protocol failures use the normal tool error formatter. Unsupported audio,
 resource links and embedded resource blocks fail explicitly. This first version
 exposes tools; resources, prompts, sampling and elicitation remain separate future
 capabilities. Server instructions are not automatically added to the system prompt.
+
+## Deployment boundary
+
+Configure server endpoints, commands and trusted read-only tools in application
+code. A stdio server runs with the application's OS permissions; its minimal
+inherited environment is not a sandbox. Use process or container isolation for
+servers that need restricted access to files, credentials or the network.
+
+Use HTTPS and scoped authentication for remote production servers. If endpoints
+or OAuth discovery URLs can come from outside the application, enforce outbound
+network policy to prevent access to unintended internal services. The SDK rejects
+cross-origin MCP redirects rather than forwarding credentials to another origin.
+
+Tool descriptions and results remain untrusted model input. Schema validation
+and approval policies enforce call contracts and permissions; they do not make
+server-provided text safe instructions. The normal output limit bounds retained
+result text, not transport bytes, image data or JSON Schema validation CPU time.
+Apply resource limits at the process or deployment boundary when connecting to
+untrusted servers.
+
+## Custom transports
 
 For a custom or in-memory transport, construct `MCP(name, transport=transport)`.
 The exported `MCPTransport` protocol requires `connect()` to return an async
