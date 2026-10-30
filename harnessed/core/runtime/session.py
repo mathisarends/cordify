@@ -81,7 +81,7 @@ class Session:
         self.ctx = ctx
         self.log = session
         self._options = options
-        self._closing_hooks_done = False
+        self._close_task: asyncio.Task[None] | None = None
         self.id = session.id
         self.context = DynamicContext(session)
         self._compaction = CompactionManager(ctx, session, context_window=options.context_window)
@@ -501,12 +501,19 @@ class Session:
         await self.control.abort(keep_inbox=keep_inbox)
 
     async def aclose(self) -> None:
+        """Close once; concurrent callers share cleanup, independently of cancellation."""
+        if _driving.get() is self or asyncio.current_task() is self._close_task:
+            raise SessionStateError("A driver or closing hook cannot wait for its own closure")
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._close(), name=f"harnessed:close:{self.id}")
+        await asyncio.shield(self._close_task)
+
+    async def _close(self) -> None:
         try:
             await self.control.close()
         finally:
             try:
-                if self.control.closing and not self._closing_hooks_done:
-                    self._closing_hooks_done = True
+                if self.control.closing:
                     await self.ctx.dispatch(SessionClosing(self))
             finally:
                 self._publish(None)

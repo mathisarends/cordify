@@ -13,9 +13,9 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 - Patch releases within a minor line are intended for compatible fixes. Pin the
   exact package version for reproducible deployments and persisted workflows.
 - Session records have an explicit format version. Release 0.1.0 uses version 1;
-  releases 0.2.0 through 0.6.0 use version 2. Incompatible core record changes require
-  a new version. The unreleased model API uses version 3. Unsupported versions
-  fail explicitly, and no automatic format migrations are provided.
+  releases 0.2.0 through 0.6.0 use version 2; 0.7.0 uses version 3. Incompatible
+  core record changes require a new version. Unsupported versions fail explicitly,
+  and no automatic format migrations are provided.
 - Back up persisted sessions before upgrading. Application-defined events and
   versioned output contracts have their own validation requirements; see
   [custom events](guides/events.md) and
@@ -26,7 +26,12 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## Unreleased
+## 0.7.0 (2026-10-30)
+
+This minor release adds typed model settings, immutable multimodal observations,
+session-owned image assets and opt-in background shell commands. It includes
+breaking model, message and observation API changes from 0.6.0 and advances the
+session record format from **2** to **3**.
 
 Observations become immutable text/image snapshots delivered automatically through
 the existing `PreStep` and `session.observe()` APIs. They stay unchanged between
@@ -39,7 +44,7 @@ Message classes are named `SystemMessage`, `UserMessage`, `AssistantMessage` and
 and use inclusion `refs`, `turn_id`, `step` and `message_id` instead of
 `ObservationForm`. See [automatic observations](guides/context.md#steering-observations-and-retrieval).
 
-The unreleased model and observation APIs share session format **3**.
+The model and observation APIs share session format **3**.
 Back up older stores and start a new one; versions 1 and 2 are rejected without
 automatic migration. The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
 contains the upgrade steps and storage limits.
@@ -56,6 +61,58 @@ contains the upgrade steps and storage limits.
 - Replace raw assistant provider dictionaries with `ProviderState`, including
   format/version and provider/model identity. Clear state with `None` when
   deliberately discarding signed replay data; incompatible bindings fail explicitly.
+
+### Background shell commands and cleanup
+
+- Compose the explicit `BackgroundShell` plugin with `Shell` or a registered shell
+  backend to start commands, inspect live output, write stdin/EOF and terminate
+  process trees. Completion queues a session-inbox notification and wakes an idle
+  agent. Jobs belong to one open session and are not restored on replay or fork.
+  See [background shell commands](guides/background-shell.md) and offline example 35.
+- Concurrent `session.aclose()` calls wait for one shared driver/resource cleanup.
+  Cancelling a caller does not interrupt cleanup for other callers. `SessionClosing`
+  releases live resources once, including background shell processes.
+
+### Image assets and session storage
+
+- Store inline images once per session as typed `ImageReference(AssetRef(...))`
+  values. JSONL histories keep references; binary data lives under `<id>.assets/`.
+  Only selected images are resolved for the provider after compaction and budget checks.
+- Use `session.assets` to read and write image bytes. Reopening histories leaves
+  images on disk until needed; reads verify size and SHA-256, forks copy referenced
+  assets and session deletion removes its asset namespace. Compaction retains audit assets.
+- Custom `SessionStore` implementations now provide `assets(session_id)`.
+  See [image assets](guides/sessions.md#image-assets-and-memory).
+
+### Upgrade from 0.6.0
+
+1. Replace raw model/run settings dictionaries with `GenerationSettings` from
+   `harnessed.models`. Move `max_tokens` from `AgentLoop` and defaults from
+   `ModelInfo` to the model's settings. Custom models now expose immutable
+   `settings: GenerationSettings`; native PydanticAI objects require an explicit
+   `PydanticAIModel(...)` wrapper. String model names remain supported.
+2. Remove `model` and `max_tokens` from manually constructed `ModelRequest` values.
+   Read model identity from `ModelRequestedEvent.model`. Request hooks no longer
+   select a model by editing a request; replace the `Model` service for subsequent
+   steps. Configure `ModelSummarizer` with the desired model directly.
+3. Replace raw assistant replay dictionaries with `ProviderState`, or clear them
+   explicitly with `None` when discarding signed replay data.
+4. Import `SystemMessage`, `UserMessage`, `AssistantMessage` and `ToolMessage`
+   in place of the old short names. Pass one immutable text/image `content` value
+   to `Observation`, remove `ObservationForm` and `max_summaries`, and use final
+   inclusion refs and explicit turn/step/message identities.
+5. Add `SessionStore.assets(session_id)` to custom storage plugins. Recorded image
+   content can now contain `ImageReference`; resolve bytes through `session.assets`
+   or use `await session.log.resolve_request(request)` for manual provider replay.
+6. Back up existing session stores, including their `.assets` and `.files`
+   directories, and start fresh stores. This release rejects
+   record versions **1** and **2**, without automatic migration. Update event
+   consumers for the selected model identity and typed generation settings.
+7. Opt in to background tools explicitly and keep their session context open
+   while jobs are needed. `agent.run(...)` closes its temporary session on return.
+
+The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the detailed changes and a model-settings upgrade example.
 
 ## 0.6.0 (2026-10-30)
 

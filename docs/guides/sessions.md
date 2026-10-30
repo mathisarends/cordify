@@ -156,6 +156,10 @@ structured output. Cancelling a result waiter leaves the run queued or executing
 Driver errors are delivered through the handle; closing the session fails unfinished
 live handles with SessionClosed while retaining their durable inputs or paused turn.
 
+Concurrent `session.aclose()` calls share one driver shutdown and resource cleanup.
+Cancelling a close waiter leaves that cleanup running; a later close waits for the
+same operation. Driver and closing hooks cannot await their own session closure.
+
 ## Fork a closed prefix
 
 ```python

@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (2026-10-30)
 
-This update changes the model, message and observation APIs. The unreleased
-session format is version **3**; the latest published release, 0.6.0, uses
-version **2**. See the upgrade steps below before adopting the new APIs.
+This minor release adds typed model settings, immutable multimodal observations,
+session-owned image assets and opt-in background shell commands. It includes
+breaking model, message and observation API changes from 0.6.0 and advances the
+session record format from **2** to **3**. See the upgrade steps below.
 
 ### Model configuration and replay state
 
@@ -73,6 +74,13 @@ version **2**. See the upgrade steps below before adopting the new APIs.
   explicit asset store too. Memory sessions retain deduplicated binary assets in memory;
   JSONL sessions retain them on disk. Compaction does not delete audit assets.
 
+### Session cleanup
+
+- Share one cleanup operation across concurrent `session.aclose()` calls. Every
+  successful close waits for driver shutdown and resource cleanup; cancelling one
+  caller leaves cleanup running for the remaining callers. Release live resources
+  once through `SessionClosing`, including background shell processes.
+
 ### Upgrade from 0.6.0
 
 1. Import `GenerationSettings` from `harnessed.models` and configure generation
@@ -81,7 +89,10 @@ version **2**. See the upgrade steps below before adopting the new APIs.
    provider-specific JSON options in `provider_options`.
 2. Give custom models a `settings: GenerationSettings` attribute. Wrap native
    provider models in `PydanticAIModel` explicitly. Read selected model metadata
-   from `ModelRequestedEvent.model` instead of `ModelRequest.model`.
+   from `ModelRequestedEvent.model` instead of `ModelRequest.model`. Move defaults
+   from `ModelInfo` to the model. Configure `ModelSummarizer` with the desired model
+   directly instead of using `model_name`. Replace the `Model` service to select
+   a different model for subsequent steps; a prepared step keeps its captured binding.
 3. Replace raw assistant `provider_state` dictionaries with `ProviderState`.
    Use `None`, rather than `{}`, when deliberately discarding replay state.
 4. Import `SystemMessage`, `UserMessage`, `AssistantMessage` and `ToolMessage`
@@ -104,6 +115,25 @@ version **2**. See the upgrade steps below before adopting the new APIs.
 8. Back up version-2 sessions and start a new version-3 store. Existing published
    formats are not migrated. See the [context guide](docs/guides/context.md),
    [model guide](docs/guides/models.md) and [session guide](docs/guides/sessions.md).
+9. Opt in to `BackgroundShell` alongside `Shell` or an explicitly registered
+   backend. Keep the session context open while jobs are needed. Running handles
+   and captured output are not restored from persisted sessions or forks.
+
+For example, configure defaults on the model and override them per turn:
+
+```python
+from harnessed import Agent
+from harnessed.models import GenerationSettings, PydanticAIModel
+
+model = PydanticAIModel(
+    "openai:gpt-4.1",
+    settings=GenerationSettings(max_tokens=4096, temperature=0.2),
+)
+agent = Agent(model=model)
+
+# Inside an async function:
+# result = await agent.run("Give a short answer.", settings=GenerationSettings(max_tokens=512))
+```
 
 ## 0.6.0 (2026-10-30)
 
