@@ -6,32 +6,20 @@ still evolving before 1.0.
 Detailed breaking changes and upgrade instructions are recorded in the repository
 [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
 
-## Unreleased: explicit conversation state
-
-The next breaking change replaces automatic session archives with `SessionState`.
-Use `agent.run(..., state=state)` or `agent.session(state=state)` and save
-`result.state.to_json()` through application-owned storage. Compaction exports
-only current working context and releases discarded runtime references. Images
-and retained spill contents travel with the snapshot.
-
-Archive backends, reopening by ID, fork APIs and paused execution restoration are
-removed. Live controls remain available. Approval grants and plugin counters
-belong to one live session. State format 1 does not automatically import older
-JSONL archives. See [the current session contract](guides/sessions.md) and the
-[complete changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
-
 ## Compatibility policy
 
 - Minor releases during 0.x may introduce breaking API or storage changes. Release
   notes identify these changes and any required upgrade steps.
 - Patch releases within a minor line are intended for compatible fixes. Pin the
   exact package version for reproducible deployments and persisted workflows.
-- Session records have an explicit format version. Release 0.1.0 uses version 1;
-  releases 0.2.0 through 0.6.0 use version 2; 0.7.0 uses version 3. Incompatible
-  core record changes require a new version. Unsupported versions fail explicitly,
-  and no automatic format migrations are provided.
-- Back up persisted sessions before upgrading. Application-defined events and
-  versioned output contracts have their own validation requirements; see
+- Conversation snapshots use an explicit state format, version **1** in 0.8.0.
+  Unsupported versions fail explicitly. Earlier releases used JSONL session
+  archives: version 1 in 0.1.0, version 2 in 0.2.0 through 0.6.0 and version 3
+  in 0.7.0. These archives are not conversation snapshots and are not automatically
+  migrated. The standalone audit-event envelope remains version **3**.
+- Back up application-owned state and older archives before upgrading.
+  Application-defined events and versioned output contracts have their own
+  validation requirements; see
   [custom events](guides/events.md) and
   [structured answers](guides/structured-output.md).
 
@@ -39,6 +27,69 @@ Python 3.12, 3.13 and 3.14 are supported on Linux, Windows and macOS. Provider
 integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
+
+## 0.8.0 (2026-10-30)
+
+This minor release replaces automatic session archives with explicit
+`SessionState` values and adds an application-owned OTLP/HTTP provider helper.
+It includes breaking session, persistence and output-restoration API changes
+from 0.7.0. Conversation snapshots use state format **1**; older JSONL archives
+are not accepted or automatically migrated.
+
+### Explicit conversation state
+
+Continue with `agent.run(..., state=state)` or `agent.session(state=state)`.
+Save `result.state.to_json()` through application-owned storage and load it with
+`SessionState.from_json(payload)`. An idle `session.snapshot()` also exports
+current working context. Snapshots include retained image and spill bytes,
+provider replay data and the metadata needed for future compaction. Compaction
+releases discarded context and runtime indexes; earlier snapshots and results
+remain independent owners of their data.
+
+Archive backends, reopening by ID, fork APIs, `restore_outputs` and paused
+execution restoration are removed. Live controls remain available. Approval
+grants and plugin counters belong to one live session. Complete audit histories
+can be stored externally through subscriptions or hooks; the standalone
+audit-event envelope remains version **3**.
+
+### OpenTelemetry provider lifecycle
+
+Use `otlp_provider()` from `harnessed.integrations.opentelemetry` after installing
+`harnessed[otel]`. Open it once around sharing agents and sessions, then pass the
+returned provider to `OpenTelemetryTracer(tracer_provider=provider)`. It creates
+a batched OTLP/HTTP export pipeline without replacing the global provider.
+Standard OpenTelemetry environment variables configure exporter settings,
+resources and sampling; explicit arguments take precedence.
+
+Close sessions before leaving the provider context. Shutdown runs outside the
+event loop after normal work, setup errors, application errors or cancellation
+and attempts to export pending batches; confirm delivery at the destination.
+Content capture remains disabled by default. See the [tracing guide](guides/tracing.md)
+and run `uv run python -m examples.29_tracing --otlp` with exporter configuration;
+the default example still uses its offline console exporter.
+
+### Upgrade from 0.7.0
+
+1. Replace archive plugins and ID-based reopening with application-owned state
+   storage. The application owns conversation keys, authorization, revisions,
+   expiration, deletion and competing writers.
+2. Pass `SessionState` explicitly and save the returned state after terminal turns.
+   Back up older JSONL archives and their resource directories before upgrading;
+   start new state-format-1 conversations or arrange an application-specific
+   conversion. No automatic archive migration is provided.
+3. Replace fork APIs with independent runs receiving the same snapshot. Restore
+   only idle conversations at terminal turn boundaries; paused executions,
+   pending work, approvals, processes and Python plugin objects are not restored.
+4. Configure output validators or versioned `OutputContract` values on each new
+   turn. Save complete audit histories externally if required; snapshots contain
+   retained working context, and ordered `EventLogCodec` persistence is removed.
+5. Existing OpenTelemetry providers continue to work. Adopt the optional helper
+   only when the application needs it to own the shared export pipeline.
+
+See [the session contract](guides/sessions.md),
+[structured answers](guides/structured-output.md) and the
+[complete changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+for detailed changes and upgrade steps.
 
 ## 0.7.0 (2026-10-30)
 
