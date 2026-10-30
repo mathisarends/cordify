@@ -7,8 +7,25 @@ from pydantic import ValidationError
 from harnessed import Agent, SystemPrompt, ToolCall
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import AgentLoop
-from harnessed.plugins.shell import LocalShell, ProcResult, Shell
+from harnessed.plugins.shell import LocalShell, ProcResult, Shell, ShellBackend, ShellTools
 from harnessed.testing import ScriptedModel
+
+
+@pytest.mark.parametrize("options", [{"env": {}}, {"max_output_bytes": 256}])
+def test_shell_tools_reject_backend_configuration(options):
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        ShellTools(**options)
+    with pytest.raises(ValueError, match="supplied ShellBackend"):
+        Shell(implementation=LocalShell(), **options)
+
+
+async def test_owned_shell_configures_its_local_backend(tmp_path):
+    shell = Shell(tmp_path, env={"EXPLICIT": "yes"}, max_output_bytes=256)
+    async with Agent(model=ScriptedModel([]), plugins=[shell]).session() as session:
+        backend = session.ctx[ShellBackend]
+        assert isinstance(backend, LocalShell)
+        assert backend.options.env == {"EXPLICIT": "yes"}
+        assert backend.options.max_output_bytes == 256
 
 
 async def test_capture_is_bounded_before_results_are_created(tmp_path):

@@ -26,6 +26,37 @@ a local server. Both accept `include_tools=None`, `readonly_tools=()`,
 Each mount owns one connection and a fixed catalog of namespaced tools. See
 [MCP tools](../guides/mcp.md) for approvals, results and cancellation boundaries.
 
+## Sandbox integrations
+
+Import `DockerSandbox` from `harnessed.integrations.docker`, or
+`BubblewrapSandbox` from `harnessed.integrations.bubblewrap`. Both own shared
+shell/filesystem backends; compose them with `ShellTools()` and `FilesystemTools()`.
+Docker requires an explicit `image`; Bubblewrap requires a dedicated `rootfs`.
+Both accept `workspace=Workspace.copy_from(path)` or `Workspace.mount(path,
+readonly=True)`, `network=NetworkAccess.NONE`, explicit `env`, `SandboxLimits`,
+`max_output_bytes` and `startup_timeout`. No extra Python dependencies are required;
+their native runtimes must be installed separately. Docker also accepts `runtime`
+for an application-configured OCI runtime.
+
+`await sandbox.export(session, source=..., destination=...)` exports one bounded
+binary file while that recipe's session mount is live. `sandbox.services(session)`
+returns typed `SandboxServices`: assign `shell = services.shell` and
+`file_system = services.file_system` for direct `shell.run(...)`,
+`file_system.read(...)`, `file_system.read_bytes(...)` and
+`file_system.grep(query, pattern="**/*", limit=100)` calls. Grep returns
+`SearchResult(matches, scanned_files, notes)` and executes in one built-in worker
+request. Text ranges count Unicode characters; a range that exceeds the transfer
+byte budget raises `ValueError`. Invalid UTF-8 raises `UnicodeError`.
+`ShellTools` accepts only `cwd`, `timeout` and `max_timeout`; configure `env` and
+`max_output_bytes` on the sandbox/backend. Shell deadlines include queueing and
+launcher startup, and expired sandbox startup raises `TimeoutError`.
+`Sandbox(backend=MyBackend, workspace=...)` accepts a zero-argument constructor or
+factory returning `SandboxBackend`. Its asynchronous `start()` guarantees readiness,
+its `shell` and `file_system` properties expose the existing typed backend contracts,
+and `aclose()` owns cleanup. Worker transport remains internal to integrations. See
+[sandboxes](../guides/sandboxes.md) for defaults, lifecycle, security boundaries,
+runtime requirements and the extension protocol.
+
 ## Agent
 
 `Agent(*, model=None, system_prompt=None, plugins=(),

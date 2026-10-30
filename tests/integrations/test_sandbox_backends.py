@@ -1,0 +1,450 @@
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from harnessed import Agent
+from harnessed.integrations import bubblewrap, docker
+from harnessed.integrations.sandbox import (
+    SandboxConfig,
+    SandboxError,
+    SandboxLimits,
+    Workspace,
+)
+from harnessed.integrations.sandbox.types import ProcessOutput
+from harnessed.plugins import FilesystemTools, ShellTools
+from harnessed.testing import ScriptedModel
+
+ENGINE = json.dumps(
+    {
+        "OSType": "linux",
+        "MemoryLimit": True,
+        "SwapLimit": True,
+        "PidsLimit": True,
+        "CpuCfsQuota": True,
+    }
+).encode()
+
+
+@pytest.mark.parametrize("readonly", [None, True, False])
+async def test_docker_configuration_and_partial_startup_cleanup(tmp_path, monkeypatch, readonly):
+    calls = []
+
+    async def run(argv, *, timeout, input=b"", max_output_bytes=1_048_576):
+        calls.append((argv, input))
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
+        if "exec" in argv:
+            request = json.loads(input)
+            if request["operation"] == "stat":
+                value = {"path": ".", "size": 0, "is_dir": True, "modified": 1.0}
+                return ProcessOutput(
+                    0, json.dumps({"value": value, "error": None, "error_type": None}).encode(), b""
+                )
+            return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
+        return ProcessOutput(0, b"container", b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    workspace = (
+        Workspace.copy_from(tmp_path)
+        if readonly is None
+        else Workspace.mount(tmp_path, readonly=readonly)
+    )
+    backend = docker.DockerBackend(image="python:3.12-slim", runtime="runsc")
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.shell
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.file_system
+    await backend.start(SandboxConfig(workspace=workspace, env={"EXPLICIT": "value"}))
+    create = next(argv for argv, _ in calls if "create" in argv)
+    for name in [
+        "--read-only",
+        "--init",
+        "--cap-drop",
+        "--security-opt",
+        "--pids-limit",
+        "--memory",
+        "--memory-swap",
+        "--cpus",
+    ]:
+        assert name in create
+    assert create[create.index("--network") + 1] == "none"
+    assert create[create.index("--user") + 1] == "65532:65532"
+    assert create[create.index("--runtime") + 1] == "runsc"
+    assert create[create.index("--pull") + 1] == "never"
+    assert "EXPLICIT=value" in create
+    assert not any("docker.sock" in value for value in create)
+    if readonly is not None:
+        mount = create[create.index("--mount") + 1]
+        assert (",readonly" in mount) is readonly
+        assert "bind-recursive=disabled" in mount
+    request = json.loads(next(payload for argv, payload in calls if "exec" in argv))
+    assert request["operation"] == ("import" if readonly is None else "stat")
+    await backend.aclose()
+    await backend.aclose()
+    assert sum("rm" in call for call, _ in calls) == 1
+    with pytest.raises(SandboxError, match="closed"):
+        await backend.shell.run(["test"], cwd=Path("."), timeout=1)
+
+
+async def test_failed_docker_setup_removes_named_container(tmp_path, monkeypatch):
+    calls = []
+
+    async def run(argv, *, timeout, **kwargs):
+        calls.append(argv)
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
+        if "start" in argv:
+            return ProcessOutput(1, b"", b"runtime unavailable")
+        return ProcessOutput(0, b"container", b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    sandbox = docker.DockerSandbox(
+        image="python:3.12-slim", workspace=Workspace.copy_from(tmp_path)
+    )
+    with pytest.raises(SandboxError, match="runtime unavailable"):
+        async with Agent(model=ScriptedModel([]), plugins=[sandbox]).session():
+            pytest.fail("Should fail closed")
+    assert calls[-1][1:4] == ["rm", "--force", "--volumes"]
+
+
+@pytest.mark.parametrize("unsafe", ["limits", "volumes"])
+async def test_docker_rejects_missing_limits_and_automatic_volumes(tmp_path, monkeypatch, unsafe):
+    calls = []
+
+    async def run(argv, *, timeout, **kwargs):
+        calls.append(argv)
+        if "info" in argv:
+            data = json.loads(ENGINE)
+            if unsafe == "limits":
+                data["MemoryLimit"] = False
+            return ProcessOutput(0, json.dumps(data).encode(), b"")
+        return ProcessOutput(0, b'{"/unbounded-volume":{}}', b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    sandbox = docker.DockerSandbox(image="test", workspace=Workspace.copy_from(tmp_path))
+    with pytest.raises(SandboxError, match="limits|volumes"):
+        async with Agent(model=ScriptedModel([]), plugins=[sandbox]).session():
+            pytest.fail("Unsafe runtime should not start")
+    assert not any("create" in argv for argv in calls)
+
+
+async def test_docker_transport_cancellation_destroys_container(tmp_path, monkeypatch):
+    started = asyncio.Event()
+    calls = []
+
+    async def run(argv, *, timeout, **kwargs):
+        calls.append(argv)
+        if "exec" in argv:
+            started.set()
+            await asyncio.Event().wait()
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
+        return ProcessOutput(0, b"", b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    backend = docker.DockerBackend(image="python:3.12-slim")
+    task = asyncio.create_task(
+        backend.start(SandboxConfig(workspace=Workspace.copy_from(tmp_path)))
+    )
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert "rm" in calls[-1]
+
+
+@pytest.mark.parametrize("failure", ["protocol", "daemon", "pipe"])
+async def test_docker_typed_services_handle_connection_loss_without_replaying(
+    tmp_path, monkeypatch, failure
+):
+    calls = []
+
+    async def run(argv, *, timeout, input=b"", **kwargs):
+        calls.append(argv)
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
+        if "exec" in argv:
+            operation = json.loads(input)["operation"]
+            if operation == "import":
+                return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
+            if failure == "pipe":
+                raise BrokenPipeError("connection interrupted")
+            if failure == "daemon":
+                return ProcessOutput(125, b"", b"daemon unavailable")
+            return ProcessOutput(0, b"invalid protocol response", b"")
+        return ProcessOutput(0, b"", b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    backend = docker.DockerBackend(image="test")
+    await backend.start(SandboxConfig(workspace=Workspace.copy_from(tmp_path)))
+    shell = backend.shell
+    file_system = backend.file_system
+    with pytest.raises(SandboxError):
+        await shell.run(["possibly-mutating-command"], cwd=Path("."), timeout=1)
+    assert sum("exec" in argv for argv in calls) == 2  # Initialization and exactly one command.
+    assert sum("rm" in argv for argv in calls) == 1
+    with pytest.raises(SandboxError, match="closed"):
+        await file_system.read(Path("file.txt"))
+    with pytest.raises(SandboxError, match="closed"):
+        _ = backend.shell
+    assert sum("exec" in argv for argv in calls) == 2
+
+
+@pytest.mark.parametrize("close_during_start", [False, True])
+async def test_docker_publishes_services_after_readiness_and_cannot_reopen_after_close(
+    tmp_path, monkeypatch, close_during_start
+):
+    reached_worker = asyncio.Event()
+    ready = asyncio.Event()
+
+    async def run(argv, *, timeout, **kwargs):
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
+        if "exec" in argv:
+            reached_worker.set()
+            await ready.wait()
+            return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
+        return ProcessOutput(0, b"", b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    backend = docker.DockerBackend(image="test")
+    starting = asyncio.create_task(
+        backend.start(SandboxConfig(workspace=Workspace.copy_from(tmp_path)))
+    )
+    await reached_worker.wait()
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.shell
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.file_system
+    if close_during_start:
+        await backend.aclose()
+    ready.set()
+    if close_during_start:
+        with pytest.raises(SandboxError, match="stopped during startup"):
+            await starting
+        with pytest.raises(SandboxError, match="closed"):
+            _ = backend.file_system
+    else:
+        await starting
+        assert backend.shell is backend.file_system
+        await backend.aclose()
+
+
+@pytest.mark.parametrize("disconnect", [False, True])
+async def test_bubblewrap_command_uses_namespaces_and_verified_resource_controls(
+    tmp_path, monkeypatch, disconnect
+):
+    calls = []
+    verified = []
+
+    class Channel:
+        async def start(self, argv, *, timeout, maximum):
+            calls.append(argv)
+
+        async def request(self, payload, *, timeout, maximum):
+            if json.loads(payload)["operation"] != "import":
+                raise BrokenPipeError("worker exited")
+            return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
+
+        async def aclose(self):
+            calls.append(["channel closed"])
+
+    async def run(argv, *, timeout):
+        calls.append(argv)
+        return ProcessOutput(0, b"/user.slice/test.scope\n", b"")
+
+    monkeypatch.setattr(bubblewrap, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(bubblewrap, "WorkerProcess", Channel)
+    monkeypatch.setattr(bubblewrap, "run_process", run)
+    monkeypatch.setattr(bubblewrap, "verify_limits", lambda group, limits: verified.append(group))
+    backend = bubblewrap.BubblewrapBackend(rootfs=tmp_path)
+    await backend.start(SandboxConfig(workspace=Workspace.copy_from(tmp_path)))
+    argv = calls[0]
+    for option in [
+        "--unshare-user",
+        "--unshare-pid",
+        "--unshare-net",
+        "--unshare-cgroup",
+        "--new-session",
+        "--die-with-parent",
+        "--clearenv",
+        "--cap-drop",
+    ]:
+        assert option in argv
+    assert "--share-net" not in argv
+    assert "--property=MemoryMax=512M" in argv
+    assert "--property=CPUQuota=100%" in argv
+    assert "--property=TasksMax=128" in argv
+    assert verified == ["/user.slice/test.scope"]
+    if disconnect:
+        file_system = backend.file_system
+        with pytest.raises(SandboxError, match="connection was lost"):
+            await file_system.read(Path("file.txt"))
+        with pytest.raises(SandboxError, match="closed"):
+            await file_system.read(Path("file.txt"))
+    await backend.aclose()
+    await backend.aclose()
+    assert any("kill" in call and "--signal=KILL" in call for call in calls)
+    assert calls[-1] == ["channel closed"]
+
+
+def test_bubblewrap_cgroup_limits_must_actually_be_effective(tmp_path):
+    group = tmp_path / "user.slice/test.scope"
+    group.mkdir(parents=True)
+    for name, value in {
+        "memory.max": "536870912",
+        "memory.swap.max": "0",
+        "pids.max": "128",
+        "cpu.max": "100000 100000",
+    }.items():
+        (group / name).write_text(value)
+    bubblewrap.verify_limits("/user.slice/test.scope", SandboxLimits(), cgroup_root=tmp_path)
+    for name in ("memory.max", "memory.swap.max", "pids.max", "cpu.max"):
+        original = (group / name).read_text()
+        (group / name).write_text("max 100000" if name == "cpu.max" else "max")
+        with pytest.raises(SandboxError, match="enforced"):
+            bubblewrap.verify_limits(
+                "/user.slice/test.scope", SandboxLimits(), cgroup_root=tmp_path
+            )
+        (group / name).write_text(original)
+    with pytest.raises(SandboxError, match="control group"):
+        bubblewrap.verify_limits("/", SandboxLimits(), cgroup_root=tmp_path)
+
+
+@pytest.mark.skipif(sys.platform == "linux", reason="Non-Linux platform check")
+async def test_bubblewrap_fails_closed_on_unsupported_platform(tmp_path):
+    sandbox = bubblewrap.BubblewrapSandbox(rootfs=tmp_path, workspace=Workspace.copy_from(tmp_path))
+    with pytest.raises(SandboxError, match="requires Linux"):
+        async with Agent(model=ScriptedModel([]), plugins=[sandbox]).session():
+            pytest.fail("Should fail closed")
+
+
+@pytest.mark.skipif(
+    os.environ.get("HARNESSED_TEST_DOCKER") != "1",
+    reason="Set HARNESSED_TEST_DOCKER=1 with a running Docker daemon and pre-pulled image",
+)
+async def test_live_docker_shell_and_filesystem_share_isolation(tmp_path):
+    await exercise_live_sandbox(
+        docker.DockerSandbox(
+            image=os.environ.get("HARNESSED_SANDBOX_IMAGE", "python:3.12-slim"),
+            workspace=Workspace.copy_from(tmp_path),
+        ),
+        tmp_path,
+    )
+
+
+@pytest.mark.skipif(
+    os.environ.get("HARNESSED_TEST_DOCKER") != "1",
+    reason="Requires a running Docker daemon and a pre-pulled image",
+)
+async def test_live_docker_batched_search_and_transfer_failures(tmp_path, monkeypatch):
+    sandbox = docker.DockerSandbox(
+        image=os.environ.get("HARNESSED_SANDBOX_IMAGE", "python:3.12-slim"),
+        workspace=Workspace.copy_from(tmp_path),
+        limits=SandboxLimits(max_transfer_bytes=16_384),
+    )
+    agent = Agent(model=ScriptedModel([]), plugins=[sandbox])
+    async with agent.session() as session:
+        services = sandbox.services(session)
+        created = await services.shell.run(
+            [
+                "python3",
+                "-c",
+                "from pathlib import Path\n"
+                "Path('many').mkdir()\n"
+                "for number in range(1000):\n"
+                "    Path(f'many/{number:04}.txt').write_text('no matches')\n"
+                "Path('large.txt').write_text('x' * 20000)\n"
+                "Path('binary.bin').write_bytes(b'\\xff')\n",
+            ],
+            cwd=Path("."),
+            timeout=10,
+        )
+        assert created.returncode == 0
+        original_run = docker.run_process
+        calls = []
+
+        async def counted(argv, **kwargs):
+            calls.append(argv)
+            return await original_run(argv, **kwargs)
+
+        monkeypatch.setattr(docker, "run_process", counted)
+        files = services.file_system
+        result = await files.grep("needle", pattern="many/*.txt")
+        assert result.matches == () and result.scanned_files == 1000 and result.notes == ()
+        assert len(calls) == 1 and calls[0][1] == "exec"
+        with pytest.raises(ValueError, match="max_transfer_bytes"):
+            await files.read(Path("large.txt"), limit=20000)
+        assert await files.read(Path("large.txt"), limit=1000) == "x" * 1000
+        with pytest.raises(UnicodeError):
+            await files.read(Path("binary.bin"))
+        # A large text preview stays in the runtime even with a smaller transfer cap.
+        assert (await files.grep("needle", pattern="*")).scanned_files == 1
+
+
+@pytest.mark.skipif(
+    not os.environ.get("HARNESSED_BWRAP_ROOTFS"),
+    reason="Set HARNESSED_BWRAP_ROOTFS to a prepared Linux rootfs",
+)
+async def test_live_bubblewrap_shell_and_filesystem_share_isolation(tmp_path):
+    await exercise_live_sandbox(
+        bubblewrap.BubblewrapSandbox(
+            rootfs=os.environ["HARNESSED_BWRAP_ROOTFS"],
+            workspace=Workspace.copy_from(tmp_path),
+        ),
+        tmp_path,
+    )
+
+
+async def exercise_live_sandbox(sandbox, tmp_path):
+    (tmp_path / "input.txt").write_text("source", encoding="utf-8")
+    agent = Agent(model=ScriptedModel([]), plugins=[sandbox, FilesystemTools(), ShellTools()])
+    async with agent.session() as session:
+        services = sandbox.services(session)
+        files = services.file_system
+        shell = services.shell
+        await files.write(Path("nested/data.txt"), "ä😀")
+        assert await files.read(Path("nested/data.txt"), offset=1, limit=1) == "😀"
+        result = await shell.run(
+            [
+                "python3",
+                "-c",
+                "from pathlib import Path; print(Path('input.txt').read_text()); "
+                "Path('output.bin').write_bytes(b'\\x00\\xff')",
+            ],
+            cwd=Path("."),
+            timeout=5,
+        )
+        assert result.returncode == 0 and result.stdout.strip() == "source"
+        await sandbox.export(session, source="output.bin", destination=tmp_path / "export.bin")
+        assert (tmp_path / "export.bin").read_bytes() == b"\x00\xff"
+        assert await files.read_bytes(Path("output.bin"), limit=1) == b"\x00"
+        with pytest.raises(UnicodeError):
+            await files.read(Path("output.bin"))
+        search = await files.grep("source", pattern="*")
+        assert search.matches == ("input.txt:1: source",)
+        assert search.scanned_files == 1  # Skip the directory and invalid UTF-8 binary.
+        assert not (tmp_path / "output.bin").exists()
+        with pytest.raises(ValueError):
+            await files.read(Path("../outside"))
+        result = await shell.run(
+            ["python3", "-c", "import socket; socket.create_connection(('1.1.1.1', 443), .5)"],
+            cwd=Path("."),
+            timeout=3,
+        )
+        assert result.returncode != 0

@@ -6,6 +6,25 @@ still evolving before 1.0.
 Detailed breaking changes and upgrade instructions are recorded in the repository
 [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
 
+## Unreleased
+
+- Add optional Docker and Bubblewrap sandbox integrations with shared shell/file
+  workspaces, bounded transfers, explicit exports, resource controls and a typed
+  backend extension protocol. Native runtime dependencies are application-managed.
+- `FilesystemTools` now includes discovery, editing and deletion. `ShellTools`
+  passes relative working directories to its backend instead of resolving them
+  against the host at mount time. See [sandboxes](guides/sandboxes.md).
+- Resolve typed `shell` and `file_system` handles with `sandbox.services(session)`.
+  Custom sandbox backends supply these services after asynchronous readiness,
+  without implementing the internal worker protocol.
+- Sandbox startup and shell deadlines raise `TimeoutError`, including time spent
+  waiting for the worker channel. UTF-8 failures use `UnicodeError`; file reads
+  fail explicitly when their requested range exceeds the transfer byte budget.
+  Filesystem backends now implement `grep()` (a `search_files` fallback is
+  available), and built-in sandboxes perform a search in one worker request.
+  Move `env` and `max_output_bytes` from `ShellTools` to the backend; `Shell`
+  accepts them only when it owns the local backend.
+
 ## Compatibility policy
 
 - Minor releases during 0.x may introduce breaking API or storage changes. Release

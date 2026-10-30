@@ -26,17 +26,81 @@ class FileStat:
     modified: float
 
 
+@dataclass(frozen=True, slots=True)
+class PathMatches:
+    paths: tuple[str, ...]
+    truncated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    matches: tuple[str, ...]
+    scanned_files: int
+    notes: tuple[str, ...] = ()
+
+
 class FileSystemBackend(Protocol):
-    """Structural filesystem seam; offsets and limits count Unicode characters."""
+    """Workspace operations with character-based text ranges and byte-based binary limits.
+
+    Invalid UTF-8 raises UnicodeError. A read returns the requested range up to
+    EOF or raises ValueError if a backend's byte budget cannot hold that range;
+    it must never silently shorten the requested character or byte limit.
+    """
 
     async def read(self, path: PurePath, *, offset: int = 0, limit: int | None = None) -> str: ...
+    async def read_bytes(self, path: PurePath, *, limit: int | None = None) -> bytes: ...
     async def write(self, path: PurePath, text: str) -> None: ...
     async def list(self, path: PurePath) -> Sequence[FileStat]: ...
     async def glob(self, pattern: str, *, limit: int = 1000) -> Sequence[PurePath]: ...
+    async def grep(self, query: str, *, pattern: str = "**/*", limit: int = 100) -> SearchResult:
+        """Search at most 1000 paths and 200000 characters per UTF-8 file.
+
+        Skip invalid UTF-8, report path/match/preview limits in notes, and raise
+        ValueError if a byte budget cannot hold a preview or the search result.
+        Backends can use search_files as a fallback without remote batching.
+        """
+        ...
+
     async def stat(self, path: PurePath) -> FileStat: ...
     async def exists(self, path: PurePath) -> bool: ...
     async def delete(self, path: PurePath) -> None: ...
     async def replace(self, path: PurePath, old: str, new: str) -> None: ...
+
+
+async def search_files(
+    fs: FileSystemBackend, query: str, *, pattern: str = "**/*", limit: int = 100
+) -> SearchResult:
+    """Implement the bounded literal-search contract using individual filesystem calls.
+
+    Remote backends should implement grep in their runtime to avoid round trips
+    per file. This fallback propagates read errors except invalid UTF-8.
+    """
+    if not query or not 1 <= limit <= 500:
+        raise ValueError("Search requires a non-empty query and a limit in [1, 500]")
+    hits: list[str] = []
+    notes: list[str] = []
+    scanned = 0
+    paths = await fs.glob(pattern, limit=1001)
+    if len(paths) > 1000:
+        notes.append("Path limit reached; narrow the glob pattern to search further.")
+    for path in paths[:1000]:
+        if (await fs.stat(path)).is_dir:
+            continue
+        try:
+            text = await fs.read(path, limit=200_001)
+        except UnicodeError:
+            continue
+        scanned += 1
+        if len(text) > 200_000:
+            notes.append(f"{path.as_posix()}: only the first 200000 characters were searched.")
+        for number, line in enumerate(text[:200_000].splitlines(), 1):
+            if query in line:
+                preview = line[:1000] + (" [line truncated]" if len(line) > 1000 else "")
+                hits.append(f"{path.as_posix()}:{number}: {preview}")
+                if len(hits) == limit:
+                    notes.append("Match limit reached; narrow the query or pattern.")
+                    return SearchResult(tuple(hits), scanned, tuple(notes))
+    return SearchResult(tuple(hits), scanned, tuple(notes))
 
 
 class LocalFileSystem:
@@ -63,6 +127,17 @@ class LocalFileSystem:
                     if not chunk:
                         return ""
                     remaining -= len(chunk)
+                return stream.read() if limit is None else stream.read(limit)
+
+        return await run_sync(read)
+
+    async def read_bytes(self, path: PurePath, *, limit: int | None = None) -> bytes:
+        """Read at most limit bytes, or the complete file when no limit is set."""
+        if limit is not None and limit < 0:
+            raise ValueError("File ranges must be non-negative")
+
+        def read() -> bytes:
+            with self._path(path).open("rb") as stream:
                 return stream.read() if limit is None else stream.read(limit)
 
         return await run_sync(read)
@@ -116,6 +191,9 @@ class LocalFileSystem:
 
         return await run_sync(matches)
 
+    async def grep(self, query: str, *, pattern: str = "**/*", limit: int = 100) -> SearchResult:
+        return await search_files(self, query, pattern=pattern, limit=limit)
+
     async def exists(self, path: PurePath) -> bool:
         return await run_sync(lambda: self._path(path).exists())
 
@@ -139,21 +217,15 @@ class LocalFileSystem:
         await run_sync(edit)
 
 
-@dataclass(frozen=True, slots=True)
-class PathMatches:
-    paths: tuple[str, ...]
-    truncated: bool
-
-
-@dataclass(frozen=True, slots=True)
-class SearchResult:
-    matches: tuple[str, ...]
-    scanned_files: int
-    notes: tuple[str, ...] = ()
-
-
 class FilesystemTools(Plugin, needs=(FileSystemBackend, ToolRegistry)):
-    """Expose bounded reads and writes through a separately owned FileSystemBackend service."""
+    """Expose workspace tools through a separately owned FileSystemBackend service."""
+
+    usage = SystemSection(
+        text=(
+            "File paths are relative to the workspace. Read a range before editing. "
+            "Use glob and grep to discover relevant files."
+        )
+    )
 
     @tool(readonly=True, parallel=True)
     async def read_file(
@@ -180,39 +252,6 @@ class FilesystemTools(Plugin, needs=(FileSystemBackend, ToolRegistry)):
         """Atomically replace a UTF-8 file, creating parent directories if needed."""
         await fs.write(Path(path), text)
         return f"Wrote {path}"
-
-
-class FilesystemConfig(PluginConfig):
-    root: Path = Path(".")
-
-
-class Filesystem(FilesystemTools, slot="filesystem"):
-    """Expose bounded reads, discovery and explicit writes within one workspace."""
-
-    needs = (ToolRegistry,)
-
-    Config = FilesystemConfig
-
-    config: FilesystemConfig
-
-    usage = SystemSection(
-        text=(
-            "File paths are relative to the workspace. Read a range before editing. "
-            "Use glob and grep to discover relevant files."
-        )
-    )
-
-    def __init__(
-        self, root: str | Path = ".", *, implementation: FileSystemBackend | None = None
-    ) -> None:
-        super().__init__(root=Path(root))
-        self.implementation = implementation
-
-    async def setup(self, ctx: Context) -> None:
-        implementation = self.implementation
-        if implementation is None:
-            implementation = await run_sync(partial(LocalFileSystem, self.config.root))
-        ctx.provide(FileSystemBackend, implementation)
 
     @tool(readonly=True, parallel=True)
     async def list_dir(
@@ -243,28 +282,7 @@ class Filesystem(FilesystemTools, slot="filesystem"):
         fs: Inject[FileSystemBackend],
     ) -> SearchResult:
         """Find literal text in bounded UTF-8 previews; narrow patterns for large trees."""
-        hits, notes, scanned = [], [], 0
-        paths = await fs.glob(pattern, limit=1001)
-        if len(paths) > 1000:
-            notes.append("Path limit reached; narrow the glob pattern to search further.")
-        for path in paths[:1000]:
-            if (await fs.stat(path)).is_dir:
-                continue
-            try:
-                text = await fs.read(path, limit=200_001)
-            except UnicodeDecodeError:
-                continue
-            scanned += 1
-            if len(text) > 200_000:
-                notes.append(f"{path.as_posix()}: only the first 200000 characters were searched.")
-            for number, line in enumerate(text[:200_000].splitlines(), 1):
-                if query in line:
-                    preview = line[:1000] + (" [line truncated]" if len(line) > 1000 else "")
-                    hits.append(f"{path.as_posix()}:{number}: {preview}")
-                    if len(hits) == limit:
-                        notes.append("Match limit reached; narrow the query or pattern.")
-                        return SearchResult(tuple(hits), scanned, tuple(notes))
-        return SearchResult(tuple(hits), scanned, tuple(notes))
+        return await fs.grep(query, pattern=pattern, limit=limit)
 
     @tool
     async def edit(
@@ -284,3 +302,27 @@ class Filesystem(FilesystemTools, slot="filesystem"):
         """Delete one workspace file."""
         await fs.delete(Path(path))
         return f"Deleted {path}"
+
+
+class FilesystemConfig(PluginConfig):
+    root: Path = Path(".")
+
+
+class Filesystem(FilesystemTools, slot="filesystem"):
+    """Own a local or application-supplied backend and its workspace tools."""
+
+    needs = (ToolRegistry,)
+    Config = FilesystemConfig
+    config: FilesystemConfig
+
+    def __init__(
+        self, root: str | Path = ".", *, implementation: FileSystemBackend | None = None
+    ) -> None:
+        super().__init__(root=Path(root))
+        self.implementation = implementation
+
+    async def setup(self, ctx: Context) -> None:
+        implementation = self.implementation
+        if implementation is None:
+            implementation = await run_sync(partial(LocalFileSystem, self.config.root))
+        ctx.provide(FileSystemBackend, implementation)

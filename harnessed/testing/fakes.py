@@ -6,7 +6,7 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from harnessed.core.session.events import SessionEvent
 from harnessed.core.session.store import MemoryPersistence
 from harnessed.core.tools.registry import ToolError
-from harnessed.plugins.filesystem import FileStat, Filesystem
+from harnessed.plugins.filesystem import FileStat, Filesystem, SearchResult, search_files
 from harnessed.plugins.shell import ProcResult, Shell
 
 
@@ -63,6 +63,12 @@ class _MemoryFiles:
                 raise NotADirectoryError(str(parent))
         self.files[key] = text
 
+    async def read_bytes(self, path: PurePath, *, limit: int | None = None) -> bytes:
+        if limit is not None and limit < 0:
+            raise ValueError("File ranges must be non-negative")
+        text = await self.read(path)
+        return text.encode("utf-8")[:limit]
+
     async def list(self, path: PurePath):
         key = _path(path)
         if not (await self.stat(path)).is_dir:
@@ -82,6 +88,9 @@ class _MemoryFiles:
             for path in sorted(self._entries())
             if path and _matches(PurePosixPath(path).parts, PurePosixPath(normalized).parts)
         )[:limit]
+
+    async def grep(self, query: str, *, pattern: str = "**/*", limit: int = 100) -> SearchResult:
+        return await search_files(self, query, pattern=pattern, limit=limit)
 
     async def stat(self, path: PurePath):
         key = _path(path)
