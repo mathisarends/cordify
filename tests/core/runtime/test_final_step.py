@@ -1,10 +1,9 @@
-import asyncio
 from dataclasses import replace
 
 import pytest
 from pydantic import BaseModel
 
-from harnessed import Agent, Plugin, SessionClosed, StopReason, ToolCall, ToolStatus, tool
+from harnessed import Agent, Plugin, StopReason, ToolCall, ToolStatus, tool
 from harnessed.core.model import ModelChunk, ModelInfo, ModelUsage, ToolDefinition
 from harnessed.errors import OutputUnavailable
 from harnessed.events import (
@@ -12,12 +11,12 @@ from harnessed.events import (
     OutputValidatedEvent,
     OutputValidationFailedEvent,
     ToolExecutionStartedEvent,
-    TurnOutcome,
 )
 from harnessed.hooks import ConfigureRequest, PreStep, ToolPolicy, TurnStopping
 from harnessed.kernel import hook
-from harnessed.plugins import AgentLoop, FinalStepPolicy, JsonlSessions
+from harnessed.plugins import AgentLoop, FinalStepPolicy
 from harnessed.testing import ScriptedModel, call
+from tests._audit import Audit
 
 
 class Answer(BaseModel):
@@ -174,55 +173,8 @@ async def test_progress_uses_each_turns_effective_limit_without_leaking_override
     async with Agent(
         model=ScriptedModel(["first", "second"]), plugins=[Observe(), AgentLoop(max_steps=5)]
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("one", max_steps=1)
         await session.run("two")
-        assert [turn.start.limits.max_steps for turn in session.turns] == [1, 5]
+        assert [turn.start.limits.max_steps for turn in session_audit.turns] == [1, 5]
     assert progress == [(1, 1, True), (5, 5, False)]
-
-
-async def test_reopen_preserves_effective_limit_and_final_policy_when_loop_configuration_changes(
-    tmp_path,
-):
-    started = asyncio.Event()
-    release = asyncio.Event()
-    executed = []
-
-    class Tools(Plugin):
-        @tool(readonly=True)
-        async def work(self) -> str:
-            started.set()
-            await release.wait()
-            executed.append(True)
-            return "stored progress"
-
-    async with Agent(
-        model=ScriptedModel([call("work")]),
-        plugins=[
-            Tools(),
-            JsonlSessions(tmp_path),
-            AgentLoop(max_steps=2, final_step=FinalStepPolicy.SUMMARIZE),
-        ],
-    ).session("saved") as session:
-        running = asyncio.create_task(session.run("go"))
-        await asyncio.wait_for(started.wait(), 3)
-        paused = asyncio.create_task(session.pause())
-        await asyncio.sleep(0)
-        release.set()
-        await asyncio.wait_for(paused, 3)
-        turn_id = session.turns[-1].id
-    with pytest.raises(SessionClosed):
-        await running
-    model = ScriptedModel(["Stored progress; work remains."])
-    async with Agent(
-        model=model,
-        plugins=[Tools(), JsonlSessions(tmp_path), AgentLoop(max_steps=9)],
-    ).session("saved") as session:
-        await session.resume()
-        await asyncio.wait_for(session.wait_until_idle(), 3)
-        turn = session.turns[-1]
-        assert turn.id == turn_id and turn.reason is TurnOutcome.MAX_STEPS
-        assert turn.start.limits.max_steps == 2
-        assert turn.start.final_step is FinalStepPolicy.SUMMARIZE
-        assert len(turn.steps) == 2 and len(model.requests) == 1 and executed == [True]
-        assert model.requests[0].tools == ()
-        assert sum(isinstance(e, ModelRequestedEvent) for e in turn.events) == 2

@@ -6,16 +6,7 @@ from harnessed import Agent, SystemPrompt, SystemSection, ToolCall
 from harnessed.core.errors import ConfigError
 from harnessed.core.messages import ToolStatus
 from harnessed.core.tools.registry import ToolRegistry
-from harnessed.plugins import (
-    Compaction,
-    JsonlSessions,
-    Rules,
-    Skill,
-    Skills,
-    Spill,
-    ToolOutputLimit,
-    when,
-)
+from harnessed.plugins import Compaction, Rules, Skill, Skills, Spill, ToolOutputLimit, when
 from harnessed.plugins.skills import SkillCatalog
 from harnessed.testing import ExtractiveSummarizer, ScriptedModel, call
 
@@ -275,7 +266,6 @@ async def test_loaded_instructions_survive_compaction_and_restart_from_the_log(t
     skill = Skill(name="testing", description="Run project tests.", instructions=original)
     policies = [
         Skills(skill),
-        JsonlSessions(tmp_path),
         Compaction(trigger=lambda state: False, keep_turns=0, summarizer=ExtractiveSummarizer()),
     ]
     app = Agent(
@@ -283,10 +273,11 @@ async def test_loaded_instructions_survive_compaction_and_restart_from_the_log(t
         plugins=policies,
         system_prompt=SystemPrompt(sections=(policies[0].catalog,)),
     )
-    async with app.session("skills") as session:
+    async with app.session() as session:
         await session.run("Run tests")
         assert await session.compact() is not None
         assert session.context.values["skill:testing"] == original
+        state = session.snapshot()
     changed = Skill(
         name="testing", description="Changed description.", instructions="Changed source."
     )
@@ -294,8 +285,8 @@ async def test_loaded_instructions_survive_compaction_and_restart_from_the_log(t
     async with Agent(
         system_prompt=SystemPrompt(sections=(skills_10.catalog,)),
         model=ScriptedModel([]),
-        plugins=[skills_10, JsonlSessions(tmp_path)],
-    ).session("skills") as restored:
+        plugins=[skills_10],
+    ).session(state=state) as restored:
         assert restored.context.values["skill:testing"] == original
         assert any(original in message.text for message in restored.messages)
 

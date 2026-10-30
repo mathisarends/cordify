@@ -13,6 +13,7 @@ from harnessed.events import (
 from harnessed.kernel import hook
 from harnessed.plugins import Compaction, every_turns
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit
 
 
 class Recorder(Plugin):
@@ -51,6 +52,7 @@ async def test_compaction_lifecycle_is_live_and_correlates_with_the_committed_pr
             ),
         ],
     ).session() as session:
+        session_audit = Audit(session)
         assert await session.compact() is None
         assert not recorder.events
         await session.run("x" * 4000)
@@ -69,7 +71,7 @@ async def test_compaction_lifecycle_is_live_and_correlates_with_the_committed_pr
             assert applied.id == started[0].compaction_id
         else:
             assert applied is None
-        assert all(not isinstance(e, TransientEvent) for e in session.events)
+        assert all(not isinstance(e, TransientEvent) for e in session_audit.events)
 
 
 @pytest.mark.parametrize("cancel", [False, True])

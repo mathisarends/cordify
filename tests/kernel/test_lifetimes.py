@@ -286,7 +286,7 @@ async def test_agent_registration_facade_uses_the_active_plugin_owner():
 
     async with Application(
         model=ScriptedModel([]), plugins=[Approvals(default=PolicyDecision.ALLOW)]
-    ).session("plugin-effects") as agent:
+    ).session() as agent:
         handle = await agent.ctx.plugin(Feature())
         assert [definition.name for definition in agent.ctx[ToolRegistry].definitions] == ["read"]
         await agent.ctx.dispatch(Ping())

@@ -246,28 +246,6 @@ class ToolExecutionStartedEvent(SessionEvent):
     call_id: Identifier
 
 
-@dataclass(frozen=True)
-class LogTailRecoveredEvent(SessionEvent):
-    __hash__ = None
-
-    type: Literal[EventKind.LOG_TAIL_RECOVERED] = field(
-        default=EventKind.LOG_TAIL_RECOVERED, kw_only=True
-    )
-    offset: int
-    discarded_bytes: int
-    sha256: str
-    archive: str
-
-    def __post_init__(self) -> None:
-        if (
-            type(self.offset) is not int
-            or self.offset < 0
-            or type(self.discarded_bytes) is not int
-            or self.discarded_bytes < 1
-        ):
-            raise ValueError("Invalid recovered log tail bounds")
-
-
 def _check_limit(name: str, value: int | None) -> None:
     if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
         raise ValueError(f"{name} must be a positive integer or None")
@@ -797,7 +775,6 @@ type LogEvent = Annotated[
         | ToolPolicyAppliedEvent
         | ToolExecutionStartedEvent
         | ToolExecutionFinishedEvent
-        | LogTailRecoveredEvent
         | InboxAddedEvent
         | InboxRemovedEvent
         | TurnStartedEvent

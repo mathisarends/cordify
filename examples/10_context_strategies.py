@@ -61,10 +61,11 @@ async def main():
             ),
         ],
     )
-    async with agent.session("strategies") as session:
+    async with agent.session() as session:
         await session.run("Old task context: " + "x" * 2000)
-        print((await session.run("Inspect the report.")).text)
-        for event in session.events:
+        result = await session.run("Inspect the report.")
+        print(result.text)
+        for event in result.events:
             if isinstance(event, CompactionAppliedEvent):
                 print(f"Compacted event prefix [0, {event.through}): {event.summary[:100]}")
             elif isinstance(event, SpillCreatedEvent):

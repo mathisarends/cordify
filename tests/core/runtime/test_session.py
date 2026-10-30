@@ -22,6 +22,7 @@ from harnessed.core.tools.registry import ToolRegistry
 from harnessed.kernel import hook
 from harnessed.plugins import AgentLoop, Approvals, Service
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 async def test_streaming_tool_loop_and_exact_recorded_requests():
@@ -42,14 +43,15 @@ async def test_streaming_tool_loop_and_exact_recorded_requests():
         info=ModelInfo("test-model", context_window=128_000),
     )
     harness = Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), features])
-    async with harness.session("math") as agent:
+    async with harness.session() as agent:
+        agent_audit = Audit(agent)
         events = [event async for event in agent.stream("Add 1 and 2")]
         assert (
             "".join(e.text for e in events if isinstance(e, TextDeltaEvent)) == "The result is 3."
         )
         assert [e.text for e in events if isinstance(e, ToolProgressEvent)] == ["adding"]
         assert any(isinstance(e, ToolCallFinishedEvent) and e.result.content == "3" for e in events)
-        recorded = [e.request for e in agent.log.events if isinstance(e, ModelRequestedEvent)]
+        recorded = [e.request for e in agent_audit.events if isinstance(e, ModelRequestedEvent)]
         assert recorded == model.requests
         assert agent.last(ModelRequestedEvent).model == model.info
         assert [m.role for m in model.requests[1].messages] == ["user", "assistant", "tool"]
@@ -72,9 +74,10 @@ class PausingModel(CallbackModel):
 
 async def test_steering_enters_next_step_while_another_run_gets_its_own_turn():
     model = PausingModel()
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "inbox"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.submit("first")
         await model.started.wait()
         await agent.steer("steering")
@@ -83,7 +86,7 @@ async def test_steering_enters_next_step_while_another_run_gets_its_own_turn():
         await agent.control.join()
         users = [[m.content for m in r.messages if m.role == Role.USER] for r in model.requests]
         assert users == [["first"], ["first", "steering"], ["first", "steering", "second"]]
-        assert sum(isinstance(e, TurnStartedEvent) for e in agent.log.events) == 2
+        assert sum(isinstance(e, TurnStartedEvent) for e in agent_audit.events) == 2
         assert not agent.inbox.pending
 
 
@@ -117,7 +120,7 @@ async def test_denied_policy_never_enters_execution_or_review_regardless_of_orde
             ApprovalGate(risky={"remove"}, ask=lambda call: False),
         ],
     )
-    async with harness.session("deny") as agent:
+    async with harness.session() as agent:
         result = await agent.run("remove")
         outcomes = [e.result for e in result.events if isinstance(e, ToolCallFinishedEvent)]
         assert outcomes[0].status == ToolStatus.DENIED
@@ -162,12 +165,13 @@ async def test_approval_always_is_session_local_and_review_can_steer_nudges():
             ApprovalGate(risky={"work"}),
         ],
     )
-    async with harness.session("approve") as agent:
+    async with harness.session() as agent:
+        agent_audit = Audit(agent)
         await agent.run("work twice")
         assert asked == ["work"]
         assert stages == ["policy", "tool", "review", "policy", "tool", "review"]
         assert any(m.content == "consider this" for m in model.requests[-1].messages)
-        results = [e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
+        results = [e.result for e in agent_audit.events if isinstance(e, ToolCallFinishedEvent)]
         assert all(result.content == "done\n\nReviewed" for result in results)
 
 
@@ -185,7 +189,7 @@ async def test_class_plugin_state_is_fresh_for_every_session_and_methods_support
 
         @hook(ReviewToolResult)
         async def review(self, event, next_, agent: Inject[Session]):
-            assert agent.id in ("one", "two")
+            assert isinstance(agent.id, str) and agent.id
             return await next_()
 
     template = Counter()
@@ -198,8 +202,8 @@ async def test_class_plugin_state_is_fresh_for_every_session_and_methods_support
         ]
     )
     harness = Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), template])
-    for session_id in ("one", "two"):
-        async with harness.session(session_id) as agent:
+    for _ in range(2):
+        async with harness.session() as agent:
             result = await agent.run("count")
             assert (
                 next(
@@ -222,7 +226,7 @@ async def test_function_plugin_can_inject_current_agent_with_explicit_needs():
     harness = Application(
         model=ScriptedModel(["done"]), plugins=[Approvals(default=PolicyDecision.ALLOW), observer()]
     )
-    async with harness.session("injected-agent") as agent:
+    async with harness.session() as agent:
         assert observed == [(agent.id, agent.ctx[ToolRegistry])]
         await agent.run("go")
 
@@ -252,7 +256,7 @@ async def test_explicit_and_live_registration():
         model=model,
         plugins=[Approvals(default=PolicyDecision.ALLOW), Echo(), Alias()],
     )
-    async with harness.session("explicit") as agent:
+    async with harness.session() as agent:
         handle = await agent.use(Live())
         seen = []
         agent.add_hook(ToolCallFinishedEvent, lambda event: seen.append(event.result.content))
@@ -266,7 +270,8 @@ async def test_explicit_and_live_registration():
 async def test_pre_step_rejection_consumes_input_permanently():
     model = ScriptedModel(["second"])
     harness = Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)])
-    async with harness.session("reject") as agent:
+    async with harness.session() as agent:
+        agent_audit = Audit(agent)
         reject = True
 
         @agent.on(PreStep)
@@ -281,14 +286,14 @@ async def test_pre_step_rejection_consumes_input_permanently():
         await agent.control.join()
         assert len(model.requests) == 1 and not agent.inbox.pending
         assert all(message.text != "first" for message in model.requests[0].messages)
-        assert len(agent.turns) == 2
+        assert len(agent_audit.turns) == 2
 
 
 async def test_cancel_before_driver_starts_and_reuse_agent():
     model = ScriptedModel(["after cancel"])
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "cancel-before-start"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session() as agent:
         await agent.submit("discard")
         await agent.abort()
         assert agent.status == "idle" and (not agent.inbox.pending)
@@ -309,11 +314,12 @@ async def test_cancel_stream_preserves_visible_prefix_and_closes_turn():
 
     async with Application(
         model=PartialModel(), plugins=[Approvals(default=PolicyDecision.ALLOW)]
-    ).session("partial") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.submit("go")
         await started.wait()
         await agent.abort()
-        partial = next(e for e in agent.log.events if isinstance(e, AssistantMessageEvent))
+        partial = next(e for e in agent_audit.events if isinstance(e, AssistantMessageEvent))
         assert partial.interrupted and partial.message.content == "visible prefix"
         assert isinstance(agent.log.last(TurnEndedEvent), TurnEndedEvent)
         assert agent.log.last(TurnEndedEvent).reason == TurnOutcome.ABORTED
@@ -336,12 +342,13 @@ async def test_cancel_tool_answers_outstanding_call_and_sets_signal():
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("wait"))]])
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), bundle]
-    ).session("cancel-tool") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.submit("go")
         await started.wait()
         await agent.abort()
         assert calls[0].signal.is_set()
-        results = [e.result for e in agent.log.events if isinstance(e, ToolCallFinishedEvent)]
+        results = [e.result for e in agent_audit.events if isinstance(e, ToolCallFinishedEvent)]
         assert len(results) == 1 and results[0].is_error
 
 
@@ -359,12 +366,12 @@ async def test_same_harness_rejects_two_live_writers_and_max_steps_bounds_the_lo
         model=model,
         plugins=[AgentLoop(max_steps=2), Approvals(default=PolicyDecision.ALLOW), bundle],
     )
-    async with harness.session("same") as agent:
-        with pytest.raises(RuntimeError, match="already"):
-            async with harness.session("same"):
-                pytest.fail("A second writer entered")
+    async with harness.session() as agent:
+        agent_audit = Audit(agent)
+        async with harness.session() as independent:
+            assert independent.id != agent.id and not independent.messages
         await agent.run("loop")
-        assert agent.log.events[-1].reason == TurnOutcome.MAX_STEPS
+        assert agent_audit.events[-1].reason == TurnOutcome.MAX_STEPS
 
 
 async def test_observer_failure_closes_model_iterator_before_run_returns():
@@ -383,7 +390,7 @@ async def test_observer_failure_closes_model_iterator_before_run_returns():
 
     async with Application(
         model=ResourceModel(), plugins=[Approvals(default=PolicyDecision.ALLOW)]
-    ).session("resource") as agent:
+    ).session() as agent:
 
         @agent.on(TextDeltaEvent)
         def broken(event):
@@ -422,16 +429,16 @@ async def test_policy_ask_routes_to_approver_seam():
             Service(Approver, CallbackApprover(approve)),
         ],
     )
-    async with harness.session("ask") as agent:
+    async with harness.session() as agent:
         await agent.run("ask")
         assert asked == ["approved"]
 
 
 async def test_canceling_when_idle_waiter_does_not_cancel_the_agent():
     model = PausingModel()
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "waiter"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session() as agent:
         await agent.submit("go")
         await model.started.wait()
         with pytest.raises(TimeoutError):

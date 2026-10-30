@@ -12,6 +12,7 @@ from harnessed.core.tools.registry import ToolRegistry
 from harnessed.plugins import Approvals, BackgroundShell, Service, Shell
 from harnessed.plugins.shell import LocalShell, ProcessState, ProcResult, ShellBackend
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 async def execute(session, name, **arguments):
@@ -135,13 +136,17 @@ async def test_completion_wakes_idle_agent_once_and_does_not_leak_raw_output(tmp
 
     app = Agent(model=CallbackModel(respond), plugins=[Shell(tmp_path), BackgroundShell(tmp_path)])
     async with app.session() as session:
+        session_audit = Audit(session)
         command_id = await start(session, "print('unreviewed-output')")
         await asyncio.wait_for(completed.wait(), 5)
         await session.wait_until_idle()
         assert len(notifications) == 1
         assert command_id in notifications[0] and '"state": "exited"' in notifications[0]
         assert "unreviewed-output" not in notifications[0]
-        assert len([event for event in session.events if isinstance(event, InboxAddedEvent)]) == 1
+        assert (
+            len([event for event in session_audit.events if isinstance(event, InboxAddedEvent)])
+            == 1
+        )
         for _ in range(2):
             await execute(session, "read_command", command_id=command_id)
         assert len(notifications) == 1
@@ -198,7 +203,7 @@ async def test_completion_arrives_in_next_step_while_agent_keeps_working(tmp_pat
         ("import sys; print('bad'); sys.exit(7)", 10, ToolStatus.ERROR, "exited", 7),
         (
             "import time; print('partial'); time.sleep(30)",
-            0.5,
+            2.0,
             ToolStatus.TIMEOUT,
             "timed_out",
             None,

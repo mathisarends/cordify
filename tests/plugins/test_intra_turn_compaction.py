@@ -1,8 +1,6 @@
-import asyncio
-
 import pytest
 
-from harnessed import Agent, Plugin, SessionClosed, SessionStatus, tool
+from harnessed import Agent, Plugin, tool
 from harnessed.core.compaction import plan_compaction
 from harnessed.core.errors import ContextLengthExceeded
 from harnessed.core.messages import (
@@ -15,13 +13,11 @@ from harnessed.core.messages import (
     UserMessage,
 )
 from harnessed.core.model import ModelChunk, ModelRequest, ModelResponse
-from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     AssistantMessageEvent,
     CompactionAppliedEvent,
     ContextLifetime,
     ContextMessageEvent,
-    ControlState,
     ModelRequestedEvent,
     StepEndedEvent,
     StepStartedEvent,
@@ -30,10 +26,11 @@ from harnessed.core.session.events import (
     TurnStartedEvent,
     UserMessageEvent,
 )
-from harnessed.core.session.session import SessionLog, derive_messages
+from harnessed.core.session.session import SessionLog
 from harnessed.models import ModelInfo, ProviderState
-from harnessed.plugins import AgentLoop, Compaction, JsonlSessions
+from harnessed.plugins import AgentLoop, Compaction
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 class Brief:
@@ -88,7 +85,6 @@ async def apply_plan(log: SessionLog, **options) -> CompactionAppliedEvent:
     settings = dict(keep_turns=1, keep_first_turns=0, preserve_turns=(), keep_steps=1)
     settings.update(options)
     plan = plan_compaction(log, **settings)
-    assert plan == plan_compaction(log.events, **settings)
     assert plan is not None
     applied = CompactionAppliedEvent(
         plan.through,
@@ -98,10 +94,6 @@ async def apply_plan(log: SessionLog, **options) -> CompactionAppliedEvent:
         retained_turns=plan.retained_turns,
     )
     await log.append(applied)
-    assert log.messages == derive_messages(log.events)
-    restored = SessionLog("restored", seed=[decode_event(encode_event(e)) for e in log.events])
-    assert restored.messages == log.messages
-    assert restored.turns == log.turns
     assert_pairs(log.messages)
     return applied
 
@@ -137,7 +129,6 @@ async def test_repeated_compaction_retains_inputs_and_signatures_but_releases_re
     assert all(message in log.messages for message in (task, steering, context))
     await log.append(TurnEndedEvent("active"))
     assert context not in log.messages
-    assert log.messages == derive_messages(log.events)
     await log.append(TurnStartedEvent("next"))
     await log.append(UserMessageEvent(UserMessage("next task")))
     await append_step(log, "next", 1)
@@ -226,8 +217,9 @@ async def test_first_turn_compacts_automatically_without_changing_retained_provi
             Compaction(trigger=lambda state: not over_budget, summarizer=brief, keep_steps=2),
         ],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("original task")
-        assert len(session.turns) == 1 and effects == list(range(5))
+        assert len(session_audit.turns) == 1 and effects == list(range(5))
         assert len(brief.sources) == 3
         assert all(not any(m.text == "original task" for m in source) for source in brief.sources)
         for request in model.requests:
@@ -268,9 +260,10 @@ async def test_nonshrinking_summary_retries_after_two_more_steps_in_the_same_tur
             Compaction(trigger=lambda state: True, summarizer=brief, keep_steps=1),
         ],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("task")
         assert len(brief.sources) == 2
-        assert sum(isinstance(e, CompactionAppliedEvent) for e in session.events) == 1
+        assert sum(isinstance(e, CompactionAppliedEvent) for e in session_audit.events) == 1
         assert any(m.text.startswith("Conversation summary:") for m in model.requests[-1].messages)
 
 
@@ -301,10 +294,11 @@ async def test_provider_context_error_can_compact_completed_steps_in_the_first_t
             Compaction(trigger=lambda state: False, summarizer=brief),
         ],
     ).session() as session:
+        session_audit = Audit(session)
         result = await session.run("task")
         assert result.text == "finished"
         assert len(brief.sources) == 1 and effects == ["work"] * 3
-        assert [step.reason for step in session.turns[0].steps] == [
+        assert [step.reason for step in session_audit.turns[0].steps] == [
             "completed",
             "completed",
             "completed",
@@ -312,59 +306,3 @@ async def test_provider_context_error_can_compact_completed_steps_in_the_first_t
             "completed",
         ]
         assert_pairs(model.requests[-1].messages)
-
-
-async def test_pause_compact_restart_resumes_after_completed_tools(tmp_path):
-    started, release = asyncio.Event(), asyncio.Event()
-    effects = []
-
-    class Work(Plugin):
-        @tool(readonly=True)
-        async def work(self, number: int) -> str:
-            effects.append(number)
-            if number == 2:
-                started.set()
-                await release.wait()
-            return "x" * 4000
-
-    def app(model):
-        return Agent(
-            model=model,
-            plugins=[
-                Work(),
-                JsonlSessions(tmp_path),
-                Compaction(trigger=lambda state: False, summarizer=Brief(), keep_steps=1),
-            ],
-        )
-
-    model = ScriptedModel(
-        [
-            ModelResponse(AssistantMessage(tool_calls=(ToolCall("work", {"number": n}),)))
-            for n in range(3)
-        ]
-    )
-    async with app(model).session("paused") as session:
-        running = asyncio.create_task(session.run("original task"))
-        await asyncio.wait_for(started.wait(), 3)
-        pausing = asyncio.create_task(session.pause())
-        while session.log.control.state != ControlState.PAUSING:
-            await session.control._changed.wait()
-        release.set()
-        await asyncio.wait_for(pausing, 3)
-        applied = await session.compact()
-        assert applied is not None
-        assert session.status is SessionStatus.PAUSED
-        assert_pairs(session.messages)
-        snapshot = session.messages
-    with pytest.raises(SessionClosed):
-        await asyncio.wait_for(running, 3)
-    continued = ScriptedModel(["finished"])
-    async with app(continued).session("paused") as session:
-        assert session.status is SessionStatus.PAUSED
-        assert session.messages == snapshot
-        await session.resume()
-        await asyncio.wait_for(session.wait_until_idle(), 3)
-        assert effects == [0, 1, 2]
-        assert len(continued.requests) == 1
-        assert_pairs(continued.requests[0].messages)
-        assert session.messages[-1].text == "finished"

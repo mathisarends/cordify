@@ -107,9 +107,9 @@ plugin_validation=PluginValidation.ERROR)` resolves reusable configuration.
 | plugin_validation | ERROR rejects unresolved plugins at session startup; WARN emits PluginDependencyWarning and retains them for later activation |
 | agent.plugins | Tuple of resolved plugins |
 | agent.prompt | Inspectable PromptComposition with order, origins, format and exclusions |
-| agent.session(id=None, restore_outputs=()) | Open/resume a Session and register pending output types/contracts |
-| agent.run(prompt, **options) | One run in a fresh session |
-| agent.sessions.list() / delete(id) | List IDs / delete an inactive stored conversation and its artifacts |
+| agent.session(*, state=None) | Open a fresh live Session from optional immutable SessionState |
+| agent.run(prompt, state=None, **options) | Run one turn and return its terminal result and state |
+| SessionState.from_json(payload) / state.to_json() | Validate or encode the canonical conversation snapshot in memory |
 
 Import `PluginValidation` from `harnessed`. Session startup checks all waiting
 plugins after publishing session services and settling their setup, before
@@ -174,30 +174,31 @@ Use ContextValue for dynamic facts. All prompt policies are exported by `harness
 | stream(prompt, output=None, ...) | Typed UI and custom events, ending with TurnFinishedEvent |
 | steer(content, attachments=()) | Send a next-step correction and return its InboxItem |
 | observe(observation) | Buffer the latest text/image snapshot per source for the next step; recorded snapshots stay unchanged until compaction or an explicit retention policy |
-| context.set(name, value) / remove(name) | Await a durable changed fact/removal |
-| inbox.pending / remove(id) | Frozen queued input snapshot / durable removal |
+| context.set(name, value) / remove(name) | Await an admitted changed fact/removal |
+| inbox.pending / remove(id) | Frozen in-memory queued input / admitted removal |
 | pause() / resume() | Pause at a committed step boundary / continue |
 | stop(keep_inbox=False) | Finish this step, end its turn, return to idle |
 | abort(keep_inbox=False) | Cancel now, drain cleanup, repair and end its turn |
 | wait_until_idle() | Wait for idle and an empty inbox |
 | use(plugin, section_delivery=SectionDelivery.ERROR) | Mount a reversible capability; CONTEXT owns guidance per activation, IGNORE skips sections |
 | compact() | Summarize completed history while idle or paused; return its record or None |
-| fork(id, at=None, inherit_approvals=False) | Create a closed-prefix branch for Agent.session |
+| snapshot() | Export immutable conversation state at an idle boundary |
 | subscribe(transient=False) | Independent raw log subscription |
-| events / messages / turns / usage / last(Event) | Durable values and projected snapshots |
+| events / turns | Current-turn execution buffers, released after terminal delivery |
+| messages / usage / last(Event) | Retained working context, live-session usage and recent diagnostics |
 | status | SessionStatus: IDLE, RUNNING, PAUSED, STOPPING, CLOSED |
-| emit(event) | Persist a declared durable event or publish a transient notification |
-| approvals.request(call, reason) / answer(id, decision) / revoke(id) | Ask, answer, or revoke durable grants; `pending` / `grants` / `grant_for()` read them |
+| emit(event) | Admit a declared execution event or publish a transient notification |
+| approvals.request(call, reason) / answer(id, decision) / revoke(id) | Ask, answer, or revoke live-session grants; `pending` / `grants` / `grant_for()` read them |
 | id / prompt | Session ID / effective system prompt |
 | ctx | Advanced: resolve services in this session's scope (`session.ctx[ToolRegistry]`) |
 | control | Advanced: the SessionControl service for plugins and external UIs |
-| log | Advanced: append-only SessionLog service and event catalog |
+| log | Advanced: live SessionLog state owner, current-turn buffer and event catalog |
 
 `from harnessed import SessionLog` exposes the injectable log service for plugins.
 Applications read through the session views above. `session.log` exposes the same
 data for plugins and integrations; prefer the session views when both exist.
 `SessionLog.request(request_id)` returns a submitted model request or `None`;
-`request_finished(request_id)` checks its durable completion, and
+`request_finished(request_id)` checks completion within the current turn, and
 `execution_pending(call_id)` checks whether a tool start still needs a receipt.
 `included_observations(request)` returns retained observation sources, refs,
 turn IDs, step numbers and message IDs using exact message provenance rather
@@ -330,7 +331,7 @@ bytes. Inline image data URLs are stored automatically on standard event admissi
 Use `await session.log.resolve_request(request)` when replaying a recorded request
 directly through a model; the agent loop resolves images automatically.
 See [session image storage](../guides/sessions.md#image-assets-and-memory) for
-cache bounds, external backend contracts and backup requirements.
+cache bounds, self-contained snapshots and ownership.
 
 The image API has three explicit boundaries:
 
@@ -338,17 +339,29 @@ The image API has three explicit boundaries:
 | --- | --- |
 | Applications and plugins | `AssetRef`, `ImageReference`, `session.assets.put(...)`, `session.assets.read(...)` |
 | Manual replay and inspection | `session.log.assets`, `await session.log.resolve_request(request)` |
-| Custom storage backends | `SessionStore.assets(session_id) -> AssetStore`, `AssetStore.put/read`, `AssetRef.verify(data)` |
+| Application persistence | `SessionState.from_json(payload)`, `result.state`, `session.snapshot()`, `state.to_json()` |
 
 `session.assets` and `log.assets` are read-only references to the same backend;
 applications can store/read content but cannot replace session storage in place.
-`AssetRef.verify(data)` raises `ValueError` on a size or digest mismatch and helps
-custom backends implement the integrity contract. Import `AssetStore` from
-`harnessed.core.assets` and `SessionStore` from `harnessed.core.session.store` when
-implementing a backend.
-
-Cache controls, admission/normalization helpers, concrete built-in asset stores
-and fork-copy helpers are internal. They are not injectable extension services.
+`AssetRef.verify(data)` raises `ValueError` on a size or digest mismatch. Snapshots
+carry verified image bytes and referenced spill contents. A later live session
+creates its own resource containers. Cache controls and concrete memory stores
+are internal; the application owns storage of the exported snapshot.
 `File` and `Image` are attachment descriptors supplied to `run`/`steer`; their
 conversion methods are internal too. Use the public operations above rather than
 reaching into those implementations.
+
+## SessionState
+
+`SessionState` is exported from `harnessed`. `state=None` starts a conversation
+without history. `SessionState.from_json(str_or_bytes)` validates format version
+1 and resource integrity; `state.to_json()` returns a string without I/O. State
+contains retained history and provenance, named context, compaction metadata and
+referenced image/text resources. It contains no runtime handles, queued turns,
+Python validators, approval grants or historical request/event archive.
+
+`RunResult.state` captures that result's terminal boundary independently of later
+turns. Imported state opens idle and never re-executes recorded tool calls.
+`session.snapshot()` requires an idle open conversation with an empty inbox.
+Reuse the same immutable state for independent continuations. See
+[the session guide](../guides/sessions.md) for compaction and application storage.

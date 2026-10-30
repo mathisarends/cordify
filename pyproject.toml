@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "harnessed"
 version = "0.7.0"
-description = "A composable Python agent SDK with reversible plugins and a durable session log."
+description = "A composable Python agent SDK with reversible plugins and explicit conversation state."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

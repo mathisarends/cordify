@@ -16,14 +16,13 @@ captured when the tool batch is planned. Review hooks receive the setting on the
 
 ```python
 from harnessed import Agent, SystemPrompt
-from harnessed.plugins import JsonlSessions, Spill, ToolOutputLimit
+from harnessed.plugins import Spill, ToolOutputLimit
 
 spill = Spill(threshold_tokens=8_000, preview_tokens=256, max_files=128, max_bytes=32 * 1024 * 1024)
 agent = Agent(
     model="deepseek:deepseek-chat",
     system_prompt=SystemPrompt(sections=(spill.usage,)),
     plugins=[
-        JsonlSessions(".harnessed/sessions"),
         spill,
         ToolOutputLimit(max_chars=16_000),
     ],
@@ -37,9 +36,9 @@ Reading a spill never creates another spill. Exit code, status, images and rule
 metadata remain attached to the result.
 
 File names are logical, session-relative names, not arbitrary filesystem paths.
-MemorySessions retains them in memory; JsonlSessions persists them beside its log.
-A fresh agent can resume and read the same content. Another session cannot use a
-reference to read the first session's data.
+The live session retains these resources in memory. Exported SessionState values
+include the contents referenced by retained context. Inject that state into a new
+session to continue reading them; a fresh empty session cannot read their keys.
 
 ## Retention and failures
 
@@ -51,12 +50,14 @@ an expiration during replay.
 
 A single result larger than the spill budget falls back to final truncation with
 a short reason. Storage failures also preserve the original result and its metadata.
-Startup removes unrecorded orphan files and records missing artifacts. Cancelling
-an atomic disk write drains it before another operation can acquire the file lock.
+Snapshot imports validate resource identity and contents. Spill quotas and
+expiration remain explicit, including when restoring into a smaller configured quota.
 
 Spill runs inside ordinary review hooks, so a default-priority rule can annotate
 the final preview. Rule conditions inspect the original execution result; their
-match bits are persisted with the canonical result for deterministic resume.
+match bits are recorded with the canonical result for application-owned audit.
+Rules repetition counters start fresh when a new live session opens.
 
 Run `uv run python -m examples.24_session_spill` for a complete offline example
-that persists a large failing test result and reads a Unicode range after restart.
+that exports a large failing test result in SessionState and reads a Unicode range
+after importing it into a fresh session.

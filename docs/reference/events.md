@@ -75,7 +75,7 @@ for provider instrumentation, limits and restoration.
 
 ## Audit events
 
-These additional built-ins belong to the durable session log, available through
+These additional built-ins describe current-turn execution, available through
 `session.events`, `session.subscribe()` and kernel hooks. They are not forwarded
 as individual notifications by `session.stream(...)`. Durable records for a
 turn are also included in its final `RunResult.events`.
@@ -91,7 +91,6 @@ turn are also included in its final `RunResult.events`.
 | `StepStartedEvent` | `step.start` | Step `(turn_id, step)` started |
 | `StepEndedEvent` | `step.end` | Outcome of step `(turn_id, step)` |
 | `AgentControlChangedEvent` | `session.control.changed` | Committed control `state` and inbox retention policy |
-| `LogTailRecoveredEvent` | `session.log.recovered` | Recovery of a damaged log tail, including offset and archived bytes |
 
 `TurnEndedEvent` records the durable outcome. `TurnFinishedEvent[T]` carries the
 assembled result to one UI stream. The latter can be absent when the stream
@@ -148,3 +147,7 @@ Class patterns can ignore variants the consumer does not display. An explicit
 application union or exhaustive match remains the application's chosen closed
 set of variants. See [declaring application events](../guides/events.md#declare-application-events)
 and [correlation identities](../guides/events.md#correlate-event-lifecycles).
+
+Serializable execution events are not automatically persisted. Use event hooks or
+subscriptions for an application-owned audit. Conversation continuation uses
+SessionState rather than replaying the audit stream.

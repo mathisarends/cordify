@@ -17,9 +17,7 @@ from harnessed.core.runtime.options import RunOptions
 from harnessed.core.runtime.result import RunResult
 from harnessed.core.runtime.services import RuntimeServices
 from harnessed.core.runtime.session import Session
-from harnessed.core.session.repository import SessionRepository
-from harnessed.core.session.session import SessionLog
-from harnessed.core.session.store import MemorySessions
+from harnessed.core.session.state import SessionState
 from harnessed.core.tools.output_limit import ToolOutputLimit
 from harnessed.core.tracing import NoopTracer
 from harnessed.kernel import Context, PluginLike
@@ -31,7 +29,7 @@ class Agent:
     """Resolve model, instructions and plugins into a reusable configuration.
 
     Each opened session owns its runtime and plugin lifetimes. The configured
-    session-store plugin retains conversations and enforces a single writer.
+    conversation state is returned to the caller rather than archived by the agent.
     """
 
     def __init__(
@@ -68,7 +66,6 @@ class Agent:
         )
         defaults: list[PluginLike] = [
             AgentLoop(),
-            MemorySessions(),
             ToolOutputLimit(),
             Approvals(),
             NoopTracer(),
@@ -93,43 +90,50 @@ class Agent:
         self._events = EventRegistry(
             kind for plugin in self.plugins for kind in plugin_events(plugin)
         )
-        self.sessions = SessionRepository(self.plugins, registry=self._events)
 
     @asynccontextmanager
     async def session(
         self,
-        session_id: str | SessionLog | None = None,
         *,
-        restore_outputs: Iterable[type[Any] | OutputContract[Any]] = (),
+        state: SessionState | None = None,
     ) -> AsyncGenerator[Session]:
-        """Open or resume a conversation; omit its ID to create a new one."""
+        """Open a live conversation, optionally initialized from an immutable state."""
         async with Context() as ctx:
             ctx.provide(EventRegistry, self._events.copy())
             # Validators are per session, so dynamic output types never leak between them.
             outputs = OutputTypes()
-            for output in restore_outputs:
-                outputs.register(output)
             ctx.provide(OutputTypes, outputs)
             await ctx.install(self.plugins, settle=True)
-            yield await open_session(ctx, session_id, plugin_validation=self.plugin_validation)
+            yield await open_session(ctx, state, plugin_validation=self.plugin_validation)
 
     @overload
     async def run[T](
-        self, prompt: str, *, output: type[T] | OutputContract[T], **options: Unpack[RunOptions]
+        self,
+        prompt: str,
+        *,
+        state: SessionState | None = None,
+        output: type[T] | OutputContract[T],
+        **options: Unpack[RunOptions],
     ) -> RunResult[T]: ...
 
     @overload
     async def run(
-        self, prompt: str, *, output: None = None, **options: Unpack[RunOptions]
+        self,
+        prompt: str,
+        *,
+        state: SessionState | None = None,
+        output: None = None,
+        **options: Unpack[RunOptions],
     ) -> RunResult[None]: ...
 
     async def run(
         self,
         prompt: str,
         *,
+        state: SessionState | None = None,
         output: type[Any] | OutputContract[Any] | None = None,
         **options: Unpack[RunOptions],
     ) -> RunResult[Any]:
         """Run one task in a new session."""
-        async with self.session() as session:
+        async with self.session(state=state) as session:
             return await session.run(prompt, output=output, **options)

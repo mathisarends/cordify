@@ -115,7 +115,7 @@ These events do not authorize additional retries or tool work.
 
 Retry diagnostics are live notifications and are not replayed. Runtime recovery
 correlation is retained on `ModelRequestedEvent` as `retry_group_id`, `retry_kind`,
-`attempt` and `max_retries`, and survives reopening. The initial ordinary request
+`attempt` and `max_retries`, within the current live execution. Conversation snapshots do not restore pending retries. The initial ordinary request
 has `retry_kind=None`; its `attempt=1` is a runtime position, never an SDK count.
 Use `session.subscribe(transient=True)` to observe all live diagnostics alongside
 the durable log. See also [compaction activity](compaction.md#display-compaction-activity).

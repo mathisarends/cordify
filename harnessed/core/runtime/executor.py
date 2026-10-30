@@ -206,7 +206,6 @@ class ToolExecutor:
         reviewable = False
         try:
             await self.log.append(ToolExecutionStartedEvent(call.id))
-            await self.log.flush()
             returned = await self.ctx.dispatch(
                 ExecuteTool(call, self.session, tool=plan.tool),
                 default=lambda: self.ctx[ToolRegistry].execute(

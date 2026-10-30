@@ -47,10 +47,6 @@ class ToolNameConflict(ConfigError):
     """Two live registrations claim the same name without an explicit override."""
 
 
-class SessionLocked(HarnessedError, RuntimeError):
-    pass
-
-
 class SessionStateError(HarnessedError, RuntimeError):
     """An operation is not valid in the session's current state."""
 
@@ -68,13 +64,13 @@ class OutputTokenLimit(HarnessedError, RuntimeError):
 
 
 class StreamOverflow(HarnessedError, RuntimeError):
-    """A stream consumer exceeded its buffer; durable records remain in the log."""
+    """A live consumer exceeded its buffer; historical capture belongs to the application."""
 
     def __init__(self, capacity: int) -> None:
         self.capacity = capacity
         super().__init__(
             f"Event consumer exceeded its buffer of {capacity} events; "
-            "read session.events for durable records and reconnect"
+            "consume events faster or increase the buffer before reconnecting"
         )
 
 

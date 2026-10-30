@@ -4,10 +4,9 @@ from contextlib import asynccontextmanager
 import pytest
 from pydantic import BaseModel, TypeAdapter
 
-from harnessed import Agent, Plugin, PolicyDecision, Session, SessionClosed, ToolCall, tool
+from harnessed import Agent, Plugin, PolicyDecision, Session, ToolCall, tool
 from harnessed.core.errors import ContextLengthExceeded, OutputValidationError, RateLimited
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.events import ControlState
 from harnessed.events import (
     ModelAttemptFinishedEvent,
     ModelAttemptOutcome,
@@ -27,8 +26,9 @@ from harnessed.models import (
     ModelRetryScheduled,
     report_model_diagnostic,
 )
-from harnessed.plugins import AgentLoop, Approvals, Compaction, JsonlSessions
+from harnessed.plugins import AgentLoop, Approvals, Compaction
 from harnessed.testing import CallbackModel, ExtractiveSummarizer, ScriptedModel
+from tests._audit import Audit
 
 
 class InstrumentedModel(ScriptedModel):
@@ -79,6 +79,7 @@ async def collect(session: Session, target: list, **kwargs) -> None:
 async def test_observed_sdk_attempts_reach_ui_before_success_or_final_failure(exhausted):
     notifications = []
     async with Agent(model=InstrumentedModel(exhausted=exhausted)).session() as session:
+        session_audit = Audit(session)
         if exhausted:
             with pytest.raises(RateLimited):
                 await collect(session, notifications)
@@ -99,7 +100,7 @@ async def test_observed_sdk_attempts_reach_ui_before_success_or_final_failure(ex
         record = session.last(ModelRequestedEvent)
         assert {e.request_id for e in starts + scheduled + finished} == {record.request_id}
         assert {e.retry_group_id for e in starts + scheduled + finished} == {record.request_id}
-        assert not any(isinstance(e, ModelAttemptStartedEvent) for e in session.events)
+        assert not any(isinstance(e, ModelAttemptStartedEvent) for e in session_audit.events)
         if exhausted:
             assert isinstance(notifications[-1], ModelRequestFailedEvent)
             assert notifications[-1].outcome is ModelRequestOutcome.FAILED
@@ -144,7 +145,7 @@ async def test_diagnostics_are_metadata_and_concurrent_requests_stay_separate(ca
         yield ModelChunk(text=request.messages[-1].text)
 
     agent = Agent(model=CallbackModel(chunks))
-    async with agent.session("one") as one, agent.session("two") as two:
+    async with agent.session() as one, agent.session() as two:
         first, second = await asyncio.gather(
             collect_events(one, "first"),
             collect_events(two, "second"),
@@ -197,6 +198,7 @@ async def test_output_corrections_have_their_own_counter_and_durable_request_cor
         model=ScriptedModel([[ModelChunk(tool_call=call)] for call in responses]),
         plugins=[AgentLoop(output_retries=1)],
     ).session() as session:
+        session_audit = Audit(session)
         if exhausted:
             with pytest.raises(OutputValidationError):
                 await collect(session, notifications, output=Answer)
@@ -207,7 +209,7 @@ async def test_output_corrections_have_their_own_counter_and_durable_request_cor
         assert scheduled[0].attempt == 1 and scheduled[0].retry_count == 0
         starts = [e for e in notifications if isinstance(e, ModelAttemptStartedEvent)]
         assert len(starts) == 1 and starts[0].attempt == 2 and starts[0].max_retries == 1
-        records = [e for e in session.events if isinstance(e, ModelRequestedEvent)]
+        records = [e for e in session_audit.events if isinstance(e, ModelRequestedEvent)]
         assert records[1].retry_group_id == records[0].request_id == scheduled[0].retry_group_id
         assert decode_event(encode_event(records[1])) == records[1]
         finished = [
@@ -242,67 +244,17 @@ async def test_context_recovery_links_new_requests_without_counting_normal_steps
             )
         ],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("x" * 4000)
         notifications = [e async for e in session.stream("next")]
         scheduled = [e for e in notifications if isinstance(e, ModelRetryScheduledEvent)]
         assert len(scheduled) == 1 and scheduled[0].retry_kind is RetryKind.CONTEXT_RECOVERY
         starts = [e for e in notifications if isinstance(e, ModelAttemptStartedEvent)]
         assert len(starts) == 1 and starts[0].attempt == 2 and starts[0].max_retries == 1
-        records = [e for e in session.events if isinstance(e, ModelRequestedEvent)]
+        records = [e for e in session_audit.events if isinstance(e, ModelRequestedEvent)]
         assert records[-1].retry_group_id == records[-2].request_id
         assert records[0].retry_kind is None and records[1].retry_kind is None
         assert records[-1].request_id != records[-2].request_id
-
-
-async def test_context_retry_correlation_survives_pause_and_jsonl_reopen(tmp_path):
-    entered, release = asyncio.Event(), asyncio.Event()
-    count = 0
-
-    async def chunks(request):
-        nonlocal count
-        count += 1
-        if count == 2:
-            raise ContextLengthExceeded("too big")
-        yield ModelChunk(text="answer")
-
-    agent = Agent(
-        model=CallbackModel(chunks),
-        plugins=[
-            JsonlSessions(tmp_path),
-            Compaction(
-                trigger=lambda state: False,
-                summarizer=ExtractiveSummarizer(),
-                keep_turns=0,
-                summary_tokens=16,
-            ),
-        ],
-    )
-    async with agent.session("retry") as session:
-        await session.run("x" * 4000)
-
-        @session.on(ModelRetryScheduledEvent)
-        async def hold(event):
-            entered.set()
-            await release.wait()
-
-        running = asyncio.create_task(session.run("next"))
-        await asyncio.wait_for(entered.wait(), 3)
-        pausing = asyncio.create_task(session.pause())
-        async with asyncio.timeout(3):
-            while session.log.control.state != ControlState.PAUSING:
-                await session.control._changed.wait()
-        release.set()
-        await asyncio.wait_for(pausing, 3)
-        original_id = session.last(ModelRequestedEvent).request_id
-    with pytest.raises(SessionClosed):
-        await running
-    async with agent.session("retry") as session:
-        await session.resume()
-        await asyncio.wait_for(session.wait_until_idle(), 3)
-        retried = session.last(ModelRequestedEvent)
-        assert retried.retry_group_id == original_id
-        assert retried.retry_kind is RetryKind.CONTEXT_RECOVERY and retried.attempt == 2
-        assert count == 3
 
 
 async def test_tool_steps_do_not_count_as_retries_and_new_groups_use_the_remaining_output_budget():
@@ -324,12 +276,13 @@ async def test_tool_steps_do_not_count_as_retries_and_new_groups_use_the_remaini
         model=ScriptedModel([[ModelChunk(tool_call=call)] for call in calls]),
         plugins=[Tools(), Approvals(default=PolicyDecision.ALLOW), AgentLoop(output_retries=2)],
     ).session() as session:
+        session_audit = Audit(session)
         notifications = [e async for e in session.stream("work", output=Answer)]
         starts = [e for e in notifications if isinstance(e, ModelAttemptStartedEvent)]
         assert [e.attempt for e in starts] == [2, 2]
         assert [e.max_retries for e in starts] == [2, 1]
         assert starts[0].retry_group_id != starts[1].retry_group_id
-        records = [e for e in session.events if isinstance(e, ModelRequestedEvent)]
+        records = [e for e in session_audit.events if isinstance(e, ModelRequestedEvent)]
         assert records[2].retry_kind is None
         assert records[3].retry_group_id == records[2].request_id
 

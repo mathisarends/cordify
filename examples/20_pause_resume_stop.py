@@ -1,11 +1,8 @@
 """Run with: uv run python -m examples.20_pause_resume_stop"""
 
 import asyncio
-from tempfile import TemporaryDirectory
 
-from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
-from harnessed.plugins import JsonlSessions
-from harnessed.plugins.sessions import Durability
+from harnessed import Agent, Plugin, SessionStatus, StopReason, tool
 from harnessed.testing import ScriptedModel, call
 
 
@@ -60,35 +57,10 @@ async def end_a_turn(*, immediate: bool):
         print((await session.run("Start a fresh task.")).text)
 
 
-async def reopen_a_paused_session(directory: str):
-    work = Work()
-    plugins = [work, JsonlSessions(directory, durability=Durability.FSYNC)]
-    agent = Agent(model=ScriptedModel([call("process", item="saved")]), plugins=plugins)
-    async with agent.session("saved") as session:
-        running = await session.submit("Process and continue later.")
-        await work.started.wait()
-        await session.pause()
-        turn_id = session.turns[-1].id
-    try:
-        await running.result()
-    except SessionClosed:
-        print("Live handle closed; the saved turn remains paused.")
-
-    fresh = Agent(model=ScriptedModel(["Continued from stored results."]), plugins=plugins)
-    async with fresh.session("saved") as session:
-        assert session.status is SessionStatus.PAUSED
-        await session.resume()
-        await session.wait_until_idle()
-        assert session.turns[-1].id == turn_id and len(work.finished) == 1
-        print(session.messages[-1].text, "Tool executed once.")
-
-
 async def main():
     await pause_and_resume()
     await end_a_turn(immediate=False)
     await end_a_turn(immediate=True)
-    with TemporaryDirectory(prefix="harnessed-control-") as directory:
-        await reopen_a_paused_session(directory)
 
 
 if __name__ == "__main__":

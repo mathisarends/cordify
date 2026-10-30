@@ -1,6 +1,5 @@
 import base64
 from collections import OrderedDict
-from collections.abc import Iterable
 from dataclasses import replace
 from functools import partial
 
@@ -26,42 +25,6 @@ from .events import (
     ToolExecutionFinishedEvent,
     UserMessageEvent,
 )
-
-
-def _event_contents(event: SessionEvent) -> Iterable[str | tuple[ContentPart, ...]]:
-    """The standard event fields that own multimodal content."""
-    if isinstance(event, InboxAddedEvent):
-        yield event.message.content
-        for message in event.context:
-            yield message.content
-    elif isinstance(event, UserMessageEvent | ContextMessageEvent):
-        yield event.message.content
-    elif isinstance(event, ObservationRecordedEvent):
-        yield event.observation.content
-    elif isinstance(event, ToolExecutionFinishedEvent | ToolCallFinishedEvent):
-        yield event.result.content
-    elif isinstance(event, ModelRequestedEvent):
-        for message in event.request.messages:
-            yield message.content
-
-
-async def _copy_image_assets(
-    events: Iterable[SessionEvent], source: AssetStore, destination: AssetStore
-) -> None:
-    """Copy only referenced assets, one at a time, before committing a fork."""
-    seen: set[AssetRef] = set()
-    for event in events:
-        for content in _event_contents(event):
-            if isinstance(content, str):
-                continue
-            for part in content:
-                if isinstance(part, ImageReference) and part.asset not in seen:
-                    ref = part.asset
-                    data = await source.read(ref)
-                    copied = await destination.put(data, media_type=ref.media_type)
-                    if copied != ref:
-                        raise ValueError("Fork asset identity changed during copy")
-                    seen.add(ref)
 
 
 class _SessionImages:

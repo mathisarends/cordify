@@ -16,6 +16,7 @@ from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.events import ContextValueChangedEvent
 from harnessed.kernel import PluginStatus
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit
 
 
 class Feature(Plugin):
@@ -29,9 +30,10 @@ class Feature(Plugin):
 async def test_context_delivery_is_mount_owned_and_leaves_system_text_fixed():
     model = ScriptedModel(["one", "two"])
     async with Agent(model=model, system_prompt="Fixed.").session() as session:
+        session_audit = Audit(session)
         handle = await session.use(Feature(), section_delivery=SectionDelivery.CONTEXT)
         assert list(session.context.values.values()) == ["Runtime guidance."]
-        assert not any(isinstance(e, ContextValueChangedEvent) for e in session.events)
+        assert not any(isinstance(e, ContextValueChangedEvent) for e in session_audit.events)
         await session.run("Use the capability")
         first = model.requests[-1]
         assert first.messages[0].text == "Fixed."
@@ -191,10 +193,10 @@ async def test_duplicate_plugin_names_have_independent_mount_context():
 async def test_runtime_guidance_is_not_restored_as_a_durable_fact():
     model = ScriptedModel(["one", "two"])
     agent = Agent(model=model)
-    async with agent.session("runtime") as session:
+    async with agent.session() as session:
         await session.use(Feature(), section_delivery=SectionDelivery.CONTEXT)
         await session.run("Mounted")
-    async with agent.session("runtime") as restored:
+    async with agent.session() as restored:
         assert restored.context.values == {}
         await restored.run("Reopened")
         assert all("Runtime guidance." not in m.text for m in model.requests[-1].messages)

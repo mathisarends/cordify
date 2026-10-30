@@ -239,14 +239,14 @@ async def test_tool_context_exposes_log_inbox_and_progress_without_the_driver():
         @tool(readonly=True)
         async def inspect(self, call: Inject[ToolContext], context: Inject[DynamicContext]) -> str:
             assert not hasattr(call, "agent")
-            assert call.log.id == "tool-context"
+            assert isinstance(call.log.id, str) and call.log.id
             await call.progress("working")
             assert not call.cancelled
             await context.set("workspace", "The workspace changed.")
             return "ready"
 
     model = ScriptedModel([[ModelChunk(tool_call=ToolCall("inspect"))], "done"])
-    async with Agent(model=model, plugins=[Inspect()]).session("tool-context") as session:
+    async with Agent(model=model, plugins=[Inspect()]).session() as session:
         await session.run("Inspect")
         assert any("The workspace changed." in m.text for m in model.requests[-1].messages)
 

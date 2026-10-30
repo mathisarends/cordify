@@ -5,9 +5,9 @@ from dataclasses import replace
 import pytest
 from pydantic import BaseModel, field_validator
 
-from harnessed import Agent, Plugin, SessionClosed, StopReason, ToolCall, tool
+from harnessed import Agent, Plugin, StopReason, ToolCall, tool
 from harnessed.core.errors import ConfigError, OutputUnavailable, OutputValidationError
-from harnessed.core.hooks import ConfigureRequest, SessionAppended, ToolPolicy
+from harnessed.core.hooks import ConfigureRequest, ToolPolicy
 from harnessed.core.messages import AssistantMessage, PolicyDecision
 from harnessed.core.model import (
     Model,
@@ -21,15 +21,14 @@ from harnessed.core.outputs import OutputContract, OutputTypes
 from harnessed.core.runtime.agent_loop import AgentLoop
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
-    InboxAddedEvent,
     OutputValidatedEvent,
     OutputValidationFailedEvent,
     TurnEndedEvent,
     TurnOutcome,
 )
-from harnessed.core.session.store import MemorySessions
 from harnessed.kernel import Context, plugin
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 class Triage(BaseModel):
@@ -86,6 +85,7 @@ async def test_output_mode_uses_the_model_captured_before_request_hooks(
 async def test_fallback_answer_is_validated_without_policies_or_application_tool_effects():
     model = ScriptedModel([answer(severity=2, owner="sdk")])
     async with Agent(model=model).session() as session:
+        session_audit = Audit(session)
         policies = []
         session.on(
             ToolPolicy, lambda ev, next_: policies.append(ev.call.name) or PolicyDecision.DENY
@@ -98,7 +98,9 @@ async def test_fallback_answer_is_validated_without_policies_or_application_tool
         request = model.requests[0]
         assert request.output_schema.mode == OutputMode.TOOL
         assert [tool.name for tool in request.tools] == ["final_answer"]
-        assert [decode_event(encode_event(e)) for e in session.events] == list(session.events)
+        assert [decode_event(encode_event(e)) for e in session_audit.events] == list(
+            session_audit.events
+        )
 
 
 async def test_native_json_retries_once_and_preserves_the_accepted_raw_input():
@@ -107,11 +109,12 @@ async def test_native_json_retries_once_and_preserves_the_accepted_raw_input():
         info=ModelInfo("native", supports_structured_output=True),
     )
     async with Agent(model=model).session() as session:
+        session_audit = Audit(session)
         result = await session.run("Triage", output=Triage)
         assert result.output.owner == "sdk" and len(model.requests) == 2
         assert model.requests[0].tools == ()
         assert model.requests[0].output_schema.mode == OutputMode.NATIVE
-        failures = [e for e in session.events if isinstance(e, OutputValidationFailedEvent)]
+        failures = [e for e in session_audit.events if isinstance(e, OutputValidationFailedEvent)]
         assert len(failures) == 1 and "severity" in failures[0].message
         assert any("Correct these fields" in m.text for m in model.requests[1].messages)
         proof = session.last(OutputValidatedEvent)
@@ -123,10 +126,14 @@ async def test_native_json_retries_once_and_preserves_the_accepted_raw_input():
 async def test_fallback_retry_is_bounded_and_never_executes_a_registered_answer_tool():
     model = ScriptedModel([answer(severity="bad"), answer(severity="bad")])
     async with Agent(model=model, plugins=[AgentLoop(output_retries=1)]).session() as session:
+        session_audit = Audit(session)
         with pytest.raises(OutputValidationError, match="retry limit"):
             await session.run("Triage", output=Triage)
         assert len(model.requests) == 2
-        assert len([e for e in session.events if isinstance(e, OutputValidationFailedEvent)]) == 2
+        assert (
+            len([e for e in session_audit.events if isinstance(e, OutputValidationFailedEvent)])
+            == 2
+        )
         assert session.last(TurnEndedEvent).reason == TurnOutcome.ABORTED
 
 
@@ -174,43 +181,6 @@ async def test_live_results_do_not_execute_non_idempotent_validators_twice():
     assert result.output.value == 2 and calls == [1]
     proof = next(e for e in result.events if isinstance(e, OutputValidatedEvent))
     assert proof.data["value"] == 1
-
-
-@pytest.mark.parametrize("output", [Triage, OutputContract("triage.v1", Triage)])
-async def test_queued_output_types_are_restored_explicitly_after_reopening_the_application(output):
-    store = MemorySessions()
-    async with Agent(model=ScriptedModel([]), plugins=[store]).session("queued") as session:
-        await session.pause()
-        enqueued = asyncio.Event()
-        session.on(
-            SessionAppended,
-            lambda ev: enqueued.set() if isinstance(ev.event, InboxAddedEvent) else None,
-        )
-        pending = asyncio.create_task(session.run("Triage", output=output))
-        await asyncio.wait_for(enqueued.wait(), 3)
-        await session.aclose()
-        with pytest.raises(SessionClosed):
-            await pending
-    app = Agent(model=ScriptedModel([answer(severity=1, owner="restored")]), plugins=[store])
-    with pytest.raises(ConfigError, match="restore_outputs"):
-        async with app.session("queued"):
-            pass
-    async with app.session("queued", restore_outputs=[output]) as restored:
-        await restored.resume()
-        await restored.wait_until_idle()
-        assert restored.last(OutputValidatedEvent).data["owner"] == "restored"
-
-
-async def test_output_types_restored_for_one_session_do_not_leak_into_another():
-    store = MemorySessions()
-    async with Agent(model=ScriptedModel([]), plugins=[store]).session("queued") as session:
-        await session.pause()
-        await session.submit("Triage", output=Triage)
-    app = Agent(model=ScriptedModel([]), plugins=[store])
-    async with app.session("other", restore_outputs=[Triage]):
-        with pytest.raises(ConfigError, match="restore_outputs"):
-            async with app.session("queued"):
-                pass
 
 
 async def test_schema_ids_cannot_silently_change_and_no_python_imports_come_from_logs():

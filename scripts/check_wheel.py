@@ -15,7 +15,7 @@ import re
 from harnessed.kernel import Context, Key
 assert 'pydantic' not in sys.modules
 from harnessed import (
-    Agent, OutputContract, Plugin, PluginSections, PromptFormat, SectionDelivery,
+    Agent, SessionState, OutputContract, Plugin, PluginSections, PromptFormat, SectionDelivery,
     SystemPrompt, SystemSection, Unplaced, tool,
 )
 from harnessed.events import TextDeltaEvent, TurnFinishedEvent
@@ -59,6 +59,13 @@ class Guidance(Plugin):
     usage = SystemSection(text='Plugin guidance.')
 
 async def main():
+    continuation = Agent(model=ScriptedModel(["remembered", "continued"]))
+    initial = await continuation.run("remember")
+    state = SessionState.from_json(initial.state.to_json())
+    next_turn = await continuation.run("continue", state=state)
+    assert len(next_turn.state.history) == 4
+    assert not hasattr(continuation, "sessions")
+
     guidance = Guidance()
     simple = Agent(system_prompt='Role.', plugins=[guidance])
     assert await simple.prompt.render() == 'Role.\n\nPlugin guidance.'
@@ -77,7 +84,7 @@ async def main():
                   plugins=[Calculator()], system_prompt=SystemPrompt(
                       format=PromptFormat.MARKDOWN,
                       sections=(SystemSection(title='Role', text='Fixed instructions.'),)))
-    async with agent.session('wheel') as session:
+    async with agent.session() as session:
         result = await session.run('Add')
         assert result.text == '42'
         assert assert_tool_called(result, 'add', a=19, b=23)[1].content == '42'

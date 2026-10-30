@@ -109,7 +109,7 @@ async def main():
             browser_tools,
         ],
     )
-    async with agent.session("browser") as session:
+    async with agent.session() as session:
         print((await session.run("Open Settings.")).text)
         for index, request in enumerate(model.requests, 1):
             print(f"\nRequest {index}:")

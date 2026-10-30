@@ -11,7 +11,6 @@ class EventKind(StrEnum):
     TOOL_POLICY_APPLIED = "tool.policy.applied"
     TOOL_EXECUTION_STARTED = "tool.execution.started"
     TOOL_EXECUTION_FINISHED = "tool.execution.finished"
-    LOG_TAIL_RECOVERED = "session.log.recovered"
     INBOX_ADDED = "inbox.added"
     INBOX_REMOVED = "inbox.removed"
     TURN_START = "turn.start"

@@ -2,8 +2,8 @@ from harnessed import Agent
 from harnessed.core.model import ModelChunk, ModelUsage, sum_usage
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import ModelUsageRecordedEvent
-from harnessed.core.session.session import SessionLog
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit, AuditProjection
 
 
 def test_cache_hit_rate_and_optional_totals_use_canonical_counters():
@@ -23,10 +23,13 @@ async def test_final_usage_is_recorded_once_and_session_totals_survive_replay():
         ]
     )
     async with Agent(model=model).session() as session:
+        session_audit = Audit(session)
         first = await session.run("Go")
         assert first.usage == final
         await session.run("Again")
-        recorded = [event for event in session.events if isinstance(event, ModelUsageRecordedEvent)]
+        recorded = [
+            event for event in session_audit.events if isinstance(event, ModelUsageRecordedEvent)
+        ]
         assert len(recorded) == 2
         assert session.usage.input_tokens == 30 and session.usage.output_tokens == 8
-        assert SessionLog("replay", seed=session.events).usage == session.usage
+        assert AuditProjection(session_audit.events).usage == session.usage

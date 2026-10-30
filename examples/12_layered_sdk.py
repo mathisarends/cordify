@@ -34,7 +34,7 @@ async def main():
             Rules([when(tool="read_file", result_tokens_over=1000).note("Read a range.")]),
         ],
     )
-    async with agent.session("layered") as session:
+    async with agent.session() as session:
         print((await session.run("Hello")).text)
 
 

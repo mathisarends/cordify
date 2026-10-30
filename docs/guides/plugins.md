@@ -2,7 +2,7 @@
 
 An Agent is a resolved plugin list. `model=` supplies `Service(Model, model)`;
 `system_prompt=` supplies `Instructions`. The default runtime plugins are
-`AgentLoop`, `MemorySessions`, `ToolOutputLimit`, `Approvals` and `NoopTracer`.
+`AgentLoop`, `ToolOutputLimit`, `Approvals` and `NoopTracer`.
 Use their public imports from `harnessed.plugins`. The tool registry, system prompt,
 token counter and context budget come from an internal plugin without a slot that
 the Agent always installs first. A replacement `loop` therefore keeps the tools;
@@ -12,7 +12,7 @@ replace a single service with `Service(TokenCounter, counter)`.
 
 ```python
 from harnessed import Agent, SystemPrompt
-from harnessed.plugins import AgentLoop, Filesystem, JsonlSessions, ToolOutputLimit
+from harnessed.plugins import AgentLoop, Filesystem, ToolOutputLimit
 from harnessed.testing import ScriptedModel
 
 filesystem = Filesystem(root=".")
@@ -23,7 +23,6 @@ agent = Agent(
         AgentLoop(max_steps=50, max_parallel_tools=4),
         ToolOutputLimit(max_chars=16_000),
         filesystem,
-        JsonlSessions(".harnessed/sessions"),
     ],
 )
 print(agent.plugins)
@@ -56,7 +55,7 @@ Instance access returns the typed value; assignment replaces that mount's value.
 Accessing state on a recipe or after disposal raises `RuntimeError`. Inherited
 fields work normally, and subclasses can override their factories. State stays
 available throughout `teardown` and owned cleanup, then its references are released.
-It is in-memory state, not persistence: restore durable state from the session log
+It is per-mount memory: import conversation facts through explicit SessionState
 in `setup`, as the built-in `Rules` plugin does.
 
 Constructor attributes remain shared inputs by default, including caller-owned
@@ -165,7 +164,7 @@ for dependency-driven setup to settle and checks the full service scope, includi
 nested plugin installs. A waiting plugin raises `PluginDependencyError` before
 the runtime starts, a model request is made or queued work resumes. Acquired
 resources and the session lease are closed normally on failure. Persisted queued
-input remains available after correcting the composition and reopening.
+the input state remains unchanged and can be supplied after correcting the composition.
 
 The error is a `ConfigError`, importable from `harnessed.errors`. Its `.issues`
 tuple lists every waiting plugin, including transitively blocked plugins. Each
@@ -250,15 +249,17 @@ can use a normal constructor without a separate configuration model. Allocate
 mutable per-mount state with `PluginState` or in setup; constructors describe
 reusable recipes.
 
-Closed loop and storage choices are enums, including
-`harnessed.models.TokenLimitBehavior` and `harnessed.plugins.Durability`:
+Closed loop choices use enums, including `harnessed.models.TokenLimitBehavior`:
 
 ```python
 from harnessed.models import TokenLimitBehavior
-from harnessed.plugins import AgentLoop, Durability, JsonlSessions
+from harnessed.plugins import AgentLoop
 
 plugins = [
     AgentLoop(on_max_tokens=TokenLimitBehavior.CONTINUE),
-    JsonlSessions(durability=Durability.FSYNC),
 ]
 ```
+
+Plugin mount state, including Rules repetition counters, starts fresh in each live
+session. Persist conversation facts through named context and export SessionState;
+arbitrary Python plugin objects are not serialized.

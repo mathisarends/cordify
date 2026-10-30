@@ -9,6 +9,7 @@ from harnessed.core.session.codec import encode_event
 from harnessed.core.session.events import AssistantMessageEvent, ToolCallRequestedEvent
 from harnessed.core.stream import TextDeltaEvent, ToolArgumentsDeltaEvent, coalesce_deltas
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 class Add(Plugin):
@@ -37,6 +38,7 @@ async def test_previews_arrive_before_stream_completion_and_do_not_execute_argum
         yield ModelChunk(tool_call=ToolCall("add", {"a": 1, "b": 2}, "final"))
 
     async with Agent(model=CallbackModel(chunks), plugins=[Add(effects)]).session() as session:
+        session_audit = Audit(session)
         notifications = []
 
         async def consume():
@@ -51,7 +53,7 @@ async def test_previews_arrive_before_stream_completion_and_do_not_execute_argum
             assert not task.done() and effects == []
             assert not any(
                 isinstance(e, AssistantMessageEvent | ToolCallRequestedEvent)
-                for e in session.events
+                for e in session_audit.events
             )
             release.set()
             await asyncio.wait_for(task, 3)
@@ -78,7 +80,7 @@ async def test_previews_arrive_before_stream_completion_and_do_not_execute_argum
             not isinstance(
                 e, events.ToolCallGenerationStartedEvent | events.ToolArgumentsDeltaEvent
             )
-            for e in session.events
+            for e in session_audit.events
         )
 
 
@@ -95,6 +97,7 @@ async def test_abort_discards_argument_preview_and_closes_the_provider_without_e
             closed.set()
 
     async with Agent(model=CallbackModel(chunks), plugins=[Add(effects)]).session() as session:
+        session_audit = Audit(session)
 
         async def consume():
             notifications = []
@@ -111,7 +114,8 @@ async def test_abort_discards_argument_preview_and_closes_the_provider_without_e
         assert closed.is_set() and effects == []
         assert notifications[-1].result.stop_reason == StopReason.ABORTED
         assert not any(
-            isinstance(e, AssistantMessageEvent | ToolCallRequestedEvent) for e in session.events
+            isinstance(e, AssistantMessageEvent | ToolCallRequestedEvent)
+            for e in session_audit.events
         )
 
 

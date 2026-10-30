@@ -38,8 +38,9 @@ from harnessed.events import (
     ToolProgressEvent,
     TurnFinishedEvent,
 )
-from harnessed.plugins import Approvals, MemorySessions
+from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 class Work(Plugin):
@@ -62,6 +63,7 @@ async def test_model_failure_raises_without_a_terminal_ui_event(partial: bool) -
         raise ValueError("model failed")
 
     async with Agent(model=CallbackModel(respond)).session() as session:
+        session_audit = Audit(session)
         received: list[EventStream[None]] = []
         with pytest.raises(ValueError, match="model failed"):
             async with aclosing(session.stream("Review")) as stream:
@@ -76,7 +78,7 @@ async def test_model_failure_raises_without_a_terminal_ui_event(partial: bool) -
         assert requested is not None
         completions = [
             event
-            for event in session.events
+            for event in session_audit.events
             if isinstance(event, AssistantMessageEvent | ModelRequestFailedEvent)
             and event.request_id == requested.request_id
         ]
@@ -173,6 +175,7 @@ async def test_stream_has_model_lifecycle_a_durable_approval_and_one_terminal_re
     effects = []
     model = ScriptedModel([work(), [ModelChunk(reasoning="checked"), ModelChunk(text="Finished")]])
     async with Agent(model=model, plugins=[Work(effects)]).session() as session:
+        session_audit = Audit(session)
         events = []
         async for event in session.stream("Publish"):
             events.append(event)
@@ -208,7 +211,7 @@ async def test_stream_has_model_lifecycle_a_durable_approval_and_one_terminal_re
             ToolProgressEvent,
             ToolCallFinishedEvent,
         }
-        assert all(any(event is record for record in session.events) for event in durable)
+        assert all(any(event is record for record in session_audit.events) for event in durable)
         finished = [event for event in events if isinstance(event, ToolCallFinishedEvent)]
         assert len(finished) == 1 and finished[0].call.name == "publish"
 
@@ -232,22 +235,21 @@ async def test_closing_the_stream_resolves_pending_approval_and_removes_its_resp
         assert result.tool_calls[0][1].status == ToolStatus.UNAVAILABLE
 
 
-async def test_answer_waits_for_persistence_and_caller_cancellation_does_not_revoke_it(monkeypatch):
-    store = MemorySessions()
+async def test_answer_waits_for_admission_and_caller_cancellation_does_not_revoke_it(monkeypatch):
     entered, release = asyncio.Event(), asyncio.Event()
-    original = store.store.persistence.append
-
-    async def append(session_id, seq, event):
-        if isinstance(event, ApprovalResolvedEvent):
-            entered.set()
-            await release.wait()
-        await original(session_id, seq, event)
-
-    monkeypatch.setattr(store.store.persistence, "append", append)
     effects = []
     async with Agent(
-        model=ScriptedModel([work(), "done"]), plugins=[store, Work(effects)]
+        model=ScriptedModel([work(), "done"]), plugins=[Work(effects)]
     ).session() as session:
+        original = session.log._append
+
+        async def append(event):
+            if isinstance(event, ApprovalResolvedEvent):
+                entered.set()
+                await release.wait()
+            return await original(event)
+
+        monkeypatch.setattr(session.log, "_append", append)
         stream = session.stream("Publish")
         async for event in stream:
             if isinstance(event, ApprovalNeededEvent):

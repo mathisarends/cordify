@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Self
 
 from harnessed.core.errors import ApprovalUnavailable
 from harnessed.core.hooks import RequestApproval, SessionAppended
 from harnessed.core.messages import ApprovalAnswer
-from harnessed.core.model import OutputSchema
 from harnessed.core.runtime.approvals import LiveApproval, LiveApprovals
 from harnessed.core.runtime.control import SessionStatus
-from harnessed.core.runtime.result import RunResults
+from harnessed.core.runtime.result import RunResult
 from harnessed.core.session.events import (
     AgentControlChangedEvent,
     ApprovalResolvedEvent,
@@ -22,7 +21,6 @@ from harnessed.core.session.events import (
     ModelRequestFailedEvent,
     OutputValidatedEvent,
     OutputValidationFailedEvent,
-    SessionEvent,
     SpillCreatedEvent,
     SpillExpiredEvent,
     ToolCallFinishedEvent,
@@ -133,18 +131,14 @@ def _stream_status(event: TurnStartedEvent | AgentControlChangedEvent) -> Sessio
 async def project_stream_events(
     raw: AsyncGenerator[AgentEvent, None],
     *,
-    results: RunResults,
-    schema: OutputSchema | None = None,
+    completion: Callable[[], Awaitable[RunResult[Any]]],
 ) -> AsyncGenerator[EventStream[Any], None]:
     """Project UI events, yielding one terminal result after normal exhaustion."""
-    events: list[SessionEvent] = []
     calls: set[str] = set()
     control_calls: set[str] = set()
     previous_status: SessionStatus | None = None
     try:
         async for event in raw:
-            if isinstance(event, SessionEvent):
-                events.append(event)
             match event:
                 case (
                     OutputValidatedEvent(call_id=call_id)
@@ -185,6 +179,6 @@ async def project_stream_events(
                     if status != previous_status:
                         previous_status = status
                         yield SessionStatusChangedEvent(status)
-        yield TurnFinishedEvent(results.build(tuple(events), schema=schema))
+        yield TurnFinishedEvent(await completion())
     finally:
         await raw.aclose()

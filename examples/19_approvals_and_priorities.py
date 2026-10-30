@@ -29,7 +29,7 @@ async def without_ui():
             tools,
             ApprovalGate(risky=[HeadlessTools.publish]),
         ],
-    ).session("no-ui") as session:
+    ).session() as session:
         result = await session.run("Publish the artifact.")
         returned = next(
             event for event in result.events if isinstance(event, ToolCallFinishedEvent)
@@ -80,7 +80,7 @@ async def listener_and_priorities():
         ],
     )
 
-    async with agent.session("answered") as session:
+    async with agent.session() as session:
         await session.run("Publish the artifact.")
         assert order == ["approval", "timer", "policy", "execute"]
         print("Order:", " -> ".join(order))
@@ -94,7 +94,7 @@ async def response_timeout():
             AgentLoop(approval_timeout=0.02),
             Approvals(default=PolicyDecision.ALLOW, timeout=0.02),
         ],
-    ).session("timeout") as session:
+    ).session() as session:
 
         @session.on(RequestApproval)
         async def disconnected(event):

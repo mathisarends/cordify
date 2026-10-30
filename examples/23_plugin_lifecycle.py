@@ -93,7 +93,7 @@ async def main():
         ],
     )
 
-    async with harness.session("notes") as agent:
+    async with harness.session() as agent:
         print((await agent.run("Save a note.")).text)
         print(agent.ctx[Notes].entries)
 

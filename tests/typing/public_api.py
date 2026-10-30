@@ -41,7 +41,7 @@ from harnessed.events import (
 )
 from harnessed.kernel import Context, Inject, PluginDependencyIssue, PluginSpec, hook, plugin
 from harnessed.models import ToolArgumentsMode, ToolCallDelta, ToolCallStart
-from harnessed.plugins import AgentLoop, JsonlSessions, MemorySessions, Spill
+from harnessed.plugins import AgentLoop, Spill
 
 
 @plugin
@@ -201,8 +201,6 @@ def plugin_configuration_signatures() -> None:
     loop = AgentLoop(max_steps=8)
     assert_type(loop.config.max_steps, int)
     assert_type(Spill(max_files=4).config.max_files, int)
-    assert_type(JsonlSessions(recover_tail=True).config.recover_tail, bool)
-    assert_type(MemorySessions(max_sessions=0).config.max_sessions, int | None)
     AgentLoop(max_steps="8")  # ty: ignore[invalid-argument-type]
     AgentLoop(max_step=8)  # ty: ignore[unknown-argument]
 
@@ -213,6 +211,11 @@ def dependency_diagnostics(ctx: Context, error: PluginDependencyError) -> None:
     assert_type(error.issues[0].plugin, PluginSpec)
 
 
-async def repository_consumer(agent: AppAgent) -> None:
-    assert_type(await agent.sessions.list(), tuple[str, ...])
-    assert_type(await agent.sessions.delete("stored"), None)
+async def state_consumer(agent: AppAgent) -> None:
+    from harnessed import SessionState
+
+    result = await agent.run("first")
+    assert_type(result.state, SessionState)
+    assert_type(result.state.to_json(), str)
+    async with agent.session(state=SessionState.from_json(result.state.to_json())) as session:
+        assert_type(session.snapshot(), SessionState)

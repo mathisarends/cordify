@@ -18,6 +18,7 @@ from harnessed.kernel import hook
 from harnessed.models import ModelChunk
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
+from tests._audit import Audit
 
 type Notification = Annotated[
     events.TextDeltaEvent | events.ReasoningDeltaEvent | events.ApprovalNeededEvent,
@@ -87,6 +88,7 @@ async def test_direct_public_event_imports_observe_the_canonical_runtime_events(
         plugins=[Observer(), Approvals(default=PolicyDecision.ALLOW)],
     )
     async with agent.session() as session:
+        session_audit = Audit(session)
         await session.run("Say hello")
         assert [type(event) for event in observed] == [
             AssistantMessageEvent,
@@ -94,7 +96,7 @@ async def test_direct_public_event_imports_observe_the_canonical_runtime_events(
             AssistantMessageEvent,
             TurnEndedEvent,
         ]
-        assert all(any(event is record for record in session.events) for event in observed)
+        assert all(any(event is record for record in session_audit.events) for event in observed)
 
 
 def test_current_record_format_roundtrips_the_turn_end_payload():

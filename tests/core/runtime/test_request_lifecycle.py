@@ -17,6 +17,7 @@ from harnessed.events import (
 from harnessed.kernel import hook
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 def completions(events, request_id):
@@ -30,16 +31,19 @@ def completions(events, request_id):
 
 async def test_response_and_usage_share_the_request_identity():
     async with Agent(model=ScriptedModel(["done", "again"])).session() as session:
+        session_audit = Audit(session)
         await session.run("first")
         await session.run("second")
-        requests = [event for event in session.events if isinstance(event, ModelRequestedEvent)]
+        requests = [
+            event for event in session_audit.events if isinstance(event, ModelRequestedEvent)
+        ]
         assert len({event.request_id for event in requests}) == 2
         for event in requests:
-            assert session.log.request(event.request_id) == event.request
-            assert len(completions(session.events, event.request_id)) == 1
+            assert session.log.request(event.request_id) is None
+            assert len(completions(session_audit.events, event.request_id)) == 1
             usage = [
                 item
-                for item in session.events
+                for item in session_audit.events
                 if isinstance(item, ModelUsageRecordedEvent) and item.request_id == event.request_id
             ]
             assert len(usage) == 1
@@ -59,10 +63,11 @@ async def test_model_failure_closes_the_request(error, outcome):
         yield ModelChunk()
 
     async with Agent(model=CallbackModel(respond)).session() as session:
+        session_audit = Audit(session)
         with pytest.raises(type(error)):
             await session.run("fail")
         requested = session.last(ModelRequestedEvent)
-        (terminal,) = completions(session.events, requested.request_id)
+        (terminal,) = completions(session_audit.events, requested.request_id)
         assert isinstance(terminal, ModelRequestFailedEvent)
         assert terminal.outcome is outcome
 
@@ -79,11 +84,12 @@ async def test_abort_closes_request_once_with_or_without_partial_output(partial)
         yield ModelChunk()
 
     async with Agent(model=CallbackModel(respond)).session() as session:
+        session_audit = Audit(session)
         await session.submit("start")
         await asyncio.wait_for(entered.wait(), 3)
         await session.abort()
         requested = session.last(ModelRequestedEvent)
-        (terminal,) = completions(session.events, requested.request_id)
+        (terminal,) = completions(session_audit.events, requested.request_id)
         if partial:
             assert isinstance(terminal, AssistantMessageEvent)
             assert terminal.interrupted
@@ -100,10 +106,11 @@ async def test_request_observer_failure_closes_committed_request():
             raise ValueError("observer failed")
 
     async with Agent(model=ScriptedModel([]), plugins=[BrokenObserver()]).session() as session:
+        session_audit = Audit(session)
         with pytest.raises(ValueError, match="observer failed"):
             await session.run("fail")
         requested = session.last(ModelRequestedEvent)
-        (terminal,) = completions(session.events, requested.request_id)
+        (terminal,) = completions(session_audit.events, requested.request_id)
         assert terminal.outcome is ModelRequestOutcome.FAILED
 
 
@@ -122,14 +129,15 @@ async def test_tool_timeout_and_cancel_always_write_one_execution_receipt(cancel
     async with Agent(
         model=model, plugins=[Tools(), Approvals(default=PolicyDecision.ALLOW)]
     ).session() as session:
+        session_audit = Audit(session)
         if cancel:
             await session.submit("start")
             await asyncio.wait_for(entered.wait(), 3)
             await session.abort()
         else:
             await session.run("start")
-        started = [e for e in session.events if isinstance(e, ToolExecutionStartedEvent)]
-        finished = [e for e in session.events if isinstance(e, ToolExecutionFinishedEvent)]
+        started = [e for e in session_audit.events if isinstance(e, ToolExecutionStartedEvent)]
+        finished = [e for e in session_audit.events if isinstance(e, ToolExecutionFinishedEvent)]
         assert len(started) == len(finished) == 1
         assert started[0].call_id == finished[0].call_id
         assert finished[0].result.status is (ToolStatus.CANCELLED if cancel else ToolStatus.TIMEOUT)

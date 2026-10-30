@@ -296,4 +296,4 @@ that a provider accepted it or that the model perceived a particular detail.
 | Advice about one tool result | result.with_note(...) |
 
 For long conversations, [compaction](compaction.md) keeps selected turns verbatim
-and summarizes older history through an append-only log event.
+and replaces older working context with its current summary and retained messages.

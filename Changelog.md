@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Explicit conversation state (breaking)
+
+- Replace automatic agent-owned session archives with immutable `SessionState`.
+  Continue with `agent.run(prompt, state=state)` or `agent.session(state=state)`;
+  export through `result.state` or an idle `session.snapshot()`. Applications own
+  storage, conversation keys, expiration and competing writers.
+- Add a validated state format **1**, including retained context, provider replay
+  data and referenced image/spill bytes. JSON import/export performs no storage
+  I/O. Unknown versions and corrupt resources fail explicitly.
+- Compaction releases discarded context and runtime indexes. Completed turns'
+  execution buffers are released after result delivery. Earlier snapshots and
+  caller-held results remain independent owners of their data.
+- Remove `MemorySessions`, `JsonlSessions`, `Durability`, `SessionStore`,
+  `SessionPersistence`, `SessionRepository`, `agent.sessions`, ID-based reopening,
+  `restore_outputs`, fork APIs and ordered `EventLogCodec` persistence. Remove
+  storage-only `SessionLocked`, `LogTailRecoveredEvent` and `InMemoryPersistence`.
+- Conversation snapshots restore idle conversations at terminal turn boundaries.
+  Live pause/resume, streaming, tools and local cancellation cleanup remain.
+  Paused executions, pending inbox work, approvals, processes and Python plugin
+  objects are not restored. Approval grants and Rules counters start fresh in a
+  new live session. Custom audit events can be stored externally through hooks.
+
+Upgrade by exporting current conversation state and injecting it explicitly.
+Older JSONL archives are not accepted as the new state format and have no automatic
+migration. Configure output validators on each new turn. See
+[the session guide](docs/guides/sessions.md) and examples 14 and 17.
+
 ## 0.7.0 (2026-10-30)
 
 This minor release adds typed model settings, immutable multimodal observations,

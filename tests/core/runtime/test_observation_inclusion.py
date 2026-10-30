@@ -3,7 +3,6 @@ from dataclasses import replace
 import pytest
 
 from harnessed import Agent, Observation, Plugin, tool
-from harnessed.core.session.codec import EventLogCodec
 from harnessed.events import (
     CompactionAppliedEvent,
     IncludedObservation,
@@ -14,8 +13,9 @@ from harnessed.events import (
 from harnessed.hooks import ConfigureRequest, Next, PrepareRequest, PreStep, StepDecision
 from harnessed.kernel import hook
 from harnessed.models import ImagePart, ModelRequest, TextPart, UserMessage
-from harnessed.plugins import Compaction, JsonlSessions, LatestObservationOnly, every_turns
+from harnessed.plugins import Compaction, LatestObservationOnly, every_turns
 from harnessed.testing import ExtractiveSummarizer, ScriptedModel, call, reply
+from tests._audit import Audit
 
 
 class Observe(Plugin):
@@ -51,7 +51,8 @@ def observations(request: ModelRequest) -> tuple[UserMessage, ...]:
 async def test_snapshots_and_receipts_retain_text_and_images_together(latest_only):
     model = ScriptedModel([call(Observe.work), reply("done")])
     plugins = [Observe(), LatestObservationOnly()] if latest_only else [Observe()]
-    async with Agent(model=model, plugins=plugins).session("observations") as session:
+    async with Agent(model=model, plugins=plugins).session() as session:
+        session_audit = Audit(session)
         await session.run("go")
         first = observations(model.requests[0])[0]
         current = observations(model.requests[1])[-1]
@@ -65,19 +66,23 @@ async def test_snapshots_and_receipts_retain_text_and_images_together(latest_onl
             ImagePart("https://example.test/frame-2.png"),
         )
         first_receipt = IncludedObservation(
-            "browser", ("frame-1",), turn_id=session.turns[0].id, step=1, message_id=first.id
+            "browser", ("frame-1",), turn_id=session_audit.turns[0].id, step=1, message_id=first.id
         )
         current_receipt = IncludedObservation(
-            "browser", ("frame-2",), turn_id=session.turns[0].id, step=2, message_id=current.id
+            "browser",
+            ("frame-2",),
+            turn_id=session_audit.turns[0].id,
+            step=2,
+            message_id=current.id,
         )
-        included = [e for e in session.events if isinstance(e, ObservationsIncludedEvent)]
+        included = [e for e in session_audit.events if isinstance(e, ObservationsIncludedEvent)]
         assert included[0].observations == (first_receipt,)
         assert included[1].observations == (
             (current_receipt,) if latest_only else (first_receipt, current_receipt)
         )
-        for index, event in enumerate(session.events):
+        for index, event in enumerate(session_audit.events):
             if isinstance(event, ModelRequestedEvent):
-                following = session.events[index + 1]
+                following = session_audit.events[index + 1]
                 assert isinstance(following, ObservationsIncludedEvent)
                 assert following.request_id == event.request_id
         assert observations(ModelRequest(session.messages)) == observations(model.requests[1])
@@ -89,12 +94,6 @@ async def test_automatic_observations_keep_the_entire_previous_request_prefix():
         await session.run("inspect")
     first, second = model.requests
     assert second.messages[: len(first.messages)] == first.messages
-    codec = EventLogCodec()
-    initial = ModelRequestedEvent(first, model=model.info, request_id="first")
-    codec.encode(initial)
-    codec.accept(initial)
-    record = codec.encode(ModelRequestedEvent(second, model=model.info, request_id="second"))
-    assert record["data"]["request"]["messages"]["prefix"] == len(first.messages)
 
 
 @pytest.mark.parametrize("stage", [PrepareRequest, ConfigureRequest])
@@ -155,6 +154,7 @@ async def test_compaction_removes_old_images_in_the_same_request_and_keeps_five_
             ),
         ],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("inspect", max_steps=8)
         before = observations(model.requests[5])
         compacted = observations(model.requests[6])
@@ -166,7 +166,7 @@ async def test_compaction_removes_old_images_in_the_same_request_and_keeps_five_
         assert observations(model.requests[7])[:-1] == compacted
         applied = session.last(CompactionAppliedEvent)
         assert applied is not None and applied.after_tokens < applied.before_tokens
-        included = [e for e in session.events if isinstance(e, ObservationsIncludedEvent)][6]
+        included = [e for e in session_audit.events if isinstance(e, ObservationsIncludedEvent)][6]
         assert [item.step for item in included.observations] == list(range(2, 8))
         assert [item.message_id for item in included.observations] == [m.id for m in compacted]
 
@@ -192,38 +192,32 @@ async def test_compacted_observations_are_not_reported_as_included():
         assert session.last(ObservationsIncludedEvent).observations == ()
 
 
-async def test_snapshots_resume_and_fork_with_images_and_refs(tmp_path):
-    model = ScriptedModel(["first", "after resume", "branch"])
-    app = Agent(model=model, plugins=[JsonlSessions(tmp_path)])
+async def test_snapshots_continue_with_images_and_observation_refs():
+    model = ScriptedModel(["first", "after resume", "alternative"])
+    app = Agent(model=model)
     image = ImagePart("data:image/png;base64,aW1hZ2U=")
-    snapshot = Observation("browser", (TextPart("state"), image), refs=("frame",))
-    async with app.session("observations") as session:
-        session.observe(snapshot)
-        await session.run("go")
-        original_snapshot = session.last(ObservationRecordedEvent).observation
-        original_events = session.events
-        original_receipt = session.last(ObservationsIncludedEvent).observations
-        original_message = observations(model.requests[0])[0]
-    async with app.session("observations") as restored:
-        assert restored.events == original_events
-        assert restored.last(ObservationRecordedEvent).observation == original_snapshot
-        await restored.run("continue")
-        assert observations(model.requests[1]) == (original_message,)
-        assert restored.last(ObservationsIncludedEvent).observations == original_receipt
-        branch = restored.fork("branch")
-    async with app.session(branch) as forked:
-        await forked.run("branch")
-        assert observations(model.requests[2]) == (original_message,)
-        assert forked.last(ObservationsIncludedEvent).observations == original_receipt
+    async with app.session() as session:
+        session.observe(Observation("browser", (TextPart("state"), image), refs=("frame",)))
+        result = await session.run("go")
+        state = result.state
+        receipt = session.last(ObservationsIncludedEvent).observations
+        original = observations(model.requests[0])[0]
+    for prompt in ("continue", "alternative"):
+        async with app.session(state=state) as restored:
+            assert not restored.events
+            await restored.run(prompt)
+            assert observations(model.requests[-1]) == (original,)
+            assert restored.last(ObservationsIncludedEvent).observations == receipt
 
 
 async def test_only_the_latest_pending_snapshot_per_source_is_recorded():
     model = ScriptedModel(["done"])
     async with Agent(model=model).session() as session:
+        session_audit = Audit(session)
         session.observe(Observation("browser", "superseded"))
         session.observe(Observation("browser", "current"))
         session.observe(Observation("screen", (ImagePart("https://example.test/screen.png"),)))
         await session.run("inspect")
-        records = [e for e in session.events if isinstance(e, ObservationRecordedEvent)]
+        records = [e for e in session_audit.events if isinstance(e, ObservationRecordedEvent)]
         assert [e.observation.source for e in records] == ["browser", "screen"]
         assert observations(model.requests[0])[0].text == "current"

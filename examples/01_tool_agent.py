@@ -22,7 +22,7 @@ async def main():
         ]
     )
     agent = Agent(model=model, system_prompt="Keep answers concise.", plugins=[Calculator()])
-    async with agent.session("calculator") as session:
+    async with agent.session() as session:
         result = await session.run("What is 19 + 23?")
         print(result.text)
         print("Turn:", result.turn_id, "Stop:", result.stop_reason)

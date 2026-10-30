@@ -4,17 +4,12 @@ from dataclasses import replace
 import pytest
 
 from harnessed import Agent, Plugin, ToolCall, ToolChain, ToolResult, ToolStatus, tool
-from harnessed.core.messages import AssistantMessage, PolicyDecision
+from harnessed.core.messages import PolicyDecision
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
-from harnessed.core.session.session import SessionLog
 from harnessed.events import (
-    AssistantMessageEvent,
-    StepStartedEvent,
     ToolCallFinishedEvent,
     ToolExecutionFinishedEvent,
-    ToolExecutionStartedEvent,
-    TurnStartedEvent,
 )
 from harnessed.hooks import ReviewToolResult, ToolPolicy
 from harnessed.kernel import hook
@@ -169,27 +164,3 @@ def test_static_boundary_rejects_parallel_execution_and_break_signal_is_boolean(
         tool(parallel=True, chain=ToolChain.STOP_AFTER)(lambda: None)
     with pytest.raises(TypeError, match="bool"):
         replace(ToolResult("result"), break_chain="yes")
-
-
-async def test_recovery_keeps_unstarted_calls_skipped_after_a_durable_break_receipt():
-    boundary = ToolCall("switch")
-    later = ToolCall("work")
-    log = SessionLog(
-        "broken-chain",
-        seed=[
-            TurnStartedEvent("turn"),
-            StepStartedEvent("turn", 1),
-            AssistantMessageEvent(
-                AssistantMessage(tool_calls=(boundary, later)), request_id="request"
-            ),
-            ToolExecutionStartedEvent(boundary.id),
-            ToolExecutionFinishedEvent(boundary.id, ToolResult("changed", break_chain=True)),
-        ],
-    )
-    await log.repair_interrupted()
-    results = {e.call_id: e.result for e in log.events if isinstance(e, ToolCallFinishedEvent)}
-    assert results[later.id].status is ToolStatus.SKIPPED
-    assert "review was interrupted" in results[boundary.id].text
-    prefix = log.events
-    await log.repair_interrupted()
-    assert log.events == prefix

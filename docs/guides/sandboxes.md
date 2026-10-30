@@ -178,8 +178,8 @@ Exports accept one regular binary file and one exact application-selected host
 destination. They never extract an untrusted archive on the host. The destination
 is replaced atomically. Export is an application operation, not an exposed model
 tool, and must happen before session close. Copied data is discarded on close;
-reopening a durable conversation creates a fresh sandbox from the configured
-source. Session forks do not snapshot the sandbox filesystem.
+opening a conversation snapshot creates a fresh sandbox from the configured
+source. Conversation snapshots do not include the sandbox filesystem.
 
 Session startup awaits the asynchronous backend `start()` before making its
 services available. A successful return guarantees the workspace and both

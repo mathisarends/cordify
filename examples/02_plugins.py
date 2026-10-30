@@ -42,7 +42,7 @@ async def main():
     )
     print("Composition:", [type(value).__name__ for value in agent.plugins])
     print(agent.prompt)
-    async with agent.session("explicit-calculator") as session:
+    async with agent.session() as session:
         print((await session.run("What is 19 + 23?")).text)
         print("Exact prompt:", await session.prompt.render())
 

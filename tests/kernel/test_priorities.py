@@ -117,7 +117,7 @@ async def test_priority_flows_through_all_sdk_declaration_and_imperative_hook_ap
     )
     extensions.on(Ping, lambda ev: seen.append("harness-decorator"), priority=-10)
     extensions.add_hook(Ping, lambda ev: seen.append("harness-imperative"), priority=10)
-    async with harness.session("priorities") as agent:
+    async with harness.session() as agent:
         agent.on(Ping, lambda ev: seen.append("agent-decorator"), priority=20)
         dispose = agent.add_hook(Ping, lambda ev: seen.append("agent-imperative"), priority=30)
         await agent.ctx.dispatch(Ping())

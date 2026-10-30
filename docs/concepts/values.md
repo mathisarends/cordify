@@ -16,18 +16,18 @@ hash is process-local; it is not a persistent fingerprint. For content addressin
 serialize the intended JSON payload with a defined canonical encoding and hash
 those bytes.
 
-The persistence codec has a separate versioned boundary. Records require version
-3 and explicit dotted tags, such as `turn.start` and `tool.call.finished`. Versions
-1 and 2 are unsupported; version 3 introduces typed generation settings, model
-identity on request events and a versioned provider-state envelope. Older formats,
-unknown fields, invalid discriminators, non-finite numbers and malformed nested
-values are rejected without rewriting the append-only log.
-See the [compatibility policy](../releases.md#compatibility-policy) before upgrading
-persisted workflows.
+Conversation snapshots have an explicit versioned boundary. `SessionState`
+format 1 contains retained context, required metadata and verified resource bytes.
+Its immutable mappings and tuples are detached from mutable runtime containers.
+Old JSONL archives are not accepted as conversation state. Unknown fields,
+invalid versions and incomplete tool pairs fail validation.
 
-[Application events](../guides/events.md) use a session-local catalog assembled
-before loading persistence. Frozen dataclasses remain the event values; Pydantic
-validates their discriminated unions and supplies the durable JSON schema.
+Standalone audit-event envelopes retain their separate version 3 and dotted tags.
+Applications can encode events while executing a turn; these records are not an
+implicit session archive. [Application events](../guides/events.md) use a
+session-local catalog assembled before runtime startup. Frozen dataclasses remain
+the values; Pydantic validates unions and supplies their JSON schema. See the
+[session guide](../guides/sessions.md) and [compatibility policy](../releases.md#compatibility-policy).
 
 ## Message roles
 

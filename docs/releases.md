@@ -6,6 +6,20 @@ still evolving before 1.0.
 Detailed breaking changes and upgrade instructions are recorded in the repository
 [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
 
+## Unreleased: explicit conversation state
+
+The next breaking change replaces automatic session archives with `SessionState`.
+Use `agent.run(..., state=state)` or `agent.session(state=state)` and save
+`result.state.to_json()` through application-owned storage. Compaction exports
+only current working context and releases discarded runtime references. Images
+and retained spill contents travel with the snapshot.
+
+Archive backends, reopening by ID, fork APIs and paused execution restoration are
+removed. Live controls remain available. Approval grants and plugin counters
+belong to one live session. State format 1 does not automatically import older
+JSONL archives. See [the current session contract](guides/sessions.md) and the
+[complete changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md).
+
 ## Compatibility policy
 
 - Minor releases during 0.x may introduce breaking API or storage changes. Release

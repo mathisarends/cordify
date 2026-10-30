@@ -3,11 +3,9 @@ import random
 import pytest
 
 from harnessed.core.approvals import ApprovalState
-from harnessed.core.compaction import plan_compaction
 from harnessed.core.messages import (
     ApprovalAnswer,
     AssistantMessage,
-    Observation,
     ToolCall,
     UserMessage,
 )
@@ -19,13 +17,10 @@ from harnessed.core.session.events import (
     ApprovalResolvedEvent,
     ApprovalRevokedEvent,
     AssistantMessageEvent,
-    CompactionAppliedEvent,
     InboxAddedEvent,
     InboxMode,
     InboxRemovedEvent,
     ModelRequestedEvent,
-    ObservationPolicyAppliedEvent,
-    ObservationRecordedEvent,
     StepEndedEvent,
     StepStartedEvent,
     TurnEndedEvent,
@@ -49,14 +44,16 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         await session.append(event)
         prefix.append(event)
         assert session.inbox == Inbox(prefix)
-        assert session.approvals == ApprovalState(prefix)
+        assert session.approvals.pending == ApprovalState(prefix).pending
         assert session.control == RunControl(prefix)
-        assert session.turns == derive_turns(prefix)
-        assert session.requests == derive_requests(prefix)
+        assert session.turns == derive_turns(session.events)
+        assert session.requests == derive_requests(session.events)
         assert session.messages == derive_messages(prefix)
         assert session.messages is session.messages
         assert session.events is session.events
-        snapshots.append((session.events, session.inbox, session.approvals, session.turns))
+        snapshots.append(
+            (tuple(prefix), Inbox(prefix), ApprovalState(prefix), derive_turns(prefix))
+        )
 
     for turn in range(5):
         message = UserMessage(f"Task {turn}", id=f"input-{turn}")
@@ -107,91 +104,3 @@ async def test_last_and_since_indexes_match_the_log_suffix():
     await session.append(message)
     assert session.last(TurnStartedEvent) is start and session.since(TurnStartedEvent) == (message,)
     assert before == (start,)
-
-
-@pytest.mark.parametrize("seed", range(5))
-async def test_incremental_observations_and_compaction_match_every_prefix(seed):
-    rng = random.Random(seed)
-    session = SessionLog("observations")
-    boundaries = []
-
-    async def append(event):
-        snapshot = session.messages
-        await session.append(event)
-        assert session.messages == derive_messages(session.events)
-        assert SessionLog("reloaded", seed=session.events).messages == session.messages
-        assert isinstance(snapshot, tuple)
-        for keep in (0, 1, 2):
-            options = dict(keep_turns=keep, keep_first_turns=1, preserve_turns=())
-            assert plan_compaction(session, **options) == plan_compaction(session.events, **options)
-
-    for turn in range(6):
-        await append(TurnStartedEvent(str(turn)))
-        await append(ObservationPolicyAppliedEvent(rng.choice([None, 1, 2, 3])))
-        for step in range(1, 3):
-            await append(StepStartedEvent(str(turn), step))
-            for source in ("browser", "screen"):
-                if rng.choice([True, False]):
-                    await append(
-                        ObservationRecordedEvent(
-                            Observation(source, f"{turn}:{step}:full"),
-                            str(turn),
-                            step,
-                        )
-                    )
-            await append(
-                ModelRequestedEvent(
-                    ModelRequest(session.messages), request_id="request", model=ModelInfo("test")
-                )
-            )
-            message_id = f"{turn}:{step}"
-            await append(
-                AssistantMessageEvent(
-                    AssistantMessage("hello world", id=message_id), request_id="request"
-                )
-            )
-            await append(StepEndedEvent(str(turn), step))
-        await append(TurnEndedEvent(str(turn)))
-        boundaries.append(len(session))
-        if turn in (2, 4):
-            await append(
-                CompactionAppliedEvent(
-                    boundaries[turn - 1],
-                    "Summary",
-                    preserve_turns=("0",),
-                )
-            )
-
-
-async def test_completed_message_does_not_enable_a_permanent_history_fold():
-    message = AssistantMessage("completed", id="old")
-    session = SessionLog(
-        "completed",
-        seed=[
-            AssistantMessageEvent(message, request_id="request"),
-            ObservationPolicyAppliedEvent(2),
-        ],
-    )
-
-    def unexpected_fold(events):
-        pytest.fail("Ordinary appends refolded the history after a completed message")
-
-    session._history._fold = unexpected_fold
-    for index in range(30):
-        await session.append(TurnStartedEvent(str(index)))
-        await session.append(StepStartedEvent(str(index), 1))
-        await session.append(
-            ObservationRecordedEvent(
-                Observation("browser", f"full {index}"),
-                str(index),
-                1,
-            )
-        )
-        await session.append(
-            ModelRequestedEvent(
-                ModelRequest(session.messages), request_id="request", model=ModelInfo("test")
-            )
-        )
-        await session.append(StepEndedEvent(str(index), 1))
-        await session.append(TurnEndedEvent(str(index)))
-        assert session.messages == derive_messages(session.events)

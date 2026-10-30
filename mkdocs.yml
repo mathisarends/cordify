@@ -55,7 +55,7 @@ nav:
       - Core SDK: reference/sdk.md
       - Events: reference/events.md
   - Benchmarks:
-      - Session memory and replay: benchmarks/sessions.md
+      - Conversation-state memory: benchmarks/sessions.md
   - Contributing:
       - Development and CI: contributing/development.md
       - Roadmap: contributing/roadmap.md

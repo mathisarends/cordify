@@ -1,8 +1,10 @@
 # Compact long conversations
 
-Compaction appends a `CompactionAppliedEvent` record. It changes the projected model
-history; original messages, tool calls and results remain in the session log.
-Replay and forks apply the same projection.
+Compaction applies a `CompactionAppliedEvent` transition and replaces retained
+working context with a summary and selected messages. The runtime releases
+discarded history and its indexes; current-turn result buffering may retain input
+until terminal delivery. Exported SessionState values contain the compacted
+conversation. Write a complete audit externally when historical records are needed.
 
 ```python
 from harnessed import Agent
@@ -118,7 +120,7 @@ events carry `UsagePurpose.COMPACTION` from `harnessed.events`.
 ## Compact manually
 
 ```python
-async with agent.session("review") as session:
+async with agent.session() as session:
     await session.run("Review the change.")
     await session.pause()
     applied = await session.compact()
@@ -133,3 +135,7 @@ can arrive while summarizing, but its model step waits until compaction finishes
 
 Run the [offline policy comparison](examples.md) with
 `uv run python -m examples.16_compaction_policies`.
+
+Compaction can preserve only turns still present in the working context. Previously
+discarded turns cannot be restored by changing retention settings. Earlier exported
+snapshots remain independent owners of their messages and resource bytes.

@@ -32,7 +32,8 @@ from harnessed.core.session.events import (
     TurnStartedEvent,
     UserMessageEvent,
 )
-from harnessed.core.session.session import SessionLog, _derive_message_entries, derive_messages
+from harnessed.core.session.history import _derive_message_entries, derive_messages
+from harnessed.core.session.session import SessionLog
 from harnessed.core.session.turns import derive_turns
 from harnessed.core.stream import CompactionFinishedEvent, CompactionOutcome, CompactionStartedEvent
 from harnessed.core.tokens import TokenCounter, count_request
@@ -246,7 +247,6 @@ class CompactionManager:
         if summarizer is None:
             summarizer = ModelSummarizer(model, focus=settings.focus)
         # The input request stays a snapshot even if new inbox/context records arrive.
-        events = self.session_log.events
         previous = self.session_log.last(CompactionAppliedEvent)
         with span(
             self.ctx, "compaction", session_id=self.session_log.id, through=plan.through
@@ -284,7 +284,15 @@ class CompactionManager:
             preserve_inputs=plan.preserve_inputs,
             retained_turns=plan.retained_turns,
         )
-        compacted = replace(request, messages=compact_request(request, events, applied))
+        projected = tuple(
+            entry.message
+            for entry in self.session_log._history.compacted(
+                applied, self.session_log.next_sequence
+            )
+        )
+        compacted = replace(
+            request, messages=_merge_compacted(request, self.session_log.messages, projected)
+        )
         before = await count_request(counter, request)
         after = await count_request(counter, compacted)
         if after >= before:
@@ -331,11 +339,13 @@ def plan_compaction(
         session = events
         known_turns = session._known_turns
         closed = session._turn_boundaries
-        previous = session.last(CompactionAppliedEvent)
+        previous_through = session.compacted_through
+        previous_preserved = session.preserved_turns
         new_turns = session.uncompacted_turn_count
         origin = session._history.origin
         current = session.open_turn
         records = session.events
+        record_offset = session.event_offset
     else:
         events = tuple(events)
         fold_events = events
@@ -353,6 +363,9 @@ def plan_compaction(
             ),
             (-1, None),
         )
+        previous_through = previous.through if previous is not None else 0
+        previous_preserved = previous.preserve_turns if previous is not None else ()
+        record_offset = 0
         new_turns = sum(boundary > previous_seq + 1 for boundary, _ in closed)
         offsets, current = {}, None
         for seq, event in enumerate(events):
@@ -374,7 +387,7 @@ def plan_compaction(
     if current is not None and current.id not in preserve_turns and len(closed) >= keep_first_turns:
         boundaries = [
             seq + 1
-            for seq, event in enumerate(records)
+            for seq, event in enumerate(records, start=record_offset)
             if isinstance(event, StepEndedEvent)
             and event.turn_id == current.id
             and event.reason is StepOutcome.COMPLETED
@@ -384,17 +397,19 @@ def plan_compaction(
             through = max(through, active_boundary)
             preserve_inputs = tuple(
                 seq
-                for seq, event in enumerate(records[:through])
+                for seq, event in enumerate(
+                    records[: max(0, through - record_offset)], start=record_offset
+                )
                 if origin(seq) == current.id
                 and isinstance(event, UserMessageEvent | ContextMessageEvent)
             )
-    if through <= (previous.through if previous is not None else 0):
+    if through <= previous_through:
         return None
     closed_ids = {turn for boundary, turn in closed if boundary <= through}
     preserved = tuple(
         dict.fromkeys(
             (
-                *(previous.preserve_turns if previous is not None else ()),
+                *previous_preserved,
                 *(turn for _, turn in closed[:keep_first_turns]),
                 *preserve_turns,
             )
@@ -405,9 +420,7 @@ def plan_compaction(
         tuple(turn for _, turn in closed[-keep_turns:]) if active_boundary and keep_turns else ()
     )
     entries = (
-        session._history.entries(session._events)
-        if session is not None
-        else _derive_message_entries(fold_events)
+        session._history.entries() if session is not None else _derive_message_entries(fold_events)
     )
     messages = tuple(
         message
@@ -430,8 +443,13 @@ def plan_compaction(
 def compact_request(
     request: ModelRequest, events: tuple[SessionEvent, ...], applied: CompactionAppliedEvent
 ) -> tuple[Message, ...]:
-    original_ids = {message.id for message in derive_messages(events)}
-    projected = derive_messages((*events, applied))
+    return _merge_compacted(request, derive_messages(events), derive_messages((*events, applied)))
+
+
+def _merge_compacted(
+    request: ModelRequest, original: tuple[Message, ...], projected: tuple[Message, ...]
+) -> tuple[Message, ...]:
+    original_ids = {message.id for message in original}
     retained_ids = {message.id for message in projected if not message.id.startswith("compaction:")}
     messages = [
         message

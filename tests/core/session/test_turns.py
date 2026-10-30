@@ -20,11 +20,11 @@ from harnessed.core.session.events import (
     TurnStartedEvent,
     UserMessageEvent,
 )
-from harnessed.core.session.session import SessionLog
 from harnessed.core.session.turns import derive_turns
 from harnessed.models import ModelInfo
 from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit, AuditProjection
 
 
 async def test_turns_group_model_requests_and_tools_while_followups_wait_for_their_turn():
@@ -44,10 +44,11 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
     )
     async with Application(
         model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), features]
-    ).session("turns") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.submit("first task")
         await started.wait()
-        live = agent.log.turns[-1]
+        live = agent_audit.turns[-1]
         assert not live.closed and (not live.steps[-1].closed)
         assert live.steps[-1].request is model.requests[0]
         await agent.steer("focus here")
@@ -55,7 +56,7 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         assert len(model.requests) == 1
         release.set()
         await agent.control.join()
-        turns = agent.log.turns
+        turns = agent_audit.turns
         assert [len(turn.steps) for turn in turns] == [2, 1]
         assert [[step.number for step in turn.steps] for turn in turns] == [[1, 2], [1]]
         assert all(turn.closed and turn.reason == TurnOutcome.COMPLETED for turn in turns)
@@ -72,18 +73,18 @@ async def test_turns_group_model_requests_and_tools_while_followups_wait_for_the
         second_users = [e.message.text for e in turns[1].events if isinstance(e, UserMessageEvent)]
         assert first_users == ["first task", "focus here"]
         assert second_users == ["second task"]
-        restored = tuple(decode_event(encode_event(event)) for event in agent.log.events)
+        restored = tuple(decode_event(encode_event(event)) for event in agent_audit.events)
         assert derive_turns(restored) == turns
-        assert agent.log.fork("fork").turns == turns
         with pytest.raises(FrozenInstanceError):
             turns[0].steps[0].number = 2
 
 
 async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
     model = ScriptedModel([])
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "rejected"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session() as agent:
+        agent_audit = Audit(agent)
 
         @agent.on(PreStep)
         async def reject(event, next_):
@@ -91,7 +92,7 @@ async def test_rejected_pre_step_is_a_closed_turn_without_a_model_step():
 
         await agent.submit("task")
         await agent.control.join()
-        turn = agent.log.turns[-1]
+        turn = agent_audit.turns[-1]
         assert turn.closed and turn.reason == TurnOutcome.REJECTED and (turn.steps == ())
         assert model.requests == [] and not agent.log.inbox.next_turn
 
@@ -110,11 +111,12 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
 
     async with Application(
         model=WaitingModel(), plugins=[Approvals(default=PolicyDecision.ALLOW)]
-    ).session("canceled-turn") as agent:
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.submit("task")
         await started.wait()
         await agent.abort()
-        turn = agent.log.turns[-1]
+        turn = agent_audit.turns[-1]
         assert turn.closed and turn.reason == TurnOutcome.ABORTED
         assert turn.steps[-1].closed and turn.steps[-1].reason == StepOutcome.ABORTED
         assert agent.status == "idle"
@@ -138,4 +140,4 @@ async def test_cancel_closes_the_open_step_and_turn_in_the_log():
 )
 def test_malformed_turn_step_boundaries_are_rejected(events):
     with pytest.raises(ValueError):
-        _ = SessionLog("invalid", seed=events).turns
+        _ = AuditProjection(events).turns

@@ -5,7 +5,6 @@ import pytest
 
 from harnessed import Agent as Application
 from harnessed import PolicyDecision
-from harnessed.core.assets import _MemoryAssets
 from harnessed.core.messages import system, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.session.codec import decode_event, encode_event
@@ -17,10 +16,9 @@ from harnessed.core.session.events import (
     UserMessageEvent,
 )
 from harnessed.core.session.inbox import Inbox
-from harnessed.core.session.session import SessionLog
-from harnessed.plugins import Approvals, JsonlSessions
-from harnessed.plugins.sessions import JsonlPersistence
+from harnessed.plugins import Approvals
 from harnessed.testing import CallbackModel, ScriptedModel
+from tests._audit import Audit
 
 
 @pytest.mark.parametrize(("mode", "target"), [("followup", "next-turn"), ("steer", "next-step")])
@@ -83,9 +81,10 @@ class PausingModel(CallbackModel):
 
 async def test_steering_enters_the_running_turn_before_its_next_step():
     model = PausingModel()
-    async with Application(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]).session(
-        "routing"
-    ) as agent:
+    async with Application(
+        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)]
+    ).session() as agent:
+        agent_audit = Audit(agent)
         await agent.submit("task")
         await model.started.wait()
         first_snapshot = model.requests[0]
@@ -95,32 +94,14 @@ async def test_steering_enters_the_running_turn_before_its_next_step():
         assert model.requests[0] == first_snapshot
         assert not any(m.text == "focus" for m in first_snapshot.messages)
         assert len(model.requests) == 2
-        assert [len(turn.steps) for turn in agent.log.turns] == [2]
+        assert [len(turn.steps) for turn in agent_audit.turns] == [2]
         assert any(m.text == "focus" for m in model.requests[-1].messages)
         assert agent.inbox.pending == ()
-
-
-@pytest.mark.parametrize("mode", ["followup", "steer"])
-async def test_resume_reconstructs_pending_routing_from_the_log(tmp_path, mode):
-    persistence = JsonlPersistence(tmp_path)
-    await persistence.load("pending")
-    session = SessionLog("pending", persistence=persistence, assets=_MemoryAssets())
-    event = InboxAddedEvent.create(user("task"), mode)
-    await session.append(event)
-    await persistence.aclose()
-    model = ScriptedModel(["processed"])
-    async with Application(
-        model=model, plugins=[Approvals(default=PolicyDecision.ALLOW), JsonlSessions(tmp_path)]
-    ).session("pending") as agent:
-        await agent.control.join()
-        assert len(model.requests) == 1 and (not agent.inbox.pending)
-        assert any(message.id == event.message.id for message in model.requests[0].messages)
 
 
 async def test_public_inbox_removal_discards_only_the_selected_queued_run():
     from harnessed import Agent, SessionStatus, StopReason
     from harnessed.core.runtime.inbox import InboxKind
-    from harnessed.testing import ScriptedModel
 
     async with Agent(model=ScriptedModel(["kept"])).session() as session:
         await session.pause()
@@ -141,30 +122,6 @@ async def test_public_inbox_removal_discards_only_the_selected_queued_run():
             await session.inbox.remove(snapshot[0].id)
         await session.resume()
         assert (await second).text == "kept"
-
-
-async def test_public_steer_returns_the_same_frozen_item_across_restart(tmp_path):
-    from harnessed import Agent
-    from harnessed.core.runtime.inbox import InboxKind, SessionInbox
-    from harnessed.plugins import JsonlSessions
-    from harnessed.testing import ScriptedModel
-
-    def agent(model):
-        return Agent(model=model, plugins=[JsonlSessions(tmp_path)])
-
-    async with agent(ScriptedModel([])).session("pending") as session:
-        await session.pause()
-        service = session.ctx[SessionInbox]
-        item = await service.steer("focus here")
-        assert item.kind is InboxKind.STEER and item.id == item.content.id
-        assert service.pending == (item,)
-        with pytest.raises(FrozenInstanceError):
-            item.kind = InboxKind.RUN
-    async with agent(ScriptedModel(["focused"])).session("pending") as session:
-        assert session.inbox.pending == (item,)
-        await session.resume()
-        await session.wait_until_idle()
-        assert len(session.turns) == 1 and session.messages[0].text == "focus here"
 
 
 def test_old_inbox_records_have_a_deterministic_creation_time():

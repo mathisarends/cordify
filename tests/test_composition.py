@@ -22,7 +22,7 @@ async def test_explicit_project_composition_adds_only_the_requested_tools(tmp_pa
         ),
         plugins=[filesystem, *commands],
     )
-    async with app.session("coding") as session:
+    async with app.session() as session:
         await session.run("inspect")
     request = model.requests[0]
     assert request.messages[0].text.startswith("Use focused changes.")
@@ -47,7 +47,7 @@ async def test_session_installs_waiting_plugins_and_disposes_the_driver_once(mon
         yield
 
     app = Agent(model=ScriptedModel(["ready"]), plugins=[observer()])
-    async with app.session("single-install") as session:
+    async with app.session() as session:
         assert starts == [session]
         assert (await session.run("hello")).text == "ready"
     assert closes == [session]
@@ -62,6 +62,6 @@ async def test_session_service_remains_available_during_dependent_teardown():
         async def teardown(self, session: Inject[Session]):
             seen.append(session.id)
 
-    async with Agent(model=ScriptedModel([]), plugins=[Dependent()]).session("teardown-owner"):
+    async with Agent(model=ScriptedModel([]), plugins=[Dependent()]).session() as session:
         pass
-    assert seen == ["teardown-owner"]
+    assert seen == [session.id]

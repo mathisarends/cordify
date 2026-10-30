@@ -36,11 +36,11 @@ not required.
 
 | Activity | Identity | Completion |
 | --- | --- | --- |
-| Turn | `turn_id` | `TurnEndedEvent` in the log; `TurnFinishedEvent.result.turn_id` on normal UI stream exhaustion |
+| Turn | `turn_id` | `TurnEndedEvent` in the execution stream; `TurnFinishedEvent.result.turn_id` on normal UI stream exhaustion |
 | Model request | `request_id` | `AssistantMessageEvent` or `ModelRequestFailedEvent` |
 | Observed provider attempt | `(retry_kind, retry_group_id, attempt)` with `retry_kind=PROVIDER` | `ModelAttemptFinishedEvent`; unknown provider counts remain `None` |
 | Runtime recovery or correction | `(retry_kind, retry_group_id)` | Attempt notifications correlate distinct model `request_id` values within that group |
-| Generated message | `message_id`, then `AssistantMessageEvent.message.id` | The accepted or interrupted assistant message, when persisted |
+| Generated message | `message_id`, then `AssistantMessageEvent.message.id` | The accepted or interrupted assistant message, when admitted |
 | Tool argument preview | `(message_id, call.index)` / `(message_id, delta.index)` | No paired terminal preview event; the completed assistant message is authoritative |
 | Scheduled tool call and its execution | `call.id` / `call_id` | `ToolCallFinishedEvent` for the call; `ToolExecutionFinishedEvent` for execution |
 | Approval question | Approval `request_id` | `ApprovalResolvedEvent`; answer through `session.approvals` |
@@ -206,17 +206,18 @@ class Indexer(Plugin):
         return "Indexed."
 ```
 
-`await ctx.emit(event)` and `await session.emit(event)` persist durable events
-and publish transient ones. Both pass through the session's event catalog.
-Custom durable and transient events also reach that turn's UI stream. Durable
-values appear in `session.events`, results, forks and restored logs; transient
-notifications do not survive replay.
+`await ctx.emit(event)` and `await session.emit(event)` admit execution records
+or publish transient notifications through the event catalog. Custom events also
+reach that turn's UI stream. Serializable records appear in current-turn buffers
+and returned results; transient notifications are live only. Neither surface
+creates an archive. Applications subscribe or use hooks to save a complete audit.
+Custom audit records are excluded from conversation snapshots.
 
-The Agent collects declarations **before opening stored logs**. Declare the same
-types when reopening a session. Runtime `session.use(plugin)` registers event
-types before setup, and retains their codecs after the plugin is disposed.
-Catalogs are isolated between sessions. An unknown stored type fails without
-rewriting the original log.
+The Agent collects declarations before runtime startup. `session.use(plugin)`
+registers types before setup and retains their codecs after disposal. Catalogs
+are isolated between sessions. An external audit reader must supply its own
+matching declarations for custom records. Importing a conversation snapshot does
+not require plugin declarations used only by an earlier audit.
 
 Different classes cannot share a tag. Mutable dataclasses, missing Literal tags,
 non-finite or mutable payloads, and subclasses of built-in event kinds are

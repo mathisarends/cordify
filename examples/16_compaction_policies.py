@@ -2,8 +2,7 @@
 
 import asyncio
 
-from harnessed import Agent, Role
-from harnessed.core.session.session import SessionLog
+from harnessed import Agent, Role, SessionState
 from harnessed.errors import ContextBudgetExceeded
 from harnessed.events import CompactionAppliedEvent
 from harnessed.models import GenerationSettings
@@ -30,13 +29,13 @@ async def compare(name, trigger):
             ),
         ],
     )
-    async with app.session(name) as session:
+    async with app.session() as session:
         await session.run("GOAL: keep the public API stable. " + "detail " * 240)
         goal = next(message for message in session.messages if message.role == Role.USER)
-        prefix = session.events
+        applied = []
+        session.on(CompactionAppliedEvent, applied.append)
         for index in range(1, 6):
             await session.run(f"task {index}: " + "detail " * 240)
-        applied = [event for event in session.events if isinstance(event, CompactionAppliedEvent)]
         print(f"{name}: {len(applied)} compactions")
         for event in applied:
             print(
@@ -44,10 +43,8 @@ async def compare(name, trigger):
                 f"{len(event.preserve_turns)} verbatim turn(s)"
             )
         assert applied and goal in model.requests[-1].messages
-        assert session.events[: len(prefix)] == prefix
-        assert SessionLog("replay", seed=session.events).messages == session.messages
-        assert session.fork("fork").messages == session.messages
-        print("  Goal kept verbatim; original log, replay and fork verified.")
+        assert SessionState.from_json(session.snapshot().to_json()) == session.snapshot()
+        print("  Goal kept verbatim; compacted state round trip verified.")
 
 
 async def main():
@@ -57,7 +54,7 @@ async def main():
 
     # Manual compaction is a core operation and uses the session model by default.
     model = ScriptedModel(["first", "second", "third", "Earlier work summarized."])
-    async with Agent(model=model).session("manual") as session:
+    async with Agent(model=model).session() as session:
         for index in range(3):
             await session.run(f"task {index}: " + "detail " * 240)
         await session.pause()
@@ -68,9 +65,9 @@ async def main():
 
     # The current task and tool schemas are never silently removed to fit a budget.
     model = ScriptedModel([])
-    async with Agent(model=model, plugins=[AgentLoop(context_window=100), Compaction()]).session(
-        "guard"
-    ) as session:
+    async with Agent(
+        model=model, plugins=[AgentLoop(context_window=100), Compaction()]
+    ).session() as session:
         try:
             await session.run("Current task that cannot be summarized away: " + "x" * 1000)
         except ContextBudgetExceeded as error:

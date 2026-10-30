@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from harnessed import Agent, Plugin, SessionClosed, SessionStatus, hook
+from harnessed import Agent, Plugin, SessionStatus, hook
 from harnessed.core.compaction import ContextState
 from harnessed.core.errors import ConfigError, ContextLengthExceeded, SessionStateError
 from harnessed.core.hooks import ConfigureRequest
@@ -21,17 +21,15 @@ from harnessed.core.model import (
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.events import (
     CompactionAppliedEvent,
-    ControlState,
     ModelRequestedEvent,
     ModelUsageRecordedEvent,
-    StepEndedEvent,
     TurnOutcome,
 )
-from harnessed.core.session.session import SessionLog
 from harnessed.core.stream import CompactionStartedEvent
 from harnessed.core.tools.decorator import tool
-from harnessed.plugins import AgentLoop, Compaction, JsonlSessions, at_ratio, every_turns
+from harnessed.plugins import AgentLoop, Compaction, at_ratio, every_turns
 from harnessed.testing import CallbackModel, ScriptedModel, reply
+from tests._audit import Audit, AuditProjection
 
 
 class Brief:
@@ -144,6 +142,7 @@ async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_ins
         system_prompt="Fixed instructions.",
         plugins=[Compaction(trigger=every_turns(1), keep_turns=0, focus="Keep paths.")],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("x" * 4000)
         await session.run("current")
         summary_request = model.requests[1]
@@ -157,8 +156,8 @@ async def test_default_summarizer_uses_the_session_model_and_preserves_fixed_ins
         assert await session.prompt.render() == "Fixed instructions."
         applied = session.last(CompactionAppliedEvent)
         assert applied.before_tokens > applied.after_tokens
-        records = [decode_event(encode_event(event)) for event in session.events]
-        assert SessionLog("replay", seed=records).messages == session.messages
+        records = [decode_event(encode_event(event)) for event in session_audit.events]
+        assert AuditProjection(records).messages == session.messages
 
 
 @pytest.mark.parametrize("reduces_context", [True, False])
@@ -173,19 +172,20 @@ async def test_compaction_usage_is_counted_and_replayed_even_when_no_summary_is_
         model=model,
         plugins=[Compaction(trigger=every_turns(1), keep_turns=0)],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("x" * 4000)
         result = await session.run("current")
         assert session.usage.input_tokens == 151 and session.usage.output_tokens == 16
         assert result.usage.input_tokens == 123 and result.usage.output_tokens == 12
         summaries = [
             event
-            for event in session.events
+            for event in session_audit.events
             if isinstance(event, ModelUsageRecordedEvent)
             and event.purpose is UsagePurpose.COMPACTION
         ]
         assert len(summaries) == 1 and summaries[0].usage == ModelUsage(123, 12)
-        records = [decode_event(encode_event(event)) for event in session.events]
-        assert SessionLog("replay", seed=records).usage == session.usage
+        records = [decode_event(encode_event(event)) for event in session_audit.events]
+        assert AuditProjection(records).usage == session.usage
         assert (session.last(CompactionAppliedEvent) is not None) == reduces_context
 
 
@@ -199,13 +199,14 @@ async def test_invalid_summarizer_responses_still_contribute_their_usage(message
     async with Agent(
         model=model, plugins=[Compaction(trigger=every_turns(1), keep_turns=0)]
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("x" * 4000)
         with pytest.raises(ValueError, match="Summarizer returned"):
             await session.run("current")
         assert session.usage.input_tokens == 151 and session.usage.output_tokens == 16
         assert session.last(ModelUsageRecordedEvent).purpose is UsagePurpose.COMPACTION
-        records = [decode_event(encode_event(event)) for event in session.events]
-        assert SessionLog("replay", seed=records).usage == session.usage
+        records = [decode_event(encode_event(event)) for event in session_audit.events]
+        assert AuditProjection(records).usage == session.usage
 
 
 async def test_periodic_trigger_counts_new_closed_turns_and_reuses_the_previous_summary():
@@ -215,11 +216,12 @@ async def test_periodic_trigger_counts_new_closed_turns_and_reuses_the_previous_
         model=model,
         plugins=[Compaction(trigger=every_turns(2), summarizer=brief, keep_turns=1)],
     ).session() as session:
+        session_audit = Audit(session)
         counts = []
         for index in range(6):
             await session.run(f"task {index}: " + "x" * 500)
             counts.append(
-                sum(isinstance(event, CompactionAppliedEvent) for event in session.events)
+                sum(isinstance(event, CompactionAppliedEvent) for event in session_audit.events)
             )
         assert counts == [0, 0, 1, 1, 2, 2]
         assert any(
@@ -266,14 +268,15 @@ async def test_budget_overflow_forces_compaction_even_when_the_trigger_is_not_du
 async def test_manual_compaction_works_without_the_policy_plugin_and_does_not_change_pause():
     model = ScriptedModel(["first", "second", "third", "manual summary"])
     async with Agent(model=model).session() as session:
+        session_audit = Audit(session)
         assert await session.compact() is None and model.requests == []
         for index in range(3):
             await session.run(f"task {index}: " + "x" * 1000)
-        original = session.events
+        original = session_audit.events
         await session.pause()
         applied = await session.compact()
         assert applied is not None and applied.policy == "manual"
-        assert session.events[: len(original)] == original
+        assert session_audit.events[: len(original)] == original
         assert session.status is SessionStatus.PAUSED
         assert session.messages[0].text == "Conversation summary:\nmanual summary"
         assert any(message.text.startswith("task 1:") for message in session.messages)
@@ -423,22 +426,23 @@ async def test_provider_context_error_compacts_once_then_retries_as_a_new_step()
         model=model,
         plugins=[Work(), Compaction(trigger=lambda state: False, summarizer=brief, keep_turns=0)],
     ).session() as session:
+        session_audit = Audit(session)
         await session.run("x" * 4000)
         result = await session.run("current")
         assert result.text == "answer 4" and effects == ["work"]
         assert len(brief.sources) == 1 and len(result.tool_calls) == 1
-        assert [step.reason for step in session.turns[-1].steps] == [
+        assert [step.reason for step in session_audit.turns[-1].steps] == [
             "context_limit",
             "completed",
             "completed",
         ]
         assert all(
             sum(isinstance(event, ModelRequestedEvent) for event in step.events) == 1
-            for step in session.turns[-1].steps
+            for step in session_audit.turns[-1].steps
         )
         assert not any(message.text == "x" * 4000 for message in model.requests[2].messages)
-        restored = [decode_event(encode_event(event)) for event in session.events]
-        assert SessionLog("replay", seed=restored).turns == session.turns
+        restored = [decode_event(encode_event(event)) for event in session_audit.events]
+        assert AuditProjection(restored).turns == session_audit.turns
 
 
 @pytest.mark.parametrize("case", ["no-policy", "no-history", "partial", "step-limit", "repeated"])
@@ -464,64 +468,13 @@ async def test_context_retry_is_bounded_and_requires_a_safe_smaller_request(case
     if case == "step-limit":
         plugins.append(AgentLoop(max_steps=1))
     async with Agent(model=model, plugins=plugins).session() as session:
+        session_audit = Audit(session)
         if case != "no-history":
             await session.run("x" * 4000)
         with pytest.raises(ContextLengthExceeded, match="Still too large"):
             await session.run("current")
-        assert session.turns[-1].reason == TurnOutcome.ABORTED
+        assert session_audit.turns[-1].reason == TurnOutcome.ABORTED
         assert len(brief.sources) == (1 if case == "repeated" else 0)
         assert len(model.requests) == (
             1 if case == "no-history" else 3 if case == "repeated" else 2
         )
-
-
-async def test_paused_context_retry_survives_restart_without_reusing_its_retry(tmp_path):
-    started, release = asyncio.Event(), asyncio.Event()
-
-    class Blocked:
-        async def summarize(self, messages, *, max_tokens):
-            started.set()
-            await release.wait()
-            return "short summary"
-
-    model = None
-
-    async def chunks(request):
-        assert model is not None
-        if len(model.requests) == 1:
-            yield ModelChunk(text="first")
-        else:
-            raise ContextLengthExceeded("Too large")
-
-    model = CallbackModel(chunks)
-
-    def app(backend, summarizer):
-        return Agent(
-            model=backend,
-            plugins=[
-                JsonlSessions(tmp_path),
-                Compaction(trigger=lambda state: False, summarizer=summarizer, keep_turns=0),
-            ],
-        )
-
-    async with app(model, Blocked()).session("retry") as session:
-        await session.run("x" * 4000)
-        running = asyncio.create_task(session.run("current"))
-        await asyncio.wait_for(started.wait(), 3)
-        pausing = asyncio.create_task(session.pause())
-        while session.log.control.state != ControlState.PAUSING:
-            await session.control._changed.wait()
-        release.set()
-        await asyncio.wait_for(pausing, 3)
-        assert session.status is SessionStatus.PAUSED
-        assert session.last(StepEndedEvent).reason == "context_limit"
-    with pytest.raises(SessionClosed):
-        await asyncio.wait_for(running, 3)
-    recovered = ScriptedModel(["continued"])
-    async with app(recovered, Brief()).session("retry") as session:
-        assert session.status is SessionStatus.PAUSED
-        await session.resume()
-        await asyncio.wait_for(session.wait_until_idle(), 3)
-        assert session.messages[-1].text == "continued"
-        assert [step.reason for step in session.turns[-1].steps] == ["context_limit", "completed"]
-        assert len(recovered.requests) == 1

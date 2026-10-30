@@ -37,7 +37,7 @@ async def main():
             ),
         ],
     )
-    async with agent.session("bundles") as session:
+    async with agent.session() as session:
         async for event in session.stream("Count the lines in the example file."):
             match event:
                 case ToolProgressEvent(text=text):

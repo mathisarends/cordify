@@ -59,7 +59,7 @@ async def main():
                 early_limit,
             ],
         )
-        async with agent.session("output-limit") as session:
+        async with agent.session() as session:
             result = await session.run("Inspect the large log and read it in small ranges.")
             for event in result.events:
                 if not isinstance(event, ToolCallFinishedEvent):

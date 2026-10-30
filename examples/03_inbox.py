@@ -25,7 +25,7 @@ class PausingModel(CallbackModel):
 async def main():
     model = PausingModel()
     agent = Agent(model=model, plugins=[Approvals(default=PolicyDecision.ALLOW)])
-    async with agent.session("inbox") as session:
+    async with agent.session() as session:
         await session.context.set("project-python", "This project uses Python 3.12+.")
         print(f"After a quiet context update: {session.status}, {len(model.requests)} requests")
         first = await session.submit("Analyze the project.")
@@ -42,13 +42,9 @@ async def main():
             for message in request.messages:
                 if message.role in (Role.USER, Role.SYSTEM):
                     print(f"  {message.text}")
-        turns = session.turns
-        print(f"\n{len(turns)} turns, {len(model.requests)} steps, status: {session.status}")
-        for number, turn in enumerate(turns, 1):
-            print(f"Turn {number}: {len(turn.steps)} steps, reason: {turn.reason}")
-            for step in turn.steps:
-                assert step.request is not None
-                print(f"  Step {step.number}: closed: {step.closed}")
+        print(f"\n{len(results)} turns, {len(model.requests)} steps, status: {session.status}")
+        for number, result in enumerate(results, 1):
+            print(f"Turn {number}: {result.turn_id}, reason: {result.stop_reason}")
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ async def independent_calls():
     async with Agent(
         model=model,
         plugins=[AgentLoop(max_parallel_tools=3), Approvals(default=PolicyDecision.ALLOW), tools],
-    ).session("lookups") as session:
+    ).session() as session:
         result = await session.run("Look up records 0, 1 and 2.")
         returned = [event for event in result.events if isinstance(event, ToolCallFinishedEvent)]
         print("Actual completion order:", completion_order)
@@ -85,7 +85,7 @@ async def writes_with_resource_keys(root: Path):
             Instructions(SystemPrompt(sections=(filesystem.usage,))),
             tools,
         ],
-    ).session("documents") as session:
+    ).session() as session:
         result = await session.run("Save both documents and then update a.txt.")
         returned = [event for event in result.events if isinstance(event, ToolCallFinishedEvent)]
         assert all(not event.result.is_error for event in returned)
