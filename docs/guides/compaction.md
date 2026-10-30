@@ -45,6 +45,14 @@ compaction can summarize their older prefix even in the very first turn. Only
 completed step boundaries are eligible; tool calls and their results stay together.
 Retained assistant messages keep their provider state unchanged.
 
+Observations in retained steps keep their complete text and image parts, message
+identities and order. For example, `keep_steps=5` keeps five completed steps plus
+the current observation in an active turn. Older observations and their images
+are removed together in the same compacted request. Between compactions, the
+history grows without rewriting previous observations. The default model
+summarizer reads textual parts and captions; it does not reanalyze image pixels.
+Include important image findings in text if they must survive summarization.
+
 The active turn's task, steering messages and supplied context stay verbatim, as do
 fixed instructions and tool schemas. Pinning the active turn, including through
 `keep_first_turns`, protects its entire history. Recent closed turns remain verbatim

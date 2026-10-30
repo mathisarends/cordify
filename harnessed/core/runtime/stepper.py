@@ -12,7 +12,7 @@ from harnessed.core.diagnostics import ModelAttemptOutcome, RetryKind
 from harnessed.core.errors import ContextLengthExceeded, OutputValidationError
 from harnessed.core.hooks import ConfigureRequest, PrepareRequest, PreStep, StepDecision
 from harnessed.core.limits import FinalStepPolicy
-from harnessed.core.messages import Assistant, Observation, Role, System, User
+from harnessed.core.messages import AssistantMessage, Observation, Role, SystemMessage, UserMessage
 from harnessed.core.model import Model, ModelRequest, resolve_request_settings
 from harnessed.core.prompt.system_prompt import SystemPromptStore
 from harnessed.core.runtime.control import SessionControl
@@ -135,7 +135,7 @@ class StepRunner:
                         )
             event = (
                 UserMessageEvent(message)
-                if isinstance(message, User)
+                if isinstance(message, UserMessage)
                 else ContextMessageEvent(message)
             )
             await self.log.append(event)
@@ -164,7 +164,7 @@ class StepRunner:
                 request,
                 tools=(),
                 output_schema=None,
-                messages=(*request.messages, System(_FINAL_STEP_INSTRUCTION)),
+                messages=(*request.messages, SystemMessage(_FINAL_STEP_INSTRUCTION)),
             )
         else:
             request = self.outputs.prepare(request, self.log.current_turn().start.output_schema)
@@ -272,7 +272,7 @@ class StepRunner:
             raise OutputValidationError(f"Structured output retry limit reached: {failure}")
         return True
 
-    async def _request(self, record: ModelRequestedEvent) -> Assistant:
+    async def _request(self, record: ModelRequestedEvent) -> AssistantMessage:
         request = record.request
         request_id = record.request_id
         try:

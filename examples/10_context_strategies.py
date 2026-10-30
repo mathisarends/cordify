@@ -23,7 +23,6 @@ class WorkspaceState(Plugin, needs=(Session,)):
             Observation(
                 "workspace",
                 f"FULL current workspace frame {self.frame}",
-                f"[workspace frame {self.frame}]",
             )
         )
         return await next_()
@@ -52,7 +51,7 @@ async def main():
             AgentLoop(context_window=2000),
             Reports(),
             WorkspaceState(),
-            LatestObservationOnly(max_summaries=1),
+            LatestObservationOnly(),
             spill,
             Compaction(
                 trigger=at_ratio(0.3),

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from harnessed.core.errors import ConfigError, SessionStateError
-from harnessed.core.messages import Assistant, ToolResult, User
+from harnessed.core.messages import AssistantMessage, ToolResult, UserMessage
 from harnessed.core.model import (
     Model,
     ModelRequest,
@@ -61,7 +61,7 @@ class OutputHandler:
         return replace(request, tools=tools, output_schema=schema)
 
     async def validate(
-        self, response: Assistant, schema: OutputSchema | None
+        self, response: AssistantMessage, schema: OutputSchema | None
     ) -> tuple[dict[str, ToolResult], str | None]:
         """Commit the verdict before control-call pairs; return a bounded terminal failure."""
         if schema is None:
@@ -108,7 +108,7 @@ class OutputHandler:
                 )
             if not outputs:
                 await self.log.append(
-                    ContextMessageEvent(User(note), ContextLifetime.TURN, current.id)
+                    ContextMessageEvent(UserMessage(note), ContextLifetime.TURN, current.id)
                 )
             return (
                 {call.id: ToolResult.error(note) for call in outputs},

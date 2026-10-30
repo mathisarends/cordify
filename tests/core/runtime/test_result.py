@@ -94,12 +94,12 @@ async def test_public_max_token_policies_return_typed_stop_reasons_or_fail():
     import pytest
 
     from harnessed import Agent, StopReason
-    from harnessed.core.messages import Assistant
+    from harnessed.core.messages import AssistantMessage
     from harnessed.core.model import ModelResponse
     from harnessed.plugins import AgentLoop
     from harnessed.testing import ScriptedModel
 
-    partial = ModelResponse(Assistant("partial"), stop_reason=StopReason.MAX_TOKENS)
+    partial = ModelResponse(AssistantMessage("partial"), stop_reason=StopReason.MAX_TOKENS)
     for policy in TokenLimitBehavior:
         model = ScriptedModel([partial, "complete"])
         async with Agent(
@@ -120,12 +120,12 @@ async def test_public_max_token_policies_return_typed_stop_reasons_or_fail():
 
 async def test_step_limit_takes_precedence_over_the_last_model_finish_reason():
     from harnessed import Agent, StopReason
-    from harnessed.core.messages import Assistant
+    from harnessed.core.messages import AssistantMessage
     from harnessed.core.model import ModelResponse
     from harnessed.plugins import AgentLoop
     from harnessed.testing import ScriptedModel
 
-    partial = ModelResponse(Assistant("partial"), stop_reason=StopReason.MAX_TOKENS)
+    partial = ModelResponse(AssistantMessage("partial"), stop_reason=StopReason.MAX_TOKENS)
     result = await Agent(
         model=ScriptedModel([partial]),
         plugins=[AgentLoop(max_steps=1, on_max_tokens=TokenLimitBehavior.CONTINUE)],

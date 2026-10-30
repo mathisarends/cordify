@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 from harnessed import Agent, Plugin, SessionClosed, StopReason, ToolCall, tool
 from harnessed.core.errors import ConfigError, OutputUnavailable, OutputValidationError
 from harnessed.core.hooks import SessionAppended, ToolPolicy
-from harnessed.core.messages import Assistant, PolicyDecision
+from harnessed.core.messages import AssistantMessage, PolicyDecision
 from harnessed.core.model import ModelChunk, ModelInfo, ModelResponse, OutputMode
 from harnessed.core.outputs import OutputContract, OutputTypes
 from harnessed.core.runtime.agent_loop import AgentLoop
@@ -173,7 +173,7 @@ async def test_schema_ids_cannot_silently_change_and_no_python_imports_come_from
 
 async def test_output_token_limit_does_not_retry_when_accept_is_configured():
     model = ScriptedModel(
-        [ModelResponse(Assistant('{"severity":'), stop_reason=StopReason.MAX_TOKENS)],
+        [ModelResponse(AssistantMessage('{"severity":'), stop_reason=StopReason.MAX_TOKENS)],
         info=ModelInfo("native", supports_structured_output=True),
     )
     result = await Agent(model=model).run("Triage", output=Triage)

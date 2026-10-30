@@ -6,13 +6,13 @@ from harnessed import Agent, Plugin, SessionClosed, SessionStatus, tool
 from harnessed.core.compaction import plan_compaction
 from harnessed.core.errors import ContextLengthExceeded
 from harnessed.core.messages import (
-    Assistant,
+    AssistantMessage,
     Message,
-    System,
+    SystemMessage,
     ToolCall,
-    ToolReply,
+    ToolMessage,
     ToolResult,
-    User,
+    UserMessage,
 )
 from harnessed.core.model import ModelChunk, ModelRequest, ModelResponse
 from harnessed.core.session.codec import decode_event, encode_event
@@ -47,10 +47,10 @@ class Brief:
 def assert_pairs(messages: tuple[Message, ...]) -> None:
     pending = set()
     for message in messages:
-        if isinstance(message, Assistant):
+        if isinstance(message, AssistantMessage):
             assert not pending
             pending.update(call.id for call in message.tool_calls)
-        elif isinstance(message, ToolReply):
+        elif isinstance(message, ToolMessage):
             assert message.tool_call_id in pending
             pending.remove(message.tool_call_id)
     assert not pending
@@ -62,7 +62,7 @@ async def append_step(log: SessionLog, turn: str, number: int) -> None:
     await log.append(ModelRequestedEvent(ModelRequest("test", log.messages), request_id="request"))
     await log.append(
         AssistantMessageEvent(
-            Assistant(tool_calls=(call,), provider_state={"signature": call.id}),
+            AssistantMessage(tool_calls=(call,), provider_state={"signature": call.id}),
             request_id="request",
         )
     )
@@ -95,14 +95,14 @@ async def apply_plan(log: SessionLog, **options) -> CompactionAppliedEvent:
 async def test_repeated_compaction_retains_inputs_and_signatures_but_releases_recent_turns():
     log = SessionLog("long-turn")
     await log.append(TurnStartedEvent("prior"))
-    await log.append(UserMessageEvent(User("prior task")))
+    await log.append(UserMessageEvent(UserMessage("prior task")))
     await append_step(log, "prior", 1)
     await log.append(TurnEndedEvent("prior"))
     await log.append(TurnStartedEvent("active"))
-    task = User("original task")
-    steering = User("steering")
-    context = System("per-turn context")
-    persistent_context = System("session context")
+    task = UserMessage("original task")
+    steering = UserMessage("steering")
+    context = SystemMessage("per-turn context")
+    persistent_context = SystemMessage("session context")
     await log.append(UserMessageEvent(task))
     await log.append(ContextMessageEvent(context, ContextLifetime.TURN, "active"))
     await log.append(ContextMessageEvent(persistent_context))
@@ -125,7 +125,7 @@ async def test_repeated_compaction_retains_inputs_and_signatures_but_releases_re
     assert context not in log.messages
     assert log.messages == derive_messages(log.events)
     await log.append(TurnStartedEvent("next"))
-    await log.append(UserMessageEvent(User("next task")))
+    await log.append(UserMessageEvent(UserMessage("next task")))
     await append_step(log, "next", 1)
     await append_step(log, "next", 2)
     third = await apply_plan(log)
@@ -158,7 +158,9 @@ async def test_a_completed_step_cannot_hide_an_unanswered_tool_call():
     await log.append(StepStartedEvent("t", 1))
     await log.append(ModelRequestedEvent(ModelRequest("test", ()), request_id="request"))
     await log.append(
-        AssistantMessageEvent(Assistant(tool_calls=(ToolCall("work"),)), request_id="request")
+        AssistantMessageEvent(
+            AssistantMessage(tool_calls=(ToolCall("work"),)), request_id="request"
+        )
     )
     await log.append(StepEndedEvent("t", 1))
     with pytest.raises(ValueError, match="unanswered tool calls"):
@@ -185,7 +187,7 @@ async def test_first_turn_compacts_automatically_without_changing_retained_provi
 
     responses = [
         ModelResponse(
-            Assistant(
+            AssistantMessage(
                 tool_calls=(ToolCall("work", {"number": n}, id=f"call-{n}"),),
                 provider_state={"signature": str(n)},
             )
@@ -209,7 +211,7 @@ async def test_first_turn_compacts_automatically_without_changing_retained_provi
         for request in model.requests:
             assert_pairs(request.messages)
             for message in request.messages:
-                if isinstance(message, Assistant) and message.tool_calls:
+                if isinstance(message, AssistantMessage) and message.tool_calls:
                     number = message.tool_calls[0].arguments["number"]
                     assert message.provider_state == {"signature": str(number)}
         assert [c.id for m in model.requests[-1].messages for c in m.tool_calls] == [
@@ -232,7 +234,7 @@ async def test_nonshrinking_summary_retries_after_two_more_steps_in_the_same_tur
 
     model = ScriptedModel(
         [
-            *(ModelResponse(Assistant(tool_calls=(ToolCall("work"),))) for _ in range(4)),
+            *(ModelResponse(AssistantMessage(tool_calls=(ToolCall("work"),))) for _ in range(4)),
             "done",
         ]
     )
@@ -314,7 +316,10 @@ async def test_pause_compact_restart_resumes_after_completed_tools(tmp_path):
         )
 
     model = ScriptedModel(
-        [ModelResponse(Assistant(tool_calls=(ToolCall("work", {"number": n}),))) for n in range(3)]
+        [
+            ModelResponse(AssistantMessage(tool_calls=(ToolCall("work", {"number": n}),)))
+            for n in range(3)
+        ]
     )
     async with app(model).session("paused") as session:
         running = asyncio.create_task(session.run("original task"))

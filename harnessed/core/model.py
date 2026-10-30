@@ -10,7 +10,7 @@ from pydantic import ConfigDict, Field, TypeAdapter
 from pydantic.dataclasses import dataclass as validated_dataclass
 
 from .diagnostics import ModelDiagnostic
-from .messages import Assistant, Message, ToolCall, freeze
+from .messages import AssistantMessage, Message, ToolCall, freeze
 
 _VALUE_CONFIG = ConfigDict(
     strict=True, extra="forbid", allow_inf_nan=False, hide_input_in_errors=True
@@ -219,12 +219,12 @@ class ModelInfo:
 @dataclass(frozen=True, slots=True)
 class ModelResponse:
     __hash__ = None
-    message: Assistant
+    message: AssistantMessage
     usage: ModelUsage = field(default_factory=lambda: ModelUsage(0))
     stop_reason: StopReason = StopReason.END
 
     def __post_init__(self) -> None:
-        if not isinstance(self.message, Assistant):
+        if not isinstance(self.message, AssistantMessage):
             raise TypeError("A model response must contain an assistant message")
         object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
 

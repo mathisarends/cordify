@@ -109,14 +109,15 @@ for counters, separate retry kinds and missing provider telemetry.
 
 Plugins can inject `SessionLog` from `harnessed` and call `log.request(id)` to
 retrieve the submitted snapshot, or `log.request_finished(id)` to inspect its
-completion. Existing version 2 JSONL records without request IDs acquire stable
-`session_id:index` identities when loaded. Recovery closes orphan requests as
+completion. Session format version 3 requires explicit request IDs; older formats
+are rejected without rewriting the log. Recovery closes orphan requests as
 cancelled before repairing their turn.
 
 `ObservationsIncludedEvent(request_id, observations)` records the observation
 messages actually present after request transformation. It follows the request
 event even when the tuple is empty. Each `IncludedObservation` carries its source,
-refs and full/summary form; see [observation delivery](context.md).
+refs, originating turn and step, and message ID. The receipt covers the complete
+text/image snapshot; see [observation delivery](context.md).
 
 Compaction start/finish and model attempt/retry notifications are also public
 typed events. Their activity records are transient; successful compaction remains

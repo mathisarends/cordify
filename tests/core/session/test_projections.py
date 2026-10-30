@@ -4,7 +4,13 @@ import pytest
 
 from harnessed.core.approvals import ApprovalState
 from harnessed.core.compaction import plan_compaction
-from harnessed.core.messages import ApprovalAnswer, Assistant, Observation, ToolCall, User
+from harnessed.core.messages import (
+    ApprovalAnswer,
+    AssistantMessage,
+    Observation,
+    ToolCall,
+    UserMessage,
+)
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.control import RunControl
 from harnessed.core.session.events import (
@@ -52,7 +58,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
         snapshots.append((session.events, session.inbox, session.approvals, session.turns))
 
     for turn in range(5):
-        message = User(f"Task {turn}", id=f"input-{turn}")
+        message = UserMessage(f"Task {turn}", id=f"input-{turn}")
         await append(InboxAddedEvent.create(message, InboxMode.FOLLOWUP))
         await append(TurnStartedEvent(str(turn), message.id))
         await append(UserMessageEvent(message))
@@ -69,7 +75,7 @@ async def test_incremental_snapshots_equal_full_folds_for_generated_valid_logs(s
             assert session.latest_approval(call.id).decision == answer
             if answer is ApprovalAnswer.ALWAYS and rng.choice([True, False]):
                 await append(ApprovalRevokedEvent(request.request_id))
-            await append(AssistantMessageEvent(Assistant("reply"), request_id="request"))
+            await append(AssistantMessageEvent(AssistantMessage("reply"), request_id="request"))
             await append(StepEndedEvent(str(turn), step))
         await append(TurnEndedEvent(str(turn)))
         await append(AgentControlChangedEvent(rng.choice(["active", "paused", "stopped"])))
@@ -92,7 +98,7 @@ async def test_last_and_since_indexes_match_the_log_suffix():
     session = SessionLog("indexes")
     assert session.last(TurnStartedEvent) is None and session.since(TurnStartedEvent) == ()
     start = TurnStartedEvent("turn")
-    message = UserMessageEvent(User("hello"))
+    message = UserMessageEvent(UserMessage("hello"))
     await session.append(start)
     before = session.events
     await session.append(message)
@@ -118,14 +124,14 @@ async def test_incremental_observations_and_compaction_match_every_prefix(seed):
 
     for turn in range(6):
         await append(TurnStartedEvent(str(turn)))
-        await append(ObservationPolicyAppliedEvent(rng.choice([None, 0, 1, 3])))
+        await append(ObservationPolicyAppliedEvent(rng.choice([None, 1, 2, 3])))
         for step in range(1, 3):
             await append(StepStartedEvent(str(turn), step))
             for source in ("browser", "screen"):
                 if rng.choice([True, False]):
                     await append(
                         ObservationRecordedEvent(
-                            Observation(source, f"{turn}:{step}:full", f"{turn}:{step}:short"),
+                            Observation(source, f"{turn}:{step}:full"),
                             str(turn),
                             step,
                         )
@@ -135,7 +141,9 @@ async def test_incremental_observations_and_compaction_match_every_prefix(seed):
             )
             message_id = f"{turn}:{step}"
             await append(
-                AssistantMessageEvent(Assistant("hello world", id=message_id), request_id="request")
+                AssistantMessageEvent(
+                    AssistantMessage("hello world", id=message_id), request_id="request"
+                )
             )
             await append(StepEndedEvent(str(turn), step))
         await append(TurnEndedEvent(str(turn)))
@@ -151,7 +159,7 @@ async def test_incremental_observations_and_compaction_match_every_prefix(seed):
 
 
 async def test_completed_message_does_not_enable_a_permanent_history_fold():
-    message = Assistant("completed", id="old")
+    message = AssistantMessage("completed", id="old")
     session = SessionLog(
         "completed",
         seed=[
@@ -169,7 +177,7 @@ async def test_completed_message_does_not_enable_a_permanent_history_fold():
         await session.append(StepStartedEvent(str(index), 1))
         await session.append(
             ObservationRecordedEvent(
-                Observation("browser", f"full {index}", f"short {index}"),
+                Observation("browser", f"full {index}"),
                 str(index),
                 1,
             )

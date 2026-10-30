@@ -17,8 +17,8 @@ serialize the intended JSON payload with a defined canonical encoding and hash
 those bytes.
 
 The persistence codec has a separate versioned boundary. Records require version
-2 and explicit dotted tags, such as `turn.start` and `tool.call.finished`. Version
-1 is unsupported after the tool lifecycle change. Older formats,
+3 and explicit dotted tags, such as `turn.start` and `tool.call.finished`. Versions
+1 and 2 are unsupported. Older formats,
 unknown fields, invalid discriminators, non-finite numbers and malformed nested
 values are rejected without rewriting the append-only log.
 See the [compatibility policy](../releases.md#compatibility-policy) before upgrading
@@ -30,10 +30,10 @@ validates their discriminated unions and supplies the durable JSON schema.
 
 ## Message roles
 
-`Message` is a tagged union of frozen `System`, `User`, `Assistant` and `ToolReply`
-values in `harnessed.core.messages`. Constructors only accept fields belonging to
-that role: tool calls, reasoning and native provider state belong to Assistant;
-a ToolReply requires a call ID. User messages and tool replies can contain text
+`Message` is a tagged union of frozen `SystemMessage`, `UserMessage`, `AssistantMessage` and `ToolMessage`
+values in `harnessed.models`. Constructors only accept fields belonging to
+that role: tool calls, reasoning and native provider state belong to `AssistantMessage`;
+a ToolMessage requires a call ID. User messages and tool replies can contain text
 and image parts. `user(...)` and `system(...)` are convenience constructors.
 
 The Core field is `reasoning`. Provider-specific fields, including DeepSeek's
@@ -42,7 +42,7 @@ opaque frozen `provider_state`. Unsigned synthetic or interrupted reasoning rema
 and is omitted from native provider history; complete signed responses replay
 through their original provider state.
 
-ToolReply retains the original status and exit code alongside its content. Native
+ToolMessage retains the original status and exit code alongside its content. Native
 provider history therefore distinguishes failed or denied tools from successful
 results instead of relying on error words in the text. Unknown tool availability
 is a failure; policy/user denial remains a denial.

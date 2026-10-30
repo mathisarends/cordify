@@ -26,6 +26,24 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
+## Unreleased
+
+Observations become immutable text/image snapshots delivered automatically through
+the existing `PreStep` and `session.observe()` APIs. They stay unchanged between
+model calls and are removed with their steps at compaction boundaries. An explicit
+`LatestObservationOnly()` policy can instead retain one snapshot per source.
+
+Message classes are named `SystemMessage`, `UserMessage`, `AssistantMessage` and
+`ToolMessage`. Replace `Observation(full=..., summary=...)` with
+`Observation(content=...)`, remove `max_summaries` from `LatestObservationOnly`,
+and use inclusion `refs`, `turn_id`, `step` and `message_id` instead of
+`ObservationForm`. See [automatic observations](guides/context.md#steering-observations-and-retrieval).
+
+These breaking value and receipt changes advance session records to version **3**.
+Back up older stores and start a new one; versions 1 and 2 are rejected without
+automatic migration. The [changelog](https://github.com/mathisarends/harnessed/blob/main/Changelog.md)
+contains the upgrade steps and storage limits.
+
 ## 0.6.0 (2026-10-30)
 
 This minor release adds explicit Docker and Bubblewrap sandboxes and hardens MCP

@@ -3,7 +3,7 @@ from contextlib import aclosing
 
 import pytest
 
-from harnessed.core.messages import ToolCall, ToolResult, User
+from harnessed.core.messages import ToolCall, ToolResult, UserMessage
 from harnessed.core.session.events import (
     ToolCallFinishedEvent,
     ToolExecutionFinishedEvent,
@@ -42,7 +42,7 @@ async def test_cancelled_result_checkpoint_drains_lock_write_and_flush(event_typ
     log = SessionLog("checkpoint", persistence=persistence)
     blocker = None
     if phase == "lock":
-        blocker = asyncio.create_task(log.append(UserMessageEvent(User("concurrent input"))))
+        blocker = asyncio.create_task(log.append(UserMessageEvent(UserMessage("concurrent input"))))
         await asyncio.wait_for(entered.wait(), 2)
     call = ToolCall("work", id="call") if event_type is ToolCallFinishedEvent else "call"
     receipt = event_type(call, ToolResult("finished result"))
@@ -101,7 +101,7 @@ async def test_mixed_concurrent_checkpoints_publish_in_durable_log_order():
     events = tuple(
         ToolExecutionFinishedEvent(str(index), ToolResult("finished"))
         if index % 2
-        else UserMessageEvent(User(str(index)))
+        else UserMessageEvent(UserMessage(str(index)))
         for index in range(20)
     )
 

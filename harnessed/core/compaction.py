@@ -12,7 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from harnessed.core.budget import ContextBudget, truncate
-from harnessed.core.messages import Message, System, User, to_dict
+from harnessed.core.messages import Message, SystemMessage, UserMessage, to_dict
 from harnessed.core.model import (
     Model,
     ModelRequest,
@@ -91,7 +91,7 @@ class ModelSummarizer:
         request = resolve_request_settings(
             ModelRequest(
                 self.model_name,
-                (System(instructions), User(transcript)),
+                (SystemMessage(instructions), UserMessage(transcript)),
                 max_tokens=max_tokens,
             ),
             self.model.info.default_settings,

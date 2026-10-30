@@ -128,7 +128,7 @@ Use ContextValue for dynamic facts. All prompt policies are exported by `harness
 | submit(prompt, output=None, ...) | Acknowledge queued input and return RunHandle[T] |
 | stream(prompt, output=None, ...) | Typed UI and custom events, ending with TurnFinishedEvent |
 | steer(content, attachments=()) | Send a next-step correction and return its InboxItem |
-| observe(observation) | Buffer the latest state per source for the next step; starts nothing |
+| observe(observation) | Buffer the latest text/image snapshot per source for the next step; recorded snapshots stay unchanged until compaction or an explicit retention policy |
 | context.set(name, value) / remove(name) | Await a durable changed fact/removal |
 | inbox.pending / remove(id) | Frozen queued input snapshot / durable removal |
 | pause() / resume() | Pause at a committed step boundary / continue |
@@ -154,8 +154,17 @@ data for plugins and integrations; prefer the session views when both exist.
 `SessionLog.request(request_id)` returns a submitted model request or `None`;
 `request_finished(request_id)` checks its durable completion, and
 `execution_pending(call_id)` checks whether a tool start still needs a receipt.
-`included_observations(request)` returns retained observation sources, refs and
-forms using message provenance rather than prompt text searches.
+`included_observations(request)` returns retained observation sources, refs,
+turn IDs, step numbers and message IDs using exact message provenance rather
+than prompt text searches. See [automatic observations](../guides/context.md#steering-observations-and-retrieval).
+
+`Observation(source, content, refs=())` accepts text or a tuple of `TextPart` and
+`ImagePart` values. The existing `PreStep` hook supplies snapshots automatically
+through `session.observe()`; no model tool call is required. Text and images
+share one recorded message and lifecycle. `LatestObservationOnly()` explicitly
+keeps only the latest snapshot per source; otherwise snapshots remain unchanged
+until compaction. `Compaction(keep_steps=5, ...)` retains five completed steps in
+the active turn, including their full observations, plus the current step.
 
 Await methods that perform durable writes. Closed handles raise SessionClosed.
 SDK failures derive from `HarnessedError`, importable from `harnessed.errors`: operations
@@ -179,6 +188,12 @@ step for an action-free text summary. Import `FinalStepPolicy` from
 when the run requested structured output. See [reserved summaries](../guides/sessions.md#step-progress-and-a-reserved-summary).
 
 ## RunResult and values
+
+`harnessed.models` exports `SystemMessage`, `UserMessage`, `AssistantMessage` and
+`ToolMessage`, the four frozen variants of `Message`. User and tool messages can
+contain text and image parts. Role names describe provider messages, not which
+person or plugin authored them. `ToolResult` is a tool's return value; a
+`ToolMessage` is its corresponding message in model history.
 
 A result belongs to one turn. It provides `text`, `events`, `messages`, `usage`,
 `turn_id`, typed `stop_reason` and `(ToolCall, ToolResult)` pairs in `tool_calls`.
@@ -235,6 +250,12 @@ Skipped calls have `ToolStatus.SKIPPED` and retain their model-history pairing.
 `PreStep.max_steps` is the effective turn limit; `remaining_steps` includes the
 current step, `is_last_step` indicates one remaining step, and `is_final_step`
 identifies an action-free reserved summary.
+
+`PreStep` runs in the harness before the model call. Its `StepDecision` accepts
+or filters queued input messages; `StepDecision.reject()` ends the turn without
+calling the model. This is a plugin decision, not an LLM response. Supply automatic
+environment snapshots through `session.observe()` so compaction can treat them
+as step history rather than protected user instructions.
 
 ## Event classes and data
 

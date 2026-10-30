@@ -11,14 +11,14 @@ from harnessed.core.diagnostics import (
     report_model_diagnostic,
 )
 from harnessed.core.messages import (
-    Assistant,
+    AssistantMessage,
     ContentPart,
     ImagePart,
     Message,
-    System,
+    SystemMessage,
     TextPart,
-    ToolReply,
-    User,
+    ToolMessage,
+    UserMessage,
     system,
     user,
 )
@@ -42,7 +42,7 @@ from harnessed.core.model import (
 from .pydantic_ai import PydanticAIModel as PydanticAIModel
 
 __all__ = [
-    "Assistant",
+    "AssistantMessage",
     "ContentPart",
     "ImagePart",
     "Message",
@@ -64,15 +64,15 @@ __all__ = [
     "RetryKind",
     "RetryReason",
     "StopReason",
-    "System",
+    "SystemMessage",
     "TextPart",
     "TokenLimitBehavior",
     "ToolArgumentsMode",
     "ToolCallDelta",
     "ToolCallStart",
     "ToolDefinition",
-    "ToolReply",
-    "User",
+    "ToolMessage",
+    "UserMessage",
     "model_diagnostics",
     "report_model_diagnostic",
     "system",

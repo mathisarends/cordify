@@ -1,7 +1,7 @@
 from collections.abc import Callable, Iterable
 from xml.sax.saxutils import escape, quoteattr
 
-from harnessed.core.messages import Message, System, ToolReply, User
+from harnessed.core.messages import Message, SystemMessage, ToolMessage, UserMessage
 from harnessed.core.model import ModelRequest
 from harnessed.core.session.events import (
     AssistantMessageEvent,
@@ -11,12 +11,9 @@ from harnessed.core.session.events import (
     ContextValueChangedEvent,
     IncludedObservation,
     ModelRequestedEvent,
-    ObservationForm,
     ObservationPolicyAppliedEvent,
     ObservationRecordedEvent,
     SessionEvent,
-    StepEndedEvent,
-    StepStartedEvent,
     SystemMessageEvent,
     ToolCallFinishedEvent,
     TurnEndedEvent,
@@ -27,11 +24,11 @@ from harnessed.core.session.events import (
 type HistoryFold = Callable[[Iterable[SessionEvent]], tuple[tuple[int, Message], ...]]
 
 
-def _observation_message(event: ObservationRecordedEvent, form: ObservationForm) -> User:
+def _observation_message(event: ObservationRecordedEvent) -> UserMessage:
     observation = event.observation
-    return User(
-        observation.full if form is ObservationForm.FULL else observation.summary,
-        id=f"observation:{event.turn_id}:{event.step}:{observation.source}:{form}",
+    return UserMessage(
+        observation.content,
+        id=f"observation:{event.turn_id}:{event.step}:{observation.source}",
     )
 
 
@@ -45,13 +42,11 @@ class MessageProjection:
         self._order_dirty = False
         self._offset = len(events) - 1
         self._turn: str | None = None
-        self._step: tuple[str, int] | None = None
         self._compaction: CompactionAppliedEvent | None = None
-        self._max_summaries: int | None = None
+        self._max_observations: int | None = None
         self._scoped: dict[str | None, dict[int, Message]] = {}
         self._origins: dict[int, str | None] = {}
         self._observations: dict[str, list[int]] = {}
-        self._by_step: dict[tuple[str, int], dict[str, list[int]]] = {}
         self._observation_events: dict[int, ObservationRecordedEvent] = {}
         self._visible_observations: dict[str, set[int]] = {}
         for seq, event in enumerate(events):
@@ -76,22 +71,14 @@ class MessageProjection:
             ),
         ):
             self._origins[seq] = self._turn
-        if isinstance(event, TurnStartedEvent | StepStartedEvent | StepEndedEvent | TurnEndedEvent):
-            if isinstance(event, StepStartedEvent):
-                self._step = (event.turn_id, event.step)
-            elif isinstance(event, StepEndedEvent | TurnEndedEvent):
-                self._step = None
         if isinstance(event, ContextMessageEvent) and event.lifetime == ContextLifetime.TURN:
             self._scoped.setdefault(event.turn_id, {})[seq] = event.message
             self._origins[seq] = self._turn
         elif isinstance(event, ObservationPolicyAppliedEvent):
-            self._max_summaries = event.max_summaries
+            self._max_observations = event.max_observations
         elif isinstance(event, ObservationRecordedEvent):
             source = event.observation.source
             self._observations.setdefault(source, []).append(seq)
-            self._by_step.setdefault((event.turn_id, event.step), {}).setdefault(source, []).append(
-                seq
-            )
             self._observation_events[seq] = event
             self._origins[seq] = self._turn
         elif isinstance(event, CompactionAppliedEvent):
@@ -114,28 +101,21 @@ class MessageProjection:
             self._order_dirty = True
         self._entries[seq] = message
 
-    def _refresh_observations(self, source: str, changed=(), *, all_entries=False) -> None:
+    def _refresh_observations(
+        self, source: str, changed: tuple[int, ...] = (), *, all_entries: bool = False
+    ) -> None:
         indices = self._observations[source]
-        active = set(self._by_step.get(self._step, {}).get(source, ()))
         visible = self._visible_observations.setdefault(source, set())
-        if self._max_summaries is None:
+        if self._max_observations is None:
             candidates = indices if all_entries else changed
             selected = None
         else:
-            selected = set(active)
-            remaining = self._max_summaries
-            for seq in reversed(indices):
-                if seq not in active:
-                    if remaining == 0:
-                        break
-                    selected.add(seq)
-                    remaining -= 1
+            selected = set(indices[-self._max_observations :])
             candidates = visible | selected
         for seq in candidates:
             event = self._observation_events[seq]
-            form = ObservationForm.FULL if seq in active else ObservationForm.SUMMARY
-            message = _observation_message(event, form)
-            if message.text and self._eligible(seq) and (selected is None or seq in selected):
+            message = _observation_message(event)
+            if message.content and self._eligible(seq) and (selected is None or seq in selected):
                 self._put(seq, message)
                 visible.add(seq)
             else:
@@ -143,7 +123,6 @@ class MessageProjection:
                 visible.discard(seq)
 
     def apply(self, event: SessionEvent, seq: int, events: list[SessionEvent]) -> None:
-        previous_step = self._step
         self._offset = seq
         self._index(event, seq)
         relevant = isinstance(
@@ -161,8 +140,6 @@ class MessageProjection:
                 UserMessageEvent,
                 TurnEndedEvent,
                 TurnStartedEvent,
-                StepStartedEvent,
-                StepEndedEvent,
             ),
         )
         if not relevant:
@@ -177,13 +154,13 @@ class MessageProjection:
         elif isinstance(event, SystemMessageEvent):
             self._entries = {key: msg for key, msg in self._entries.items() if msg.id != "system"}
             if event.content:
-                self._entries = {seq: System(event.content, id="system")} | self._entries
+                self._entries = {seq: SystemMessage(event.content, id="system")} | self._entries
         elif isinstance(event, UserMessageEvent | AssistantMessageEvent):
             self._put(seq, event.message)
         elif isinstance(event, ToolCallFinishedEvent):
             self._put(
                 seq,
-                ToolReply(
+                ToolMessage(
                     event.result.content,
                     tool_call_id=event.call_id,
                     id=event.call_id,
@@ -197,7 +174,7 @@ class MessageProjection:
                 if event.value is None
                 else f"<context name={quoteattr(event.name)}>{escape(event.value)}</context>"
             )
-            self._put(seq, User(content, id=f"context:{event.id}"))
+            self._put(seq, UserMessage(content, id=f"context:{event.id}"))
         elif isinstance(event, ContextMessageEvent):
             if event.lifetime == ContextLifetime.SESSION or event.turn_id == self._turn:
                 self._put(seq, event.message)
@@ -215,13 +192,6 @@ class MessageProjection:
         elif isinstance(event, ObservationPolicyAppliedEvent):
             for source in self._observations:
                 self._refresh_observations(source, all_entries=True)
-        elif previous_step != self._step:
-            changed = {}
-            for step in (previous_step, self._step):
-                for source, offsets in self._by_step.get(step, {}).items():
-                    changed.setdefault(source, []).extend(offsets)
-            for source, offsets in changed.items():
-                self._refresh_observations(source, offsets)
 
     def snapshot(self, events: list[SessionEvent]) -> tuple[Message, ...]:
         if self._snapshot is None:
@@ -253,15 +223,20 @@ class MessageProjection:
         self, messages: tuple[Message, ...]
     ) -> tuple[IncludedObservation, ...]:
         """Match final message identities and values, without scanning prompt text."""
-        provenance: dict[str, tuple[User, IncludedObservation]] = {}
+        provenance: dict[str, tuple[UserMessage, IncludedObservation]] = {}
         for event in self._observation_events.values():
-            for form in ObservationForm:
-                message = _observation_message(event, form)
-                if message.text:
-                    provenance[message.id] = (
-                        message,
-                        IncludedObservation(event.observation.source, event.observation.refs, form),
-                    )
+            message = _observation_message(event)
+            if message.content:
+                provenance[message.id] = (
+                    message,
+                    IncludedObservation(
+                        event.observation.source,
+                        event.observation.refs,
+                        turn_id=event.turn_id,
+                        step=event.step,
+                        message_id=message.id,
+                    ),
+                )
         included = []
         seen: set[str] = set()
         for message in messages:
@@ -278,32 +253,22 @@ def derive_requests(events: Iterable[SessionEvent]) -> tuple[ModelRequest, ...]:
 
 def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, Message], ...]:
     events = tuple(events)
-    active_turn, active_step, max_summaries = None, None, None
+    active_turn, max_observations = None, None
     observations: dict[str, list[int]] = {}
     for seq, event in enumerate(events):
         match event:
             case TurnStartedEvent(turn_id=turn_id):
                 active_turn = turn_id
-            case StepStartedEvent(turn_id=turn_id, step=step):
-                active_step = (turn_id, step)
-            case StepEndedEvent():
-                active_step = None
             case TurnEndedEvent():
-                active_turn, active_step = None, None
-            case ObservationPolicyAppliedEvent(max_summaries=limit):
-                max_summaries = limit
-            case ObservationRecordedEvent(observation=observation, turn_id=turn_id, step=step):
+                active_turn = None
+            case ObservationPolicyAppliedEvent(max_observations=limit):
+                max_observations = limit
+            case ObservationRecordedEvent(observation=observation):
                 observations.setdefault(observation.source, []).append(seq)
     visible_observations = set()
     for indices in observations.values():
-        older = [
-            seq
-            for seq in indices
-            if isinstance(observation := events[seq], ObservationRecordedEvent)
-            and (observation.turn_id, observation.step) != active_step
-        ]
         visible_observations.update(
-            older if max_summaries is None else older[-max_summaries:] if max_summaries else ()
+            indices if max_observations is None else indices[-max_observations:]
         )
     entries: list[tuple[int, Message]] = []
     originals: list[tuple[int, Message]] = []
@@ -325,7 +290,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
             case SystemMessageEvent(content=content):
                 entries = [(offset, m) for offset, m in entries if m.id != "system"]
                 if content:
-                    entries.insert(0, (seq, System(content, id="system")))
+                    entries.insert(0, (seq, SystemMessage(content, id="system")))
             case UserMessageEvent(message=message) | AssistantMessageEvent(message=message):
                 add(seq, message)
             case ContextMessageEvent(message=message, lifetime=lifetime, turn_id=turn_id):
@@ -337,27 +302,19 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     if value is None
                     else f"<context name={quoteattr(name)}>{escape(value)}</context>"
                 )
-                message = User(content, id=f"context:{event.id}")
+                message = UserMessage(content, id=f"context:{event.id}")
                 add(seq, message)
                 if value is None:
                     current_context.pop(name, None)
                 else:
                     current_context[name] = (seq, message)
-            case ObservationRecordedEvent(observation=observation, turn_id=turn_id, step=step):
-                content = (
-                    observation.full if active_step == (turn_id, step) else observation.summary
-                )
-                if content and (active_step == (turn_id, step) or seq in visible_observations):
-                    form = (
-                        ObservationForm.FULL
-                        if active_step == (turn_id, step)
-                        else ObservationForm.SUMMARY
-                    )
-                    add(seq, _observation_message(event, form))
+            case ObservationRecordedEvent(observation=observation):
+                if observation.content and seq in visible_observations:
+                    add(seq, _observation_message(event))
             case ToolCallFinishedEvent(call_id=call_id, result=result):
                 add(
                     seq,
-                    ToolReply(
+                    ToolMessage(
                         result.content,
                         tool_call_id=call_id,
                         id=call_id,
@@ -404,7 +361,7 @@ def _derive_message_entries(events: Iterable[SessionEvent]) -> tuple[tuple[int, 
                     position,
                     (
                         seq,
-                        System(
+                        SystemMessage(
                             f"Conversation summary:\n{summary}",
                             id=f"compaction:{event.id or seq}",
                         ),

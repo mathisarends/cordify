@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel, field_validator
 
 from harnessed import Agent, Plugin, SessionClosed, SessionStatus, StopReason, tool
-from harnessed.core.messages import User
+from harnessed.core.messages import UserMessage
 from harnessed.events import InboxAddedEvent
 from harnessed.hooks import PreStep, StepDecision
 from harnessed.plugins import JsonlSessions
@@ -51,7 +51,7 @@ async def test_reusing_a_consumed_message_does_not_overwrite_a_running_submissio
 
     model = ScriptedModel([call(Work.work), "first", "second"])
     async with Agent(model=model, plugins=[Work()]).session() as session:
-        message = User("reused input")
+        message = UserMessage("reused input")
         first = await session.submit(message)
         await started.wait()
         second = await session.submit(message)

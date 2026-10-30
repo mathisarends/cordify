@@ -5,7 +5,13 @@ from dataclasses import replace
 
 import pytest
 
-from harnessed.core.messages import Assistant, ImageDetail, ToolCall, ToolReply, User
+from harnessed.core.messages import (
+    AssistantMessage,
+    ImageDetail,
+    ToolCall,
+    ToolMessage,
+    UserMessage,
+)
 
 pytest.importorskip("pydantic_ai")
 
@@ -158,7 +164,7 @@ async def test_interleaved_native_calls_keep_part_indices_names_and_updated_ids(
         yield {1: DeltaToolCall("d", ',"b":3}', tool_call_id="late")}
 
     model = PydanticAIModel(FunctionModel(stream_function=chunks))
-    async with model.stream(ModelRequest("fixture", (User("add"),))) as stream:
+    async with model.stream(ModelRequest("fixture", (UserMessage("add"),))) as stream:
         chunks = [chunk async for chunk in stream]
         response = stream.response()
     assert [c.tool_call_start.index for c in chunks if c.tool_call_start] == [1, 0]
@@ -260,10 +266,12 @@ async def test_native_tools_are_forwarded_and_their_parts_replay_from_provider_s
 
     search = WebSearchTool(max_uses=2)
     model = PydanticAIModel(FunctionModel(respond), native_tools=[search])
-    first = await model.request(ModelRequest("fixture", (User("weather?"),)))
+    first = await model.request(ModelRequest("fixture", (UserMessage("weather?"),)))
     assert first.message.text == "It is sunny." and first.message.tool_calls == ()
     assert first.stop_reason == StopReason.END
-    await model.request(ModelRequest("fixture", (User("weather?"), first.message, User("more"))))
+    await model.request(
+        ModelRequest("fixture", (UserMessage("weather?"), first.message, UserMessage("more")))
+    )
     assert [tools for _, tools in received] == [[search], [search]]
     replayed = received[-1][0][1].parts
     assert [type(part) for part in replayed] == [
@@ -289,7 +297,7 @@ async def test_invalid_native_argument_preview_remains_a_malformed_completed_cal
         yield {0: DeltaToolCall("add", arguments, tool_call_id="invalid")}
 
     model = PydanticAIModel(FunctionModel(stream_function=chunks))
-    async with model.stream(ModelRequest("fixture", (User("add"),))) as stream:
+    async with model.stream(ModelRequest("fixture", (UserMessage("add"),))) as stream:
         chunks = [chunk async for chunk in stream]
         response = stream.response()
     assert any(c.tool_call_delta.arguments == arguments for c in chunks if c.tool_call_delta)
@@ -315,7 +323,7 @@ async def test_non_streaming_request_and_settings_are_delegated_to_pydantic_ai()
 
     model = PydanticAIModel(FunctionModel(respond), settings={"temperature": 0.5})
     response = await model.request(
-        ModelRequest("fixture", (User("hi"),), settings={"temperature": 0})
+        ModelRequest("fixture", (UserMessage("hi"),), settings={"temperature": 0})
     )
     assert response.message.text == "answer" and seen == [{"temperature": 0}]
 
@@ -376,7 +384,7 @@ async def test_edited_signed_history_requires_explicit_provider_state_invalidati
         )
 
     model = PydanticAIModel(FunctionModel(respond))
-    original = (await model.request(ModelRequest("fixture", (User("hi"),)))).message
+    original = (await model.request(ModelRequest("fixture", (UserMessage("hi"),)))).message
     edited = replace(original, **changes)
     with pytest.raises(InvalidRequest, match="clear provider_state"):
         await model.request(ModelRequest("fixture", (edited,)))
@@ -433,7 +441,7 @@ async def test_native_authentication_errors_map_to_host_error_types():
 
     model = PydanticAIModel(FunctionModel(denied))
     with pytest.raises(AuthError):
-        await model.request(ModelRequest("fixture", (User("hi"),)))
+        await model.request(ModelRequest("fixture", (UserMessage("hi"),)))
 
 
 @pytest.mark.parametrize(
@@ -454,7 +462,9 @@ async def test_native_http_failures_map_without_a_second_retry_layer(status, exp
         raise exceptions.ModelHTTPError(status, "fixture", body={"error": "unavailable"})
 
     with pytest.raises(expected) as error:
-        await PydanticAIModel(FunctionModel(failed)).request(ModelRequest("fixture", (User("hi"),)))
+        await PydanticAIModel(FunctionModel(failed)).request(
+            ModelRequest("fixture", (UserMessage("hi"),))
+        )
     assert error.value.status_code == status and len(calls) == 1
 
 
@@ -467,7 +477,7 @@ async def test_user_images_are_translated_without_flattening_the_prompt():
 
     request = ModelRequest(
         "fixture",
-        (User((TextPart("Look"), ImagePart("https://example.test/image.png"))),),
+        (UserMessage((TextPart("Look"), ImagePart("https://example.test/image.png"))),),
     )
     await PydanticAIModel(FunctionModel(respond)).request(request)
     prompt = received[-1].parts[0].content
@@ -567,7 +577,7 @@ async def test_standalone_native_requests_exit_the_model_context_on_success_and_
         return native.ModelResponse(parts=[native.TextPart("done")])
 
     adapter = PydanticAIModel(ResourceModel(respond))
-    request = ModelRequest("fixture", (User("hi"),))
+    request = ModelRequest("fixture", (UserMessage("hi"),))
     if fails:
         with pytest.raises(RuntimeError, match="request failed"):
             await adapter.request(request)
@@ -603,7 +613,7 @@ async def test_aborting_a_native_stream_closes_its_generator():
     model = PydanticAIModel(ResourceModel(stream_function=chunks))
 
     async def consume():
-        async with model.stream(ModelRequest("fixture", (User("hi"),))) as stream:
+        async with model.stream(ModelRequest("fixture", (UserMessage("hi"),))) as stream:
             async for _ in stream:
                 pass
 
@@ -924,8 +934,8 @@ async def test_unsigned_partial_reasoning_is_not_sent_back_to_a_native_provider(
         return native.ModelResponse([native.TextPart("continued")])
 
     model = PydanticAIModel(FunctionModel(respond))
-    partial = Assistant("visible partial", reasoning="interrupted unsigned thought")
-    response = await model.request(ModelRequest("fixture", (partial, User("continue"))))
+    partial = AssistantMessage("visible partial", reasoning="interrupted unsigned thought")
+    response = await model.request(ModelRequest("fixture", (partial, UserMessage("continue"))))
     assert response.message.text == "continued" and partial.reasoning
     parts = [
         part
@@ -949,8 +959,8 @@ async def test_multimodal_tool_returns_are_native_parts_with_preserved_image_det
         ModelRequest(
             "fixture",
             (
-                Assistant(tool_calls=(ToolCall("snapshot", id="call"),)),
-                ToolReply(
+                AssistantMessage(tool_calls=(ToolCall("snapshot", id="call"),)),
+                ToolMessage(
                     (
                         TextPart("page"),
                         ImagePart("https://example.test/page.png", ImageDetail.ORIGINAL),
@@ -995,8 +1005,8 @@ async def test_tool_status_is_not_lost_in_native_model_history(status, exit_code
         ModelRequest(
             "fixture",
             (
-                Assistant(tool_calls=(ToolCall("work", id="call"),)),
-                ToolReply("result", tool_call_id="call", status=status, exit_code=exit_code),
+                AssistantMessage(tool_calls=(ToolCall("work", id="call"),)),
+                ToolMessage("result", tool_call_id="call", status=status, exit_code=exit_code),
             ),
         )
     )

@@ -3,7 +3,7 @@ import json
 import pytest
 
 from harnessed import Agent, Plugin, SystemPrompt
-from harnessed.core.messages import ImageDetail, ImagePart, Role, TextPart, ToolReply, ToolResult
+from harnessed.core.messages import ImageDetail, ImagePart, Role, TextPart, ToolMessage, ToolResult
 from harnessed.core.model import ModelInfo, ModelRequest
 from harnessed.core.session.codec import decode_event, encode_event
 from harnessed.core.session.session import SessionLog
@@ -65,7 +65,7 @@ async def test_multimodal_tool_loop_retains_images_and_metadata_through_replay(t
             count_content(counter, tool_result.content)
             == counter.count_text(tool_result.text) + 1024
         )
-        without_images = ToolReply(history.text, tool_call_id=history.tool_call_id)
+        without_images = ToolMessage(history.text, tool_call_id=history.tool_call_id)
         assert counter.count_request(ModelRequest("vision", (history,))) == (
             counter.count_request(ModelRequest("vision", (without_images,))) + 1024
         )

@@ -14,7 +14,7 @@ from harnessed.core.messages import (
     Message,
     Role,
     TextPart,
-    User,
+    UserMessage,
     freeze,
     system,
     to_dict,
@@ -72,7 +72,7 @@ async def prepare_input(
         )
         for attachment in attachments:
             parts.extend(await attachment.parts())
-        message = User(tuple(parts), id=message.id)
+        message = UserMessage(tuple(parts), id=message.id)
     contributions = []
     for name, value in (context or {}).items():
         if not isinstance(name, str):

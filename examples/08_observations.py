@@ -1,13 +1,14 @@
 """Run with: uv run python -m examples.08_observations (uses an in-memory browser)."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Protocol
 
 from harnessed import Agent, Observation, Plugin, PolicyDecision, Session, ToolCall, tool
-from harnessed.hooks import PreStep
+from harnessed.hooks import Next, PreStep, StepDecision
 from harnessed.kernel import Context, Inject, hook, plugin
-from harnessed.models import ModelChunk
+from harnessed.models import ImagePart, ModelChunk, TextPart
 from harnessed.plugins import Approvals
 from harnessed.testing import ScriptedModel
 
@@ -38,7 +39,7 @@ class DemoBrowser:
     async def snapshot(self) -> PageState:
         return PageState(self.current_url, self.title)
 
-    async def click(self, ref: str):
+    async def click(self, ref: str) -> None:
         if ref != "settings":
             raise ValueError(f"Unknown ref: {ref}")
         self.current_url = "https://example.test/settings"
@@ -46,20 +47,30 @@ class DemoBrowser:
 
 
 @plugin
-async def browser_backend(ctx: Context):
+async def browser_backend(ctx: Context) -> AsyncGenerator[None]:
     ctx.provide(Browser, DemoBrowser())
     yield
 
 
 class BrowserObserver(Plugin, needs=(Browser, Session)):
     @hook(PreStep)
-    async def observe(self, event, next_, browser: Inject[Browser], session: Inject[Session]):
+    async def observe(
+        self,
+        event: PreStep,
+        next_: Next[StepDecision],
+        browser: Inject[Browser],
+        session: Inject[Session],
+    ) -> StepDecision:
         state = await browser.snapshot()
         session.observe(
             Observation(
                 source="browser",
-                full=state.render(),
-                summary=f"[page state: {state.url} - {state.title}]",
+                content=(
+                    TextPart(state.render()),
+                    # ScriptedModel records this reference without downloading it.
+                    ImagePart(f"https://example.test/screenshots/{state.title.lower()}.png"),
+                ),
+                refs=(state.url,),
             )
         )
         return await next_()

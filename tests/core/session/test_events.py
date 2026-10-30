@@ -8,7 +8,7 @@ import pytest
 from harnessed import Agent as Application
 from harnessed import Plugin, PolicyDecision, ToolCall, ToolResult, tool
 from harnessed.core.hooks import PrepareRequest
-from harnessed.core.messages import Assistant, System, User
+from harnessed.core.messages import AssistantMessage, SystemMessage, UserMessage
 from harnessed.core.model import ModelChunk
 from harnessed.core.plugin import Bundle
 from harnessed.core.session.codec import decode_event, encode_event
@@ -120,7 +120,7 @@ async def test_exact_requests_include_request_hook_changes_without_rerunning_the
     async def configure(event, next_):
         invocations.append(True)
         request = await next_()
-        return replace(request, messages=(*request.messages, System("request context")))
+        return replace(request, messages=(*request.messages, SystemMessage("request context")))
 
     async with harness.session("request-snapshot") as agent:
         await agent.run("hello")
@@ -141,9 +141,9 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
     for event in (
         TurnStartedEvent("turn"),
         StepStartedEvent("turn", 1),
-        UserMessageEvent(User("hello")),
+        UserMessageEvent(UserMessage("hello")),
         AssistantMessageEvent(
-            Assistant("partial", reasoning="thinking", id="reply"),
+            AssistantMessage("partial", reasoning="thinking", id="reply"),
             interrupted=True,
             request_id="request",
         ),
@@ -169,7 +169,7 @@ async def test_resume_repairs_a_crash_after_interrupted_message_without_repeatin
 async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     events = (
         TurnStartedEvent("turn"),
-        AssistantMessageEvent(Assistant("one two", id="reply"), request_id="request"),
+        AssistantMessageEvent(AssistantMessage("one two", id="reply"), request_id="request"),
     )
     partial = derive_messages(events)
     assert len(partial) == 1 and partial[0].text == "one two"
@@ -177,7 +177,7 @@ async def test_partial_streams_and_forks_do_not_duplicate_completed_messages():
     assert derive_messages(completed) == partial
     parent = SessionLog("parent", seed=completed)
     child = parent.fork("child")
-    await child.append(UserMessageEvent(User("another branch")))
+    await child.append(UserMessageEvent(UserMessage("another branch")))
     assert parent.events == completed and parent.messages == partial
     assert len(child.messages) == 2 and child.events[: len(completed)] == parent.events
 

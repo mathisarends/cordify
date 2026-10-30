@@ -289,7 +289,12 @@ class Session:
         return await self.inbox.steer(content, attachments=attachments)
 
     def observe(self, observation: Observation) -> None:
-        """Buffer the latest state per source; the next step records it."""
+        """Buffer a text/image snapshot per source for the next step.
+
+        A newer pending snapshot replaces the same source before recording.
+        Recorded snapshots remain unchanged until compaction or an explicit
+        observation retention policy removes them from model history.
+        """
         self.control.check_open()
         self._steps.observe(observation)
 

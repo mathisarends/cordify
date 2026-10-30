@@ -17,7 +17,7 @@ from harnessed.core.errors import (
     RateLimited,
 )
 from harnessed.core.messages import (
-    Assistant,
+    AssistantMessage,
     ContentPart,
     MalformedArguments,
     Role,
@@ -361,7 +361,7 @@ def _response(response: NativeResponse) -> ModelResponse:
         else:
             raise ProviderError(f"Unsupported response part: {type(part).__name__}")
     raw = native.ModelMessagesTypeAdapter.dump_python([response], mode="json")[0]
-    message = Assistant(
+    message = AssistantMessage(
         "".join(text),
         tuple(calls),
         reasoning="".join(thinking),

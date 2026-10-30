@@ -14,7 +14,7 @@ from harnessed import (
     tool,
 )
 from harnessed.core.hooks import PreStep
-from harnessed.core.messages import ImageDetail, ImagePart, Role, User, user
+from harnessed.core.messages import ImageDetail, ImagePart, Role, UserMessage, user
 from harnessed.core.model import ModelChunk
 from harnessed.core.prompt.context import DynamicContext
 from harnessed.core.session.codec import decode_event, encode_event
@@ -159,14 +159,14 @@ async def test_explicit_class_needs_and_injected_dynamic_project_context(tmp_pat
         assert any("second rules" in message.text for message in model.requests[1].messages)
 
 
-async def test_observations_use_full_current_state_and_summaries_in_later_steps_and_replay():
+async def test_observations_remain_unchanged_in_later_steps_replay_and_forks():
     states = iter(["before", "after"])
 
     class BrowserObserver(Plugin, needs=(Session,)):
         @hook(PreStep)
         async def observe(self, event, next_, agent: Inject[Session]):
             state = next(states)
-            agent.observe(Observation("browser", f"FULL {state} refs", f"SUMMARY {state}"))
+            agent.observe(Observation("browser", f"FULL {state} refs"))
             return await next_()
 
     class ToolsPlugin(Plugin):
@@ -183,12 +183,15 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
         await agent.run("Open settings")
         assert model.requests[0].messages[-1].text == "FULL before refs"
         texts = [m.text for m in model.requests[1].messages]
-        assert "SUMMARY before" in texts and "FULL before refs" not in texts
+        assert "FULL before refs" in texts
         assert texts[-1] == "FULL after refs"
         assert any(isinstance(e, ObservationRecordedEvent) for e in agent.log.events)
         replay = SessionLog("replay", seed=agent.log.events)
         assert replay.messages == agent.log.messages
-        assert all(not m.text.startswith("FULL") for m in replay.messages)
+        assert [m.text for m in replay.messages if m.text.startswith("FULL")] == [
+            "FULL before refs",
+            "FULL after refs",
+        ]
         fork = agent.log.fork("fork")
         assert fork.messages == replay.messages
 
@@ -196,5 +199,5 @@ async def test_observations_use_full_current_state_and_summaries_in_later_steps_
 async def test_remote_images_are_references_without_download():
     parts = await Image("https://example.com/screenshot.png", detail=ImageDetail.LOW).parts()
     assert parts == (ImagePart("https://example.com/screenshot.png", ImageDetail.LOW),)
-    message = User(list(parts))
+    message = UserMessage(list(parts))
     assert isinstance(message.content, tuple)

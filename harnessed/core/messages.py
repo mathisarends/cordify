@@ -279,7 +279,7 @@ class _NoCallID:
 
 
 @dataclass(frozen=True)
-class System(_PlainMessage, _NoCallID):
+class SystemMessage(_PlainMessage, _NoCallID):
     __hash__ = None
     content: str = ""
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
@@ -291,7 +291,7 @@ class System(_PlainMessage, _NoCallID):
 
 
 @dataclass(frozen=True)
-class User(_PlainMessage, _NoCallID):
+class UserMessage(_PlainMessage, _NoCallID):
     __hash__ = None
     content: str | tuple[ContentPart, ...] = ""
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
@@ -304,7 +304,7 @@ class User(_PlainMessage, _NoCallID):
 
 
 @dataclass(frozen=True)
-class Assistant(_MessageText, _NoCallID):
+class AssistantMessage(_MessageText, _NoCallID):
     __hash__ = None
     content: str = ""
     tool_calls: tuple[ToolCall, ...] = ()
@@ -323,7 +323,7 @@ class Assistant(_MessageText, _NoCallID):
 
 
 @dataclass(frozen=True)
-class ToolReply(_PlainMessage):
+class ToolMessage(_PlainMessage):
     __hash__ = None
     content: str | tuple[ContentPart, ...] = ""
     tool_call_id: str = field(kw_only=True)
@@ -346,27 +346,35 @@ class ToolReply(_PlainMessage):
         return self.status != ToolStatus.OK or self.exit_code not in (None, 0)
 
 
-type Message = Annotated[System | User | Assistant | ToolReply, Field(discriminator="role")]
+type Message = Annotated[
+    SystemMessage | UserMessage | AssistantMessage | ToolMessage, Field(discriminator="role")
+]
 
 
-def user(text: str) -> User:
-    return User(text)
+def user(text: str) -> UserMessage:
+    return UserMessage(text)
 
 
-def system(text: str) -> System:
-    return System(text)
+def system(text: str) -> SystemMessage:
+    return SystemMessage(text)
 
 
 @dataclass(frozen=True)
 class Observation:
+    """An immutable state snapshot retained until compaction or an explicit policy.
+
+    Text and images share one message and lifecycle. Refs identify the observed
+    state for applications; they are not interpreted as attachment locations.
+    """
+
     source: str
-    full: str
-    summary: str
+    content: str | tuple[ContentPart, ...]
     refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.source:
+        if not isinstance(self.source, str) or not self.source:
             raise ValueError("Observations require a source")
+        object.__setattr__(self, "content", _content(self.content))
         refs = tuple(self.refs)
         if any(not isinstance(ref, str) for ref in refs):
             raise TypeError("Observation refs must be strings")

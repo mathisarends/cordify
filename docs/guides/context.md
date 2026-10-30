@@ -222,9 +222,46 @@ travel with that run using `File(...)` or `Image(...)`.
 turn before its next step. While idle, it starts a new turn without waiting for
 its result. Concurrent `run(...)` calls queue separate turns.
 
-An Observation represents a current state, with full text and a compact summary.
-Observation policies can retain only the latest full state. Historical events
-remain available in the log; projected model history chooses the appropriate view.
+An `Observation` is an immutable state snapshot supplied by the application. A
+plugin can capture it automatically in `PreStep`, before every model invocation;
+the model does not need to call an observation tool. The existing
+`session.observe()` method buffers the latest pending snapshot per source and the
+runtime records it with the current turn and step.
+
+```python
+from harnessed import Observation
+from harnessed.models import ImagePart, TextPart
+
+# Inside a PreStep hook, after capturing the browser state:
+event.session.observe(
+    Observation(
+        source="browser",
+        content=(TextPart(browser_text), ImagePart(screenshot_url)),
+        refs=(snapshot_id,),
+    )
+)
+```
+
+`content` accepts a string or a tuple of text and image parts, including an
+image-only tuple. Text and images are projected together as one `UserMessage`.
+The user role is the model's input role; it does not mean a human authored the
+snapshot. `refs` identify application state and are not attachment locations.
+
+Recorded snapshots keep the same content, identity and history position after
+their step ends. They are not automatically replaced by summaries. Ordinary
+steps append to the existing request prefix, which allows provider caches and
+the JSONL prefix codec to reuse unchanged history. This does not guarantee a
+particular provider cache hit rate.
+
+Compaction removes old snapshots with their steps, including their images, in
+the request that applies the summary. `Compaction(keep_steps=5, ...)` retains five
+completed steps in the active turn plus the current step; this is retention at
+compaction boundaries, not a window that removes a snapshot after every step.
+To explicitly replace older state instead, install `LatestObservationOnly()`
+from `harnessed.plugins`. It retains one unchanged snapshot per source and can
+change the request prefix whenever a replacement arrives. Original snapshots
+remain available in the durable log under either policy.
+
 Large knowledge bases fit tool retrieval: injected services perform the search,
 and the model requests the tool when needed. Retrieval avoids paying for unused
 knowledge on every step.
@@ -233,17 +270,17 @@ Attach application identifiers with `Observation(..., refs=("hint-1", "hint-2"))
 These refs are durable metadata, separate from the rendered text. After all
 request hooks and compaction, `ObservationsIncludedEvent` follows
 `ModelRequestedEvent` with the same `request_id`. Each `IncludedObservation`
-contains `source`, `refs` and `form`, an `ObservationForm.FULL` or
-`ObservationForm.SUMMARY` value from `harnessed.events`.
+contains `source`, `refs`, `turn_id`, `step` and `message_id`.
 
-Use this event to acknowledge delivered hints: consume refs only for the relevant
-source and full form. Old summaries can still contain refs and are reported as
-summaries. An empty inclusion tuple means no observation message survived in that
-request. Message IDs encode the observation and its rendered form; transformations
-must retain the message's identity and content to retain its provenance. A hook
-that removes, redacts or rewrites an observation excludes that message from the
-event, as does compaction. Text matching an application ID elsewhere in the prompt
-never counts as inclusion.
+Use this event to acknowledge included hints or select the screenshot used by
+coordinate tools. Match the relevant source and refs, and use the explicit turn,
+step and message identity instead of parsing message IDs. An empty inclusion
+tuple means no observation message survived in that request. Transformations
+must retain the message's identity and complete content to retain its provenance:
+removing an image, redacting text or dropping a snapshot removes its receipt, as
+does compaction. Text matching an application ID elsewhere in the prompt never
+counts as inclusion. A receipt describes the final submitted request, not proof
+that a provider accepted it or that the model perceived a particular detail.
 
 | Information | Mechanism |
 | --- | --- |

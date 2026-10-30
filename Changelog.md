@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Stable multimodal observations and explicit message names
+
+- Rename message classes to `SystemMessage`, `UserMessage`, `AssistantMessage`
+  and `ToolMessage` throughout `harnessed.models`, examples and provider history.
+  The old short names are removed; `user()` and `system()` remain convenience
+  constructors.
+- Replace `Observation.full` / `.summary` with one immutable `content` value:
+  text or a tuple of `TextPart` and `ImagePart`. Automatic `PreStep` capture still
+  uses `session.observe()`. Recorded snapshots keep their content, identity and
+  position until compaction or an explicitly installed retention policy.
+- Compact observations with their complete text/image content in the same
+  request. Existing `Compaction(keep_steps=5, ...)` retains five completed steps
+  in the active turn plus the current step without rewriting their snapshots.
+- Make `LatestObservationOnly()` an explicit one-snapshot-per-source policy;
+  remove `max_summaries`. Omitting it retains snapshots until compaction.
+- Replace full/summary provenance with `IncludedObservation.source`, `.refs`,
+  `.turn_id`, `.step` and `.message_id`. Receipts match the complete final
+  text/image message, so removing an image also removes its receipt.
+- Advance session records to version **3** and remove pre-request-ID restoration.
+  Older formats fail without rewriting the stored log; no migration is provided.
+
+### Upgrade from 0.6.0
+
+1. Import the explicit message names from `harnessed.models`. Replace `ToolReply`
+   with `ToolMessage` and the other short class names with their `Message` names.
+2. Pass `Observation(source, content, refs=())` instead of full and summary text.
+   Put screenshots in the same content tuple as their text. Browser integrations
+   can remove request-time image insertion and observation-ID parsing.
+3. Omit `LatestObservationOnly` to preserve full snapshots until compaction, or
+   instantiate it without arguments to keep only the latest per source. Review
+   context budgets because old observations are no longer shortened every step.
+4. Read final inclusion refs and explicit turn/step/message identities instead of
+   `ObservationForm`. Message ID formatting remains internal. Snapshot captions
+   and important visual findings should be textual if they must survive the
+   default text-only compaction summarizer.
+5. Back up existing sessions and start a new version **3** store. Retained images
+   round-trip through observation events and request snapshots; JSONL still uses
+   prefix deltas rather than a content-addressed blob store.
+
 ## 0.6.0 (2026-10-30)
 
 This release adds explicit Docker and Bubblewrap sandboxes and hardens MCP

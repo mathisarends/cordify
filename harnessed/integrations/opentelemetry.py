@@ -8,7 +8,14 @@ from typing import Any
 from opentelemetry import trace
 from pydantic import Field
 
-from harnessed.core.messages import Assistant, Message, ToolCall, ToolResult, ToolStatus, to_dict
+from harnessed.core.messages import (
+    AssistantMessage,
+    Message,
+    ToolCall,
+    ToolResult,
+    ToolStatus,
+    to_dict,
+)
 from harnessed.core.model import ModelRequest, ModelUsage
 from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.runtime.control import StopAtBoundary
@@ -103,7 +110,7 @@ class _Span:
                 self.content("input", [_message(message) for message in value.messages])
         elif isinstance(value, ModelUsage):
             self.usage(value)
-        elif isinstance(value, Assistant):
+        elif isinstance(value, AssistantMessage):
             if self.config.capture_content:
                 self.content("output", _message(value))
         elif isinstance(value, ToolCall):

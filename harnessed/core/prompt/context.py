@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from xml.sax.saxutils import escape, quoteattr
 
 from harnessed.core.hooks import PreStep, StepDecision
-from harnessed.core.messages import User
+from harnessed.core.messages import UserMessage
 from harnessed.core.plugin import Plugin
 from harnessed.core.session.events import ContextValueChangedEvent
 from harnessed.core.session.session import SessionLog
@@ -42,10 +42,10 @@ class DynamicContext:
         return {item.name: item.value for item in self._owned if item.registration.active}
 
     @property
-    def owned_messages(self) -> tuple[User, ...]:
+    def owned_messages(self) -> tuple[UserMessage, ...]:
         """Active mount instructions, kept out of durable named-fact history."""
         return tuple(
-            User(
+            UserMessage(
                 f"<context name={quoteattr(name)}>{escape(value)}</context>",
                 id=f"mount-context:{name}",
             )
