@@ -102,7 +102,7 @@ class BackgroundCommands:
         except KeyError:
             raise ToolError("Unknown command_id (another mount or evicted result)") from None
 
-    def list(self) -> tuple[CommandInfo, ...]:
+    def summaries(self) -> tuple[CommandInfo, ...]:
         return tuple(
             CommandInfo(command.id, command.argv, snapshot.state, snapshot.returncode)
             for command in self._commands.values()

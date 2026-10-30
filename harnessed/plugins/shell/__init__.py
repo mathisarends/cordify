@@ -256,7 +256,7 @@ class BackgroundShell(Plugin, needs=(ShellBackend, ToolRegistry, SessionInbox)):
     @tool(readonly=True, parallel=True)
     def list_commands(self) -> tuple[CommandInfo, ...]:
         """List this mount's retained command IDs, argv, states and exit codes."""
-        return self._commands.list()
+        return self._commands.summaries()
 
 
 __all__ = [
