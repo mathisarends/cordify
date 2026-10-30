@@ -8,6 +8,8 @@ from pydantic import Field, model_validator
 
 from harnessed.core.errors import SandboxError as SandboxError
 from harnessed.core.plugin import PluginConfig
+from harnessed.plugins.filesystem import FileSystemBackend
+from harnessed.plugins.shell import ShellBackend
 
 
 class NetworkAccess(StrEnum):
@@ -76,23 +78,23 @@ class ProcessOutput:
 
 
 class SandboxBackend(Protocol):
-    """One fresh backend per mount; all calls must share the configured workspace.
+    """Own one isolated workspace and its typed services for a single mount.
 
-    invoke runs the bundled JSON worker protocol. It must bound capture,
-    enforce the deadline and terminate its workload
-    on cancellation. aclose must be idempotent and work after partial startup.
-    Backends must fail when isolation or resource controls are unavailable.
+    start returns only after both services are ready and configured isolation and
+    resource controls are enforced. Service operations handle later connection
+    loss without replaying commands. aclose must be idempotent after partial
+    startup and invalidate previously obtained services.
     """
 
-    async def start(self, config: SandboxConfig) -> None: ...
+    async def start(self, config: SandboxConfig) -> None:
+        """Establish and verify readiness before exposing shell or file_system."""
+        ...
 
-    async def invoke(
-        self,
-        payload: bytes,
-        *,
-        timeout: float,
-        max_output_bytes: int,
-    ) -> ProcessOutput: ...
+    @property
+    def shell(self) -> ShellBackend: ...
+
+    @property
+    def file_system(self) -> FileSystemBackend: ...
 
     async def aclose(self) -> None: ...
 

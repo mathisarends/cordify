@@ -27,9 +27,10 @@ class FileStat:
 
 
 class FileSystemBackend(Protocol):
-    """Structural filesystem seam; offsets and limits count Unicode characters."""
+    """Workspace operations with character-based text ranges and byte-based binary limits."""
 
     async def read(self, path: PurePath, *, offset: int = 0, limit: int | None = None) -> str: ...
+    async def read_bytes(self, path: PurePath, *, limit: int | None = None) -> bytes: ...
     async def write(self, path: PurePath, text: str) -> None: ...
     async def list(self, path: PurePath) -> Sequence[FileStat]: ...
     async def glob(self, pattern: str, *, limit: int = 1000) -> Sequence[PurePath]: ...
@@ -63,6 +64,17 @@ class LocalFileSystem:
                     if not chunk:
                         return ""
                     remaining -= len(chunk)
+                return stream.read() if limit is None else stream.read(limit)
+
+        return await run_sync(read)
+
+    async def read_bytes(self, path: PurePath, *, limit: int | None = None) -> bytes:
+        """Read at most limit bytes, or the complete file when no limit is set."""
+        if limit is not None and limit < 0:
+            raise ValueError("File ranges must be non-negative")
+
+        def read() -> bytes:
+            with self._path(path).open("rb") as stream:
                 return stream.read() if limit is None else stream.read(limit)
 
         return await run_sync(read)

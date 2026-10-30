@@ -28,7 +28,7 @@ class Operation(StrEnum):
     EXISTS = "exists"
     DELETE = "delete"
     REPLACE = "replace"
-    EXPORT = "export"
+    READ_BYTES = "read_bytes"
     IMPORT = "import"
 
 
@@ -305,13 +305,20 @@ def dispatch(request: Request) -> object:
             return [metadata(str(PurePosixPath(request.path, name))) for name in sorted(names)]
         case Operation.GLOB:
             return matches(request.path, request.limit if request.limit is not None else 1000)
-        case Operation.EXPORT:
+        case Operation.READ_BYTES:
+            if request.limit is not None and request.limit < 0:
+                raise ValueError("File ranges must be non-negative")
+            maximum = request.max_transfer_bytes + 1
+            if request.limit is not None:
+                maximum = min(maximum, request.limit)
             with opened(request.path) as fd, os.fdopen(os.dup(fd), "rb") as stream:
-                data = stream.read(request.max_transfer_bytes + 1)
+                data = stream.read(maximum)
             if len(data) > request.max_transfer_bytes:
                 raise ValueError("Export exceeds max_transfer_bytes")
             return base64.b64encode(data).decode("ascii")
         case Operation.IMPORT:
+            with opened(".", directory=True):
+                pass
             data = base64.b64decode(request.text, validate=True)
             if len(data) > request.max_transfer_bytes:
                 raise ValueError("Workspace import exceeds max_transfer_bytes")

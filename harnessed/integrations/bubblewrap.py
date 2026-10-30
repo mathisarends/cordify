@@ -1,7 +1,4 @@
-import base64
-import json
 import sys
-from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 from uuid import uuid4
@@ -24,6 +21,7 @@ from harnessed.integrations.sandbox import (
 from harnessed.integrations.sandbox import (
     Workspace as Workspace,
 )
+from harnessed.integrations.sandbox._runtime import RuntimeState, WorkerRuntime
 from harnessed.integrations.sandbox.process import WorkerProcess, finish, run_process
 from harnessed.integrations.sandbox.types import ProcessOutput, environment
 from harnessed.integrations.sandbox.workspace import seed_archive, source_root
@@ -51,7 +49,7 @@ def verify_limits(
         raise SandboxError("Required CPU quota was not enforced")
 
 
-class BubblewrapBackend:
+class BubblewrapBackend(WorkerRuntime):
     """Linux namespaces plus verified cgroup-v2 limits through the user systemd manager.
 
     rootfs is an application-supplied trusted Linux root filesystem containing
@@ -67,6 +65,7 @@ class BubblewrapBackend:
         systemctl: str = "systemctl",
         python: str = "python3",
     ) -> None:
+        super().__init__()
         self.rootfs = Path(rootfs)
         self.executable = executable
         self.systemd_run = systemd_run
@@ -75,10 +74,10 @@ class BubblewrapBackend:
         self.unit = f"harnessed-{uuid4().hex}.scope"
         self.channel = WorkerProcess()
         self._attempted = False
-        self._closed = False
         self._removed = False
 
     async def start(self, config: SandboxConfig) -> None:
+        client = self._begin_start(config)
         if sys.platform != "linux":
             raise SandboxError("Bubblewrap requires Linux, cgroup v2 and a user systemd manager")
         self.config = config
@@ -167,34 +166,25 @@ class BubblewrapBackend:
             await run_sync(partial(verify_limits, group.stdout.decode().strip(), limits))
         except (OSError, ValueError) as error:
             raise SandboxError("Bubblewrap requires enforced cgroup-v2 resource limits") from error
-        if seed is not None:
-            request = worker.Request(
-                operation=worker.Operation.IMPORT,
-                text=base64.b64encode(seed).decode("ascii"),
-                max_transfer_bytes=limits.max_transfer_bytes,
-            )
-            output = await self.invoke(
-                json.dumps(asdict(request)).encode(),
-                timeout=config.startup_timeout,
-                max_output_bytes=65_536,
-            )
-            reply = json.loads(output.stdout)
-            if reply.get("error") is not None:
-                raise SandboxError(f"Could not initialize sandbox workspace: {reply['error']}")
+        await client.initialize(seed)
+        self._mark_ready()
 
-    async def invoke(
+    async def _request(
         self, payload: bytes, *, timeout: float, max_output_bytes: int
     ) -> ProcessOutput:
-        if self._closed:
-            raise SandboxError("Bubblewrap sandbox is closed")
+        if self._state not in (RuntimeState.STARTING, RuntimeState.READY):
+            raise SandboxError(f"Bubblewrap sandbox is not available: {self._state}")
         try:
-            return await self.channel.invoke(payload, timeout=timeout, maximum=max_output_bytes)
+            return await self.channel.request(payload, timeout=timeout, maximum=max_output_bytes)
+        except OSError as error:
+            await finish(self.aclose())
+            raise SandboxError("Bubblewrap worker connection was lost") from error
         except BaseException:
             await finish(self.aclose())
             raise
 
     async def aclose(self) -> None:
-        self._closed = True
+        self._state = RuntimeState.CLOSED
         if self._removed:
             return
         try:

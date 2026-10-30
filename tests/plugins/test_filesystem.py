@@ -11,6 +11,17 @@ from harnessed.plugins.filesystem import Filesystem, LocalFileSystem
 from harnessed.testing import ScriptedModel
 
 
+async def test_binary_reads_preserve_bytes_and_apply_byte_limits(tmp_path):
+    data = b"\xff\x00" + "ä😀".encode()
+    (tmp_path / "binary.bin").write_bytes(data)
+    file_system = LocalFileSystem(tmp_path)
+    assert await file_system.read_bytes(Path("binary.bin")) == data
+    assert await file_system.read_bytes(Path("binary.bin"), limit=3) == data[:3]
+    assert await file_system.read_bytes(Path("binary.bin"), limit=0) == b""
+    with pytest.raises(ValueError, match="non-negative"):
+        await file_system.read_bytes(Path("binary.bin"), limit=-1)
+
+
 async def test_ranged_reads_never_read_the_entire_file(tmp_path, monkeypatch):
     content = "ä😀abc" * 40_000
     path = tmp_path / "large.txt"

@@ -33,6 +33,12 @@ async def exercise(sandbox: Sandbox, directory: Path) -> None:
     async with agent.session() as session:
         result = await session.run("Create a file and read it through the shell.")
         await sandbox.export(session, source="result.txt", destination=directory / "exported.txt")
+        services = sandbox.services(session)
+        shell = services.shell
+        file_system = services.file_system
+        version = await shell.run(["python3", "--version"], cwd=Path("."), timeout=5)
+        print(version.stdout.strip())
+        print(await file_system.read(Path("result.txt")))
         print(result.text)
         print((directory / "exported.txt").read_text(encoding="utf-8"))
 

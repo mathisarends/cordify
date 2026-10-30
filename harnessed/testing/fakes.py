@@ -63,6 +63,12 @@ class _MemoryFiles:
                 raise NotADirectoryError(str(parent))
         self.files[key] = text
 
+    async def read_bytes(self, path: PurePath, *, limit: int | None = None) -> bytes:
+        if limit is not None and limit < 0:
+            raise ValueError("File ranges must be non-negative")
+        text = await self.read(path)
+        return text.encode("utf-8")[:limit]
+
     async def list(self, path: PurePath):
         key = _path(path)
         if not (await self.stat(path)).is_dir:

@@ -9,6 +9,9 @@
 - Expose the full filesystem tool set through `FilesystemTools` and interpret
   `ShellTools(cwd=...)` in the selected backend's filesystem. Add a typed factory
   contract for additional sandbox backends and native-runtime opt-in tests.
+- Expose ready `shell` and `file_system` services through the sandbox lifecycle
+  contract and `sandbox.services(session)`. Keep worker transport internal and add
+  bounded binary reads to filesystem backends for explicit exports.
 
 ## 0.5.0 (2026-10-30)
 

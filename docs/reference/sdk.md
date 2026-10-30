@@ -39,8 +39,14 @@ their native runtimes must be installed separately. Docker also accepts `runtime
 for an application-configured OCI runtime.
 
 `await sandbox.export(session, source=..., destination=...)` exports one bounded
-binary file while that recipe's session mount is live. `Sandbox(backend=factory,
-workspace=...)` accepts custom `SandboxBackend` implementations. See
+binary file while that recipe's session mount is live. `sandbox.services(session)`
+returns typed `SandboxServices`: assign `shell = services.shell` and
+`file_system = services.file_system` for direct `shell.run(...)`,
+`file_system.read(...)` and `file_system.read_bytes(...)` calls.
+`Sandbox(backend=MyBackend, workspace=...)` accepts a zero-argument constructor or
+factory returning `SandboxBackend`. Its asynchronous `start()` guarantees readiness,
+its `shell` and `file_system` properties expose the existing typed backend contracts,
+and `aclose()` owns cleanup. Worker transport remains internal to integrations. See
 [sandboxes](../guides/sandboxes.md) for defaults, lifecycle, security boundaries,
 runtime requirements and the extension protocol.
 

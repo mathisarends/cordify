@@ -1,6 +1,4 @@
-import base64
 import json
-from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 from typing import Literal
@@ -26,6 +24,7 @@ from harnessed.integrations.sandbox import (
 from harnessed.integrations.sandbox import (
     Workspace as Workspace,
 )
+from harnessed.integrations.sandbox._runtime import RuntimeState, WorkerRuntime
 from harnessed.integrations.sandbox.process import finish, run_process
 from harnessed.integrations.sandbox.types import ProcessOutput, environment
 from harnessed.integrations.sandbox.workspace import seed_archive, source_root
@@ -40,7 +39,7 @@ class _EngineInfo(BaseModel):
     cpu: Literal[True] = Field(alias="CpuCfsQuota")
 
 
-class DockerBackend:
+class DockerBackend(WorkerRuntime):
     """Docker CLI transport; images must contain Python 3.12+ and be pre-pulled.
 
     A non-default OCI runtime (for example runsc) can be selected explicitly.
@@ -55,6 +54,7 @@ class DockerBackend:
         runtime: str | None = None,
         python: str = "python3",
     ) -> None:
+        super().__init__()
         if not image or image.startswith("-"):
             raise ValueError("An explicit container image is required")
         self.image = image
@@ -63,13 +63,13 @@ class DockerBackend:
         self.python = python
         self.name = f"harnessed-{uuid4().hex}"
         self._attempted = False
-        self._closed = False
         self._removed = False
 
     async def command(self, argv: list[str], *, timeout: float = 30.0) -> ProcessOutput:
         return await run_process([self.executable, *argv], timeout=timeout)
 
     async def start(self, config: SandboxConfig) -> None:
+        client = self._begin_start(config)
         self.config = config
         limits = config.limits
         root = await run_sync(partial(source_root, config.workspace))
@@ -164,20 +164,8 @@ class DockerBackend:
         self.check(created, "create")
         started = await self.command(["start", self.name], timeout=config.startup_timeout)
         self.check(started, "start")
-        request = worker.Request(
-            operation=worker.Operation.IMPORT if seed is not None else worker.Operation.EXISTS,
-            text=base64.b64encode(seed).decode("ascii") if seed is not None else "",
-            max_transfer_bytes=limits.max_transfer_bytes,
-        )
-        output = await self.invoke(
-            json.dumps(asdict(request)).encode(),
-            timeout=config.startup_timeout,
-            max_output_bytes=65_536,
-        )
-        self.check(output, "initialize workspace")
-        reply = json.loads(output.stdout)
-        if reply.get("error") is not None:
-            raise SandboxError(f"Could not initialize sandbox workspace: {reply['error']}")
+        await client.initialize(seed)
+        self._mark_ready()
 
     @staticmethod
     def check(output: ProcessOutput, operation: str) -> None:
@@ -185,25 +173,30 @@ class DockerBackend:
             detail = output.stderr.decode("utf-8", errors="replace")[:2000]
             raise SandboxError(f"Docker could not {operation}: {detail}")
 
-    async def invoke(
+    async def _request(
         self, payload: bytes, *, timeout: float, max_output_bytes: int
     ) -> ProcessOutput:
-        if self._closed:
-            raise SandboxError("Docker sandbox is closed")
-        script = await run_sync(partial(Path(worker.__file__).read_text, encoding="utf-8"))
+        if self._state not in (RuntimeState.STARTING, RuntimeState.READY):
+            raise SandboxError(f"Docker sandbox is not available: {self._state}")
         try:
-            return await run_process(
+            script = await run_sync(partial(Path(worker.__file__).read_text, encoding="utf-8"))
+            output = await run_process(
                 [self.executable, "exec", "-i", self.name, self.python, "-I", "-c", script],
                 input=payload,
                 timeout=timeout,
                 max_output_bytes=max_output_bytes,
             )
+            self.check(output, "execute worker request")
+            return output
+        except OSError as error:
+            await finish(self.aclose())
+            raise SandboxError("Docker worker connection was lost") from error
         except BaseException:
             await finish(self.aclose())
             raise
 
     async def aclose(self) -> None:
-        self._closed = True
+        self._state = RuntimeState.CLOSED
         if not self._attempted or self._removed:
             return
         output = await self.command(["rm", "--force", "--volumes", self.name])

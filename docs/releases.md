@@ -14,6 +14,9 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 - `FilesystemTools` now includes discovery, editing and deletion. `ShellTools`
   passes relative working directories to its backend instead of resolving them
   against the host at mount time. See [sandboxes](guides/sandboxes.md).
+- Resolve typed `shell` and `file_system` handles with `sandbox.services(session)`.
+  Custom sandbox backends supply these services after asynchronous readiness,
+  without implementing the internal worker protocol.
 
 ## Compatibility policy
 

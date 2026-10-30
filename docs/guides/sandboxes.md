@@ -17,6 +17,8 @@ image containing Python 3.12 or newer, for example `docker pull python:3.12-slim
 Image pulling is never automatic. Pin an image digest for reproducible deployments.
 
 ```python
+from pathlib import Path
+
 from harnessed import Agent
 from harnessed.integrations.docker import DockerSandbox, Workspace
 from harnessed.plugins import FilesystemTools, ShellTools
@@ -29,12 +31,26 @@ agent = Agent(model=model, plugins=[sandbox, ShellTools(), FilesystemTools()])
 
 async with agent.session() as session:
     await session.run("Create a report at reports/result.md.")
+    services = sandbox.services(session)
+    shell = services.shell
+    file_system = services.file_system
+
+    result = await shell.run(["python3", "--version"], cwd=Path("."), timeout=30)
+    report = await file_system.read(Path("reports/result.md"))
     await sandbox.export(
         session,
         source="reports/result.md",
         destination="./output/result.md",
     )
 ```
+
+`sandbox.services(session)` returns immutable, typed `SandboxServices` with
+`shell` and `file_system` fields for that recipe's live session mount. Resolve
+them once and call `shell.run(...)`, `file_system.read(...)`,
+`file_system.write(...)` or `file_system.read_bytes(...)` directly. The services
+are also available through the existing kernel injection contracts. These direct
+Python calls are application operations; model tool calls still pass through the
+tool registry and approval policy.
 
 Each mount creates a fresh container, a read-only root filesystem and bounded
 tmpfs mounts for `/workspace` and `/tmp`. The workload runs as UID/GID 65532,
@@ -145,6 +161,14 @@ tool, and must happen before session close. Copied data is discarded on close;
 reopening a durable conversation creates a fresh sandbox from the configured
 source. Session forks do not snapshot the sandbox filesystem.
 
+Session startup awaits the asynchronous backend `start()` before making its
+services available. A successful return guarantees the workspace and both
+services are ready, including required isolation and resource controls. Later
+connection loss is handled by the service operation that encounters it. There is
+no additional daemon probe before every call and no automatic replay of a
+possibly executed command. Closed or failed built-in runtimes reject previously
+obtained service handles.
+
 ## Approvals and cancellation
 
 The existing approval policy still applies to sandboxed tools. A sandbox does not
@@ -164,39 +188,55 @@ reported rather than falling back to local execution.
 ## Implement another backend
 
 ```python
-from harnessed.integrations.sandbox import Sandbox, SandboxBackend, Workspace
-
-
-def create_backend() -> SandboxBackend:
-    return MySandboxBackend()
-
+from harnessed.integrations.sandbox import Sandbox, Workspace
 
 sandbox = Sandbox(
-    backend=create_backend,
+    backend=MySandboxBackend,  # Application-provided, zero-argument constructor.
     workspace=Workspace.copy_from("./project"),
 )
 ```
 
-`SandboxBackend` is a structural protocol with three asynchronous operations:
+Implement `SandboxBackend` with lifecycle operations and the existing typed
+shell and filesystem services. No worker messages or JSON serialization are
+required from third-party backends:
+
+```python
+from typing import Protocol
+
+from harnessed.integrations.sandbox import SandboxConfig
+from harnessed.plugins.filesystem import FileSystemBackend
+from harnessed.plugins.shell import ShellBackend
+
+
+class SandboxBackend(Protocol):
+    async def start(self, config: SandboxConfig) -> None: ...
+
+    @property
+    def shell(self) -> ShellBackend: ...
+
+    @property
+    def file_system(self) -> FileSystemBackend: ...
+
+    async def aclose(self) -> None: ...
+```
 
 | Operation | Contract |
 | --- | --- |
-| `start(config: SandboxConfig)` | Create one isolated workspace, seed or mount its inputs, and enforce configured limits before returning. |
-| `invoke(payload: bytes, *, timeout: float, max_output_bytes: int) -> ProcessOutput` | Execute the version-1 worker request inside isolation; bound transport output and enforce cancellation/deadlines. |
+| `start(config: SandboxConfig)` | Return only after the workspace, shell and filesystem are ready and isolation/resource limits are enforced. |
+| `shell.run(...)` | Run a command with bounded capture and deadlines; handle later connection loss without replaying commands. |
+| `file_system.read(...)`, `write(...)`, `read_bytes(...)`, etc. | Perform typed workspace operations and handle later connection loss. Binary reads accept a byte limit for bounded export. |
 | `aclose()` | Idempotently terminate all workloads and release resources, including after partial startup. |
 
-The synchronous factory creates fresh state for every mount. It must not return
+The class constructor or synchronous factory creates fresh state for every mount. It must not return
 a shared live backend. `Sandbox` owns cleanup with public kernel operations and
 publishes the existing `ShellBackend` and `FileSystemBackend` services only after
 startup succeeds. Neither tool plugin imports a sandbox integration.
 
-`worker_source()` returns the self-contained Python helper used by both built-in
-backends. Run it with `python3 -I -u -c SOURCE` inside isolation with a workspace at
-`/workspace`. It consumes a JSON request with `version=1` and returns an envelope
-with `value`, `error` and `error_type`. `--serve` selects JSON lines, beginning with
-`{"ready":true}`. Custom backends can transport this helper or implement its same
-protocol. Keep vendor SDK dependencies in the owning integration's optional
-extra and import that integration explicitly; the base SDK does not need them.
+Docker and Bubblewrap share an internal worker client and versioned JSON
+transport. This is an implementation detail; a backend using a vendor SDK can
+provide its own `ShellBackend` and `FileSystemBackend` directly. Keep vendor SDK
+dependencies in the owning integration's optional extra and import that
+integration explicitly; the base SDK does not need them.
 
 ## Verification
 

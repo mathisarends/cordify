@@ -1,7 +1,5 @@
 import asyncio
-import base64
 import io
-import json
 import os
 import sys
 import tarfile
@@ -13,7 +11,6 @@ from pydantic import ValidationError
 from harnessed import Agent, ApprovalAnswer, ToolCall
 from harnessed.core.tools.registry import ToolRegistry
 from harnessed.integrations.sandbox import (
-    ProcessOutput,
     Sandbox,
     SandboxConfig,
     SandboxError,
@@ -26,62 +23,102 @@ from harnessed.integrations.sandbox.worker import Operation, Request, match_path
 from harnessed.integrations.sandbox.workspace import seed_archive
 from harnessed.kernel import MissingService
 from harnessed.plugins import Approvals, FilesystemTools, ShellTools
-from harnessed.plugins.filesystem import FileSystemBackend
-from harnessed.plugins.shell import ShellBackend
+from harnessed.plugins.filesystem import FileStat, FileSystemBackend
+from harnessed.plugins.shell import ProcResult, ShellBackend
 from harnessed.testing import ScriptedModel
+
+
+class MemoryServices:
+    """Typed test implementation with no worker transport or serialization."""
+
+    def __init__(self, backend):
+        self.backend = backend
+
+    def key(self, path):
+        if self.backend.closed:
+            raise SandboxError("closed")
+        return workspace_path(path.as_posix()).relative_to("/workspace").as_posix()
+
+    async def run(self, argv, *, cwd, timeout):
+        key = self.key(cwd)
+        self.backend.calls.append({"argv": argv, "path": key})
+        if argv == ["timeout"]:
+            await self.backend.aclose()
+            raise TimeoutError("command deadline")
+        if argv == ["wait"]:
+            self.backend.block.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await self.backend.aclose()
+                raise
+        return ProcResult(7, "ran", "diagnostic")
+
+    async def read(self, path, *, offset=0, limit=None):
+        text = self.backend.files[self.key(path)].decode()
+        return text[offset : None if limit is None else offset + limit]
+
+    async def read_bytes(self, path, *, limit=None):
+        return self.backend.files[self.key(path)][:limit]
+
+    async def write(self, path, text):
+        key = self.key(path)
+        data = text.encode()
+        if len(data) > self.backend.config.limits.max_transfer_bytes:
+            raise ValueError("max_transfer_bytes")
+        self.backend.files[key] = data
+
+    async def stat(self, path):
+        key = self.key(path)
+        return FileStat(key, len(self.backend.files[key]), False, 1.0)
+
+    async def exists(self, path):
+        return self.key(path) in self.backend.files
+
+    async def list(self, path):
+        self.key(path)
+        return [await self.stat(Path(name)) for name in self.backend.files]
+
+    async def glob(self, pattern, *, limit=1000):
+        return [Path(name) for name in self.backend.files if Path(name).match(pattern)][:limit]
+
+    async def delete(self, path):
+        del self.backend.files[self.key(path)]
+
+    async def replace(self, path, old, new):
+        text = await self.read(path)
+        if not old or text.count(old) != 1:
+            raise ValueError("Expected one match")
+        await self.write(path, text.replace(old, new, 1))
 
 
 class MemoryBackend:
     def __init__(self):
         self.files = {"example.txt": b"hello"}
-        self.requests = []
+        self.calls = []
         self.closed = False
         self.started = False
         self.fail = False
         self.block = asyncio.Event()
+        self._services = MemoryServices(self)
+
+    @property
+    def shell(self):
+        if not self.started or self.closed:
+            raise SandboxError("not ready")
+        return self._services
+
+    @property
+    def file_system(self):
+        if not self.started or self.closed:
+            raise SandboxError("not ready")
+        return self._services
 
     async def start(self, config):
         self.config = config
-        self.started = True
         if self.fail:
             raise SandboxError("startup failed")
-
-    async def invoke(self, payload, *, timeout, max_output_bytes):
-        if self.closed:
-            raise SandboxError("closed")
-        request = json.loads(payload)
-        self.requests.append(request)
-        path = request["path"]
-        value = None
-        match request["operation"]:
-            case "read":
-                text = self.files[path].decode()
-                offset, limit = request["offset"], request["limit"]
-                value = text[offset : None if limit is None else offset + limit]
-            case "write":
-                self.files[path] = request["text"].encode()
-            case "export":
-                value = base64.b64encode(self.files[path]).decode()
-            case "stat":
-                value = {
-                    "path": path,
-                    "size": len(self.files[path]),
-                    "is_dir": False,
-                    "modified": 1.0,
-                }
-            case "run":
-                if request["argv"] == ["wait"]:
-                    self.block.set()
-                    await asyncio.Event().wait()
-                value = {
-                    "returncode": 7,
-                    "stdout": "ran",
-                    "stderr": "diagnostic",
-                    "timed_out": request["argv"] == ["timeout"],
-                }
-        return ProcessOutput(
-            0, json.dumps({"value": value, "error": None, "error_type": None}).encode(), b""
-        )
+        self.started = True
 
     async def aclose(self):
         self.closed = True
@@ -103,15 +140,18 @@ async def test_same_workspace_backend_and_explicit_binary_export(tmp_path):
     backend = MemoryBackend()
     sandbox = Sandbox(backend=lambda: backend, workspace=Workspace.copy_from(tmp_path))
     async with app(sandbox).session() as session:
-        files = session.ctx[FileSystemBackend]
-        shell = session.ctx[ShellBackend]
+        services = sandbox.services(session)
+        files = services.file_system
+        shell = services.shell
+        assert files is session.ctx[FileSystemBackend]
+        assert shell is session.ctx[ShellBackend]
         assert files is shell
         assert await files.read(Path("example.txt"), offset=1, limit=3) == "ell"
         assert (await files.stat(Path("example.txt"))).size == 5
         await files.write(Path("new.txt"), "changed")
         result = await shell.run(["test"], cwd=Path("nested"), timeout=3)
         assert result.returncode == 7 and result.stderr == "diagnostic"
-        assert backend.requests[-1]["path"] == "nested"
+        assert backend.calls[-1]["path"] == "nested"
         backend.files["result.bin"] = b"\x00\xff\x10"
         destination = tmp_path / "out/result.bin"
         await sandbox.export(session, source="result.bin", destination=destination)
@@ -130,6 +170,8 @@ async def test_same_workspace_backend_and_explicit_binary_export(tmp_path):
         call = await registry.execute(ToolCall("run_command", {"argv": ["test"]}))
         assert call.exit_code == 7
     assert backend.closed
+    with pytest.raises(SandboxError, match="closed"):
+        await files.read(Path("example.txt"))
 
 
 async def test_mount_state_is_fresh_and_export_uses_recipe_identity(tmp_path):
@@ -145,10 +187,13 @@ async def test_mount_state_is_fresh_and_export_uses_recipe_identity(tmp_path):
     agent = app(sandbox)
     async with agent.session() as first, agent.session() as second:
         assert len(backends) == 2 and backends[0] is not backends[1]
+        assert sandbox.services(first).file_system is not sandbox.services(second).file_system
         await first.ctx[FileSystemBackend].write(Path("example.txt"), "first")
         assert await second.ctx[FileSystemBackend].read(Path("example.txt")) == "hello"
         with pytest.raises(MissingService):
             await other.export(first, source="example.txt", destination=tmp_path / "wrong.txt")
+        with pytest.raises(MissingService):
+            other.services(first)
     assert all(backend.closed for backend in backends)
 
 
@@ -181,19 +226,6 @@ async def test_cancelled_startup_drains_and_cleans_partial_resources(tmp_path):
     with pytest.raises(asyncio.CancelledError):
         await opening
     assert backend.closed
-
-
-async def test_invalid_transport_response_closes_sandbox(tmp_path):
-    class InvalidBackend(MemoryBackend):
-        async def invoke(self, payload, *, timeout, max_output_bytes):
-            return ProcessOutput(0, b"not a protocol response", b"")
-
-    backend = InvalidBackend()
-    sandbox = Sandbox(backend=lambda: backend, workspace=Workspace.copy_from(tmp_path))
-    async with app(sandbox).session() as session:
-        with pytest.raises(SandboxError, match="envelope"):
-            await session.ctx[FileSystemBackend].read(Path("example.txt"))
-        assert backend.closed
 
 
 @pytest.mark.parametrize("end", ["cancel", "timeout"])
@@ -238,7 +270,7 @@ async def test_rejected_path_and_oversized_writes_never_reach_backend(tmp_path):
             await files.read(Path("../secret"))
         with pytest.raises(ValueError, match="max_transfer_bytes"):
             await files.write(Path("large"), "ä" * 129)
-        assert backend.requests == []
+        assert backend.calls == []
 
 
 def test_workspace_copy_excludes_files_and_bounds_archive(tmp_path):

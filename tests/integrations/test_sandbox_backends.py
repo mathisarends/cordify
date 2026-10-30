@@ -10,15 +10,13 @@ import pytest
 from harnessed import Agent
 from harnessed.integrations import bubblewrap, docker
 from harnessed.integrations.sandbox import (
-    ProcessOutput,
     SandboxConfig,
     SandboxError,
     SandboxLimits,
     Workspace,
 )
+from harnessed.integrations.sandbox.types import ProcessOutput
 from harnessed.plugins import FilesystemTools, ShellTools
-from harnessed.plugins.filesystem import FileSystemBackend
-from harnessed.plugins.shell import ShellBackend
 from harnessed.testing import ScriptedModel
 
 ENGINE = json.dumps(
@@ -43,6 +41,12 @@ async def test_docker_configuration_and_partial_startup_cleanup(tmp_path, monkey
         if "image" in argv:
             return ProcessOutput(0, b"null", b"")
         if "exec" in argv:
+            request = json.loads(input)
+            if request["operation"] == "stat":
+                value = {"path": ".", "size": 0, "is_dir": True, "modified": 1.0}
+                return ProcessOutput(
+                    0, json.dumps({"value": value, "error": None, "error_type": None}).encode(), b""
+                )
             return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
         return ProcessOutput(0, b"container", b"")
 
@@ -53,6 +57,10 @@ async def test_docker_configuration_and_partial_startup_cleanup(tmp_path, monkey
         else Workspace.mount(tmp_path, readonly=readonly)
     )
     backend = docker.DockerBackend(image="python:3.12-slim", runtime="runsc")
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.shell
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.file_system
     await backend.start(SandboxConfig(workspace=workspace, env={"EXPLICIT": "value"}))
     create = next(argv for argv, _ in calls if "create" in argv)
     for name in [
@@ -77,12 +85,12 @@ async def test_docker_configuration_and_partial_startup_cleanup(tmp_path, monkey
         assert (",readonly" in mount) is readonly
         assert "bind-recursive=disabled" in mount
     request = json.loads(next(payload for argv, payload in calls if "exec" in argv))
-    assert request["operation"] == ("import" if readonly is None else "exists")
+    assert request["operation"] == ("import" if readonly is None else "stat")
     await backend.aclose()
     await backend.aclose()
     assert sum("rm" in call for call, _ in calls) == 1
     with pytest.raises(SandboxError, match="closed"):
-        await backend.invoke(b"{}", timeout=1, max_output_bytes=256)
+        await backend.shell.run(["test"], cwd=Path("."), timeout=1)
 
 
 async def test_failed_docker_setup_removes_named_container(tmp_path, monkeypatch):
@@ -138,12 +146,17 @@ async def test_docker_transport_cancellation_destroys_container(tmp_path, monkey
         if "exec" in argv:
             started.set()
             await asyncio.Event().wait()
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
         return ProcessOutput(0, b"", b"")
 
     monkeypatch.setattr(docker, "run_process", run)
     backend = docker.DockerBackend(image="python:3.12-slim")
-    backend._attempted = True
-    task = asyncio.create_task(backend.invoke(b"{}", timeout=10, max_output_bytes=256))
+    task = asyncio.create_task(
+        backend.start(SandboxConfig(workspace=Workspace.copy_from(tmp_path)))
+    )
     await started.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -151,8 +164,90 @@ async def test_docker_transport_cancellation_destroys_container(tmp_path, monkey
     assert "rm" in calls[-1]
 
 
+@pytest.mark.parametrize("failure", ["protocol", "daemon", "pipe"])
+async def test_docker_typed_services_handle_connection_loss_without_replaying(
+    tmp_path, monkeypatch, failure
+):
+    calls = []
+
+    async def run(argv, *, timeout, input=b"", **kwargs):
+        calls.append(argv)
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
+        if "exec" in argv:
+            operation = json.loads(input)["operation"]
+            if operation == "import":
+                return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
+            if failure == "pipe":
+                raise BrokenPipeError("connection interrupted")
+            if failure == "daemon":
+                return ProcessOutput(125, b"", b"daemon unavailable")
+            return ProcessOutput(0, b"invalid protocol response", b"")
+        return ProcessOutput(0, b"", b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    backend = docker.DockerBackend(image="test")
+    await backend.start(SandboxConfig(workspace=Workspace.copy_from(tmp_path)))
+    shell = backend.shell
+    file_system = backend.file_system
+    with pytest.raises(SandboxError):
+        await shell.run(["possibly-mutating-command"], cwd=Path("."), timeout=1)
+    assert sum("exec" in argv for argv in calls) == 2  # Initialization and exactly one command.
+    assert sum("rm" in argv for argv in calls) == 1
+    with pytest.raises(SandboxError, match="closed"):
+        await file_system.read(Path("file.txt"))
+    with pytest.raises(SandboxError, match="closed"):
+        _ = backend.shell
+    assert sum("exec" in argv for argv in calls) == 2
+
+
+@pytest.mark.parametrize("close_during_start", [False, True])
+async def test_docker_publishes_services_after_readiness_and_cannot_reopen_after_close(
+    tmp_path, monkeypatch, close_during_start
+):
+    reached_worker = asyncio.Event()
+    ready = asyncio.Event()
+
+    async def run(argv, *, timeout, **kwargs):
+        if "info" in argv:
+            return ProcessOutput(0, ENGINE, b"")
+        if "image" in argv:
+            return ProcessOutput(0, b"null", b"")
+        if "exec" in argv:
+            reached_worker.set()
+            await ready.wait()
+            return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
+        return ProcessOutput(0, b"", b"")
+
+    monkeypatch.setattr(docker, "run_process", run)
+    backend = docker.DockerBackend(image="test")
+    starting = asyncio.create_task(
+        backend.start(SandboxConfig(workspace=Workspace.copy_from(tmp_path)))
+    )
+    await reached_worker.wait()
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.shell
+    with pytest.raises(SandboxError, match="not ready"):
+        _ = backend.file_system
+    if close_during_start:
+        await backend.aclose()
+    ready.set()
+    if close_during_start:
+        with pytest.raises(SandboxError, match="stopped during startup"):
+            await starting
+        with pytest.raises(SandboxError, match="closed"):
+            _ = backend.file_system
+    else:
+        await starting
+        assert backend.shell is backend.file_system
+        await backend.aclose()
+
+
+@pytest.mark.parametrize("disconnect", [False, True])
 async def test_bubblewrap_command_uses_namespaces_and_verified_resource_controls(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, disconnect
 ):
     calls = []
     verified = []
@@ -161,8 +256,9 @@ async def test_bubblewrap_command_uses_namespaces_and_verified_resource_controls
         async def start(self, argv, *, timeout, maximum):
             calls.append(argv)
 
-        async def invoke(self, payload, *, timeout, maximum):
-            assert json.loads(payload)["operation"] == "import"
+        async def request(self, payload, *, timeout, maximum):
+            if json.loads(payload)["operation"] != "import":
+                raise BrokenPipeError("worker exited")
             return ProcessOutput(0, b'{"value":null,"error":null,"error_type":null}', b"")
 
         async def aclose(self):
@@ -195,6 +291,12 @@ async def test_bubblewrap_command_uses_namespaces_and_verified_resource_controls
     assert "--property=CPUQuota=100%" in argv
     assert "--property=TasksMax=128" in argv
     assert verified == ["/user.slice/test.scope"]
+    if disconnect:
+        file_system = backend.file_system
+        with pytest.raises(SandboxError, match="connection was lost"):
+            await file_system.read(Path("file.txt"))
+        with pytest.raises(SandboxError, match="closed"):
+            await file_system.read(Path("file.txt"))
     await backend.aclose()
     await backend.aclose()
     assert any("kill" in call and "--signal=KILL" in call for call in calls)
@@ -264,8 +366,9 @@ async def exercise_live_sandbox(sandbox, tmp_path):
     (tmp_path / "input.txt").write_text("source", encoding="utf-8")
     agent = Agent(model=ScriptedModel([]), plugins=[sandbox, FilesystemTools(), ShellTools()])
     async with agent.session() as session:
-        files = session.ctx[FileSystemBackend]
-        shell = session.ctx[ShellBackend]
+        services = sandbox.services(session)
+        files = services.file_system
+        shell = services.shell
         await files.write(Path("nested/data.txt"), "ä😀")
         assert await files.read(Path("nested/data.txt"), offset=1, limit=1) == "😀"
         result = await shell.run(
@@ -281,6 +384,7 @@ async def exercise_live_sandbox(sandbox, tmp_path):
         assert result.returncode == 0 and result.stdout.strip() == "source"
         await sandbox.export(session, source="output.bin", destination=tmp_path / "export.bin")
         assert (tmp_path / "export.bin").read_bytes() == b"\x00\xff"
+        assert await files.read_bytes(Path("output.bin"), limit=1) == b"\x00"
         assert not (tmp_path / "output.bin").exists()
         with pytest.raises(ValueError):
             await files.read(Path("../outside"))

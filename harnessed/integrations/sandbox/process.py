@@ -139,7 +139,7 @@ class WorkerProcess:
     def diagnostics(self) -> str:
         return self.stderr.decode("utf-8", errors="replace")
 
-    async def invoke(self, payload: bytes, *, timeout: float, maximum: int) -> ProcessOutput:
+    async def request(self, payload: bytes, *, timeout: float, maximum: int) -> ProcessOutput:
         async with self._lock:
             process = self.process
             if process is None or process.returncode is not None:

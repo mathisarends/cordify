@@ -39,7 +39,8 @@ protocol instead.
   an application-owned OpenTelemetry provider. Import it explicitly with the
   `otel` extra installed; SDK and feature facades never import OpenTelemetry.
 - `integrations/sandbox/` owns optional sandbox composition, the structural
-  backend protocol, bounded workspace copying/export and the in-sandbox worker.
+  lifecycle protocol, typed shell/filesystem services, bounded workspace
+  copying/export and the private in-sandbox worker transport.
   `integrations/docker/` and `integrations/bubblewrap.py` provide native-runtime
   implementations without adding Python dependencies. They publish existing
   feature backend contracts; tool plugins never import integrations.
