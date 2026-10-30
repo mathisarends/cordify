@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import inspect
 import json
@@ -31,6 +33,7 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.session.session import SessionLog, _derive_message_entries, derive_messages
 from harnessed.core.session.turns import derive_turns
+from harnessed.core.stream import CompactionFinishedEvent, CompactionOutcome, CompactionStartedEvent
 from harnessed.core.tokens import TokenCounter, count_request
 from harnessed.core.tracing import span
 from harnessed.kernel import Context
@@ -205,72 +208,102 @@ class CompactionManager:
                     or plan.through <= self._retry_through
                 ):
                     return None, request
-            counter = self.ctx[TokenCounter]
-            summarizer = policy.summarizer if policy is not None else None
-            if summarizer is None:
-                summarizer = ModelSummarizer(
-                    self.ctx[Model], model_name=request.model, focus=settings.focus
+            compaction_id = uuid4().hex
+            outcome = CompactionOutcome.FAILED
+            try:
+                await self.session_log.publish(CompactionStartedEvent(compaction_id))
+                applied, compacted = await self._apply(request, plan, settings, compaction_id)
+                outcome = (
+                    CompactionOutcome.APPLIED
+                    if applied is not None
+                    else CompactionOutcome.DISCARDED
                 )
-            # The input request stays a snapshot even if new inbox/context records arrive.
-            events = self.session_log.events
-            previous = self.session_log.last(CompactionAppliedEvent)
-            with span(
-                self.ctx, "compaction", session_id=self.session_log.id, through=plan.through
-            ) as trace:
-                try:
-                    summary = await summarizer.summarize(
-                        plan.messages, max_tokens=settings.summary_tokens
-                    )
-                except SummaryError as error:
-                    trace.set_attribute("usage", error.usage)
-                    await self.session_log.append(
-                        ModelUsageRecordedEvent(error.usage, purpose=UsagePurpose.COMPACTION)
-                    )
-                    raise
-                if isinstance(summary, Summary) and summary.usage is not None:
-                    trace.set_attribute("usage", summary.usage)
-            if isinstance(summary, Summary):
-                if summary.usage is not None:
-                    await self.session_log.append(
-                        ModelUsageRecordedEvent(summary.usage, purpose=UsagePurpose.COMPACTION)
-                    )
-                summary = summary.text
-            summary = _SUMMARY_RESULT.validate_python(summary)
-            summary = truncate(summary.strip(), settings.summary_tokens, counter)
-            if not summary.strip():
-                raise ValueError("Summarizer produced no content within the summary budget")
-            if self.session_log.last(CompactionAppliedEvent) is not previous:
-                return None, request
-            applied = CompactionAppliedEvent(
-                plan.through,
-                summary,
-                preserve_turns=plan.preserve_turns,
-                policy="Compaction" if policy is not None else "manual",
-                id=uuid4().hex,
-                preserve_inputs=plan.preserve_inputs,
-                retained_turns=plan.retained_turns,
+                return applied, compacted
+            except asyncio.CancelledError:
+                outcome = CompactionOutcome.CANCELLED
+                raise
+            finally:
+                # A committed projection remains applied even if its observer fails/cancels.
+                committed = self.session_log.last(CompactionAppliedEvent)
+                if committed is not None and committed.id == compaction_id:
+                    outcome = CompactionOutcome.APPLIED
+                await self.session_log.publish(CompactionFinishedEvent(compaction_id, outcome))
+
+    async def _apply(
+        self,
+        request: ModelRequest,
+        plan: CompactionPlan,
+        settings: CompactionSettings,
+        compaction_id: str,
+    ) -> tuple[CompactionAppliedEvent | None, ModelRequest]:
+        policy = self.ctx[CompactionPolicy] if CompactionPolicy in self.ctx else None
+        current = self.session_log.open_turn
+        counter = self.ctx[TokenCounter]
+        summarizer = policy.summarizer if policy is not None else None
+        if summarizer is None:
+            summarizer = ModelSummarizer(
+                self.ctx[Model], model_name=request.model, focus=settings.focus
             )
-            compacted = replace(request, messages=compact_request(request, events, applied))
-            before = await count_request(counter, request)
-            after = await count_request(counter, compacted)
-            if after >= before:
-                self._retry_after_turns = self.session_log.closed_turn_count + 2
-                self._retry_through = plan.through
-                self._retry_after_step = (
-                    (current.id, sum(step.closed for step in current.steps) + 2)
-                    if current is not None
-                    else None
+        # The input request stays a snapshot even if new inbox/context records arrive.
+        events = self.session_log.events
+        previous = self.session_log.last(CompactionAppliedEvent)
+        with span(
+            self.ctx, "compaction", session_id=self.session_log.id, through=plan.through
+        ) as trace:
+            try:
+                summary = await summarizer.summarize(
+                    plan.messages, max_tokens=settings.summary_tokens
                 )
-                logger.warning(
-                    "Compaction did not reduce context (%s -> %s tokens); "
-                    "retry after two more turns or steps in the active turn",
-                    before,
-                    after,
+            except SummaryError as error:
+                trace.set_attribute("usage", error.usage)
+                await self.session_log.append(
+                    ModelUsageRecordedEvent(error.usage, purpose=UsagePurpose.COMPACTION)
                 )
-                return None, request
-            applied = replace(applied, before_tokens=before, after_tokens=after)
-            await self.session_log.append(applied)
-            return applied, compacted
+                raise
+            if isinstance(summary, Summary) and summary.usage is not None:
+                trace.set_attribute("usage", summary.usage)
+        if isinstance(summary, Summary):
+            if summary.usage is not None:
+                await self.session_log.append(
+                    ModelUsageRecordedEvent(summary.usage, purpose=UsagePurpose.COMPACTION)
+                )
+            summary = summary.text
+        summary = _SUMMARY_RESULT.validate_python(summary)
+        summary = truncate(summary.strip(), settings.summary_tokens, counter)
+        if not summary.strip():
+            raise ValueError("Summarizer produced no content within the summary budget")
+        if self.session_log.last(CompactionAppliedEvent) is not previous:
+            return None, request
+        applied = CompactionAppliedEvent(
+            plan.through,
+            summary,
+            preserve_turns=plan.preserve_turns,
+            policy="Compaction" if policy is not None else "manual",
+            id=compaction_id,
+            preserve_inputs=plan.preserve_inputs,
+            retained_turns=plan.retained_turns,
+        )
+        compacted = replace(request, messages=compact_request(request, events, applied))
+        before = await count_request(counter, request)
+        after = await count_request(counter, compacted)
+        if after >= before:
+            self._retry_after_turns = self.session_log.closed_turn_count + 2
+            self._retry_through = plan.through
+            self._retry_after_step = (
+                (current.id, sum(step.closed for step in current.steps) + 2)
+                if current is not None
+                else None
+            )
+            logger.warning(
+                "Compaction did not reduce context (%s -> %s tokens); "
+                "retry after two more turns or steps in the active turn",
+                before,
+                after,
+            )
+            return None, request
+        applied = replace(applied, before_tokens=before, after_tokens=after)
+        await self.session_log.append(applied)
+        return applied, compacted
 
 
 @dataclass(frozen=True)

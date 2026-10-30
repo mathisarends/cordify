@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 from uuid import uuid4
 
+from harnessed.core.diagnostics import ModelAttemptOutcome, model_diagnostics
 from harnessed.core.messages import Assistant, ToolCall
 from harnessed.core.model import Model, ModelRequest, ModelStream
+from harnessed.core.runtime.diagnostics import RequestDiagnostics
 from harnessed.core.session.events import AssistantMessageEvent, ModelUsageRecordedEvent
 from harnessed.core.session.session import SessionLog
 from harnessed.core.stream import (
@@ -27,10 +29,27 @@ class ModelResponder:
             self.ctx, "model", session_id=self.log.id, model=request.model, request_id=request_id
         ) as current:
             current.set_attribute("request", request)
-            return await self._stream_response(request, request_id=request_id, trace=current)
+            diagnostics = RequestDiagnostics(self.log, request_id)
+            try:
+                with model_diagnostics(diagnostics.receive):
+                    response = await self._stream_response(
+                        request, request_id=request_id, trace=current, diagnostics=diagnostics
+                    )
+                await diagnostics.finish(ModelAttemptOutcome.SUCCEEDED)
+                return response
+            except BaseException as error:
+                await diagnostics.failed(error)
+                raise
+            finally:
+                diagnostics.closed = True
 
     async def _stream_response(
-        self, request: ModelRequest, *, request_id: str, trace: Span
+        self,
+        request: ModelRequest,
+        *,
+        request_id: str,
+        trace: Span,
+        diagnostics: RequestDiagnostics,
     ) -> Assistant:
         message_id = uuid4().hex
         calls: list[ToolCall] = []
@@ -49,6 +68,16 @@ class ModelResponder:
         try:
             async with self.ctx[Model].stream(request) as stream:
                 async for chunk in stream:
+                    if chunk.diagnostic is not None:
+                        await diagnostics.receive(chunk.diagnostic)
+                    if (
+                        chunk.text
+                        or chunk.reasoning
+                        or chunk.tool_call
+                        or chunk.tool_call_start
+                        or chunk.tool_call_delta
+                    ):
+                        diagnostics.partial = True
                     if chunk.text or chunk.reasoning:
                         text.append(chunk.text)
                         reasoning.append(chunk.reasoning)

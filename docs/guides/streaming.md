@@ -58,6 +58,55 @@ Text and reasoning deltas are transient. Tool progress is durable. The accepted
 assistant message is stored once; deltas do not create additional history
 messages. Final-answer control tools do not produce application tool spinners.
 
+## Model and retry activity
+
+The UI stream includes the durable `ModelRequestedEvent` and
+`ModelRequestFailedEvent` as well as the following transient notifications from
+`harnessed.events`:
+
+| Event | Meaning |
+| --- | --- |
+| `ModelAttemptStartedEvent` | An observed provider attempt or runtime recovery request actually starts |
+| `ModelRetryScheduledEvent` | A further attempt is planned; its counter has not advanced yet |
+| `ModelAttemptFinishedEvent` | An attempt succeeds, will retry, fails, exhausts its limit or is cancelled |
+
+Tags are `model.attempt.started`, `model.retry.scheduled` and
+`model.attempt.finished`. Each carries `request_id`, `retry_group_id`,
+`retry_kind`, `attempt`, `retry_count` and `max_retries`. Optional structured
+`reason`, `status_code` and `delay_seconds` accompany retry decisions; completion
+also reports whether visible response parts were emitted through `partial`.
+
+`RetryKind.PROVIDER` counts only SDK attempts the adapter actually observes.
+The group equals the Harnessed request ID. One request can contain many SDK
+attempts. Missing telemetry means unknown counts (`None`), even on success.
+The request event still reports overall request activity. The
+[adapter diagnostic contract](models.md#report-observed-sdk-attempts) supports
+chunks and awaited callbacks, including work before stream context entry returns.
+
+`RetryKind.CONTEXT_RECOVERY` links a context failure to the new request after
+successful compaction, with a one-retry limit. `RetryKind.OUTPUT_CORRECTION`
+links an invalid structured answer to its correction, bounded by `output_retries`.
+If normal tool steps separate correction groups, the new group's limit uses the
+turn's remaining output-retry budget; those tool steps do not advance its counter.
+Their first retry starts at `attempt=2`, `retry_count=1`; the preceding retry
+decision still has `attempt=1`, `retry_count=0`. The decision identifies the
+failed request, and the next start has the new request ID and the same group.
+Normal tool-following steps and new turns do not count as retries. Provider and
+runtime counters have separate kinds and must not be added together.
+
+Cancellation during backoff may leave a scheduled retry without a matching
+start. `ModelRequestFailedEvent(outcome=CANCELLED)` closes the overall request.
+Clear activity at request failure or turn completion. On final failure, queued
+diagnostics and the native failure event arrive before the stream raises its
+usual exception. These events do not authorize additional retries or tool work.
+
+Retry diagnostics are live notifications and are not replayed. Runtime recovery
+correlation is retained on `ModelRequestedEvent` as `retry_group_id`, `retry_kind`,
+`attempt` and `max_retries`, and survives reopening. The initial ordinary request
+has `retry_kind=None`; its `attempt=1` is a runtime position, never an SDK count.
+Use `session.subscribe(transient=True)` to observe all live diagnostics alongside
+the durable log. See also [compaction activity](compaction.md#display-compaction-activity).
+
 ## Preview tool arguments
 
 `events.ToolCallGenerationStartedEvent` (`tool.call.generation.started`) and

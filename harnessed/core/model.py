@@ -9,6 +9,7 @@ from typing import Annotated, Any, Protocol, runtime_checkable
 from pydantic import ConfigDict, Field, TypeAdapter
 from pydantic.dataclasses import dataclass as validated_dataclass
 
+from .diagnostics import ModelDiagnostic
 from .messages import Assistant, Message, ToolCall, freeze
 
 _VALUE_CONFIG = ConfigDict(
@@ -195,6 +196,7 @@ class ModelChunk:
     stop_reason: StopReason | None = None
     tool_call_start: ToolCallStart | None = None
     tool_call_delta: ToolCallDelta | None = None
+    diagnostic: ModelDiagnostic | None = None
 
     def __post_init__(self) -> None:
         if self.stop_reason is not None:

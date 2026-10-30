@@ -21,6 +21,8 @@ from harnessed.events import (
     ApprovalNeededEvent,
     ApprovalResolvedEvent,
     InboxAddedEvent,
+    ModelAttemptFinishedEvent,
+    ModelRequestedEvent,
     ReasoningDeltaEvent,
     SessionEvent,
     SessionStatusChangedEvent,
@@ -95,7 +97,7 @@ def work():
     return [ModelChunk(tool_call=ToolCall("publish"))]
 
 
-async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result():
+async def test_stream_has_model_lifecycle_a_durable_approval_and_one_terminal_result():
     effects = []
     model = ScriptedModel([work(), [ModelChunk(reasoning="checked"), ModelChunk(text="Finished")]])
     async with Agent(model=model, plugins=[Work(effects)]).session() as session:
@@ -113,6 +115,8 @@ async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result
                     await session.approvals.answer(event.request_id, ApprovalAnswer.DENY)
         assert effects == ["published"]
         assert {type(e) for e in events} == {
+            ModelRequestedEvent,
+            ModelAttemptFinishedEvent,
             TextDeltaEvent,
             ReasoningDeltaEvent,
             ToolCallRequestedEvent,
@@ -127,6 +131,7 @@ async def test_stream_has_eight_kinds_a_durable_approval_and_one_terminal_result
         assert sum(isinstance(e, TurnFinishedEvent) for e in events) == 1
         durable = [event for event in events if isinstance(event, SessionEvent)]
         assert {type(event) for event in durable} == {
+            ModelRequestedEvent,
             ToolCallRequestedEvent,
             ToolProgressEvent,
             ToolCallFinishedEvent,

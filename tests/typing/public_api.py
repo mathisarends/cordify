@@ -21,12 +21,18 @@ from harnessed.core.runtime.session import Session
 from harnessed.errors import PluginDependencyError
 from harnessed.events import (
     AssistantMessageEvent,
+    CompactionFinishedEvent,
+    CompactionOutcome,
     EventStream,
     IncludedObservation,
+    ModelAttemptFinishedEvent,
+    ModelAttemptOutcome,
+    ModelAttemptStartedEvent,
     ModelRequestFailedEvent,
     ModelRequestOutcome,
     ObservationForm,
     ObservationsIncludedEvent,
+    RetryKind,
     ToolArgumentsDeltaEvent,
     ToolCallGenerationStartedEvent,
     ToolExecutionFinishedEvent,
@@ -153,6 +159,15 @@ async def typed_stream(session: Session) -> None:
         elif isinstance(event, ToolArgumentsDeltaEvent):
             assert_type(event.delta, ToolCallDelta)
             assert_type(event.delta.mode, ToolArgumentsMode)
+        elif isinstance(event, CompactionFinishedEvent):
+            assert_type(event.compaction_id, str)
+            assert_type(event.outcome, CompactionOutcome)
+        elif isinstance(event, ModelAttemptStartedEvent):
+            assert_type(event.attempt, int | None)
+            assert_type(event.retry_count, int | None)
+            assert_type(event.retry_kind, RetryKind)
+        elif isinstance(event, ModelAttemptFinishedEvent):
+            assert_type(event.outcome, ModelAttemptOutcome)
 
 
 async def functional_scope(ctx: Context) -> None:

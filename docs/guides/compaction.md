@@ -69,6 +69,27 @@ the normal step budget. A partial reply, exhausted step budget, absent policy or
 history that cannot be reduced propagates the error. The retry marker survives
 pause and restart.
 
+## Display compaction activity
+
+Automatic and manual attempts publish `CompactionStartedEvent`
+(`compaction.started`) before summarization and `CompactionFinishedEvent`
+(`compaction.finished`) after the attempt. Both are exported by `harnessed.events`
+and share `compaction_id`. A started attempt always closes, including on errors
+and cancellation. No lifecycle events are emitted for ineligible history or a
+backoff check that does not invoke the summarizer.
+
+The finish carries `CompactionOutcome.APPLIED`, `DISCARDED`, `FAILED` or
+`CANCELLED`. Discarded means the summary was not committed, for example because
+it did not reduce the request. Exceptions and cancellation still propagate.
+If an observer fails after commit, the outcome remains `APPLIED`.
+
+On success the durable `CompactionAppliedEvent` arrives before the finish. Its
+`id` equals `compaction_id`; it contains the summary and estimated
+`before_tokens`/`after_tokens`. Start and finish are transient activity signals,
+not replayed history. `session.stream()` forwards all three events during a turn.
+Use `session.subscribe(transient=True)` for a session-wide indicator, including
+manual compaction while idle or paused.
+
 ## Choose a summarizer
 
 Omitting `summarizer` uses the session's current `Model`. A model string, native

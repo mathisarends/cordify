@@ -727,6 +727,84 @@ async def test_native_deepseek_provider_round_trip_with_mock_http_transport():
     assert requests[1]["messages"][-1]["tool_call_id"] == "call"
 
 
+@pytest.mark.parametrize("instrumented", [False, True])
+@pytest.mark.parametrize("exhausted", [False, True])
+async def test_real_sdk_retries_are_counted_only_when_public_http_hooks_report_them(
+    instrumented,
+    exhausted,
+):
+    import httpx2
+    from openai import AsyncOpenAI
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    from harnessed.models import ModelAttemptStarted, report_model_diagnostic
+
+    requests = 0
+    observed = 0
+
+    async def on_request(request):
+        nonlocal observed
+        observed += 1
+        await report_model_diagnostic(ModelAttemptStarted(attempt=observed, max_retries=2))
+
+    def respond(request):
+        nonlocal requests
+        requests += 1
+        if requests < 3 or exhausted:
+            return httpx2.Response(
+                429,
+                json={"error": {"message": "rate limited", "type": "rate_limit_error"}},
+                headers={"retry-after-ms": "1"},
+            )
+        return httpx2.Response(
+            200,
+            text=_openai_sse([{"content": "answer"}], "stop"),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(respond),
+        event_hooks={"request": [on_request]} if instrumented else {},
+    ) as http:
+        async with AsyncOpenAI(api_key="test", max_retries=2, http_client=http) as client:
+            model = OpenAIChatModel("fixture", provider=OpenAIProvider(openai_client=client))
+            notifications = []
+            async with Agent(model=model).session() as session:
+
+                async def consume():
+                    async for event in session.stream("work"):
+                        notifications.append(event)
+
+                if exhausted:
+                    with pytest.raises(RateLimited):
+                        await consume()
+                else:
+                    await consume()
+                assert requests == 3
+                starts = [
+                    e for e in notifications if isinstance(e, events.ModelAttemptStartedEvent)
+                ]
+                finished = [
+                    e for e in notifications if isinstance(e, events.ModelAttemptFinishedEvent)
+                ]
+                if instrumented:
+                    assert [e.attempt for e in starts] == [1, 2, 3]
+                    assert finished[-1].retry_count == 2 and finished[-1].max_retries == 2
+                else:
+                    assert not starts and len(finished) == 1
+                    assert finished[0].attempt is finished[0].retry_count is None
+                assert finished[-1].outcome is (
+                    events.ModelAttemptOutcome.FAILED
+                    if exhausted
+                    else events.ModelAttemptOutcome.SUCCEEDED
+                )
+                # A transport callback observes actual starts, not SDK retry decisions/delays.
+                assert not any(
+                    isinstance(e, events.ModelRetryScheduledEvent) for e in notifications
+                )
+
+
 def _anthropic_sse(*, tool_call):
     frames = [
         {

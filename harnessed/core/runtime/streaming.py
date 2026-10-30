@@ -18,6 +18,8 @@ from harnessed.core.session.events import (
     ControlState,
     DurableEvent,
     InboxAddedEvent,
+    ModelRequestedEvent,
+    ModelRequestFailedEvent,
     OutputValidatedEvent,
     OutputValidationFailedEvent,
     SessionEvent,
@@ -30,8 +32,13 @@ from harnessed.core.session.events import (
 )
 from harnessed.core.stream import (
     ApprovalNeededEvent,
+    CompactionFinishedEvent,
+    CompactionStartedEvent,
     CustomTransientEvent,
     EventStream,
+    ModelAttemptFinishedEvent,
+    ModelAttemptStartedEvent,
+    ModelRetryScheduledEvent,
     ReasoningDeltaEvent,
     SessionStatusChangedEvent,
     TextDeltaEvent,
@@ -151,6 +158,13 @@ async def project_stream_events(
                     | ApprovalNeededEvent()
                     | ToolCallGenerationStartedEvent()
                     | ToolArgumentsDeltaEvent()
+                    | CompactionStartedEvent()
+                    | CompactionFinishedEvent()
+                    | ModelAttemptStartedEvent()
+                    | ModelAttemptFinishedEvent()
+                    | ModelRetryScheduledEvent()
+                    | ModelRequestedEvent()
+                    | ModelRequestFailedEvent()
                 ):
                     yield event
                 case CompactionAppliedEvent() | SpillCreatedEvent() | SpillExpiredEvent():
