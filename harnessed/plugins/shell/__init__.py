@@ -14,7 +14,7 @@ from harnessed.core.plugin import Plugin, PluginConfig
 from harnessed.core.prompt.values import SystemSection
 from harnessed.core.tools.decorator import tool
 from harnessed.core.tools.registry import ToolError, ToolRegistry
-from harnessed.kernel import Context, Inject, run_sync
+from harnessed.kernel import Context, Inject
 
 if os.name == "nt":
     from .windows import WindowsJob
@@ -28,7 +28,7 @@ class ProcResult:
 
 
 class ShellBackend(Protocol):
-    """A structural command backend; tools may replace it with a container backend."""
+    """Run commands with cwd interpreted relative to the backend's filesystem."""
 
     async def run(self, argv: list[str], *, cwd: Path, timeout: float) -> ProcResult: ...
 
@@ -221,7 +221,7 @@ class ShellTools(Plugin, needs=(ShellBackend, ToolRegistry)):
         )
 
     async def setup(self, ctx: Context) -> None:
-        self.cwd = await run_sync(self.config.cwd.resolve)
+        self.cwd = self.config.cwd
         ctx[ToolRegistry].result_converter(ProcResult, proc_result, owner=ctx)
 
     def _command_fields(self) -> Mapping[str, FieldInfo]:

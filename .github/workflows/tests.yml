@@ -76,6 +76,13 @@ jobs:
           --error-on-warning --output-format github
       - name: Run tests and offline examples
         run: uv run --locked --no-sync pytest --junitxml=build/test-results.xml
+      - name: Run native Docker sandbox integration
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        env:
+          HARNESSED_TEST_DOCKER: "1"
+        run: |
+          docker pull python:3.12-slim
+          uv run --locked --no-sync pytest tests/integrations/test_sandbox_backends.py -k live_docker
       - name: Build distribution artifacts
         run: uv build --no-sources
       - name: Check the wheel outside the source checkout

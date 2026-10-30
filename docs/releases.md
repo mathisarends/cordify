@@ -8,6 +8,13 @@ Detailed breaking changes and upgrade instructions are recorded in the repositor
 
 ## Unreleased
 
+- Add optional Docker and Bubblewrap sandbox integrations with shared shell/file
+  workspaces, bounded transfers, explicit exports, resource controls and a typed
+  backend extension protocol. Native runtime dependencies are application-managed.
+- `FilesystemTools` now includes discovery, editing and deletion. `ShellTools`
+  passes relative working directories to its backend instead of resolving them
+  against the host at mount time. See [sandboxes](guides/sandboxes.md).
+
 - Tools support typed application metadata, captured hook descriptions and fixed
   or dynamic action-chain boundaries with durable, explicit skipped results.
 - `PreStep` exposes effective remaining steps. `AgentLoop` can reserve a final

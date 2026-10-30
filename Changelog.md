@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add explicit Docker and Bubblewrap sandbox integrations, shared shell/filesystem
+  backends, session-owned cleanup, bounded copy workspaces and binary exports.
+  Bubblewrap verifies cgroup-v2 limits; both fail rather than falling back to local
+  execution. Native runtime dependencies remain optional.
+- Expose the full filesystem tool set through `FilesystemTools` and interpret
+  `ShellTools(cwd=...)` in the selected backend's filesystem. Add a typed factory
+  contract for additional sandbox backends and native-runtime opt-in tests.
+
 - Add typed, process-local tool metadata and captured tool descriptions in policy,
   execution and result-review hooks, including schema-defined external tools.
 - Add fixed and dynamic action-chain boundaries, durable break signals and explicit

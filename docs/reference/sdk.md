@@ -26,6 +26,24 @@ a local server. Both accept `include_tools=None`, `readonly_tools=()`,
 Each mount owns one connection and a fixed catalog of namespaced tools. See
 [MCP tools](../guides/mcp.md) for approvals, results and cancellation boundaries.
 
+## Sandbox integrations
+
+Import `DockerSandbox` from `harnessed.integrations.docker`, or
+`BubblewrapSandbox` from `harnessed.integrations.bubblewrap`. Both own shared
+shell/filesystem backends; compose them with `ShellTools()` and `FilesystemTools()`.
+Docker requires an explicit `image`; Bubblewrap requires a dedicated `rootfs`.
+Both accept `workspace=Workspace.copy_from(path)` or `Workspace.mount(path,
+readonly=True)`, `network=NetworkAccess.NONE`, explicit `env`, `SandboxLimits`,
+`max_output_bytes` and `startup_timeout`. No extra Python dependencies are required;
+their native runtimes must be installed separately. Docker also accepts `runtime`
+for an application-configured OCI runtime.
+
+`await sandbox.export(session, source=..., destination=...)` exports one bounded
+binary file while that recipe's session mount is live. `Sandbox(backend=factory,
+workspace=...)` accepts custom `SandboxBackend` implementations. See
+[sandboxes](../guides/sandboxes.md) for defaults, lifecycle, security boundaries,
+runtime requirements and the extension protocol.
+
 ## Agent
 
 `Agent(*, model=None, system_prompt=None, plugins=(),

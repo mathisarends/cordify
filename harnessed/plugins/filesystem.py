@@ -153,7 +153,14 @@ class SearchResult:
 
 
 class FilesystemTools(Plugin, needs=(FileSystemBackend, ToolRegistry)):
-    """Expose bounded reads and writes through a separately owned FileSystemBackend service."""
+    """Expose workspace tools through a separately owned FileSystemBackend service."""
+
+    usage = SystemSection(
+        text=(
+            "File paths are relative to the workspace. Read a range before editing. "
+            "Use glob and grep to discover relevant files."
+        )
+    )
 
     @tool(readonly=True, parallel=True)
     async def read_file(
@@ -180,39 +187,6 @@ class FilesystemTools(Plugin, needs=(FileSystemBackend, ToolRegistry)):
         """Atomically replace a UTF-8 file, creating parent directories if needed."""
         await fs.write(Path(path), text)
         return f"Wrote {path}"
-
-
-class FilesystemConfig(PluginConfig):
-    root: Path = Path(".")
-
-
-class Filesystem(FilesystemTools, slot="filesystem"):
-    """Expose bounded reads, discovery and explicit writes within one workspace."""
-
-    needs = (ToolRegistry,)
-
-    Config = FilesystemConfig
-
-    config: FilesystemConfig
-
-    usage = SystemSection(
-        text=(
-            "File paths are relative to the workspace. Read a range before editing. "
-            "Use glob and grep to discover relevant files."
-        )
-    )
-
-    def __init__(
-        self, root: str | Path = ".", *, implementation: FileSystemBackend | None = None
-    ) -> None:
-        super().__init__(root=Path(root))
-        self.implementation = implementation
-
-    async def setup(self, ctx: Context) -> None:
-        implementation = self.implementation
-        if implementation is None:
-            implementation = await run_sync(partial(LocalFileSystem, self.config.root))
-        ctx.provide(FileSystemBackend, implementation)
 
     @tool(readonly=True, parallel=True)
     async def list_dir(
@@ -284,3 +258,27 @@ class Filesystem(FilesystemTools, slot="filesystem"):
         """Delete one workspace file."""
         await fs.delete(Path(path))
         return f"Deleted {path}"
+
+
+class FilesystemConfig(PluginConfig):
+    root: Path = Path(".")
+
+
+class Filesystem(FilesystemTools, slot="filesystem"):
+    """Own a local or application-supplied backend and its workspace tools."""
+
+    needs = (ToolRegistry,)
+    Config = FilesystemConfig
+    config: FilesystemConfig
+
+    def __init__(
+        self, root: str | Path = ".", *, implementation: FileSystemBackend | None = None
+    ) -> None:
+        super().__init__(root=Path(root))
+        self.implementation = implementation
+
+    async def setup(self, ctx: Context) -> None:
+        implementation = self.implementation
+        if implementation is None:
+            implementation = await run_sync(partial(LocalFileSystem, self.config.root))
+        ctx.provide(FileSystemBackend, implementation)

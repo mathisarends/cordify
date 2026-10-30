@@ -9,6 +9,10 @@ class ConfigError(HarnessedError, ValueError):
     pass
 
 
+class SandboxError(HarnessedError, RuntimeError):
+    """A sandbox could not enforce its configuration or complete an operation."""
+
+
 class PluginConflict(ConfigError):
     pass
 

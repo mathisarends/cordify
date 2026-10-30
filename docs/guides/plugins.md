@@ -212,8 +212,9 @@ plugins = [Service(ShellBackend, LocalShell()), ShellTools(".")]
 
 The tool plugin explicitly needs the backend. Removing its provider suspends the
 tools, and a replacement provider restarts them. Injection resolves the current
-backend for every call. `FilesystemTools` exposes bounded `read_file` and
-`write_file`; `Filesystem` also provides discovery, editing and deletion tools.
+backend for every call. `FilesystemTools` exposes the same bounded reading,
+writing, discovery, editing and deletion tools as `Filesystem`. For shared isolated
+backends, see [sandbox integrations](sandboxes.md).
 
 ## Configuration models stay outside plugin classes
 

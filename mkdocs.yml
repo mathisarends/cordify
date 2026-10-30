@@ -44,6 +44,7 @@ nav:
       - Compaction: guides/compaction.md
       - Sessions and controls: guides/sessions.md
       - Approvals: guides/approvals.md
+      - Sandboxes: guides/sandboxes.md
       - Testing: guides/testing.md
       - Tracing: guides/tracing.md
       - Examples: guides/examples.md

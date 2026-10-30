@@ -38,6 +38,11 @@ protocol instead.
 - `integrations/opentelemetry.py` implements the optional `tracer` slot against
   an application-owned OpenTelemetry provider. Import it explicitly with the
   `otel` extra installed; SDK and feature facades never import OpenTelemetry.
+- `integrations/sandbox/` owns optional sandbox composition, the structural
+  backend protocol, bounded workspace copying/export and the in-sandbox worker.
+  `integrations/docker/` and `integrations/bubblewrap.py` provide native-runtime
+  implementations without adding Python dependencies. They publish existing
+  feature backend contracts; tool plugins never import integrations.
 - `plugins/mcp.py` owns optional MCP clients, transport lifetimes and schema
   validation. Import it explicitly with the `mcp` extra installed. Core's
   `ToolRegistry.register_external()` owns schema-defined remote registrations

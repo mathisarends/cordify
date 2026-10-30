@@ -32,7 +32,12 @@ class MemoryShell:
 
 
 FEATURES = [
-    (FilesystemTools, FileSystemBackend, MemoryFS, {"read_file", "write_file"}),
+    (
+        FilesystemTools,
+        FileSystemBackend,
+        MemoryFS,
+        {"read_file", "write_file", "list_dir", "glob", "grep", "edit", "delete_file"},
+    ),
     (ShellTools, Shell, MemoryShell, {"run_command"}),
 ]
 
