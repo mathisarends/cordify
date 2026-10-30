@@ -26,7 +26,7 @@ integrations are optional extras; the standalone kernel uses only the standard
 library. Harnessed is distributed under the
 [MIT License](https://github.com/mathisarends/harnessed/blob/main/LICENSE).
 
-## 0.6.0 (Unreleased)
+## 0.6.0 (2026-10-30)
 
 This minor release adds explicit Docker and Bubblewrap sandboxes and hardens MCP
 transport failures and cleanup. It includes breaking shell/filesystem backend
