@@ -64,7 +64,7 @@ plugin_validation=PluginValidation.ERROR)` resolves reusable configuration.
 
 | Member | Behavior |
 | --- | --- |
-| model | Harnessed Model, native PydanticAI model, or provider:model string |
+| model | Harnessed Model or provider:model string; wrap native models with PydanticAIModel |
 | system_prompt | Plain text or an explicitly ordered SystemPrompt |
 | plugins | Explicit configured plugins, merged with default slots |
 | plugin_validation | ERROR rejects unresolved plugins at session startup; WARN emits PluginDependencyWarning and retains them for later activation |
@@ -83,6 +83,14 @@ tuple contains immutable `PluginDependencyIssue` snapshots with `.plugin`
 `PluginValidation.WARN` emits one `PluginDependencyWarning` with the same `.issues`
 and permits later activation. Setup failures still propagate in either mode.
 See [startup validation](../guides/plugins.md#session-startup-validation).
+
+Model generation defaults live on `model.settings: GenerationSettings`, exported
+from `harnessed.models`. Configure `PydanticAIModel(..., settings=GenerationSettings(...))`
+and optionally override concrete values with `session.run(..., settings=...)`.
+`max_tokens` and `temperature` are typed fields; JSON provider options use
+`provider_options`. None inherits a default. The effective request snapshot stores
+these settings once, and `ModelRequestedEvent.model` records the selected
+`ModelInfo`. See [model settings and ownership](../guides/models.md#settings-and-ownership).
 
 ## System prompt composition
 
@@ -164,7 +172,7 @@ corrupt stored records raise `SessionFormatError`, and `on_max_tokens=FAIL` rais
 `OutputTokenLimit`.
 See [session boundaries and restart behavior](../guides/sessions.md).
 
-Configure loop options on `AgentLoop(...)` in `plugins=`: step/output budgets,
+Configure loop options on `AgentLoop(...)` in `plugins=`: step limits,
 parallel tool limits, timeouts and context-window overrides belong to the agent
 configuration. `session(id)` opens that configured runtime; it has no per-session
 loop overrides. A single run may narrow the step limit with `max_steps=` and cap

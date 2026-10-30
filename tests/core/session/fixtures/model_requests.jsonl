@@ -1,0 +1,7 @@
+{"version":3,"seq":0,"type":"turn.start","data":{"turn_id":"turn"}}
+{"version":3,"seq":1,"type":"step.start","data":{"turn_id":"turn","step":1}}
+{"version":3,"seq":2,"type":"model.requested","data":{"request":{"messages":{"prefix":0,"items":[{"role":"user","content":"hello","id":"user"}]}},"model":{"name":"test"},"request_id":"request"}}
+{"version":3,"seq":3,"type":"model.usage","data":{"usage":{"input_tokens":5},"request_id":"request"}}
+{"version":3,"seq":4,"type":"assistant.message","data":{"message":{"role":"assistant","content":"done","id":"reply"},"request_id":"request"}}
+{"version":3,"seq":5,"type":"step.end","data":{"turn_id":"turn","step":1}}
+{"version":3,"seq":6,"type":"turn.end","data":{"turn_id":"turn"}}

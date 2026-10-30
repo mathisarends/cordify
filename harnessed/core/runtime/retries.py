@@ -1,5 +1,5 @@
 from harnessed.core.diagnostics import ModelAttemptOutcome, RetryKind, RetryReason
-from harnessed.core.model import ModelRequest
+from harnessed.core.model import ModelInfo, ModelRequest
 from harnessed.core.runtime.options import AgentOptions
 from harnessed.core.session.events import (
     ModelRequestedEvent,
@@ -21,7 +21,9 @@ class RequestRetries:
         self.log = log
         self.options = options
 
-    def request(self, request: ModelRequest, request_id: str) -> ModelRequestedEvent:
+    def request(
+        self, request: ModelRequest, request_id: str, model: ModelInfo
+    ) -> ModelRequestedEvent:
         steps = self.log.current_turn().steps
         previous = steps[-2] if len(steps) > 1 else None
         kind = (
@@ -39,9 +41,10 @@ class RequestRetries:
             else None
         )
         if kind is None or prior is None:
-            return ModelRequestedEvent(request, request_id=request_id)
+            return ModelRequestedEvent(request, model=model, request_id=request_id)
         return ModelRequestedEvent(
             request,
+            model=model,
             request_id=request_id,
             retry_group_id=prior.retry_group_id if prior.retry_kind == kind else prior.request_id,
             retry_kind=kind,

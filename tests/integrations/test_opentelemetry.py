@@ -7,6 +7,8 @@ from threading import Thread
 
 import pytest
 
+from harnessed.models import ProviderState
+
 pytest.importorskip("opentelemetry.sdk")
 
 from opentelemetry import trace
@@ -71,7 +73,13 @@ async def test_runtime_tree_usage_and_backend_attributes(telemetry):
 
 async def test_content_is_explicit_bounded_and_excludes_opaque_state(telemetry):
     provider, exporter = telemetry
-    native = Assistant("answer", reasoning="private reasoning", provider_state={"key": "opaque"})
+    native = Assistant(
+        "answer",
+        reasoning="private reasoning",
+        provider_state=ProviderState(
+            format="test.response", version=1, provider="test", model="test", data={"key": "opaque"}
+        ),
+    )
     # Scripted streams retain response text; exercise the portable serializer
     # directly as well to check exclusion of opaque provider state.
     plugin = OpenTelemetryTracer(tracer_provider=provider, capture_content=True)

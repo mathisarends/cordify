@@ -268,8 +268,8 @@ class _PlainMessage(_MessageText):
         return ""
 
     @property
-    def provider_state(self) -> Mapping[str, Any]:
-        return MappingProxyType({})
+    def provider_state(self) -> ProviderState | None:
+        return None
 
 
 class _NoCallID:
@@ -303,6 +303,28 @@ class User(_PlainMessage, _NoCallID):
         object.__setattr__(self, "content", _content(self.content))
 
 
+@dataclass(frozen=True, kw_only=True)
+class ProviderState:
+    """Versioned adapter-owned replay data, tied to its originating provider/model."""
+
+    __hash__ = None
+    format: Annotated[str, Field(min_length=1)]
+    version: Annotated[int, Field(ge=1)]
+    provider: Annotated[str, Field(min_length=1)]
+    model: Annotated[str, Field(min_length=1)]
+    data: JSONMapping
+
+    def __post_init__(self) -> None:
+        if any(
+            not isinstance(value, str) or not value
+            for value in (self.format, self.provider, self.model)
+        ):
+            raise ValueError("Provider state requires format, provider and model identifiers")
+        if type(self.version) is not int or self.version < 1:
+            raise ValueError("Provider state requires a positive integer format version")
+        object.__setattr__(self, "data", freeze(self.data))
+
+
 @dataclass(frozen=True)
 class Assistant(_MessageText, _NoCallID):
     __hash__ = None
@@ -310,7 +332,7 @@ class Assistant(_MessageText, _NoCallID):
     tool_calls: tuple[ToolCall, ...] = ()
     reasoning: str = ""
     id: str = field(default_factory=lambda: uuid4().hex, kw_only=True)
-    provider_state: JSONMapping = field(default_factory=dict, kw_only=True)
+    provider_state: ProviderState | None = field(default=None, kw_only=True)
     role: Literal[Role.ASSISTANT] = field(default=Role.ASSISTANT, kw_only=True)
 
     def __post_init__(self) -> None:
@@ -319,7 +341,8 @@ class Assistant(_MessageText, _NoCallID):
         if not isinstance(self.reasoning, str):
             raise TypeError("Assistant reasoning must be text")
         object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
-        object.__setattr__(self, "provider_state", freeze(self.provider_state))
+        if self.provider_state is not None and not isinstance(self.provider_state, ProviderState):
+            raise TypeError("Assistant provider_state must be a ProviderState or None")
 
 
 @dataclass(frozen=True)

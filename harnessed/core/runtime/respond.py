@@ -24,16 +24,20 @@ class ModelResponder:
         self.ctx = ctx
         self.log = log
 
-    async def respond(self, request: ModelRequest, *, request_id: str) -> Assistant:
+    async def respond(self, request: ModelRequest, *, model: Model, request_id: str) -> Assistant:
         with span(
-            self.ctx, "model", session_id=self.log.id, model=request.model, request_id=request_id
+            self.ctx, "model", session_id=self.log.id, model=model.info.name, request_id=request_id
         ) as current:
             current.set_attribute("request", request)
             diagnostics = RequestDiagnostics(self.log, request_id)
             try:
                 with model_diagnostics(diagnostics.receive):
                     response = await self._stream_response(
-                        request, request_id=request_id, trace=current, diagnostics=diagnostics
+                        request,
+                        model=model,
+                        request_id=request_id,
+                        trace=current,
+                        diagnostics=diagnostics,
                     )
                 await diagnostics.finish(ModelAttemptOutcome.SUCCEEDED)
                 return response
@@ -47,6 +51,7 @@ class ModelResponder:
         self,
         request: ModelRequest,
         *,
+        model: Model,
         request_id: str,
         trace: Span,
         diagnostics: RequestDiagnostics,
@@ -66,7 +71,7 @@ class ModelResponder:
             )
 
         try:
-            async with self.ctx[Model].stream(request) as stream:
+            async with model.stream(request) as stream:
                 async for chunk in stream:
                     if chunk.diagnostic is not None:
                         await diagnostics.receive(chunk.diagnostic)

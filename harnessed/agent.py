@@ -1,12 +1,10 @@
-from __future__ import annotations
-
 from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, Unpack, overload
+from typing import Any, Unpack, overload
 
 from harnessed.core.approvals import Approvals
 from harnessed.core.composition import PluginValidation
-from harnessed.core.errors import PluginConflict
+from harnessed.core.errors import ConfigError, PluginConflict
 from harnessed.core.event_registry import EventRegistry
 from harnessed.core.model import Model
 from harnessed.core.outputs import OutputContract, OutputTypes
@@ -28,9 +26,6 @@ from harnessed.kernel import Context, PluginLike
 from harnessed.kernel.plugin import as_plugin_spec
 from harnessed.models.pydantic_ai import PydanticAIModel
 
-if TYPE_CHECKING:
-    from harnessed.models.pydantic_ai import NativeModel
-
 
 class Agent:
     """Resolve model, instructions and plugins into a reusable configuration.
@@ -42,7 +37,7 @@ class Agent:
     def __init__(
         self,
         *,
-        model: Model | str | NativeModel | None = None,
+        model: Model | str | None = None,
         system_prompt: str | SystemPrompt | None = None,
         plugins: Iterable[PluginLike] = (),
         plugin_validation: PluginValidation = PluginValidation.ERROR,
@@ -57,8 +52,13 @@ class Agent:
         for value in supplied:
             if isinstance(value, Service) and value.key is Model:
                 implementation = value.value
-                if not isinstance(implementation, Model):
+                if isinstance(implementation, str):
                     implementation = PydanticAIModel(implementation)
+                elif not isinstance(implementation, Model):
+                    raise ConfigError(
+                        "model must implement harnessed.models.Model; wrap native "
+                        "PydanticAI models with PydanticAIModel(model)"
+                    )
                 value = Service(Model, implementation)
             normalized.append(value)
         declared = next((value for value in normalized if isinstance(value, Instructions)), None)

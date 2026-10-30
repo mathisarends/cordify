@@ -296,7 +296,7 @@ async def test_recovery_finishes_when_a_previous_attempt_stopped_before_recordin
 async def test_recovery_rejects_invalid_approval_prefix_without_modifying_the_file(tmp_path):
     path = tmp_path / "invalid.jsonl"
     invalid = {
-        "version": 2,
+        "version": 3,
         "seq": 0,
         **encode_event(ApprovalResolvedEvent("unknown", ApprovalAnswer.ALLOW)),
     }
@@ -318,7 +318,7 @@ async def test_complete_approval_answer_without_commit_delimiter_is_not_reused(t
     path = tmp_path / "answer.jsonl"
     prefix = await asyncio.to_thread(path.read_bytes)
     answer = {
-        "version": 2,
+        "version": 3,
         "seq": 1,
         **encode_event(ApprovalResolvedEvent("approval", ApprovalAnswer.ALWAYS)),
     }
