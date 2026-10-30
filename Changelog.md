@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-10-30)
+
+This minor release replaces automatic session archives with explicit conversation
+state and adds an application-owned OTLP/HTTP provider helper. It includes
+breaking session, persistence and output-restoration API changes from 0.7.0.
+Conversation snapshots use state format **1**; older JSONL archives are not
+accepted or automatically migrated. The standalone audit-event envelope remains
+version **3**.
 
 ### Explicit conversation state (breaking)
 
@@ -24,10 +31,60 @@
   objects are not restored. Approval grants and Rules counters start fresh in a
   new live session. Custom audit events can be stored externally through hooks.
 
-Upgrade by exporting current conversation state and injecting it explicitly.
-Older JSONL archives are not accepted as the new state format and have no automatic
-migration. Configure output validators on each new turn. See
-[the session guide](docs/guides/sessions.md) and examples 14 and 17.
+### OpenTelemetry provider lifecycle
+
+- Add `otlp_provider()` in `harnessed.integrations.opentelemetry` as an async
+  context manager around an application's agents and sessions. It creates a
+  `TracerProvider`, `BatchSpanProcessor` and OTLP/HTTP exporter without replacing
+  the global provider. Install `harnessed[otel]` to use the optional integration.
+- Require a nonempty `service_name`; accept an explicit trace ingestion endpoint
+  and resource attributes. Standard OpenTelemetry environment variables configure
+  exporter endpoints, headers, timeouts, resources and sampling. Explicit values
+  take precedence, with `service_name` overriding the `service.name` resource.
+- Shut down the owned provider outside the event loop after application work,
+  including setup failures, application errors and task cancellation. Shutdown
+  attempts to export pending batches; it does not confirm backend ingestion.
+  Close sessions before leaving the provider context. Closing a session or
+  unmounting `OpenTelemetryTracer` does not shut down a shared provider.
+- Expand the [tracing guide](docs/guides/tracing.md) with application lifespan,
+  shared-provider and environment configuration examples. Add an `--otlp` mode
+  to `uv run python -m examples.29_tracing`; the default remains an offline
+  console example. Cover batched HTTP delivery and cleanup with local collectors.
+
+### Upgrade from 0.7.0
+
+1. Remove `MemorySessions`, `JsonlSessions`, durability configuration and custom
+   archive backends. Replace ID-based reopening and `agent.sessions` access with
+   application-owned storage and explicit `SessionState` values. The application
+   owns conversation keys, authorization, revisions, expiration and deletion.
+2. Continue with `agent.run(prompt, state=state)` or `agent.session(state=state)`.
+   Save `result.state.to_json()` after a terminal turn; load it with
+   `SessionState.from_json(payload)`. Use `session.snapshot()` only while idle,
+   with no queued inputs. Omit `state` to start a new conversation.
+3. Back up older JSONL archives and their `.assets` and `.files` directories before
+   upgrading. They cannot be passed to `SessionState.from_json()`; there is no
+   automatic archive migration. Start new state-format-1 conversations or arrange
+   an application-specific conversion before upgrading. New snapshots contain
+   retained image and spill bytes, without sidecar resource directories.
+4. Replace fork APIs with independent runs receiving the same immutable snapshot.
+   Paused executions, queued work, pending approvals and live processes cannot
+   be restored. Live pause/resume and cancellation still work within one session;
+   approval grants and Rules counters start fresh when a new session opens.
+5. Remove `restore_outputs` and configure the desired output validator or
+   `OutputContract` on each new turn. Snapshots retain conversation messages and
+   provider replay state, not Python validators, agent configuration or plugins.
+6. Store complete audit histories externally through subscriptions or hooks.
+   Conversation snapshots retain working context rather than an execution archive;
+   ordered `EventLogCodec` persistence is removed. The standalone audit-event codec
+   keeps its own versioned envelope.
+7. Existing OpenTelemetry providers continue to work. To adopt `otlp_provider()`,
+   open it once around sharing sessions and pass its result to
+   `OpenTelemetryTracer(tracer_provider=provider)`. Content capture remains an
+   explicit tracer option and is disabled by default.
+
+See the [session guide](docs/guides/sessions.md),
+[structured-output guide](docs/guides/structured-output.md) and examples 14 and 17
+for explicit state and application-owned storage.
 
 ## 0.7.0 (2026-10-30)
 
